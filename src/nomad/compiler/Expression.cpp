@@ -1409,10 +1409,6 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
         reportError(context, function, "Invalid constructor for '" + m_constructorName + "'");
         return;
     }
-    if (selected->getConstructedType()->asStructType() != nullptr) {
-        reportError(context, function, "Struct construction is not yet supported");
-        return;
-    }
     for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
         arguments[index]->setType(selected->getParameters()[index].type);
     }
@@ -1430,30 +1426,90 @@ void ConstructorExpression::onCompile(Compiler* compiler, ScriptCallableBase* fu
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
+    if (getType()->asStructType() != nullptr) {
+        compiler->reportError("Struct construction requires a local destination");
+    }
     if (m_constructor->asNativeConstructor() != nullptr) {
-        compiler->addNativeConstructorCall(m_constructor->getId(), function, &m_arguments);
+        compiler->addNativeObjectCreation(m_constructor->getId(), function, &m_arguments);
     } else {
-        compiler->addScriptConstructorCall(
-            m_constructor->getId(), m_constructor->getClassType()->getId(), function, &m_arguments
-        );
+        compiler->addScriptObjectCreation(m_constructor->getId(), function, &m_arguments);
     }
     compiler->addMoveResult(getType(), target);
+}
+
+void ConstructorExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (getType()->asStructType() == nullptr) {
+        Expression::onCompileIntoLocal(compiler, function, destination);
+        return;
+    }
+    if (m_constructor == nullptr) {
+        raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
+    }
+    compiler->addStructCreationIntoLocal(m_constructor->getId(), function, &m_arguments, destination);
 }
 
 void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    m_arguments.evaluate(context, evaluatedArguments, values);
+    if (getType()->asStructType() != nullptr) {
+        raiseException("Interpreter construction does not support struct value storage");
+    }
+    auto* machine = context.getVirtualMachine();
+    const auto& arguments = m_arguments.getArguments();
+    auto pushed = NomadIndex{0};
+    auto prepared = false;
+    const auto releaseArguments = [&]() {
+        for (auto index = NomadIndex{0}; index < pushed; ++index) {
+            const auto argumentIndex = prepared ? index : pushed - index - 1;
+            auto value = machine->popValue();
+            arguments[argumentIndex]->getType()->freeValue(&value);
+        }
+    };
+    NomadObject* created = nullptr;
+    try {
+        for (const auto& argument : arguments) {
+            const auto value = argument->evaluate(context);
+            if (context.hasError()) {
+                releaseArguments();
+                return;
+            }
+            if (argument->getType()->asStructType() != nullptr) {
+                raiseException("Interpreter construction does not support struct argument storage");
+            }
+            RuntimeValue copy;
+            argument->getType()->copyValue(&value.getValue(), &copy);
+            try {
+                machine->pushValue(copy);
+            } catch (...) {
+                argument->getType()->freeValue(&copy);
+                throw;
+            }
+            ++pushed;
+        }
+        if (pushed != 0) {
+            std::reverse(machine->getStackAddress(pushed - 1), machine->getStackAddress(0) + 1);
+        }
+        prepared = true;
+        created = m_constructor->asNativeConstructor() != nullptr
+            ? machine->createNativeObject(m_constructor->getId())
+            : machine->createScriptObject(m_constructor->getId());
+    } catch (...) {
+        releaseArguments();
+        throw;
+    }
+    releaseArguments();
+    const auto release = [](NomadObject* object) { object->releaseRef(); };
+    const std::unique_ptr<NomadObject, decltype(release)> object(
+        created, release
+    );
     if (context.hasError()) {
         return;
     }
-    const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(
-        context.getVirtualMachine()->constructObject(m_constructor->getId(), values), release
-    );
     RuntimeValue value;
     value.setObjectValue(object.get());
     context.setResult(getType(), value);

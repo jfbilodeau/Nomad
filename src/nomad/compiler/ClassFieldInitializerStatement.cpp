@@ -29,6 +29,15 @@ void ClassFieldInitializerStatement::onResolve(CompilerContext* context, ScriptC
 void ClassFieldInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     auto* initializer = m_member->getInitializer();
     const auto* receiverType = function->getClassType();
+    if (receiverType->asStructType() != nullptr) {
+        IdentifierDefinition receiver;
+        receiver.identifierType = IdentifierType::Receiver;
+        receiver.valueType = receiverType;
+        const auto* property = compiler->getRuntime()->getProperty(m_member->getPropertyId());
+        StorageLocation(receiver).getProperty(*property).emitAssignment(
+            *compiler, function, *initializer, m_stagingVariable);
+        return;
+    }
     if (initializer->getType()->asStructType() != nullptr) {
         const auto* property = compiler->getRuntime()->getProperty(m_member->getPropertyId());
         StorageLocation(property).emitAssignment(*compiler, function, *initializer, m_stagingVariable);

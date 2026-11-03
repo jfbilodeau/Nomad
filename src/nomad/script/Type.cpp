@@ -223,7 +223,8 @@ void Type::emitFreeStorage(OpCodeEmitter&, NomadIndex) const {
 
 void Type::emitInitStorage(OpCodeEmitter& emitter, const NomadIndex offset) const {
     if (getSize() != 0) {
-        emitInitResult(emitter);
+        emitter.addOpCode(op_code_load_default_r);
+        emitter.addId(getId().id);
         emitFreeStorage(emitter, offset);
         emitter.addOpCode(op_storage_set);
         emitter.addIndex(offset);

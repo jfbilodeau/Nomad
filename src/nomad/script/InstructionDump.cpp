@@ -83,6 +83,12 @@ void dumpInstructions(const Runtime& runtime, const ScriptCallableBase& callable
                 case Operand::Id:
                     textValue = std::to_string(value.getIdValue());
                     break;
+                case Operand::Callable: {
+                    const auto* targetCallable = runtime.getCallable(CallableId{value.getIdValue()});
+                    textValue = (targetCallable != nullptr ? getQualifiedCallableName(targetCallable) : "<unknown callable>") +
+                        " (" + std::to_string(value.getIdValue()) + ")";
+                    break;
+                }
                 case Operand::Function: {
                     const auto functionStart = value.getIndexValue();
                     const auto* function = runtime.getScriptCallableByStartAddress(functionStart);

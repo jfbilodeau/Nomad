@@ -41,7 +41,7 @@ enum class CompilationCallableTarget {
     Function = 1,
     Constructor,
     HubInitializer,
-    ObjectInitializer
+    PropertyInitializer
 };
 
 class Compiler : public OpCodeEmitter {
@@ -190,14 +190,19 @@ public:
         VariableId destinationId = VariableId::INVALID
     );
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
-    NomadIndex addScriptConstructorCall(
+    NomadIndex addScriptObjectCreation(
         CallableId constructorId,
-        TypeId typeId,
         ScriptCallableBase* function,
         const ArgumentList* arguments
     );
     NomadIndex addNativeFunctionCall(CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
-    NomadIndex addNativeConstructorCall(CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addNativeObjectCreation(CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments);
+    void addStructCreationIntoLocal(
+        CallableId constructorId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        VariableId destinationId
+    );
     NomadIndex addNativeMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
@@ -309,7 +314,7 @@ private:
     void reportFieldDiagnostics(CompilerContext* context) const;
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
     void compileFunction(const FunctionCompilation& function);
-    void compileObjectInitializer(const FunctionCompilation& initializer);
+    void compilePropertyInitializer(const FunctionCompilation& initializer);
     void compileConstructor(const FunctionCompilation& constructor);
 
     Runtime* m_runtime;

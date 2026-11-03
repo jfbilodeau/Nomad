@@ -2,7 +2,7 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1AZ have been reviewed. Step 1BA is implemented and awaiting
+Steps 1AP through 1BA have been reviewed. Step 1BB is implemented and awaiting
 review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
@@ -2157,6 +2157,57 @@ Validation:
 Next after review: destination-based `new` calls and generated field initializer
 sequencing, followed by struct declaration syntax. Return forwarding and NRVO
 remain later optimization work.
+
+### Step 1BB: Specialized stack-fed object and struct creation
+
+Approved scope:
+
+- Native object constructors remain factories. Expose `createNativeObject` and
+  `createScriptObject` with constructor IDs and prepared VM-stack arguments.
+- Expose `createNativeStruct` and `createScriptStruct` with fresh borrowed
+  `RuntimeValue*` destinations and stack arguments. No struct allocation,
+  argument vectors, or heap-allocated call bookkeeping.
+- Keep allocation-only script object creation distinct as `allocateScriptObject`.
+- Wire destination-based struct expressions and property initialization.
+  Keep declaration syntax and interpreter aggregate values out of scope.
+
+Implementation:
+
+- Removed the vector-fed, source-dispatching object construction API and migrated
+  host bindings, interpreter construction, and tests to specialized entry points.
+- Dedicated object and struct creation opcodes select native/script execution.
+  Struct destination distances are compiler-computed; empty destinations omit
+  the pointer slot and use an explicit absent-distance operand. Callable operands
+  retain named constructor targets in instruction dumps.
+- Struct creation initializes properties before native/script bodies. Registered
+  generated property initializer bodies share class initializer sequencing;
+  otherwise struct types provide ordinary defaults. Creation into locals supports
+  staged assignment, constructor arguments, return copies, and class properties.
+- Explicit Runtime class/struct registration APIs mirror TypeManager. Generic
+  registration entry points remain compatible delegates.
+- Struct lifecycle traversal and initializer lookup no longer allocate catalog
+  copies. Scalar indirect default initialization now loads the actual type default
+  rather than relying on a no-op scalar register initializer.
+- Interpreter constructor arguments retain left-to-right evaluation and are
+  reversed in-place into stack-call order.
+
+Validation:
+
+- Debug tests, runtime, and LSP targets built successfully.
+- Language, remaining, bindings, and tooling regression groups passed, including repeated ownership
+  restoration, object factory compatibility, stack-fed host reentry, nested
+  aggregate constructor arguments, property defaults, explicit initializers,
+  class property construction/replacement, and empty constructor side effects.
+- MSVC Debug allocation hooks verify zero allocations for repeated native/script
+  struct creation. Object creation adds no allocations beyond direct object
+  storage, including Debug standard-library iterator proxies.
+- Shell-based documentation tests, whitespace validation, and worktree inspection
+  were unavailable because the sandbox disabled the local-network access required
+  to start shell commands. CMake Tools build and regression execution succeeded.
+- Complete fault unwinding, gameplay, and performance benchmarks are not covered.
+
+Next after review: struct declaration syntax and member discovery, using these
+registered construction paths. Return forwarding and NRVO remain later work.
 
 Remaining Step 1 work, requiring separate design approval:
 

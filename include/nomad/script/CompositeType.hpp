@@ -23,6 +23,7 @@ public:
     using Type::toString;
     [[nodiscard]] NomadString getTypeName() const override;
     [[nodiscard]] const NomadString& getInitializerName() const;
+    [[nodiscard]] const Method* getInitializer() const;
     [[nodiscard]] const CompositeType* asCompositeType() const override;
     [[nodiscard]] bool isOpen() const;
     [[nodiscard]] CallableId registerConstructor(
@@ -41,6 +42,7 @@ public:
     );
     [[nodiscard]] const Property* getProperty(const NomadString& name) const;
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
+    [[nodiscard]] const Property* getPropertyAt(NomadIndex index) const;
     [[nodiscard]] std::vector<const Property*> getProperties() const;
     [[nodiscard]] NomadIndex getFieldIndex(PropertyId id) const;
     [[nodiscard]] NomadIndex getFieldOffset(PropertyId id) const;

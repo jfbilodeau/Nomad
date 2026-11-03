@@ -13,6 +13,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <initializer_list>
 #include <utility>
 
 using namespace nomad;
@@ -49,8 +50,8 @@ std::vector<NomadString> callSequence(const Runtime& runtime, const ScriptCallab
             sequence.push_back(OpCodes::op_call_script_function);
         } else if (name == OpCodes::op_call_native_method) {
             sequence.push_back(OpCodes::op_call_script_method);
-        } else if (name == OpCodes::op_call_native_constructor) {
-            sequence.push_back(OpCodes::op_call_script_constructor);
+        } else if (name == OpCodes::op_create_native_object) {
+            sequence.push_back(OpCodes::op_create_script_object);
         } else {
             sequence.push_back(name);
         }
@@ -58,6 +59,42 @@ std::vector<NomadString> callSequence(const Runtime& runtime, const ScriptCallab
         BOOST_REQUIRE(index <= function->getFunctionEnd());
     }
     return sequence;
+}
+
+NomadObject* createTestObject(
+    VirtualMachine& machine,
+    const CallableId constructorId,
+    const std::initializer_list<RuntimeValue> arguments
+) {
+    const auto* constructor = machine.getRuntime()->getConstructor(constructorId);
+    BOOST_REQUIRE(constructor != nullptr);
+    BOOST_REQUIRE(constructor->getParameterCount() == arguments.size());
+    const auto& parameters = constructor->getParameters();
+    auto pushed = NomadIndex{0};
+    const auto releaseArguments = [&]() {
+        for (auto index = arguments.size() - pushed; index < arguments.size(); ++index) {
+            auto value = machine.popValue();
+            parameters[index].type->freeValue(&value);
+        }
+    };
+    NomadObject* object;
+    try {
+        auto argument = arguments.end();
+        while (argument != arguments.begin()) {
+            --argument;
+            RuntimeValue copy;
+            parameters[arguments.size() - pushed - 1].type->copyValue(argument, &copy);
+            machine.pushValue(copy);
+            ++pushed;
+        }
+        object = constructor->asNativeConstructor() != nullptr
+            ? machine.createNativeObject(constructorId) : machine.createScriptObject(constructorId);
+    } catch (...) {
+        releaseArguments();
+        throw;
+    }
+    releaseArguments();
+    return object;
 }
 
 } // namespace
@@ -73,21 +110,29 @@ BOOST_AUTO_TEST_CASE(call_opcodes_have_specialized_operands) {
         BOOST_REQUIRE(operands.size() == 1u);
         BOOST_CHECK(operands[0] == Operand::Function);
     }
-    const auto constructorId = runtime.getInstructionId(OpCodes::op_call_script_constructor);
+    const auto constructorId = runtime.getInstructionId(OpCodes::op_create_script_object);
     BOOST_REQUIRE(constructorId.isValid());
     const auto operands = runtime.getInstructionOperands(constructorId);
-    BOOST_REQUIRE(operands.size() == 2u);
-    BOOST_CHECK(operands[0] == Operand::Function);
-    BOOST_CHECK(operands[1] == Operand::Id);
+    BOOST_REQUIRE(operands.size() == 1u);
+    BOOST_CHECK(operands[0] == Operand::Callable);
     for (const auto& name : {
-        OpCodes::op_call_native_function, OpCodes::op_call_native_method, OpCodes::op_call_native_constructor
+        OpCodes::op_call_native_function, OpCodes::op_call_native_method, OpCodes::op_create_native_object
     }) {
         const auto id = runtime.getInstructionId(name);
         BOOST_REQUIRE(id.isValid());
         const auto nativeOperands = runtime.getInstructionOperands(id);
         BOOST_REQUIRE(nativeOperands.size() == 1u);
         BOOST_CHECK(nativeOperands[0] ==
-            (name == OpCodes::op_call_native_function ? Operand::NativeFunction : Operand::Id));
+            (name == OpCodes::op_call_native_function ? Operand::NativeFunction :
+                name == OpCodes::op_create_native_object ? Operand::Callable : Operand::Id));
+    }
+    for (const auto& name : {OpCodes::op_create_native_struct, OpCodes::op_create_script_struct}) {
+        const auto id = runtime.getInstructionId(name);
+        BOOST_REQUIRE(id.isValid());
+        const auto structOperands = runtime.getInstructionOperands(id);
+        BOOST_REQUIRE(structOperands.size() == 2U);
+        BOOST_CHECK(structOperands[0] == Operand::Callable);
+        BOOST_CHECK(structOperands[1] == Operand::Index);
     }
 }
 
@@ -180,16 +225,13 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return)));
     const auto* main = runtime.getScriptFunction(id);
     auto foundConstructorCall = false;
-    const auto callInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_script_constructor));
+    const auto callInstruction = runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_create_script_object));
     for (auto index = main->getFunctionStart(); index < main->getFunctionEnd(); ++index) {
         if (instructions[index].fn == callInstruction) {
-            BOOST_TEST(instructions[index + 1].value.getIndexValue() == constructor->getFunctionStart());
-            BOOST_TEST(instructions[index + 2].value.getIdValue() == type->getId().id);
-            BOOST_TEST(instructions[index + 3].fn ==
+            BOOST_TEST(instructions[index + 1].value.getIdValue() == constructor->getId().id);
+            BOOST_TEST(instructions[index + 2].fn ==
                 runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_pop_1)));
-            BOOST_TEST(instructions[index + 4].fn ==
-                runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_move_this_to_r)));
-            BOOST_TEST(instructions[index + 5].fn ==
+            BOOST_TEST(instructions[index + 3].fn ==
                 runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_pop_this)));
             foundConstructorCall = true;
         }
@@ -426,7 +468,7 @@ BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots
     const auto* type = runtime.getTypeByName("Item")->asClassType();
     auto machine = runtime.createVirtualMachine();
     RuntimeValue item;
-    item.setObjectValue(machine->constructObject(type->getConstructors()[0]->getId(), {}));
+    item.setObjectValue(machine->createScriptObject(type->getConstructors()[0]->getId()));
     RuntimeValue text;
     text.setStringValue("original");
     const auto before = NomadObject::getLiveObjectCount();
@@ -560,7 +602,7 @@ BOOST_AUTO_TEST_CASE(void_constructor_exit_transfers_instance_and_releases_neste
     for (const auto early : {true, false}) {
         machine->setIntegerResult(41);
         machine->setIntegerIntermediate(42);
-        auto* object = machine->constructObject(constructor->getId(), {RuntimeValue{early}});
+        auto* object = createTestObject(*machine, constructor->getId(), {RuntimeValue{early}});
         BOOST_REQUIRE(object != nullptr);
         BOOST_TEST(object->getReferenceCount() == 1u);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before + 2);
@@ -636,7 +678,7 @@ BOOST_AUTO_TEST_CASE(script_constructor_fault_terminates_compiled_host_and_inter
                     RuntimeValue name;
                     name.setStringValue("host");
                     BOOST_CHECK_EXCEPTION(
-                        static_cast<void>(machine->constructObject(resolved.id, {name, RuntimeValue{true}})),
+                        static_cast<void>(createTestObject(*machine, resolved.id, {name, RuntimeValue{true}})),
                         VirtualMachineException, [](const VirtualMachineException& exception) {
                             return NomadString(exception.what()) == "Constructor failed";
                         });
@@ -1566,7 +1608,7 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     BOOST_TEST(runtime.getInstructions()[start].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_push_this)));
     BOOST_TEST(runtime.getInstructions()[start + 1].fn ==
-        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_call_native_constructor)));
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_create_native_object)));
     RuntimeValue result;
     runtime.executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
@@ -1597,14 +1639,14 @@ BOOST_AUTO_TEST_CASE(native_constructor_host_calls_preserve_registers_and_borrow
     text.setStringValue("owned");
     machine->setIntegerResult(41);
     machine->setIntegerIntermediate(42);
-    auto* object = machine->constructObject(constructorId, {text, RuntimeValue{NomadInteger{23}}});
+    auto* object = createTestObject(*machine, constructorId, {text, RuntimeValue{NomadInteger{23}}});
     BOOST_REQUIRE(object != nullptr);
     BOOST_TEST(object->getReferenceCount() == 1u);
     BOOST_TEST(text.getStringObject()->getReferenceCount() == 1u);
     BOOST_TEST(machine->getIntegerResult() == 41);
     BOOST_TEST(machine->getIntegerIntermediate() == 42);
     BOOST_TEST(calls == 1);
-    BOOST_CHECK_THROW(static_cast<void>(machine->constructObject(constructorId, {})), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(machine->createNativeObject(constructorId)), NomadException);
     BOOST_TEST(machine->getIntegerResult() == 41);
     object->releaseRef();
     runtime.getStringType()->freeValue(&text);
@@ -1642,8 +1684,8 @@ BOOST_AUTO_TEST_CASE(host_script_construction_preserves_native_method_context_an
             const auto before = NomadObject::getLiveObjectCount();
             machine->setIntegerResult(41);
             machine->setIntegerIntermediate(42);
-            auto* object = static_cast<ScriptObject*>(machine->constructObject(
-                constructorId, {machine->getParameter(0)}
+            auto* object = static_cast<ScriptObject*>(createTestObject(
+                *machine, constructorId, {machine->getParameter(0)}
             ));
             BOOST_REQUIRE(object != nullptr);
             BOOST_TEST(object->getReferenceCount() == 1u);
@@ -1707,7 +1749,7 @@ BOOST_AUTO_TEST_CASE(native_constructor_failure_releases_published_result_and_re
     machine->setIntegerResult(41);
     machine->setIntegerIntermediate(42);
     BOOST_CHECK_THROW(
-        static_cast<void>(machine->constructObject(constructorId, {RuntimeValue{true}})), NomadException
+        static_cast<void>(createTestObject(*machine, constructorId, {RuntimeValue{true}})), NomadException
     );
     BOOST_TEST(machine->getIntegerResult() == 41);
     BOOST_TEST(machine->getIntegerIntermediate() == 42);
@@ -1738,7 +1780,7 @@ BOOST_AUTO_TEST_CASE(native_constructor_reentry_restores_the_stack_parameter_fra
         .parameters = {{runtime.getStringType()->getId(), "value", ""}},
         .function = [innerId](VirtualMachine* machine) {
             BOOST_TEST(machine->getStringParameter(0)->getString() == "outer");
-            auto* inner = machine->constructObject(innerId, {RuntimeValue{NomadInteger{99}}});
+            auto* inner = createTestObject(*machine, innerId, {RuntimeValue{NomadInteger{99}}});
             inner->releaseRef();
             BOOST_TEST(machine->getStringParameter(0)->getString() == "outer");
             machine->getResult().setObjectValue(new ConstructedObject);

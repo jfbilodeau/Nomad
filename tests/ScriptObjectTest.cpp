@@ -79,7 +79,7 @@ auto constructScriptObject(VirtualMachine& machine, const ClassType* type) {
     BOOST_REQUIRE(type->getConstructors().size() == 1u);
     const auto release = [](ScriptObject* object) { object->releaseRef(); };
     return std::unique_ptr<ScriptObject, decltype(release)>(
-        static_cast<ScriptObject*>(machine.constructObject(type->getConstructors()[0]->getId(), {})),
+        static_cast<ScriptObject*>(machine.createScriptObject(type->getConstructors()[0]->getId())),
         release
     );
 }
@@ -719,13 +719,11 @@ BOOST_AUTO_TEST_CASE(empty_initializers_and_invalid_host_construction_requests) 
     const auto empty = constructScriptObject(*machine, type);
     BOOST_TEST(empty->getFieldCount() == 0u);
     BOOST_TEST(empty->getReferenceCount() == 1u);
-    BOOST_CHECK_THROW(static_cast<void>(machine->constructObject(CallableId::INVALID, {})), NomadException);
-    BOOST_CHECK_THROW(static_cast<void>(machine->constructObject(type->getConstructors()[0]->getId(),
-        {RuntimeValue{NomadInteger{1}}})), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(machine->createScriptObject(CallableId::INVALID)), NomadException);
     const auto* uncompiled = createTestType(runtime, "Uncompiled");
     const auto constructorId = runtime.registerScriptConstructor(uncompiled->getId(), {}, "", "");
     BOOST_REQUIRE(constructorId.isValid());
-    BOOST_CHECK_THROW(static_cast<void>(machine->constructObject(constructorId, {})), NomadException);
+    BOOST_CHECK_THROW(static_cast<void>(machine->createScriptObject(constructorId)), NomadException);
 }
 
 BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_calls) {

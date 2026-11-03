@@ -51,7 +51,8 @@ bool StructType::needsFree() const {
     if (getSize() == 0) {
         return false;
     }
-    for (const auto* property : getProperties()) {
+    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+        const auto* property = getPropertyAt(index);
         if (property->asNativeProperty() == nullptr && property->getValueType()->needsFree()) {
             return true;
         }
@@ -64,7 +65,8 @@ void StructType::initValue(RuntimeValue* value) const {
         return;
     }
     auto offset = NomadIndex{0};
-    for (const auto* property : getProperties()) {
+    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+        const auto* property = getPropertyAt(index);
         if (property->asNativeProperty() != nullptr) {
             continue;
         }
@@ -82,7 +84,8 @@ void StructType::copyValue(const RuntimeValue* source, RuntimeValue* destination
         return;
     }
     auto offset = NomadIndex{0};
-    for (const auto* property : getProperties()) {
+    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+        const auto* property = getPropertyAt(index);
         if (property->asNativeProperty() != nullptr) {
             continue;
         }
@@ -100,7 +103,8 @@ void StructType::freeValue(RuntimeValue* value) const {
         return;
     }
     auto offset = NomadIndex{0};
-    for (const auto* property : getProperties()) {
+    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+        const auto* property = getPropertyAt(index);
         if (property->asNativeProperty() != nullptr) {
             continue;
         }

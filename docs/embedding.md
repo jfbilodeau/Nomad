@@ -433,8 +433,13 @@ The existing Runtime lookup and finalization methods remain available with
 the same behavior. Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
 Register native class accessors with `TypeManager::registerNativeClassProperty`.
-Register class methods and constructors with the manager's explicit
-native/script class APIs. Register struct constructor metadata with
+Register class methods and constructors with the explicit
+native/script class APIs on TypeManager or Runtime. Both also expose
+`registerNativeStructMethod`, `registerScriptStructMethod`,
+`registerScriptClassProperty`, and `registerScriptStructProperty`.
+Native property accessors remain class-only. Existing generic Runtime registration
+entry points remain compatibility delegates.
+Register struct constructors with
 `TypeManager::registerNativeStructConstructor(ownerId, definition)` or
 `registerScriptStructConstructor(ownerId, parameters, path, source)`.
 `Runtime::addConstructor` and `registerScriptConstructor` also accept struct
@@ -451,10 +456,10 @@ a nonempty struct, and no receiver pointer for an empty struct. There is no
 separate return pointer. Finalize the composite layout before querying this ABI.
 Class factories still return their declared constructed class type.
 
-Registration and overload lookup are available, but struct `new` expressions,
-constructor body compilation, and host construction are not yet supported.
-`VirtualMachine::constructObject` and class native constructor calls reject struct
-constructors before invoking a callback.
+Registered native and script struct constructors support `new` expressions into
+local destinations, including staged assignments, argument copies, returns,
+and class property initializers. Struct declaration syntax and interpreter
+aggregate values remain unsupported.
 
 Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
@@ -778,7 +783,8 @@ resolved expression into a same-type local. Scalar expressions replace the
 local using their existing result-register path. Struct-local identifiers copy
 into disjoint local storage; identical source/destination locals are a no-op.
 Struct parameter identifiers also copy into local storage, preserving the
-parameter's value. Other struct expression sources are not yet supported. The destination ID is
+parameter's value. Registered aggregate-returning calls, stored property reads,
+and `new` expressions also support local destinations. The destination ID is
 resolved to a physical offset during emission, and its storage must be reserved
 before execution. This API does not allocate temporary locals or stage assignment
 targets. It follows the same result-register ownership preconditions as local
@@ -1313,7 +1319,7 @@ ownership and lifecycle contracts; use the assignment API to replace owned value
 
 Direct allocation zeroes storage without running
 type defaults or field initializer expressions. To create a ready-to-use script
-instance from the host, use `VirtualMachine::constructObject()` with a compiled
+instance from the host, use `VirtualMachine::createScriptObject()` with a compiled
 constructor. Every generated constructor calls the class's `$init` before its
 source body. `$init` evaluates explicit field initializers in source order, then
 initializes the remaining fields with their declared type's default value.
@@ -1326,8 +1332,9 @@ The type stores its fully qualified initializer name, available through
 
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when
-required. Host construction rejects invalid constructor IDs, argument counts,
-uncompiled constructors, and struct constructors. If a field initializer fails, later initializers
+required. Script object creation rejects invalid constructor IDs, non-script or
+non-class constructors, and uncompiled constructors. The caller must prepare
+the selected signature's stack arguments. If a field initializer fails, later initializers
 and the source constructor body do not run, and no instance is returned.
 Destruction releases owned field values, including values stored in a partially
 populated object.
@@ -1348,24 +1355,60 @@ new instance becomes active. Script construction produces an instance of the
 declared class. A native factory may produce a different registered type.
 A native factory returning null raises `VirtualMachineException`.
 
-`VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
-native or compiled script constructor. Arguments are borrowed and must match the
-selected constructor's parameter types and count. The returned object owns one
-reference, which the caller must release. Host construction leaves existing
-result and intermediate values unchanged and restores the active receiver,
-including when called from a native callback. Script constructor callables have a
-`void` return type; `Constructor::getConstructedType()` reports the type produced
-by construction, including native factories whose produced type differs from
-their owner. Script construction releases the failed
-instance at a host construction boundary if initialization or the body throws.
+`VirtualMachine::createNativeObject(constructorId)` invokes a native factory.
+`createScriptObject(constructorId)` allocates a script object and executes its
+compiled initializer and constructor body. Both consume prepared stack arguments,
+not an argument container. The returned object owns one reference, which the
+caller must release.
+
+Push owned argument copies right-to-left. Within each struct argument, push its
+physical slots in increasing order. After the call, the caller releases the
+current argument values and pops their slots; a script constructor can reassign
+its copied parameters. These APIs do not release or pop the caller's arguments.
+They preserve existing result and intermediate values and restore the active
+receiver and call frame, including on exceptions and native-callback reentry.
+The compiler emits dedicated native/script object creation opcodes; each selects
+its entry point without native/script dispatch.
+
+`createNativeStruct(destination, constructorId)` and
+`createScriptStruct(destination, constructorId)` initialize fresh, correctly sized
+`RuntimeValue*` storage. They do not allocate a struct or release a previous value.
+For nonempty structs, push the borrowed destination pointer before the explicit
+arguments; pop it after argument cleanup. Empty structs omit the pointer and can
+pass `nullptr`, but still execute initialization and constructor side effects.
+Destinations may be on the fixed VM stack or in caller-owned heap storage.
+The caller owns their field values and eventually calls the struct type's
+`freeValue`. Assignment must stage creation before replacing a live destination.
+
+Registered generated property initializers run before native or script struct
+constructor bodies. They evaluate explicit property initializers in order and
+default-initialize remaining properties. Without a registered property initializer,
+creation supplies ordinary type defaults before the constructor body.
+Copying a nested struct does not execute its constructor.
+
+Creation argument handling and call bookkeeping allocate no heap storage.
+Native factories and script objects allocate their actual object storage;
+initializer and constructor code can itself allocate values. Struct lifecycle
+operations traverse properties without allocating temporary catalogs.
+Interpreter object construction preserves its existing left-to-right argument
+evaluation, then arranges those values in stack-call order without an argument
+vector. Interpreter struct values remain unsupported.
+
+Script and struct constructor callables have a `void` return type;
+`Constructor::getConstructedType()` reports the produced value type, including
+native object factories whose produced class differs from their owner.
+Failed script object creation releases its instance. Failed struct creation can
+leave partially initialized fields; direct callers must release them.
 VM faults are fatal to execution: stop execution and do not resume or reuse the
 faulted VM. Fault recovery and complete release of nested frames, temporary
 arguments, or instances are not supported yet. Class
 initialization and constructor bodies cannot yield. Compile and initialize
 required script-level hub variables before using this lower-level VM API.
 
-Native constructors that allocate `ScriptObject` storage must explicitly supply
+Native factories that allocate `ScriptObject` storage must explicitly supply
 any required field values. Direct allocation does not run a defaults-only pass.
+The low-level `allocateScriptObject(typeId)` operation only allocates raw storage
+and binds it as `this`; it does not invoke a constructor.
 
 `getClassType()` and `getFieldCount()` describe the instance. `getField(index)`
 returns a borrowed const value; `setField(index, value)` copies a value of the

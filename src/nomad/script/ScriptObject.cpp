@@ -13,7 +13,9 @@ ScriptObject::ScriptObject(const ClassType* classType):
     if (classType == nullptr) {
         throw NomadException("Script object requires a class type");
     }
-    for (const auto* property : classType->getProperties()) {
+    m_fields.reserve(classType->getPropertyCount());
+    for (auto index = NomadIndex{0}; index < classType->getPropertyCount(); ++index) {
+        const auto* property = classType->getPropertyAt(index);
         if (property->asNativeProperty() == nullptr) {
             const auto* type = property->getValueType();
             m_fields.push_back({type, classType->getFieldOffset(property->getId()), type->getSize()});

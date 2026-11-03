@@ -258,7 +258,7 @@ bool registerMemberSignatures(
         auto* callable = runtime->getScriptCallable(id);
         callable->setHub(context->getHub());
         callable->setSourceLineRange(member->getLine(), member->getEndLine());
-        const auto kind = member->getKind() == ClassMemberKind::Field ? CompilationCallableTarget::ObjectInitializer :
+        const auto kind = member->getKind() == ClassMemberKind::Field ? CompilationCallableTarget::PropertyInitializer :
             member->getKind() == ClassMemberKind::Constructor ? CompilationCallableTarget::Constructor : CompilationCallableTarget::Function;
         context->getCompiler()->registerMemberCompilation(id, function->getId(), kind);
         if (member->getKind() == ClassMemberKind::Field) {
@@ -277,7 +277,7 @@ bool registerMemberSignatures(
         }
         auto* callable = runtime->getScriptCallable(id);
         callable->setHub(context->getHub());
-        context->getCompiler()->registerMemberCompilation(id, function->getId(), CompilationCallableTarget::ObjectInitializer);
+        context->getCompiler()->registerMemberCompilation(id, function->getId(), CompilationCallableTarget::PropertyInitializer);
         context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
     if (type->asClassType()->getConstructors().empty()) {

@@ -261,6 +261,13 @@ public:
     void registerEnumOperators(const EnumType* type);
 
     // `id` identifies the declaring type; `createdTypeId` can identify a different result type.
+    [[nodiscard]] CallableId registerNativeClassConstructor(TypeId id, NativeConstructorDefinition definition);
+    [[nodiscard]] CallableId registerNativeClassConstructor(
+        TypeId id,
+        TypeId createdTypeId,
+        NativeConstructorDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeStructConstructor(TypeId id, NativeConstructorDefinition definition);
     [[nodiscard]] CallableId addConstructor(TypeId id, NativeConstructorDefinition definition);
     [[nodiscard]] CallableId addConstructor(
         TypeId id,
@@ -294,6 +301,37 @@ public:
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
     // Native members
+    [[nodiscard]] CallableId registerNativeClassMethod(TypeId id, NativeMethodDefinition definition);
+    [[nodiscard]] CallableId registerNativeStructMethod(TypeId id, NativeMethodDefinition definition);
+    [[nodiscard]] CallableId registerScriptClassMethod(
+        TypeId id,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptStructMethod(
+        TypeId id,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptClassConstructor(
+        TypeId id,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptStructConstructor(
+        TypeId id,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] PropertyId registerScriptClassProperty(TypeId id, const NomadString& name, const Type* valueType);
+    [[nodiscard]] PropertyId registerScriptStructProperty(TypeId id, const NomadString& name, const Type* valueType);
+    [[nodiscard]] PropertyId registerNativeClassProperty(TypeId id, NativePropertyDefinition definition);
     [[nodiscard]] IndexerId addIndexer(TypeId id, NativeIndexerDefinition definition);
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* classType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);

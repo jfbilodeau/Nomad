@@ -1048,35 +1048,60 @@ NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, Sc
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addScriptConstructorCall(
+NomadIndex Compiler::addScriptObjectCreation(
     const CallableId constructorId,
-    const TypeId typeId,
     ScriptCallableBase* function,
     const ArgumentList* arguments
 ) {
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-    addOpCode(OpCodes::op_call_script_constructor);
-    addFunctionLink(constructorId, m_instructions.size());
-    addIndex(0);
-    addId(typeId.id);
+    addOpCode(OpCodes::op_create_script_object);
+    addId(constructorId.id);
     addFreeArguments(arguments);
-    addOpCode(OpCodes::op_move_this_to_r);
     addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addNativeConstructorCall(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeObjectCreation(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-    addOpCode(OpCodes::op_call_native_constructor);
+    addOpCode(OpCodes::op_create_native_object);
     addId(constructorId.id);
     addFreeArguments(arguments);
-    addOpCode(OpCodes::op_move_this_to_r);
     addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
+}
+
+void Compiler::addStructCreationIntoLocal(
+    const CallableId constructorId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const VariableId destinationId
+) {
+    const auto* constructor = m_runtime->getConstructor(constructorId);
+    const auto* type = constructor != nullptr ? constructor->getConstructedType() : nullptr;
+    if (type == nullptr || type->asStructType() == nullptr ||
+        function->getVariableType(destinationId) != type) {
+        reportInternalError("Struct creation requires a resolved constructor and matching local destination");
+    }
+    const auto offset = function->getVariableOffset(destinationId);
+    type->emitFreeFunctionVariable(*this, offset);
+    const auto layout = constructor->getCallStorageLayout(arguments->getArgumentCount());
+    if (layout.receiverOffset.has_value()) {
+        addOpCode(OpCodes::op_local_address_push);
+        addIndex(offset);
+    }
+    arguments->compile(this, function);
+    addOpCode(constructor->asNativeConstructor() != nullptr
+        ? OpCodes::op_create_native_struct : OpCodes::op_create_script_struct);
+    addId(constructorId.id);
+    addIndex(layout.receiverOffset.value_or(NOMAD_INVALID_INDEX));
+    addFreeArguments(arguments);
+    if (layout.receiverOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
 }
 
 NomadIndex Compiler::addScriptMethodCall(
@@ -1371,14 +1396,25 @@ void Compiler::addPropertyAccess(const PropertyId id, const bool write) {
     addIndex(property->getClassType()->getFieldOffset(id));
 }
 
-void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
+void Compiler::compilePropertyInitializer(const FunctionCompilation& source) {
     auto* function = source.function;
-    const auto* owner = function->getClassType()->asClassType();
+    const auto* owner = function->getClassType()->asCompositeType();
     function->setFunctionStart(m_instructions.size());
     addFunctionEntry(function);
     source.ast->compile(this, function);
     for (const auto* property : owner->getProperties()) {
         if (property->asNativeProperty() != nullptr || property->hasExplicitInitializer()) {
+            continue;
+        }
+        if (owner->asStructType() != nullptr) {
+            if (property->getValueType()->getSize() != 0) {
+                IdentifierDefinition receiver;
+                receiver.identifierType = IdentifierType::Receiver;
+                receiver.valueType = owner;
+                StorageLocation(receiver).getProperty(*property).emitAddress(*this, function);
+                addOpCode(OpCodes::op_pop_i);
+                property->getValueType()->emitInitStorage(*this, 0);
+            }
             continue;
         }
         if (property->getValueType()->asStructType() != nullptr) {
@@ -1405,11 +1441,14 @@ void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
 
 void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
-    if (constructor->getClassType()->asStructType() != nullptr) {
-        reportError("Struct constructor body compilation is not yet supported");
-    }
     constructor->setFunctionStart(m_instructions.size());
     addFunctionEntry(constructor);
+    if (constructor->getClassType()->asStructType() != nullptr) {
+        source.ast->compile(this, constructor);
+        addFunctionReturn(constructor);
+        constructor->setFunctionEnd(m_instructions.size());
+        return;
+    }
     const auto* type = constructor->getClassType()->asClassType();
     const auto methods = type->getMethods();
     const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
@@ -1591,7 +1630,7 @@ const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const 
 bool Compiler::isFieldInitializer(const ScriptCallableBase* function) const {
     while (function != nullptr) {
         if (std::ranges::any_of(m_functions, [&](const auto& source) {
-            return source.function == function && source.kind == CompilationCallableTarget::ObjectInitializer;
+            return source.function == function && source.kind == CompilationCallableTarget::PropertyInitializer;
         })) {
             return true;
         }
@@ -1951,8 +1990,8 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
 
         reportExceptions(source.function->getPath(), [&] {
             switch (source.kind) {
-                case CompilationCallableTarget::ObjectInitializer:
-                    compileObjectInitializer(source);
+                case CompilationCallableTarget::PropertyInitializer:
+                    compilePropertyInitializer(source);
                     break;
                 case CompilationCallableTarget::Constructor:
                     compileConstructor(source);

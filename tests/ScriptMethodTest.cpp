@@ -85,7 +85,7 @@ BOOST_AUTO_TEST_CASE(compiled_interpreter_and_host_methods_preserve_parameter_co
     {
         auto machine = runtime.createVirtualMachine();
         RuntimeValue receiver;
-        receiver.setObjectValue(machine->constructObject(type->getConstructors()[0]->getId(), {}));
+        receiver.setObjectValue(machine->createScriptObject(type->getConstructors()[0]->getId()));
         const RuntimeValue argument{NomadInteger{4}};
         machine->runScriptMethod(resolution.id, {argument}, receiver);
         BOOST_TEST(argument.getIntegerValue() == 4);
@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(returning_a_temporary_receiver_retains_it_and_releases_fina
         BOOST_REQUIRE(method.isResolved());
         auto machine = runtime.createVirtualMachine();
         RuntimeValue receiver;
-        receiver.setObjectValue(machine->constructObject(type->getConstructors()[0]->getId(), {}));
+        receiver.setObjectValue(machine->createScriptObject(type->getConstructors()[0]->getId()));
         RuntimeValue text;
         text.setStringValue("borrowed");
         machine->runScriptMethod(method.id, {text}, receiver);

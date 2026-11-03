@@ -709,11 +709,10 @@ BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destinat
     BOOST_TEST(runtime.registerScriptConstructor(structId,
         {defParameter("this", runtime.getIntegerType(), "")}, "", "").isInvalid());
     VirtualMachine machine(&runtime);
-    BOOST_CHECK_THROW(static_cast<void>(machine.constructObject(nativeId, {RuntimeValue{NomadInteger{1}}})),
+    BOOST_CHECK_THROW(static_cast<void>(machine.createNativeObject(nativeId)),
         VirtualMachineException);
-    BOOST_CHECK_THROW(static_cast<void>(machine.constructObject(scriptId, {})), VirtualMachineException);
-    BOOST_CHECK_THROW(static_cast<void>(machine.constructObject(emptyConstructorId, {})), VirtualMachineException);
-    BOOST_CHECK_THROW(machine.callNativeConstructor(nativeId), VirtualMachineException);
+    BOOST_CHECK_THROW(static_cast<void>(machine.createScriptObject(scriptId)), VirtualMachineException);
+    BOOST_CHECK_THROW(static_cast<void>(machine.createScriptObject(emptyConstructorId)), VirtualMachineException);
     BOOST_TEST(calls == 0);
     BOOST_TEST(runtime.getFunctionTableSize() == before + 5);
 }

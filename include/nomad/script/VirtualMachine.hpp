@@ -51,6 +51,7 @@ public:
     // Trusted nonempty storage; offsets and address-slot provenance are compiler-verified.
     [[nodiscard]] RuntimeValue* getLocalAddress(NomadIndex offset) { return m_stack.data() + m_variableIndex + offset; }
     [[nodiscard]] RuntimeValue* getParameterAddress(NomadIndex distance) { return m_stack.data() + m_parameterIndex - distance; }
+    [[nodiscard]] RuntimeValue* getStackAddress(NomadIndex distance) { return m_stack.data() + m_stackIndex - distance; }
     [[nodiscard]] RuntimeValue& getStorageParameter(
         NomadIndex pointerOffset,
         NomadIndex fieldOffset
@@ -69,10 +70,12 @@ public:
     }
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
-    [[nodiscard]] NomadObject* constructObject(
-        CallableId constructorId,
-        const std::vector<RuntimeValue>& arguments
-    );
+    // Arguments are owned copies already on the stack; the caller frees/pops them.
+    [[nodiscard]] NomadObject* createNativeObject(CallableId constructorId);
+    [[nodiscard]] NomadObject* createScriptObject(CallableId constructorId);
+    // Fresh destination storage; nonempty receivers also have a hidden pointer below the arguments.
+    void createNativeStruct(RuntimeValue* destination, CallableId constructorId);
+    void createScriptStruct(RuntimeValue* destination, CallableId constructorId);
     void yield(const RuntimeValue& result);
     void stop(const RuntimeValue& result);
     void fault(const NomadString& faultMessage) const;
@@ -83,11 +86,9 @@ public:
 
     void callScriptFunction(NomadIndex address);
     void callScriptMethod(NomadIndex address);
-    void callScriptConstructor(NomadIndex address, TypeId typeId);
-    void createScriptObject(TypeId typeId);
+    void allocateScriptObject(TypeId typeId);
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId);
-    void callNativeConstructor(CallableId constructorId);
     void returnFunction(NomadIndex variableCount);
     void runScriptMethod(
         CallableId memberId,
@@ -327,14 +328,8 @@ private:
         std::vector<const Type*>& argumentTypes
     );
     void freeHostArguments(NomadIndex firstIndex, const std::vector<const Type*>& argumentTypes);
-    [[nodiscard]] NomadObject* runNativeConstructor(
-        const NativeConstructor* constructor,
-        const std::vector<RuntimeValue>& args
-    );
-    [[nodiscard]] NomadObject* runScriptConstructor(
-        const ScriptConstructor* constructor,
-        const std::vector<RuntimeValue>& args
-    );
+    void initializeStructStorage(RuntimeValue* destination, const Type* type);
+    void executeCreationBody(const ScriptCallableBase* callable, const RuntimeValue& receiver);
     void pushScriptFrame();
 
     static constexpr NomadIndex s_scriptFrameSlotCount = 4;

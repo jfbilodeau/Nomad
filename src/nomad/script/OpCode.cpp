@@ -243,10 +243,44 @@ void op_call_script_method(VirtualMachine* interpreter) {
     interpreter->callScriptMethod(interpreter->nextIndex());
 }
 
-void op_call_script_constructor(VirtualMachine* interpreter) {
-    const auto address = interpreter->nextIndex();
-    const auto typeId = TypeId{interpreter->nextId()};
-    interpreter->callScriptConstructor(address, typeId);
+namespace {
+
+void freeCreationArguments(VirtualMachine* machine, const Constructor* constructor) {
+    auto distance = NomadIndex{0};
+    for (const auto& parameter : constructor->getParameters()) {
+        const auto size = parameter.type->getSize();
+        if (size != 0) {
+            parameter.type->freeValue(machine->getStackAddress(distance + size - 1));
+        }
+        distance += size;
+    }
+}
+
+} // namespace
+
+void op_create_script_object(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    try {
+        interpreter->getResult().setObjectValue(interpreter->createScriptObject(constructorId));
+    } catch (...) {
+        freeCreationArguments(interpreter, interpreter->getRuntime()->getConstructor(constructorId));
+        throw;
+    }
+}
+
+void op_create_script_struct(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    const auto distance = interpreter->nextIndex();
+    auto* destination = distance == NOMAD_INVALID_INDEX
+        ? nullptr : interpreter->peekStack(distance).getStorageAddress();
+    try {
+        interpreter->createScriptStruct(destination, constructorId);
+    } catch (...) {
+        const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
+        constructor->getConstructedType()->freeValue(destination);
+        freeCreationArguments(interpreter, constructor);
+        throw;
+    }
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -257,17 +291,28 @@ void op_call_native_method(VirtualMachine* interpreter) {
     interpreter->callNativeMethod(CallableId{interpreter->nextId()});
 }
 
-void op_call_native_constructor(VirtualMachine* interpreter) {
+void op_create_native_object(VirtualMachine* interpreter) {
     const auto constructorId = CallableId{interpreter->nextId()};
     try {
-        interpreter->callNativeConstructor(constructorId);
+        interpreter->getResult().setObjectValue(interpreter->createNativeObject(constructorId));
     } catch (...) {
         const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
-        const auto& parameters = constructor->getParameters();
-        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-            auto argument = interpreter->peekStack(index);
-            parameters[index].type->freeValue(&argument);
-        }
+        freeCreationArguments(interpreter, constructor);
+        throw;
+    }
+}
+
+void op_create_native_struct(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    const auto distance = interpreter->nextIndex();
+    auto* destination = distance == NOMAD_INVALID_INDEX
+        ? nullptr : interpreter->peekStack(distance).getStorageAddress();
+    try {
+        interpreter->createNativeStruct(destination, constructorId);
+    } catch (...) {
+        const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
+        constructor->getConstructedType()->freeValue(destination);
+        freeCreationArguments(interpreter, constructor);
         throw;
     }
 }
@@ -1094,7 +1139,7 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    interpreter->createScriptObject(TypeId{interpreter->nextId()});
+    interpreter->allocateScriptObject(TypeId{interpreter->nextId()});
 }
 
 void op_object_init_i(VirtualMachine* interpreter) {

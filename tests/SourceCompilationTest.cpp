@@ -429,7 +429,9 @@ BOOST_AUTO_TEST_CASE(dumps_script_constructors_methods_and_their_call_targets)
     BOOST_TEST(instructions.str().find("constructor Counter amount:int") != NomadString::npos);
     BOOST_TEST(instructions.str().find("method Counter.read") != NomadString::npos);
     BOOST_TEST(instructions.str().find("method Counter$init") != NomadString::npos);
-    BOOST_TEST(instructions.str().find("call_script_constructor") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("create_script_object") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("Counter (" + std::to_string(
+        runtime.getTypeByName("Counter")->asClassType()->getConstructors()[0]->getId().id) + ")") != NomadString::npos);
     BOOST_TEST(instructions.str().find("call_script_method") != NomadString::npos);
     BOOST_TEST(instructions.str().find("Counter.read (") != NomadString::npos);
     BOOST_TEST(instructions.str().find("Unknown") == NomadString::npos);

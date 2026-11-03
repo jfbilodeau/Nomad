@@ -36,6 +36,15 @@ const NomadString& CompositeType::getInitializerName() const {
     return m_initializerName;
 }
 
+const Method* CompositeType::getInitializer() const {
+    for (const auto& method : m_methods) {
+        if (method->getName() == m_initializerName && method->getParameterCount() == 0) {
+            return method.get();
+        }
+    }
+    return nullptr;
+}
+
 const CompositeType* CompositeType::asCompositeType() const {
     return this;
 }
@@ -157,6 +166,10 @@ std::vector<const Property*> CompositeType::getProperties() const {
         properties.push_back(property.get());
     }
     return properties;
+}
+
+const Property* CompositeType::getPropertyAt(const NomadIndex index) const {
+    return m_properties.at(index).get();
 }
 
 NomadIndex CompositeType::getPropertyCount() const {

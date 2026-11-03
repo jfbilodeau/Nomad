@@ -4,6 +4,7 @@
 
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -399,6 +400,113 @@ BOOST_AUTO_TEST_CASE(calls_need_only_existing_frames_and_requested_pointer_slots
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocating) {
+    Runtime runtime;
+    const auto typeId = runtime.registerStruct("AllocationFreeStruct");
+    const auto* type = runtime.getTypeByName("AllocationFreeStruct");
+    BOOST_REQUIRE(runtime.registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    const auto nativeId = runtime.registerNativeStructConstructor(typeId, {
+        .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
+        .function = [](VirtualMachine* active) {
+            active->getStorageParameter(1, 0) = active->getParameter(0);
+        }
+    });
+    const auto scriptId = runtime.registerScriptStructConstructor(typeId,
+        {defParameter("number", runtime.getIntegerType(), ""), defParameter("unused", runtime.getIntegerType(), "")},
+        "", "");
+    BOOST_REQUIRE(nativeId.isValid());
+    BOOST_REQUIRE(scriptId.isValid());
+    auto* script = runtime.getScriptCallable(scriptId);
+    auto compiler = runtime.createCompiler();
+    script->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(script);
+    compiler->addOpCode(OpCodes::op_parameter_load_r);
+    compiler->addIndex(0);
+    compiler->addOpCode(OpCodes::op_storage_parameter_set);
+    compiler->addIndex(2);
+    compiler->addIndex(0);
+    compiler->addFunctionReturn(script);
+    script->setFunctionEnd(runtime.getInstructions().size());
+    VirtualMachine machine(&runtime, 64);
+    std::array<RuntimeValue, 2> storage;
+    type->initValue(storage.data());
+    type->freeValue(storage.data());
+    callAllocations = 0;
+    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+    try {
+        for (auto index = 0; index < 100; ++index) {
+            machine.pushStorageAddress(storage.data());
+            machine.pushInteger(17);
+            machine.createNativeStruct(storage.data(), nativeId);
+            machine.pop2();
+            type->freeValue(storage.data());
+            machine.pushStorageAddress(storage.data());
+            machine.pushInteger(0);
+            machine.pushInteger(19);
+            machine.createScriptStruct(storage.data(), scriptId);
+            machine.pop3();
+            type->freeValue(storage.data());
+        }
+    } catch (...) {
+        _CrtSetAllocHook(previousAllocationHook);
+        throw;
+    }
+    _CrtSetAllocHook(previousAllocationHook);
+    BOOST_TEST(callAllocations == 0U);
+    BOOST_TEST(storage[0].getIntegerValue() == 19);
+    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
+}
+
+BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto nativeTypeId = runtime.registerClass("CountedNative", ClassMode::Closed);
+    const auto* nativeType = runtime.getTypeByName("CountedNative")->asClassType();
+    runtime.finalizeCompositeFieldLayout(nativeTypeId);
+    const auto nativeId = runtime.registerNativeClassConstructor(nativeTypeId, {
+        .parameters = {},
+        .function = [nativeType](VirtualMachine* active) {
+            active->getResult().setObjectValue(new ScriptObject(nativeType));
+        }
+    });
+    BOOST_REQUIRE(nativeId.isValid());
+    fixture.addFunction("main", "class CountedScript\nend");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* scriptType = runtime.getTypeByName("CountedScript")->asClassType();
+    const auto scriptId = scriptType->getConstructors()[0]->getId();
+    VirtualMachine machine(&runtime, 64);
+    // Debug standard-library containers also allocate iterator proxies inside each object.
+    callAllocations = 0;
+    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+    try {
+        for (auto index = 0; index < 100; ++index) {
+            (new ScriptObject(nativeType))->releaseRef();
+            (new ScriptObject(scriptType))->releaseRef();
+        }
+    } catch (...) {
+        _CrtSetAllocHook(previousAllocationHook);
+        throw;
+    }
+    _CrtSetAllocHook(previousAllocationHook);
+    const auto objectAllocations = callAllocations;
+    callAllocations = 0;
+    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+    try {
+        for (auto index = 0; index < 100; ++index) {
+            machine.createNativeObject(nativeId)->releaseRef();
+            machine.createScriptObject(scriptId)->releaseRef();
+        }
+    } catch (...) {
+        _CrtSetAllocHook(previousAllocationHook);
+        throw;
+    }
+    _CrtSetAllocHook(previousAllocationHook);
+    BOOST_TEST(callAllocations == objectAllocations);
+    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
+}
+
 BOOST_AUTO_TEST_CASE(script_and_native_call_bookkeeping_does_not_allocate) {
     Runtime runtime;
     VirtualMachine machine(&runtime, 64);

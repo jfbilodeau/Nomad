@@ -66,6 +66,7 @@ enum class Operand {
     ContextVariableId,
     FormatString,
     Index,
+    Callable,
 };
 
 DeclareId(OpCodeId);
@@ -130,10 +131,12 @@ DECLARE_OP_CODE(op_code_load_default_r)
 // Callable operations
 DECLARE_OP_CODE(op_call_script_function)
 DECLARE_OP_CODE(op_call_script_method)
-DECLARE_OP_CODE(op_call_script_constructor)
+DECLARE_OP_CODE(op_create_script_object)
+DECLARE_OP_CODE(op_create_script_struct)
 DECLARE_OP_CODE(op_call_native_function)
 DECLARE_OP_CODE(op_call_native_method)
-DECLARE_OP_CODE(op_call_native_constructor)
+DECLARE_OP_CODE(op_create_native_object)
+DECLARE_OP_CODE(op_create_native_struct)
 DECLARE_OP_CODE(op_native_property_get)
 DECLARE_OP_CODE(op_native_property_set)
 DECLARE_OP_CODE(op_stored_property_load_r)

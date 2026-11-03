@@ -3,6 +3,8 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/ClassFieldInitializerStatement.hpp>
+#include <nomad/compiler/ClassMemberDeclaration.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/Parser.hpp>
@@ -3089,7 +3091,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsu
     }
 }
 
-BOOST_AUTO_TEST_CASE(registered_struct_constructors_reject_source_construction_until_destination_lowering) {
+BOOST_AUTO_TEST_CASE(registered_native_struct_constructors_create_nonempty_and_empty_values) {
     for (const auto empty : {false, true}) {
         nomad::test::LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
@@ -3099,26 +3101,27 @@ BOOST_AUTO_TEST_CASE(registered_struct_constructors_reject_source_construction_u
         }
         runtime.finalizeCompositeFieldLayout(id);
         auto calls = 0;
-        BOOST_REQUIRE(runtime.addConstructor(id, {
+        BOOST_REQUIRE(runtime.registerNativeStructConstructor(id, {
             .parameters = {},
             .function = [&](VirtualMachine*) { ++calls; },
             .documentation = ""
         }).isValid());
         fixture.addFunction("main", "value = new PendingConstruction");
-        BOOST_TEST(!fixture.compile());
-        BOOST_CHECK_MESSAGE(fixture.hasError("Struct construction is not yet supported"), fixture.getDiagnostics());
-        BOOST_TEST(calls == 0);
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+        RuntimeValue result;
+        runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+        BOOST_TEST(calls == 1);
     }
 }
 
-BOOST_AUTO_TEST_CASE(registered_struct_constructor_bodies_reject_class_initializer_lowering) {
+BOOST_AUTO_TEST_CASE(registered_empty_script_struct_constructor_bodies_create_values_without_object_initializers) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     const auto id = runtime.registerStruct("PendingBody");
     runtime.finalizeCompositeFieldLayout(id);
-    const auto constructorId = runtime.registerScriptConstructor(id, {}, "pending.nomad", "");
+    const auto constructorId = runtime.registerScriptStructConstructor(id, {}, "pending.nomad", "");
     BOOST_REQUIRE(constructorId.isValid());
-    fixture.addFunction("main", "");
+    fixture.addFunction("main", "value = new PendingBody");
     fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
         if (phase != CompilationPhase::Parse) {
             return;
@@ -3127,9 +3130,185 @@ BOOST_AUTO_TEST_CASE(registered_struct_constructor_bodies_reject_class_initializ
             constructorId, runtime.getFunctionId("main"), CompilationCallableTarget::Constructor);
         fixture.getCompiler().setFunctionBody(constructorId, std::make_unique<FunctionNode>(0, 0));
     });
-    BOOST_TEST(!fixture.compile());
-    BOOST_CHECK_MESSAGE(fixture.hasError("Struct constructor body compilation is not yet supported"),
-        fixture.getDiagnostics());
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    RuntimeValue result;
+    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+}
+
+BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_preserves_copy_ownership) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto nativeId = runtime.registerStruct("NativeCreated");
+    const auto scriptId = runtime.registerStruct("ScriptCreated");
+    const auto emptyId = runtime.registerStruct("EmptyCreated");
+    const auto* nativeType = runtime.getTypeByName("NativeCreated");
+    const auto* scriptType = runtime.getTypeByName("ScriptCreated");
+    const auto* emptyType = runtime.getTypeByName("EmptyCreated");
+    const auto nativeNumber = runtime.registerScriptStructProperty(nativeId, "number", runtime.getIntegerType());
+    BOOST_REQUIRE(nativeNumber.isValid());
+    BOOST_REQUIRE(runtime.registerScriptStructProperty(nativeId, "text", runtime.getStringType()).isValid());
+    const auto scriptNumber = runtime.registerScriptStructProperty(scriptId, "number", runtime.getIntegerType());
+    BOOST_REQUIRE(scriptNumber.isValid());
+    BOOST_REQUIRE(runtime.registerScriptStructProperty(scriptId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerScriptStructProperty(scriptId, "nested", nativeType).isValid());
+    runtime.setPropertyHasExplicitInitializer(nativeNumber, true);
+    runtime.setPropertyHasExplicitInitializer(scriptNumber, true);
+    runtime.finalizeCompositeFieldLayout(scriptId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    auto initializers = 0;
+    auto nativeCalls = 0;
+    auto emptyCalls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("initialNumber", [&](VirtualMachine* active) {
+        ++initializers;
+        active->setIntegerResult(42);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    std::vector<NomadInteger> argumentOrder;
+    BOOST_REQUIRE(runtime.registerNativeFunction("argumentNumber", [&](VirtualMachine* active) {
+        argumentOrder.push_back(1);
+        active->setIntegerResult(7);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("argumentText", [&](VirtualMachine* active) {
+        argumentOrder.push_back(2);
+        active->setStringResult("owned");
+    }, {}, runtime.getStringType(), "").isValid());
+    const auto nativeConstructor = runtime.registerNativeStructConstructor(nativeId, {
+        .parameters = {
+            {runtime.getIntegerType()->getId(), "number", ""},
+            {runtime.getStringType()->getId(), "text", ""}
+        },
+        .function = [&](VirtualMachine* active) {
+            BOOST_TEST(active->getStorageParameter(2, 0).getIntegerValue() == 42);
+            BOOST_TEST(active->getStorageParameter(2, 1).getStringObject()->getString().empty());
+            active->getStorageParameter(2, 0) = active->getParameter(0);
+            active->getStorageParameter(2, 1).freeObjectValue();
+            active->getStorageParameter(2, 1).copyObjectValue(active->getParameter(1));
+            ++nativeCalls;
+        }
+    });
+    BOOST_REQUIRE(nativeConstructor.isValid());
+    const auto scriptConstructor = runtime.registerScriptStructConstructor(scriptId,
+        {defParameter("copy", nativeType, "")}, "created.nomad",
+        "assert this.number == 42\nassert this.text == \"\"\n"
+        "assert this.nested.number == 0\nassert this.nested.text == \"\"\n"
+        "this.nested = copy\nthis.text = copy.text\nthis.number = copy.number\ncopy.number = 99");
+    BOOST_REQUIRE(scriptConstructor.isValid());
+    const auto emptyConstructor = runtime.registerScriptStructConstructor(emptyId, {}, "empty.nomad", "recordEmpty");
+    BOOST_REQUIRE(emptyConstructor.isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("recordEmpty", [&](VirtualMachine*) {
+        ++emptyCalls;
+    }, {}, runtime.getVoidType(), "").isValid());
+    const auto nativeInitializer = runtime.registerScriptStructMethod(nativeId,
+        nativeType->asCompositeType()->getInitializerName(), {}, "", "");
+    const auto scriptInitializer = runtime.registerScriptStructMethod(scriptId,
+        scriptType->asCompositeType()->getInitializerName(), {}, "", "");
+    BOOST_REQUIRE(nativeInitializer.isValid());
+    BOOST_REQUIRE(scriptInitializer.isValid());
+    auto nativeDeclaration = std::make_unique<ClassMemberDeclaration>(
+        0, 0, ClassMemberKind::Field, "number", std::vector<Parameter>{}, std::vector<ClassMemberSourceLine>{});
+    nativeDeclaration->setPropertyId(nativeNumber);
+    nativeDeclaration->setInitializer(std::make_unique<FunctionCallExpression>(nullptr, 0, 0, "initialNumber"));
+    auto scriptDeclaration = std::make_unique<ClassMemberDeclaration>(
+        0, 0, ClassMemberKind::Field, "number", std::vector<Parameter>{}, std::vector<ClassMemberSourceLine>{});
+    scriptDeclaration->setPropertyId(scriptNumber);
+    scriptDeclaration->setInitializer(std::make_unique<FunctionCallExpression>(nullptr, 0, 0, "initialNumber"));
+    fixture.addFunction("createCopy",
+        "return new ScriptCreated (new NativeCreated argumentNumber argumentText)");
+    fixture.addFunction("main",
+        "fun acceptCopy value:ScriptCreated\nvalue.number = 111\nreturn value.nested.number\nend\n"
+        "native = new NativeCreated argumentNumber argumentText\n"
+        "script = new ScriptCreated native\n"
+        "assert native.number == 7\nassert native.text == \"owned\"\n"
+        "assert script.number == 7\nassert script.nested.number == 7\n"
+        "native.number = 8\nassert script.nested.number == 7\n"
+        "copied = createCopy\nassert copied.text == \"owned\"\n"
+        "assert (acceptCopy (new ScriptCreated native)) == 8\n"
+        "assert script.number == 7\n"
+        "class CreatedOwner\nvalue = new ScriptCreated (new NativeCreated 5 \"property\")\nend\n"
+        "owner = new CreatedOwner\nassert owner.value.nested.number == 5\n"
+        "owner.value = new ScriptCreated (new NativeCreated 6 \"replaced\")\n"
+        "assert owner.value.nested.number == 6\nassert owner.value.text == \"replaced\"\n"
+        "empty = new EmptyCreated\nempty = new EmptyCreated\n"
+        "return 1");
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext* context, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) {
+            return;
+        }
+        for (const auto id : {nativeInitializer, scriptInitializer}) {
+            runtime.getScriptCallable(id)->setReturnType(runtime.getVoidType());
+            fixture.getCompiler().registerMemberCompilation(
+                id, runtime.getFunctionId("main"), CompilationCallableTarget::PropertyInitializer);
+            auto body = std::make_unique<FunctionNode>(0, 0);
+            body->addStatement(std::make_unique<ClassFieldInitializerStatement>(
+                id == nativeInitializer ? nativeDeclaration.get() : scriptDeclaration.get()));
+            fixture.getCompiler().setFunctionBody(id, std::move(body));
+        }
+        for (const auto id : {scriptConstructor, emptyConstructor}) {
+            auto* constructor = runtime.getScriptCallable(id);
+            fixture.getCompiler().registerMemberCompilation(
+                id, runtime.getFunctionId("main"), CompilationCallableTarget::Constructor);
+            auto body = std::make_unique<FunctionNode>(0, 0);
+            Tokenizer tokens(context, constructor->getPath(), constructor->getSourceCode());
+            while (tokens.nextLine()) {
+                if (auto statement = parser::parseLine(context, constructor, &tokens)) {
+                    body->addStatement(std::move(statement));
+                }
+            }
+            fixture.getCompiler().setFunctionBody(id, std::move(body));
+        }
+    });
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        RuntimeValue result;
+        runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+        BOOST_TEST(result.getIntegerValue() == 1);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(nativeCalls == 12);
+    BOOST_TEST(initializers == 27);
+    BOOST_TEST(emptyCalls == 6);
+    BOOST_REQUIRE(argumentOrder.size() == 12U);
+    for (auto index = NomadIndex{0}; index < argumentOrder.size(); index += 2) {
+        BOOST_TEST(argumentOrder[index] == 2);
+        BOOST_TEST(argumentOrder[index + 1] == 1);
+    }
+    auto machine = runtime.createVirtualMachine();
+    std::array<RuntimeValue, 2> nativeStorage;
+    RuntimeValue text;
+    text.setStringValue("host");
+    machine->pushStorageAddress(nativeStorage.data());
+    machine->pushObjectValue(text);
+    machine->pushInteger(23);
+    machine->setIntegerResult(41);
+    machine->setIntegerIntermediate(43);
+    machine->createNativeStruct(nativeStorage.data(), nativeConstructor);
+    BOOST_TEST(machine->getIntegerResult() == 41);
+    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+    BOOST_TEST(nativeStorage[0].getIntegerValue() == 23);
+    BOOST_TEST(nativeStorage[1].getStringObject()->getString() == "host");
+    BOOST_TEST(machine->peekStack(0).getIntegerValue() == 23);
+    machine->pop1();
+    auto argument = machine->popValue();
+    runtime.getStringType()->freeValue(&argument);
+    machine->pop1();
+    std::array<RuntimeValue, 4> scriptStorage;
+    machine->pushStorageAddress(scriptStorage.data());
+    machine->pushValue(nativeStorage[0]);
+    machine->pushObjectValue(nativeStorage[1]);
+    machine->createScriptStruct(scriptStorage.data(), scriptConstructor);
+    BOOST_TEST(scriptStorage[0].getIntegerValue() == 23);
+    BOOST_TEST(scriptStorage[2].getIntegerValue() == 23);
+    BOOST_TEST(machine->getIntegerResult() == 41);
+    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+    nativeType->freeValue(machine->getStackAddress(1));
+    machine->pop2();
+    machine->pop1();
+    nativeType->freeValue(nativeStorage.data());
+    scriptType->freeValue(scriptStorage.data());
+    text.freeObjectValue();
+    BOOST_TEST(emptyType->getSize() == 0U);
 }
 
 BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_without_writing_instructions) {
