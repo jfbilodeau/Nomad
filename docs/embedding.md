@@ -1332,9 +1332,10 @@ The type stores its fully qualified initializer name, available through
 
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when
-required. Script object creation rejects invalid constructor IDs, non-script or
-non-class constructors, and uncompiled constructors. The caller must prepare
-the selected signature's stack arguments. If a field initializer fails, later initializers
+required. Creation APIs trust the compiler to provide a valid constructor ID,
+the correct native/script and object/struct entry point, a fully compiled body,
+and the selected signature's stack arguments. Direct host callers must satisfy
+the same preconditions. If a field initializer fails, later initializers
 and the source constructor body do not run, and no instance is returned.
 Destruction releases owned field values, including values stored in a partially
 populated object.

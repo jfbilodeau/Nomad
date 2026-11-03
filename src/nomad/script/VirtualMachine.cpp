@@ -223,10 +223,6 @@ void VirtualMachine::freeHostArguments(
 }
 
 void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, const RuntimeValue& receiver) {
-    if (callable->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        callable->getFunctionStart() >= callable->getFunctionEnd()) {
-        fault("Creation body has not been compiled");
-    }
     const auto state = beginScriptRun();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
@@ -252,14 +248,7 @@ void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, con
 }
 
 NomadObject* VirtualMachine::createScriptObject(const CallableId constructorId) {
-    const auto* callable = m_runtime->getConstructor(constructorId);
-    const auto* constructor = callable != nullptr ? callable->asScriptConstructor() : nullptr;
-    if (constructor == nullptr || constructor->getClassType()->asClassType() == nullptr) {
-        fault("Script object creation requires a script class constructor");
-    }
-    if (constructor->getParameterStorageSize() > m_stackIndex) {
-        fault("Script object creation has insufficient stack arguments");
-    }
+    const auto* constructor = m_runtime->getConstructor(constructorId)->asScriptConstructor();
     const auto release = [](ScriptObject* object) { object->releaseRef(); };
     std::unique_ptr<ScriptObject, decltype(release)> object(
         new ScriptObject(constructor->getClassType()->asClassType()), release);
@@ -281,9 +270,6 @@ void VirtualMachine::initializeStructStorage(RuntimeValue* destination, const Ty
         return;
     }
     const auto* script = initializer->asScriptMethod();
-    if (script == nullptr) {
-        fault("Struct property initialization requires a script initializer");
-    }
     if (size != 0) {
         pushStorageAddress(destination);
     }
@@ -301,20 +287,13 @@ void VirtualMachine::initializeStructStorage(RuntimeValue* destination, const Ty
 }
 
 void VirtualMachine::createScriptStruct(RuntimeValue* destination, const CallableId constructorId) {
-    const auto* callable = m_runtime->getConstructor(constructorId);
-    const auto* constructor = callable != nullptr ? callable->asScriptConstructor() : nullptr;
-    if (constructor == nullptr || constructor->getClassType()->asStructType() == nullptr) {
-        fault("Script struct creation requires a script struct constructor");
-    }
+    const auto* constructor = m_runtime->getConstructor(constructorId)->asScriptConstructor();
     initializeStructStorage(destination, constructor->getClassType());
     executeCreationBody(constructor, RuntimeValue{});
 }
 
 void VirtualMachine::createNativeStruct(RuntimeValue* destination, const CallableId constructorId) {
     const auto* constructor = m_runtime->getNativeConstructor(constructorId);
-    if (constructor == nullptr || constructor->getClassType()->asStructType() == nullptr) {
-        fault("Native struct creation requires a native struct constructor");
-    }
     initializeStructStorage(destination, constructor->getClassType());
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
@@ -412,12 +391,6 @@ void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
 
 NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) {
     const auto* constructor = m_runtime->getNativeConstructor(constructorId);
-    if (constructor == nullptr || constructor->getClassType()->asClassType() == nullptr) {
-        fault("Native object creation requires a native class factory");
-    }
-    if (constructor->getParameterStorageSize() > m_stackIndex) {
-        fault("Native object creation has insufficient stack arguments");
-    }
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;

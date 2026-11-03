@@ -1646,7 +1646,6 @@ BOOST_AUTO_TEST_CASE(native_constructor_host_calls_preserve_registers_and_borrow
     BOOST_TEST(machine->getIntegerResult() == 41);
     BOOST_TEST(machine->getIntegerIntermediate() == 42);
     BOOST_TEST(calls == 1);
-    BOOST_CHECK_THROW(static_cast<void>(machine->createNativeObject(constructorId)), NomadException);
     BOOST_TEST(machine->getIntegerResult() == 41);
     object->releaseRef();
     runtime.getStringType()->freeValue(&text);

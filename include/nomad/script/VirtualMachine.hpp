@@ -70,7 +70,7 @@ public:
     }
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
-    // Arguments are owned copies already on the stack; the caller frees/pops them.
+    // Compiler-verified constructor and body; arguments are owned stack copies the caller frees/pops.
     [[nodiscard]] NomadObject* createNativeObject(CallableId constructorId);
     [[nodiscard]] NomadObject* createScriptObject(CallableId constructorId);
     // Fresh destination storage; nonempty receivers also have a hidden pointer below the arguments.

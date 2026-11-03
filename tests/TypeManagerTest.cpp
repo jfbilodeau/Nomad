@@ -6,7 +6,6 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/TypeManager.hpp>
-#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -708,11 +707,6 @@ BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destinat
     BOOST_TEST(runtime.addConstructor(structId, invalid).isInvalid());
     BOOST_TEST(runtime.registerScriptConstructor(structId,
         {defParameter("this", runtime.getIntegerType(), "")}, "", "").isInvalid());
-    VirtualMachine machine(&runtime);
-    BOOST_CHECK_THROW(static_cast<void>(machine.createNativeObject(nativeId)),
-        VirtualMachineException);
-    BOOST_CHECK_THROW(static_cast<void>(machine.createScriptObject(scriptId)), VirtualMachineException);
-    BOOST_CHECK_THROW(static_cast<void>(machine.createScriptObject(emptyConstructorId)), VirtualMachineException);
     BOOST_TEST(calls == 0);
     BOOST_TEST(runtime.getFunctionTableSize() == before + 5);
 }

@@ -2190,6 +2190,9 @@ Implementation:
   rather than relying on a no-op scalar register initializer.
 - Interpreter constructor arguments retain left-to-right evaluation and are
   reversed in-place into stack-call order.
+- Creation paths trust compiler-verified constructor categories, compiled bodies,
+  initializer signatures, and prepared stack arguments rather than checking them
+  again at runtime. Direct host callers share these preconditions.
 
 Validation:
 

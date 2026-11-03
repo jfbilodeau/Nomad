@@ -38,7 +38,7 @@ const NomadString& CompositeType::getInitializerName() const {
 
 const Method* CompositeType::getInitializer() const {
     for (const auto& method : m_methods) {
-        if (method->getName() == m_initializerName && method->getParameterCount() == 0) {
+        if (method->getName() == m_initializerName) {
             return method.get();
         }
     }

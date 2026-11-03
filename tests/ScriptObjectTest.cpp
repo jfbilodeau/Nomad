@@ -709,7 +709,7 @@ BOOST_AUTO_TEST_CASE(host_construction_releases_stored_fields_on_initializer_fai
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(empty_initializers_and_invalid_host_construction_requests) {
+BOOST_AUTO_TEST_CASE(empty_initializers_create_objects) {
     test::LanguageTestFixture fixture;
     fixture.addFunction("main", "class Empty\nend");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
@@ -719,11 +719,6 @@ BOOST_AUTO_TEST_CASE(empty_initializers_and_invalid_host_construction_requests) 
     const auto empty = constructScriptObject(*machine, type);
     BOOST_TEST(empty->getFieldCount() == 0u);
     BOOST_TEST(empty->getReferenceCount() == 1u);
-    BOOST_CHECK_THROW(static_cast<void>(machine->createScriptObject(CallableId::INVALID)), NomadException);
-    const auto* uncompiled = createTestType(runtime, "Uncompiled");
-    const auto constructorId = runtime.registerScriptConstructor(uncompiled->getId(), {}, "", "");
-    BOOST_REQUIRE(constructorId.isValid());
-    BOOST_CHECK_THROW(static_cast<void>(machine->createScriptObject(constructorId)), NomadException);
 }
 
 BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_calls) {
