@@ -217,7 +217,7 @@ NomadIndex CompositeType::getFieldOffset(const PropertyId id) const {
 
 NomadIndex CompositeType::getFieldStorageSize() const {
     if (isFieldLayoutFinalized()) {
-        return getFinalizedFieldStorageSize();
+        return getLayoutSize();
     }
 
     auto size = NomadIndex{0};
@@ -234,18 +234,18 @@ NomadIndex CompositeType::getFieldStorageSize() const {
     return size;
 }
 
-NomadIndex CompositeType::getFinalizedFieldStorageSize() const noexcept {
+NomadIndex CompositeType::getLayoutSize() const noexcept {
     if (!isFieldLayoutFinalized()) {
         std::terminate();
     }
-    return m_finalizedFieldStorageSize;
+    return m_fieldStorageSize;
 }
 
-std::span<const CompositeType::StoredFieldLayout> CompositeType::getFinalizedFields() const noexcept {
+std::span<const CompositeType::StoredFieldLayout> CompositeType::getFieldLayouts() const noexcept {
     if (!isFieldLayoutFinalized()) {
         std::terminate();
     }
-    return m_finalizedFields;
+    return m_fieldLayouts;
 }
 
 bool CompositeType::isFieldLayoutFinalized() const noexcept {
@@ -285,8 +285,8 @@ void CompositeType::finalizeFieldLayout() {
             fields.push_back({type, size, fieldSize});
             size += fieldSize;
         }
-        m_finalizedFields = std::move(fields);
-        m_finalizedFieldStorageSize = size;
+        m_fieldLayouts = std::move(fields);
+        m_fieldStorageSize = size;
         m_fieldLayoutState = FieldLayoutState::Finalized;
     } catch (...) {
         m_fieldLayoutState = FieldLayoutState::Unresolved;

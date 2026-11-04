@@ -21,7 +21,7 @@
 using namespace nomad;
 
 static_assert(std::is_same_v<decltype(&Type::initValue), void (Type::*)(RuntimeValue*) const>);
-static_assert(std::is_same_v<decltype(&Type::freeValue), void (Type::*)(RuntimeValue*) const>);
+static_assert(std::is_same_v<decltype(&Type::freeValue), void (Type::*)(RuntimeValue*) const noexcept>);
 static_assert(std::is_same_v<
     decltype(&Type::copyValue),
     void (Type::*)(const RuntimeValue*, RuntimeValue*) const

@@ -36,7 +36,7 @@ NomadIndex StructType::getSize() const {
     if (!isFieldLayoutFinalized()) {
         throw NomadException("Field layout of struct '" + getTypeName() + "' is not finalized");
     }
-    return getFinalizedFieldStorageSize();
+    return getLayoutSize();
 }
 
 bool StructType::sameType(const Type* other) const {
@@ -99,7 +99,7 @@ void StructType::copyValue(const RuntimeValue* source, RuntimeValue* destination
 }
 
 void StructType::freeValue(RuntimeValue* value) const noexcept {
-    for (const auto& field : getFinalizedFields()) {
+    for (const auto& field : getFieldLayouts()) {
         if (field.size != 0) {
             field.type->freeValue(value + field.offset);
         }

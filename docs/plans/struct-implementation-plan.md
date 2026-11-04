@@ -2750,6 +2750,32 @@ Implementation and validation:
 - Stop for review without expanding interpreter construction, calls, properties,
   captures, formatting, or host aggregate APIs.
 
+### Step 5A follow-up: Nonthrowing cleanup and runtime layout access
+
+- Keep layout finalization and checked compiler/host queries throwing. Publish
+  stored field types, offsets, widths, and total width only after successful
+  finalization; failed owners remain retryable without publishing partial
+  metadata.
+- Expose `noexcept` runtime views through `getLayoutSize()` and
+  `getFieldLayouts()`. Access before successful finalization is fatal, not an
+  empty-layout fallback. Include zero-width stored fields and exclude native
+  properties.
+- Make `Type::freeValue` and all overrides `noexcept`, along with
+  `RuntimeValue::freeObjectValue`. Struct cleanup traverses cached field
+  layouts without querying field sizes or ownership metadata. Invalid deferred
+  or unfinalized cleanup terminates the process.
+- Preserve throwing initialization, copying, and assignment, including
+  partial-copy cleanup and destination preservation. Do not redesign mutable
+  collection defaults or add a new move operation.
+- Cover nested and empty layouts, stable published metadata, failed-finalization
+  retries, retained references, and partial-copy cleanup. Check fatal contracts
+  in isolated processes with an exact terminate-handler exit status.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, five isolated fatal-contract cases, four
+  documentation preparation tests, and whitespace validation passed. Gameplay
+  and performance were not validated.
+- Stop for review without expanding interpreter support or committing.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

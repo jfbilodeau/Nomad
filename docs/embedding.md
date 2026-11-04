@@ -1274,6 +1274,12 @@ successfully finalized dependencies remain finalized.
 After finalization, `getFieldStorageSize()` returns the cached total. Empty
 layouts finalize successfully with size zero. Field offsets remain available
 through the existing queries, and a class's reference size remains one.
+`getLayoutSize()` and `getFieldLayouts()` provide `noexcept` runtime views of
+the total slot count and each stored field's type, offset, and width. They
+require a finalized layout; calling either before successful finalization
+terminates the process. Empty stored fields are included with width zero;
+native properties are excluded. The views remain valid for the descriptor's
+lifetime, including repeated finalization and later native-member registration.
 Repeated finalization is a no-op. New stored-field registrations are logged and
 rejected after finalization; redeclaring an existing field with the same name and
 type retains its ID. Native properties, methods, constructors, initializer flags,
@@ -1307,6 +1313,8 @@ constructors. Copying preserves inline scalar values and retains references held
 by string and class fields. `freeValue` releases stored fields, including nested
 structs; native properties are not storage. After a partial initialization or
 copy failure, call `freeValue` on the partial destination before discarding it.
+Cleanup is `noexcept` and requires finalized metadata, even for an empty struct;
+unfinalized struct cleanup terminates rather than throwing.
 Direct copying requires disjoint source and destination, except self-copy;
 use `assignValue` with disjoint scratch for overlapping replacement.
 
@@ -2420,7 +2428,7 @@ virtual void copyValue(
     const RuntimeValue* source,
     RuntimeValue* destination
 ) const = 0;
-virtual void freeValue(RuntimeValue* storage) const;
+virtual void freeValue(RuntimeValue* storage) const noexcept;
 ```
 
 Provide `getSize()` contiguous, valid `RuntimeValue` slots. Nonempty values require
@@ -2434,6 +2442,11 @@ owned value. Class and string copies retain their existing reference semantics,
 and self-copy is supported. Release owned contents through `freeValue(&value)`;
 this does not release the storage itself. If initialization or copying fails
 after acquiring resources, release the partial destination through `freeValue`.
+All `freeValue` overrides must be `noexcept`. Cleanup requires valid runtime
+metadata: using an unresolved compiler placeholder or an unfinalized struct
+for cleanup terminates the process. Checked layout queries continue to report
+invalid metadata with exceptions. Initialization, copying, and assignment may
+still throw; mutable collection defaults remain independently allocated.
 
 Assignment uses one API with optional external scratch:
 

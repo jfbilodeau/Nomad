@@ -148,6 +148,7 @@ nomad_copy_runtime_dependencies(nomad_test)
 add_executable(nomad-value-cleanup-test ValueCleanupContractTest.cpp)
 target_link_libraries(nomad-value-cleanup-test PRIVATE Nomad::Language)
 nomad_copy_runtime_dependencies(nomad-value-cleanup-test)
+add_dependencies(nomad_test nomad-value-cleanup-test)
 
 add_test(NAME nomad_value_cleanup_contract
     COMMAND "${CMAKE_COMMAND}"

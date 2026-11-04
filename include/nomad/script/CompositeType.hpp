@@ -55,8 +55,8 @@ public:
     [[nodiscard]] NomadIndex getFieldOffset(PropertyId id) const;
     [[nodiscard]] NomadIndex getFieldStorageSize() const;
     // Runtime views require a finalized layout; violations terminate.
-    [[nodiscard]] NomadIndex getFinalizedFieldStorageSize() const noexcept;
-    [[nodiscard]] std::span<const StoredFieldLayout> getFinalizedFields() const noexcept;
+    [[nodiscard]] NomadIndex getLayoutSize() const noexcept;
+    [[nodiscard]] std::span<const StoredFieldLayout> getFieldLayouts() const noexcept;
     [[nodiscard]] bool isFieldLayoutFinalized() const noexcept;
     void finalizeFieldLayout();
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
@@ -84,8 +84,8 @@ private:
     std::vector<std::unique_ptr<Constructor>> m_constructors;
     std::vector<std::unique_ptr<Method>> m_methods;
     FieldLayoutState m_fieldLayoutState = FieldLayoutState::Unresolved;
-    NomadIndex m_finalizedFieldStorageSize = 0;
-    std::vector<StoredFieldLayout> m_finalizedFields;
+    NomadIndex m_fieldStorageSize = 0;
+    std::vector<StoredFieldLayout> m_fieldLayouts;
 };
 
 } // namespace nomad

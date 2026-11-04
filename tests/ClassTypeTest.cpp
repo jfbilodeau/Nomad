@@ -26,8 +26,8 @@ static_assert(!std::is_convertible_v<PropertyId, NomadId>);
 static_assert(!std::is_convertible_v<PropertyId, CallableId>);
 static_assert(!std::is_copy_constructible_v<Property>);
 static_assert(std::is_abstract_v<CompositeType>);
-static_assert(noexcept(std::declval<const CompositeType&>().getFinalizedFieldStorageSize()));
-static_assert(noexcept(std::declval<const CompositeType&>().getFinalizedFields()));
+static_assert(noexcept(std::declval<const CompositeType&>().getLayoutSize()));
+static_assert(noexcept(std::declval<const CompositeType&>().getFieldLayouts()));
 static_assert(noexcept(std::declval<const CompositeType&>().isFieldLayoutFinalized()));
 static_assert(!noexcept(std::declval<const CompositeType&>().getFieldStorageSize()));
 static_assert(std::is_base_of_v<Type, CompositeType>);
@@ -155,7 +155,7 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
     BOOST_TEST(owner->getFieldOffset(first) == 0U);
     BOOST_TEST(owner->getFieldOffset(second) == 1U);
     BOOST_TEST(owner->getSize() == 1U);
-    const auto fields = owner->getFinalizedFields();
+    const auto fields = owner->getFieldLayouts();
     BOOST_REQUIRE(fields.size() == 2U);
     BOOST_TEST(fields[0].type == runtime.getFloatType());
     BOOST_TEST(fields[0].offset == 0U);
@@ -199,9 +199,9 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
     BOOST_REQUIRE(constructor.isValid());
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(owner->getPropertyCount() == 3U);
-    BOOST_TEST(owner->getFinalizedFieldStorageSize() == 2U);
-    BOOST_TEST(owner->getFinalizedFields().size() == fields.size());
-    BOOST_TEST(owner->getFinalizedFields().data() == fields.data());
+    BOOST_TEST(owner->getLayoutSize() == 2U);
+    BOOST_TEST(owner->getFieldLayouts().size() == fields.size());
+    BOOST_TEST(owner->getFieldLayouts().data() == fields.data());
     BOOST_TEST(owner->getFieldStorageSize() == 2U);
     BOOST_TEST(owner->getFieldIndex(second) == 1U);
     BOOST_TEST(owner->getFieldOffset(second) == 1U);
@@ -377,7 +377,7 @@ BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_bac
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(owner->getFieldStorageSize() == 4U);
     BOOST_TEST(pending->getSizeQueryCount() == 2U);
-    const auto fields = owner->getFinalizedFields();
+    const auto fields = owner->getFieldLayouts();
     BOOST_REQUIRE(fields.size() == 3U);
     BOOST_TEST(fields[0].type == empty);
     BOOST_TEST(fields[0].offset == 0U);
@@ -388,11 +388,11 @@ BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_bac
     BOOST_TEST(fields[2].type == runtime.getIntegerType());
     BOOST_TEST(fields[2].offset == 3U);
     BOOST_TEST(fields[2].size == 1U);
-    BOOST_TEST(owner->getFinalizedFieldStorageSize() == 4U);
+    BOOST_TEST(owner->getLayoutSize() == 4U);
     BOOST_TEST(pending->getSizeQueryCount() == 2U);
     runtime.finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->getFieldStorageSize() == 4U);
-    BOOST_TEST(owner->getFinalizedFields().data() == fields.data());
+    BOOST_TEST(owner->getFieldLayouts().data() == fields.data());
     BOOST_TEST(pending->getSizeQueryCount() == 2U);
 }
 

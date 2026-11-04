@@ -139,9 +139,9 @@ BOOST_AUTO_TEST_CASE(finalized_cleanup_uses_cached_nested_layouts_without_field_
     BOOST_REQUIRE(runtime.registerProperty(outerId, "text", runtime.getStringType()).isValid());
     runtime.finalizeCompositeFieldLayout(outerId);
 
-    const auto fields = outer->getFinalizedFields();
+    const auto fields = outer->getFieldLayouts();
     BOOST_REQUIRE(fields.size() == 4U);
-    BOOST_TEST(outer->getFinalizedFieldStorageSize() == 4U);
+    BOOST_TEST(outer->getLayoutSize() == 4U);
     BOOST_TEST(fields[0].type == runtime.getIntegerType());
     BOOST_TEST(fields[0].offset == 0U);
     BOOST_TEST(fields[0].size == 1U);
@@ -154,11 +154,11 @@ BOOST_AUTO_TEST_CASE(finalized_cleanup_uses_cached_nested_layouts_without_field_
     BOOST_TEST(fields[3].type == runtime.getStringType());
     BOOST_TEST(fields[3].offset == 3U);
     BOOST_TEST(fields[3].size == 1U);
-    BOOST_TEST(empty->getFinalizedFields().empty());
-    BOOST_TEST(empty->getFinalizedFieldStorageSize() == 0U);
+    BOOST_TEST(empty->getFieldLayouts().empty());
+    BOOST_TEST(empty->getLayoutSize() == 0U);
     empty->freeValue(nullptr);
     runtime.finalizeCompositeFieldLayout(outerId);
-    BOOST_TEST(outer->getFinalizedFields().data() == fields.data());
+    BOOST_TEST(outer->getFieldLayouts().data() == fields.data());
 
     for (auto index = 0; index < 3; ++index) {
         std::array<RuntimeValue, 4> values{};

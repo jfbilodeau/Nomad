@@ -45,9 +45,9 @@ int main(int argumentCount, char* arguments[]) {
             if (testCase == "unfinalized-free") {
                 type->freeValue(nullptr);
             } else if (testCase == "unfinalized-size") {
-                (void)type->getFinalizedFieldStorageSize();
+                (void)type->getLayoutSize();
             } else if (testCase == "unfinalized-fields" || testCase == "failed-layout-fields") {
-                (void)type->getFinalizedFields();
+                (void)type->getFieldLayouts();
             } else {
                 std::fputs("Unknown cleanup contract case\n", stderr);
                 return 2;
