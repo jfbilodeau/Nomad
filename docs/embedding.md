@@ -935,6 +935,15 @@ explicit free-function arguments, and destination fields must be cleared or
 valid owned values. Empty results require no destination pointer. The API does
 not reserve local storage or stage an existing assignment target.
 
+`Compiler::addStructCreationIntoReturn(constructorId, caller, arguments)`
+constructs a struct in the enclosing callable's return destination. The
+constructed type must match the caller's result, and arguments must contain
+only explicit constructor arguments. Destination fields must be cleared or
+valid owned values and disjoint from borrowed sources; their previous ownership
+is released before construction. Empty structs omit the destination pointer
+but still evaluate arguments and execute initialization and constructor bodies.
+Use separate staging storage when replacing an existing live assignment target.
+
 Custom struct expressions can opt into this return path by overriding
 `Expression::supportsReturnDestination()` and `onCompileIntoReturn`.
 `compileIntoReturn(compiler, caller)` requires a resolved expression with the
@@ -946,9 +955,10 @@ including staged assignments and struct arguments. Script `return` statements
 support struct locals, parameters, and nested function calls. Returned fields are
 copied into the caller's destination before local cleanup, except that
 `return makePoint ...` forwards a struct-returning free-function call directly
-to that destination without an intermediate return local or copy. This also
+to that destination, and `return new Point ...` constructs there directly,
+without an intermediate return local or copy. This also
 works inside struct methods, without confusing the result destination with
-the borrowed receiver. Local/parameter, construction, and method-result returns
+the borrowed receiver. Local/parameter and method-result returns
 retain their copy paths. Existing assignment
 targets are replaced only after their source expression finishes. Discarded
 struct results are released, and empty results still execute their side effects.

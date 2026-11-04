@@ -1516,6 +1516,17 @@ void ConstructorExpression::onCompileIntoLocal(
     compiler->addStructCreationIntoLocal(m_constructor->getId(), function, &m_arguments, destination);
 }
 
+bool ConstructorExpression::supportsReturnDestination() const {
+    return getType() != nullptr && getType()->isStruct();
+}
+
+void ConstructorExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_constructor == nullptr) {
+        raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
+    }
+    compiler->addStructCreationIntoReturn(m_constructor->getId(), function, &m_arguments);
+}
+
 void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");

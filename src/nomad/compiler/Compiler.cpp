@@ -1298,6 +1298,39 @@ void Compiler::addStructCreationIntoLocal(
     }
 }
 
+void Compiler::addStructCreationIntoReturn(
+    const CallableId constructorId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    const auto* constructor = m_runtime->getConstructor(constructorId);
+    const auto* type = constructor != nullptr ? constructor->getConstructedType() : nullptr;
+    if (type == nullptr || !type->isStruct() || function == nullptr || arguments == nullptr ||
+        function->getReturnType() != type || arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct return creation requires a resolved constructor, matching caller result, and arguments");
+    }
+    const auto layout = constructor->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.receiverOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Struct return creation requires matching destination storage");
+    }
+    if (callerLayout.returnOffset.has_value()) {
+        type->emitFreeStorageParameter(*this, *callerLayout.returnOffset, 0);
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    arguments->compile(this, function);
+    addOpCode(constructor->asNativeConstructor() != nullptr
+        ? OpCodes::op_create_native_struct : OpCodes::op_create_script_struct);
+    addId(constructorId.id);
+    addIndex(layout.receiverOffset.value_or(NOMAD_INVALID_INDEX));
+    addFreeArguments(arguments);
+    if (layout.receiverOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+}
+
 NomadIndex Compiler::addScriptMethodCall(
     const CallableId memberId,
     ScriptCallableBase* function,

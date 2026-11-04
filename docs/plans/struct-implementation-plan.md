@@ -4,8 +4,9 @@ Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
-has been reviewed, along with temporary struct method receivers. Free-function
-return-destination forwarding is implemented and awaiting review.
+has been reviewed, along with temporary struct method receivers and free-function
+return-destination forwarding. Direct construction returns are implemented and
+awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2524,6 +2525,48 @@ Implementation and validation:
   and method-call expressions in separately approved slices. Temporary-rooted
   property access, interpreter/capture/formatting/host parity, and NRVO remain
   later work. Gameplay, performance, and fault recovery were not validated.
+
+### Step 4D: Direct struct construction returns
+
+Approved scope:
+
+- Construct `return new Point ...` directly in the enclosing callable's return
+  destination, without an intermediate return local or field-wise copy.
+- Extend the existing expression forwarding capability and add a specialized
+  construction emitter. Reuse the constructor ABI and existing instructions.
+- Preserve field-initializer/body order, argument evaluation, empty-struct side
+  effects, owned fields, and assignment-site staging.
+- Keep method-result forwarding, local/parameter return copies, NRVO, and
+  VM fault handling outside this slice.
+
+Implementation and validation:
+
+- Resolved struct constructor expressions opt into return-destination support.
+  `addStructCreationIntoReturn` releases previous destination ownership, forwards
+  its hidden address, and emits the existing native/script creation instruction.
+- Empty construction returns omit the pointer but still evaluate arguments and
+  run constructor side effects. No return-handling special case, VM changes,
+  opcodes, or ABI changes were introduced.
+- Metadata and instruction dumps verify zero intermediate local slots, forwarded
+  addresses, and no local-address pushes or field-copy stores. Existing
+  local/parameter and method-result return coverage retains the copy fallback.
+- Script execution verifies overloaded constructors, field initialization before
+  bodies, right-to-left argument evaluation, early return branches, copied
+  aggregate arguments, and construction returns from a struct method with
+  distinct receiver and return-destination offsets.
+- Native constructor coverage verifies default-initialized fields, exact
+  destination identity across successful host reentry, and that writing the
+  constructed result does not expose premature changes to a class-owned
+  assignment target. Empty native/script construction returns preserve side
+  effects without destination pointers.
+- Each new execution scenario runs three times with exact results and recorded
+  side effects, restoring live string/object counts after normal return.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, four documentation preparation tests, and
+  whitespace validation passed.
+- Stop for review. Next is method-result forwarding, followed by temporary-rooted
+  property access and interpreter/capture/formatting/host parity. NRVO remains
+  separate. Gameplay, performance, and fault recovery were not validated.
 
 ### Step 5: Interpreter, captures, formatting, and host parity
 

@@ -260,6 +260,7 @@ public:
         ArgumentList arguments
     );
     [[nodiscard]] bool isTerminal() const override;
+    [[nodiscard]] bool supportsReturnDestination() const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -269,6 +270,7 @@ protected:
         ScriptCallableBase* function,
         VariableId destination
     ) override;
+    void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:

@@ -220,6 +220,11 @@ public:
         const ArgumentList* arguments,
         VariableId destinationId
     );
+    void addStructCreationIntoReturn(
+        CallableId constructorId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments
+    );
     NomadIndex addNativeMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);

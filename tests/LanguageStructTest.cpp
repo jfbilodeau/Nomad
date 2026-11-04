@@ -64,7 +64,7 @@ BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_sto
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    for (const auto* name : {"relay", "relayAgain", "fromParameter"}) {
+    for (const auto* name : {"build", "relay", "relayAgain", "fromParameter"}) {
         const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         BOOST_TEST(wrapper->getVariableCount() == 0U);
@@ -75,7 +75,7 @@ BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_sto
         BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
         BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
     }
-    for (const auto* name : {"build", "identity", "methodResult"}) {
+    for (const auto* name : {"identity", "methodResult"}) {
         const auto* copying = runtime.getScriptFunction(runtime.getFunctionId(name));
         BOOST_REQUIRE(copying != nullptr);
         BOOST_TEST(copying->getVariableCount() == 1U);
@@ -125,7 +125,7 @@ BOOST_AUTO_TEST_CASE(empty_free_function_return_forwarding_omits_storage_and_pre
         "value = chain\nchain\nreturn 17");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
-    for (const auto* name : {"forward", "chain"}) {
+    for (const auto* name : {"leaf", "forward", "chain"}) {
         const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         BOOST_TEST(wrapper->getVariableCount() == 0U);
@@ -144,6 +144,85 @@ BOOST_AUTO_TEST_CASE(empty_free_function_return_forwarding_omits_storage_and_pre
         BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
         BOOST_TEST(outcome.integerValue == 17);
         BOOST_TEST(calls == 2);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(construction_returns_preserve_initialization_order_early_returns_and_borrowed_receivers) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "record",
+        [&](VirtualMachine* machine) {
+            const auto value = machine->getIntegerParameter(0);
+            calls.push_back(value);
+            machine->setIntegerResult(value);
+        },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "struct Payload\n"
+        "number = record 10\ntext = \"default\"\n"
+        "init number:int text:string\n"
+        "assert this.number == 10\nassert this.text == \"default\"\n"
+        "this.number = number\nthis.text = text\nrecord 20\nend\n"
+        "init other:Payload\n"
+        "assert this.number == 10\nthis.number = other.number\nthis.text = other.text\n"
+        "other.number = 99\nrecord 30\nend\n"
+        "fun create amount:int\nreturn new Payload (this.number + amount) this.text\nend\n"
+        "end\n"
+        "fun textArgument\nrecord 2\nreturn \"owned\"\nend\n"
+        "fun make early:bool\n"
+        "if early\nreturn new Payload (record 1) (textArgument)\nend\n"
+        "return new Payload (record 3) (textArgument)\nend\n"
+        "fun duplicate value:Payload\nreturn new Payload value\nend\n"
+        "first = make true\nsecond = make false\ncopy = duplicate first\n"
+        "created = first.create 4\n"
+        "assert first.number == 1\nassert second.number == 3\n"
+        "assert copy.number == 1\nassert created.number == 5\n"
+        "assert first.text == \"owned\"\nassert created.text == \"owned\"\n"
+        "return first.number + second.number + copy.number + created.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    for (const auto* name : {"make", "duplicate"}) {
+        const auto* callable = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(callable->getVariableCount() == 0U);
+        BOOST_TEST(callable->getVariableStorageSize() == 0U);
+        std::ostringstream dump;
+        dumpInstructions(runtime, *callable, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_create_script_struct) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    }
+    const auto* type = runtime.getTypeByName("Payload")->asStructType();
+    const auto methods = type->getMethods();
+    const auto create = std::ranges::find_if(methods, [](const auto* candidate) {
+        return candidate->getName() == "create";
+    });
+    BOOST_REQUIRE(create != methods.end());
+    const auto* method = (*create)->asScriptCallable();
+    BOOST_REQUIRE(method != nullptr);
+    BOOST_TEST(method->getVariableCount() == 0U);
+    BOOST_REQUIRE(method->getCallStorageLayout().returnOffset.has_value());
+    BOOST_REQUIRE(method->getCallStorageLayout().receiverOffset.has_value());
+    BOOST_TEST(*method->getCallStorageLayout().returnOffset == 2U);
+    BOOST_TEST(*method->getCallStorageLayout().receiverOffset == 1U);
+    const std::vector<NomadInteger> expectedCalls{2, 1, 10, 20, 2, 3, 10, 20, 10, 30, 10, 20};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 10);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
         BOOST_TEST(outcome.leakedStrings == 0);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);

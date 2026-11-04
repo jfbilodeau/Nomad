@@ -2401,6 +2401,120 @@ BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_orde
     }
 }
 
+BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_exposing_assignment_targets) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.registerStruct("ConstructedReturn");
+    const auto* type = runtime.getTypeByName("ConstructedReturn");
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    const auto ownerId = runtime.registerClass("ConstructionOwner", ClassMode::Closed);
+    const auto* ownerType = runtime.getTypeByName("ConstructionOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", type).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeConstructionOwner",
+        [ownerType](VirtualMachine* active) {
+            active->getResult().setObjectValue(new ScriptObject(ownerType));
+        },
+        {},
+        ownerType,
+        ""
+    ).isValid());
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "recordConstruction",
+        [&](VirtualMachine* active) {
+            const auto value = active->getIntegerParameter(0);
+            calls.push_back(value);
+            active->setIntegerResult(value);
+        },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeStructConstructor(typeId, {
+        .parameters = {
+            {ownerId, "owner", ""},
+            {runtime.getIntegerType()->getId(), "first", ""},
+            {runtime.getIntegerType()->getId(), "second", ""}
+        },
+        .function = [&](VirtualMachine* active) {
+            calls.push_back(100);
+            BOOST_TEST(active->getIntegerParameter(1) == 2);
+            BOOST_TEST(active->getIntegerParameter(2) == 3);
+            auto* destination = active->getParameter(3).getStorageAddress();
+            BOOST_TEST(active->getEnclosingParameterStorage(1, 1)[0].getStorageAddress() == destination);
+            auto* owner = static_cast<ScriptObject*>(active->getParameter(0).getObjectValue());
+            const auto stored = owner->getFieldStorage(0);
+            BOOST_TEST(destination != stored.data());
+            BOOST_TEST(destination[0].getIntegerValue() == 0);
+            BOOST_TEST(destination[1].getStringObject()->getString().empty());
+            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("constructionSuccess"));
+            active->run(success, {});
+            BOOST_TEST(active->getIntegerResult() == 42);
+            BOOST_TEST(active->getParameter(3).getStorageAddress() == destination);
+            destination[0].setIntegerValue(17);
+            destination[1].freeObjectValue();
+            destination[1].setStringValue("constructed");
+            BOOST_TEST(stored[0].getIntegerValue() == 5);
+            BOOST_TEST(stored[1].getStringObject()->getString() == "previous");
+        }
+    }).isValid());
+    const auto emptyId = runtime.registerStruct("EmptyConstructionReturn");
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    BOOST_REQUIRE(runtime.registerNativeStructConstructor(emptyId, {
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .function = [&](VirtualMachine* active) {
+            calls.push_back(active->getIntegerParameter(0));
+        }
+    }).isValid());
+    fixture.addFunction("constructionSuccess", "return 42");
+    fixture.addFunction("main",
+        "fun create owner:ConstructionOwner\n"
+        "return new ConstructedReturn owner (recordConstruction 2) (recordConstruction 3)\nend\n"
+        "fun emptyConstruction\nreturn new EmptyConstructionReturn (recordConstruction 4)\nend\n"
+        "owner = makeConstructionOwner\n"
+        "owner.payload.number = 5\nowner.payload.text = \"previous\"\n"
+        "owner.payload = create owner\n"
+        "assert owner.payload.text == \"constructed\"\n"
+        "empty = emptyConstruction\nemptyConstruction\n"
+        "return owner.payload.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto* create = runtime.getScriptFunction(runtime.getFunctionId("create"));
+    BOOST_REQUIRE(create != nullptr);
+    BOOST_TEST(create->getVariableCount() == 0U);
+    std::ostringstream dump;
+    dumpInstructions(runtime, *create, dump);
+    BOOST_TEST(dump.str().find(OpCodes::op_create_native_struct) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    const auto* empty = runtime.getScriptFunction(runtime.getFunctionId("emptyConstruction"));
+    BOOST_REQUIRE(empty != nullptr);
+    BOOST_TEST(empty->getVariableCount() == 0U);
+    BOOST_TEST(!empty->getCallStorageLayout().returnOffset.has_value());
+    std::ostringstream emptyDump;
+    dumpInstructions(runtime, *empty, emptyDump);
+    BOOST_TEST(emptyDump.str().find(OpCodes::op_storage_parameter_address_push) == NomadString::npos);
+    BOOST_TEST(emptyDump.str().find(OpCodes::op_create_native_struct) != NomadString::npos);
+    const std::vector<NomadInteger> expectedCalls{3, 2, 100, 4, 4, 4, 4};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 17);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_results) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
