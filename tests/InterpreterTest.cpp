@@ -1,10 +1,13 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <LanguageTestFixture.hpp>
+
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
@@ -13,7 +16,9 @@
 
 #include <nomad/system/SystemFunctions.hpp>
 
+#include <array>
 #include <stdexcept>
+#include <utility>
 
 using namespace nomad;
 
@@ -105,6 +110,273 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
 }
 
 } // namespace
+
+BOOST_AUTO_TEST_CASE(interpreter_typed_values_own_complete_nested_storage_and_keep_moves_stable) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("ValueEmpty");
+    const auto leafId = runtime.registerStruct("ValueLeaf");
+    const auto outerId = runtime.registerStruct("ValueOuter");
+    const auto ownerId = runtime.registerClass("ValueOwner", ClassMode::Closed);
+    const auto* empty = runtime.getTypeByName("ValueEmpty");
+    const auto* leaf = runtime.getTypeByName("ValueLeaf");
+    const auto* outer = runtime.getTypeByName("ValueOuter");
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "owner", runtime.getTypeByName("ValueOwner")).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "prefix", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "leaf", leaf).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "suffix", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
+    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        std::array<RuntimeValue, 5> source{};
+        source[0].setStringValue("prefix");
+        source[1].setIntegerValue(7);
+        source[2].setStringValue("nested");
+        source[3].setObjectValue(new NomadObject);
+        source[4].setStringValue("suffix");
+        {
+            TypedValue value(outer, source);
+            BOOST_REQUIRE_EQUAL(value.getStorage().size(), 5U);
+            BOOST_TEST(value.getStorage().data() != source.data());
+            BOOST_TEST(source[2].getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(source[3].getObjectValue()->getReferenceCount() == 2U);
+            TypedValue copied(value);
+            BOOST_TEST(copied.getStorage().data() != value.getStorage().data());
+            BOOST_TEST(source[2].getObjectValue()->getReferenceCount() == 3U);
+            source[1].setIntegerValue(99);
+            BOOST_TEST(copied.getStorage()[1].getIntegerValue() == 7);
+            const auto* address = copied.getStorage().data();
+            TypedValue moved(std::move(copied));
+            BOOST_TEST(moved.getStorage().data() == address);
+            BOOST_TEST(copied.getType() == nullptr);
+            BOOST_TEST(copied.getStorage().empty());
+            TypedValue assigned(runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
+            assigned = moved;
+            const auto* alias = &assigned;
+            assigned = *alias;
+            BOOST_TEST(assigned.getStorage()[4].getStringValue() == "suffix");
+            TypedValue moveAssigned(runtime.getBooleanType(), RuntimeValue{true});
+            moveAssigned = std::move(assigned);
+            BOOST_TEST(assigned.getType() == nullptr);
+            BOOST_TEST(moveAssigned.getStorage()[3].getObjectValue() == source[3].getObjectValue());
+            auto* moveAlias = &moveAssigned;
+            const auto* moveAddress = moveAssigned.getStorage().data();
+            moveAssigned = std::move(*moveAlias);
+            BOOST_TEST(moveAssigned.getStorage().data() == moveAddress);
+            std::vector<TypedValue> relocated;
+            relocated.push_back(std::move(moveAssigned));
+            for (auto count = 0; count < 32; ++count) {
+                relocated.emplace_back(runtime.getIntegerType(), RuntimeValue{NomadInteger{count}});
+            }
+            BOOST_TEST(relocated.front().getStorage().data() == moveAddress);
+            BOOST_CHECK_THROW(static_cast<void>(value.getValue()), std::invalid_argument);
+            BOOST_CHECK_THROW((TypedValue{outer, source[0]}), std::invalid_argument);
+            BOOST_CHECK_THROW((TypedValue{outer, std::span<const RuntimeValue>{source}.first(4)}),
+                std::invalid_argument);
+            BOOST_CHECK_THROW((TypedValue{runtime.getIntegerType(), source}), std::invalid_argument);
+            BOOST_CHECK_THROW((TypedValue{nullptr, std::span<const RuntimeValue>{}}), std::invalid_argument);
+            TypedValue emptyValue(empty, std::span<const RuntimeValue>{});
+            TypedValue emptyCopy(emptyValue);
+            BOOST_TEST(emptyCopy.getType() == empty);
+            BOOST_TEST(emptyCopy.getStorage().empty());
+            BOOST_TEST(emptyCopy.getStorage().data() == nullptr);
+            BOOST_TEST(!emptyCopy.getType()->isVoid());
+            BOOST_CHECK_THROW(static_cast<void>(emptyCopy.getValue()), std::invalid_argument);
+        }
+        BOOST_TEST(source[0].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(source[2].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(source[3].getObjectValue()->getReferenceCount() == 1U);
+        outer->freeValue(source.data());
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_from_host_storage) {
+    Runtime runtime;
+    const auto pairId = runtime.registerStruct("ConsolePair");
+    const auto emptyId = runtime.registerStruct("ConsoleEmpty");
+    const auto* pair = runtime.getTypeByName("ConsolePair");
+    const auto* empty = runtime.getTypeByName("ConsoleEmpty");
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(pairId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(pairId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    auto machine = runtime.createVirtualMachine();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            InterpreterContext context(*machine);
+            InterpreterContext independent(*machine);
+            std::array<RuntimeValue, 2> source{};
+            source[0].setIntegerValue(17);
+            source[1].setStringValue("host value");
+            context.setVariable("source", pair, source);
+            pair->freeValue(source.data());
+            const auto* root = context.getVariableStorage("source").data();
+            context.setVariable("empty", empty, std::span<const RuntimeValue>{});
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("source", context));
+            BOOST_REQUIRE(context.getResult() != nullptr);
+            BOOST_TEST(context.getResult()->getType() == pair);
+            BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 17);
+            BOOST_TEST(context.getResult()->getStorage()[1].getStringValue() == "host value");
+            context.setResult(*context.getResult());
+            context.setResult(pair, context.getResult()->getStorage());
+            const TypedValue snapshot(*context.getResult());
+            BOOST_REQUIRE(Interpreter{}.execute("copy = source\nsource = source\nemptyCopy = empty", context));
+            BOOST_TEST(context.getVariableStorage("copy").data() != root);
+            BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 17);
+            BOOST_TEST(context.getVariableType("emptyCopy") == empty);
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("emptyCopy", context));
+            BOOST_TEST(context.getResult()->getType() == empty);
+            BOOST_TEST(context.getResult()->getStorage().empty());
+            BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
+            BOOST_CHECK_THROW(context.setVariable("empty", empty, RuntimeValue{}), std::invalid_argument);
+            BOOST_CHECK_THROW(context.setVariable("copy", pair, std::span<const RuntimeValue>{}),
+                std::invalid_argument);
+            BOOST_TEST(context.getVariableStorage("copy")[1].getStringValue() == "host value");
+            BOOST_CHECK_THROW(context.setVariable("copy", pair, RuntimeValue{}), std::invalid_argument);
+            BOOST_CHECK_THROW(static_cast<void>(context.getVariableValue("copy")), std::invalid_argument);
+            BOOST_CHECK_THROW(static_cast<void>(context.getVariableValueById(
+                context.getCallable()->getVariableId("copy"))),
+                std::invalid_argument);
+            context.setVariable("copy", pair, context.getVariableStorage("copy"));
+            BOOST_REQUIRE(Interpreter{}.execute("source = 31", context));
+            BOOST_TEST(context.getVariableValue("source")->getIntegerValue() == 31);
+            BOOST_TEST(snapshot.getStorage()[1].getStringValue() == "host value");
+            BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 17);
+            BOOST_TEST(independent.getVariableType("copy") == nullptr);
+            BOOST_TEST(independent.getVariableStorage("copy").empty());
+            const auto variables = context.listVariables();
+            BOOST_REQUIRE_EQUAL(variables.size(), 4U);
+            BOOST_TEST(variables[0].name == "copy");
+            BOOST_TEST(variables[0].value == "ConsolePair");
+            BOOST_TEST(variables[1].value == "ConsoleEmpty");
+            context.clearVariableValue("copy");
+            BOOST_TEST(context.getVariableType("copy") == nullptr);
+            BOOST_TEST(context.getVariableStorage("copy").empty());
+            BOOST_TEST(!Interpreter{}.execute("copy", context));
+            BOOST_TEST(context.hasError());
+            BOOST_TEST(context.getResult() == nullptr);
+            context.setResult(pair, snapshot.getStorage());
+            BOOST_CHECK_THROW(context.setResult(pair, std::span<const RuntimeValue>{}), std::invalid_argument);
+            BOOST_TEST(context.getResult()->getType() == pair);
+            context.setVoidResult();
+            BOOST_TEST(context.getResult()->getStorage().empty());
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_and_locals_by_physical_offset) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto visits = 0;
+    const auto inspectFrameId = runtime.registerNativeFunction(
+        "inspectAggregateFrame",
+        [&](VirtualMachine* machine) {
+            ++visits;
+            const auto* callable = machine->getCurrentCallable();
+            BOOST_REQUIRE(callable != nullptr);
+            const auto variableCount = callable->getVariableCount();
+            const auto parameterCount = callable->getParameterCount();
+            const auto instructionsBefore = runtime.getInstructions().size();
+            const auto savedResult = machine->getResult();
+            const auto savedIntermediate = machine->getIntermediate();
+            InterpreterContext context(*machine, *callable);
+            const auto* outer = runtime.getTypeByName("FrameOuter");
+            const auto* empty = runtime.getTypeByName("FrameEmpty");
+            const auto parameterId = callable->getParameterId("value");
+            const auto tailId = callable->getParameterId("tail");
+            BOOST_REQUIRE(parameterId != NOMAD_INVALID_ID);
+            BOOST_REQUIRE(tailId != NOMAD_INVALID_ID);
+            BOOST_TEST(callable->getParameterOffset(tailId) == 5U);
+            const auto input = context.getVariableStorage("value");
+            BOOST_REQUIRE_EQUAL(input.size(), 5U);
+            BOOST_TEST(input[0].getIntegerValue() == 7);
+            BOOST_TEST(input[1].getStringValue() == "nested");
+            BOOST_TEST(input[3].getStringValue() == "outer");
+            BOOST_TEST(context.getVariableValue("tail")->getIntegerValue() == 23);
+            BOOST_TEST(context.getParameterStorage(tailId)[0].getIntegerValue() == 23);
+            BOOST_TEST(context.getVariableType("empty") == empty);
+            BOOST_TEST(context.getVariableStorage("empty").empty());
+            BOOST_TEST(context.getVariableStorage("emptyLocal").empty());
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("value", context));
+            const TypedValue snapshot(*context.getResult());
+            BOOST_TEST(snapshot.getStorage().data() != input.data());
+            BOOST_REQUIRE(Interpreter{}.execute("saved = value\nlocal = value\nvalue = local\nvalue = value\n"
+                "tail = tail + 1\nemptyLocal = empty\nempty = emptyLocal", context));
+            BOOST_TEST(context.getVariableStorage("saved").data() != input.data());
+            BOOST_TEST(context.getVariableStorage("local")[1].getStringValue() == "nested");
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("empty", context));
+            BOOST_TEST(context.getResult()->getType() == empty);
+            BOOST_TEST(context.getResult()->getStorage().empty());
+            std::array<RuntimeValue, 5> replacement{};
+            outer->copyValue(snapshot.getStorage().data(), replacement.data());
+            replacement[0].setIntegerValue(41);
+            context.setParameter(parameterId, replacement);
+            context.setVariable("local", outer, replacement);
+            outer->freeValue(replacement.data());
+            BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 41);
+            BOOST_TEST(context.getVariableStorage("local")[0].getIntegerValue() == 41);
+            BOOST_TEST(context.getVariableStorage("saved")[0].getIntegerValue() == 7);
+            BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 7);
+            context.setParameter(parameterId, context.getParameterStorage(parameterId));
+            context.setVariable("local", outer, context.getVariableStorage("local"));
+            BOOST_CHECK_THROW(context.setParameter(parameterId, std::span<const RuntimeValue>{}),
+                std::invalid_argument);
+            BOOST_CHECK_THROW(context.setParameter(parameterId, RuntimeValue{}), std::invalid_argument);
+            BOOST_TEST(!Interpreter{}.execute("value = 1", context));
+            BOOST_TEST(!Interpreter{}.execute("local = 1", context));
+            BOOST_TEST(context.getVariableStorage("local")[0].getIntegerValue() == 41);
+            context.setVariable("tail", runtime.getIntegerType(), RuntimeValue{NomadInteger{29}});
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("tail", context));
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
+            BOOST_TEST(machine->getResult().getIntegerValue() == savedResult.getIntegerValue());
+            BOOST_TEST(machine->getIntermediate().getIntegerValue() == savedIntermediate.getIntegerValue());
+            BOOST_TEST(callable->getVariableCount() == variableCount);
+            BOOST_TEST(callable->getParameterCount() == parameterCount);
+            BOOST_TEST(runtime.getInstructions().size() == instructionsBefore);
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(inspectFrameId.isValid());
+    fixture.addFunction("main",
+        "class FrameOwner\nnumber = 11\nend\n"
+        "struct FrameEmpty\nend\n"
+        "struct FrameLeaf\nnumber = 7\ntext = \"nested\"\nowner = new FrameOwner\nend\n"
+        "struct FrameOuter\nleaf = new FrameLeaf\ntext = \"outer\"\nlast = 19\nend\n"
+        "fun inspect value:FrameOuter empty:FrameEmpty tail:int\n"
+        "prefix = \"prefix\"\nemptyLocal = new FrameEmpty\nlocal = new FrameOuter\n"
+        "inspectAggregateFrame\n"
+        "assert value.leaf.number == 41\nassert local.leaf.number == 41\n"
+        "assert value.leaf.owner.number == 11\nassert value.last == 19\n"
+        "assert local.text == \"outer\"\nassert prefix == \"prefix\"\n"
+        "return tail\nend\n"
+        "source = new FrameOuter\nresult = inspect source (new FrameEmpty) 23\n"
+        "assert source.leaf.number == 7\nreturn result");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 29);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(visits == 3);
+}
 
 BOOST_AUTO_TEST_CASE(interpreter_executes_conditional_loops)
 {

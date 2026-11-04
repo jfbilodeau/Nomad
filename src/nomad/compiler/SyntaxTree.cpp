@@ -546,7 +546,7 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Parameter:
-        context.setParameter(m_identifierDefinition.parameterId, assignedValue.getValue());
+        context.setParameter(m_identifierDefinition.parameterId, assignedValue.getStorage());
         break;
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
@@ -568,7 +568,7 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
     }
 
     default:
-        context.setVariable(m_identifier, type, assignedValue.getValue());
+        context.setVariable(m_identifier, type, assignedValue.getStorage());
         break;
     }
 

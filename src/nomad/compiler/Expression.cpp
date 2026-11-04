@@ -2197,15 +2197,14 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         context.setParameterResult(m_identifierDefinition.parameterId);
         break;
     case IdentifierType::FunctionVariable: {
-        const auto* value = context.getVariableValueById(m_identifierDefinition.variableId);
-        if (value == nullptr) {
+        const auto* actualType = context.getVariableTypeById(m_identifierDefinition.variableId);
+        if (actualType == nullptr) {
             raiseException("Variable '" + m_identifier + "' has not been assigned a value");
         }
-        const auto* actualType = context.getVariableTypeById(m_identifierDefinition.variableId);
         if (actualType != getType()) {
             raiseException("Variable '" + m_identifier + "' changed type after this expression was resolved");
         }
-        context.setResult(actualType, *value);
+        context.setResult(actualType, context.getVariableStorageById(m_identifierDefinition.variableId));
         break;
     }
 

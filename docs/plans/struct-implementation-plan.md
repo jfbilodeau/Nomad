@@ -6,8 +6,9 @@ Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
 has been reviewed, along with temporary struct method receivers and free-function
 return-destination forwarding, direct construction returns, and method-result
-forwarding on struct receivers. Temporary-rooted stored property access is
-implemented and awaiting review.
+forwarding on struct receivers and temporary-rooted stored property access.
+Step 5A interpreter-owned struct values and frame access is implemented and
+awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2677,6 +2678,51 @@ Prerequisite: step 4 approved.
 
 Review stop: parity results and any unsupported surface requiring a scope
 decision.
+
+### Step 5A: Interpreter-owned struct values and frame access
+
+Approved scope:
+
+- Preserve inline scalar values while giving structs owned contiguous field
+  storage, including zero-slot values, without compiled-runtime boxing.
+- Add span-based value access and assignment while preserving scalar APIs.
+- Support whole-value interpreter reads and assignments for host-supplied
+  structs and ordinary parameters/locals in active script frames.
+- Preserve field-wise copies, shared contained class references, self-assignment,
+  and existing scalar behavior. Keep construction, aggregate calls, properties,
+  methods, captures, and formatting outside this slice.
+
+Implementation and validation:
+
+- `TypedValue` copies and releases all physical slots through existing type
+  ownership operations. Struct storage survives moves without relocation;
+  empty values retain their type without a slot pointer or allocation.
+- Interpreter variables and results accept exact-size source spans. Replacement
+  stages ownership before releasing existing values, including self-sourced
+  result/variable updates. Scalar APIs reject aggregate values explicitly.
+- Identifier evaluation and ordinary assignments use complete storage views.
+  Empty values are distinguished from missing variables through type metadata.
+  Variable listing retains the existing struct type-name summary.
+- Frame reads/writes use original callable layouts for physical local offsets
+  and parameter widths. Parameter access reuses enclosing-script-frame storage,
+  rather than a native callback's argument area, when inspecting from native
+  code. Frame metadata and compiled instructions remain unchanged.
+- Regressions cover nested owned strings and class references, deep copies,
+  copy/move/self-assignment, stable storage across container relocation, invalid
+  spans, cleared variables, independent contexts, and result snapshots.
+- Executable frame tests cover aggregate parameters, scalar parameters following
+  aggregate and empty parameters, aggregate locals, empty locals/parameters,
+  whole-value interpreted assignment, checked host writes, fixed frame types,
+  register preservation, and unchanged original caller values.
+- New scenarios run three times and restore live string/object counts after
+  normal completion. Language, remaining, bindings, and tooling CTest groups,
+  compiler-export and LSP process integration tests, four documentation
+  preparation tests, and whitespace validation passed.
+- Stop for review. Next, scope interpreter construction/call/property support,
+  followed by captures, formatting, and remaining host parity. Native
+  accessor-backed struct properties and class-receiver struct returns remain
+  separate compiled gaps. NRVO and fatal-fault cleanup remain deferred.
+  Gameplay and performance were not validated.
 
 ### Step 6: Conservative named return-value optimization
 

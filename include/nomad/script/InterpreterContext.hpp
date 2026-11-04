@@ -26,6 +26,7 @@ class VirtualMachine;
 class TypedValue {
 public:
     TypedValue(const Type* type, const RuntimeValue& value);
+    TypedValue(const Type* type, std::span<const RuntimeValue> storage);
     TypedValue(const TypedValue& other);
     TypedValue(TypedValue&& other) noexcept;
     TypedValue& operator=(const TypedValue& other);
@@ -33,13 +34,17 @@ public:
     ~TypedValue();
 
     [[nodiscard]] const Type* getType() const;
+    // Scalar access only; structs, including empty structs, require getStorage().
     [[nodiscard]] const RuntimeValue& getValue() const;
+    // Borrowed slots remain valid until this value is replaced or destroyed; moves preserve struct addresses.
+    [[nodiscard]] std::span<const RuntimeValue> getStorage() const;
 
 private:
     void release() noexcept;
 
     const Type* m_type;
     RuntimeValue m_value;
+    std::unique_ptr<RuntimeValue[]> m_storage;
 };
 
 struct InterpreterVariableInfo {
@@ -78,8 +83,11 @@ public:
     void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void setParameterResult(NomadId parameterId);
     void setParameter(NomadId parameterId, const RuntimeValue& value);
+    void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
+    [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
 
     void setResult(const Type* type, const RuntimeValue& value);
+    void setResult(const Type* type, std::span<const RuntimeValue> storage);
     void setResult(const TypedValue& value);
     void setVoidResult();
     void clearResult();
@@ -96,12 +104,16 @@ public:
     [[nodiscard]] const NomadString* getError() const;
 
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
+    void setVariable(const NomadString& name, const Type* type, std::span<const RuntimeValue> storage);
     void clearVariableValue(const NomadString& name);
 
     [[nodiscard]] const Type* getVariableType(const NomadString& name) const;
     [[nodiscard]] const Type* getVariableTypeById(VariableId variableId) const;
     [[nodiscard]] const RuntimeValue* getVariableValue(const NomadString& name) const;
     [[nodiscard]] const RuntimeValue* getVariableValueById(VariableId variableId) const;
+    // Empty views also represent missing values; query the variable type to distinguish empty structs.
+    [[nodiscard]] std::span<const RuntimeValue> getVariableStorage(const NomadString& name) const;
+    [[nodiscard]] std::span<const RuntimeValue> getVariableStorageById(VariableId variableId) const;
     [[nodiscard]] std::vector<InterpreterVariableInfo> listVariables() const;
 
 private:

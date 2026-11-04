@@ -1018,7 +1018,7 @@ Compiled struct method calls also accept temporary receivers, such as
 before explicit arguments, and its owned fields are released when the call
 finishes. Returned strings, class references, and struct copies remain valid
 after that release. Chained method returns and empty temporary receivers follow
-the same rules. Interpreter aggregate support remains separate.
+the same rules. Interpreter struct construction and member calls remain separate.
 
 Stored struct properties rooted in locals, ordinary struct parameters,
 borrowed struct `this`, class objects, or temporary struct values can be read
@@ -1039,8 +1039,8 @@ fields are released. Extracted strings, class references, and struct copies
 remain independently owned. Assigning to or calling a mutating method on a
 temporary field changes only that temporary, except for shared class references
 stored in its fields. Empty fields still evaluate and release their root.
-Native accessor-backed struct properties and interpreter aggregates remain
-unsupported.
+Native accessor-backed struct properties and interpreter struct property access
+remain unsupported.
 
 Object-owned reads evaluate the owner once and keep it alive until copied values
 are independently owned. Writes retain the original owner and capture the
@@ -2244,6 +2244,52 @@ survive another evaluation; do not free the context's result manually.
 `listVariables()` lists interpreter-owned variables, not borrowed frame slots.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
+
+### Struct values and frame inspection
+
+The interpreter can read and assign complete struct values supplied by the
+host or present in an active compiled script frame. For example, after the host
+supplies `point`, `copy = point` creates an independent field-wise copy, and
+`point = point` safely preserves the value. Contained class references retain
+their ordinary reference semantics. Empty structs remain typed values even
+though they occupy no slots.
+
+`TypedValue(type, storage)` copies a `std::span<const RuntimeValue>` containing
+exactly `type->getSize()` contiguous slots. The type's layout must be finalized.
+`getStorage()` borrows the complete owned value. Copies own separate slot
+storage; moving a struct value preserves its slot addresses. The runtime and
+type metadata must outlive the value. Scalar values keep their existing inline
+representation.
+
+Use the span overloads of `InterpreterContext::setVariable(name, type, storage)`
+and `setResult(type, storage)` for structs. Both copy the complete value before
+releasing what they replace, so their own storage can be supplied as the source.
+`setResult(const TypedValue&)` likewise takes an owned copy.
+`getVariableStorage(name)` and `getVariableStorageById(variableId)` borrow
+complete variable storage; `getResult()->getStorage()` borrows result storage.
+Replacing or clearing an owning variable/result invalidates its views. Copy into
+a `TypedValue` when a snapshot must survive those operations.
+
+An empty view can mean either an empty struct or a missing variable; check
+`getVariableType` or `getVariableTypeById` to distinguish them. Empty struct
+views contain no slot pointer. The scalar constructors, setters, `getValue()`,
+and `getVariableValue` accessors reject structs with `std::invalid_argument`,
+including one-slot and empty structs; use complete storage views instead.
+Incorrect view sizes also throw `std::invalid_argument` without replacing the
+previous value.
+
+Frame-backed contexts borrow locals and ordinary parameters from the active
+script callable. `getParameterStorage(parameterId)` and the span overload of
+`setParameter(parameterId, storage)` accept logical parameter IDs and select
+their complete physical ranges, including when a native callback inspects the
+enclosing script frame. Writes preserve declared types and affect the borrowed
+frame, not the original caller's copied arguments. New interpreter variables
+remain context-owned. Borrowed frame storage is valid only while that frame is
+active; it must not be used after the frame returns.
+
+`listVariables()` displays struct type names rather than formatting their
+fields. Interpreter struct construction, struct arguments/results in calls,
+stored property access, methods, and aggregate captures remain unsupported.
 
 ## Parameterized types
 
