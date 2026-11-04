@@ -2,6 +2,8 @@
 
 #include <nomad/script/InterpreterContext.hpp>
 
+#include <nomad/script/InterpreterCallFrame.hpp>
+#include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -437,6 +439,75 @@ void InterpreterContext::evaluateNativeFunctionCall(const CallableId functionId,
     }
     machine->setResult(savedResult);
     machine->setIntermediate(savedIntermediate);
+}
+
+void InterpreterContext::evaluateFunctionCallWithStorage(
+    const CallableId functionId,
+    const std::span<const TypedValue> arguments
+) {
+    const auto* function = getRuntime()->getScriptFunction(functionId);
+    if (function == nullptr || function->getReturnType() == nullptr) {
+        throw NomadBug("Invalid interpreted function call");
+    }
+    if (!function->getReturnType()->isStruct() &&
+        std::ranges::none_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
+        std::vector<RuntimeValue> values;
+        values.reserve(arguments.size());
+        for (const auto& argument : arguments) {
+            values.push_back(argument.getValue());
+        }
+        evaluateFunctionCall(functionId, values);
+        return;
+    }
+    InterpreterCallFrame frame(m_virtualMachine, *function, arguments, function->getReturnType());
+    m_virtualMachine.runPreparedFunction(function);
+    setResult(function->getReturnType(), frame.getResultStorage());
+}
+
+void InterpreterContext::evaluateNativeFunctionCallWithStorage(
+    const CallableId functionId,
+    const std::span<const TypedValue> arguments
+) {
+    const auto* function = getRuntime()->getNativeFunction(functionId);
+    if (function == nullptr || function->getReturnType() == nullptr) {
+        throw NomadBug("Invalid interpreted native function call");
+    }
+    InterpreterCallFrame frame(m_virtualMachine, *function, arguments, function->getReturnType());
+    m_virtualMachine.callNativeFunction(functionId);
+    setResult(function->getReturnType(), frame.getResultStorage());
+}
+
+void InterpreterContext::evaluateConstructorCall(
+    const CallableId constructorId,
+    const std::span<const TypedValue> arguments
+) {
+    const auto* constructor = getRuntime()->getConstructor(constructorId);
+    if (constructor == nullptr || constructor->getReturnType() == nullptr) {
+        throw NomadBug("Invalid interpreted constructor call");
+    }
+    const auto* type = constructor->getConstructedType();
+    InterpreterCallFrame frame(m_virtualMachine, *constructor, arguments, type);
+    if (type->isStruct()) {
+        if (constructor->asNativeConstructor() != nullptr) {
+            m_virtualMachine.createNativeStruct(frame.getDestination(), constructorId);
+        } else {
+            m_virtualMachine.createScriptStruct(frame.getDestination(), constructorId);
+        }
+        if (!hasError()) {
+            setResult(type, frame.getResultStorage());
+        }
+        return;
+    }
+    auto* created = constructor->asNativeConstructor() != nullptr
+        ? m_virtualMachine.createNativeObject(constructorId)
+        : m_virtualMachine.createScriptObject(constructorId);
+    const auto release = [](NomadObject* object) { object->releaseRef(); };
+    const std::unique_ptr<NomadObject, decltype(release)> object(created, release);
+    if (!hasError()) {
+        RuntimeValue value;
+        value.setObjectValue(object.get());
+        setResult(type, value);
+    }
 }
 
 } // namespace nomad

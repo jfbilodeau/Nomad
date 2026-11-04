@@ -58,6 +58,10 @@ public:
     [[nodiscard]] bool isFrameVariable(VariableId variableId) const;
     void evaluateFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
+    // Resolved interpreter calls use complete typed arguments, including zero-slot values.
+    void evaluateFunctionCallWithStorage(CallableId functionId, std::span<const TypedValue> arguments);
+    void evaluateNativeFunctionCallWithStorage(CallableId functionId, std::span<const TypedValue> arguments);
+    void evaluateConstructorCall(CallableId constructorId, std::span<const TypedValue> arguments);
     void setParameterResult(NomadId parameterId);
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);

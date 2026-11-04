@@ -112,6 +112,36 @@ void VirtualMachine::pushStorageAddress(RuntimeValue* address) {
     pushValue(value);
 }
 
+void VirtualMachine::pushStorage(const std::span<const RuntimeValue> storage) {
+    if (m_stackIndex >= m_stack.size() || storage.size() > m_stack.size() - m_stackIndex - 1) {
+        fault("Stack overflow");
+    }
+    if (!storage.empty()) {
+        std::copy(storage.begin(), storage.end(), m_stack.begin() + m_stackIndex + 1);
+        m_stackIndex += storage.size();
+    }
+}
+
+void VirtualMachine::runPreparedFunction(const ScriptFunction* function) {
+    if (function == nullptr || function->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        function->getFunctionStart() >= function->getFunctionEnd()) {
+        fault("Cannot call prepared script function: invalid or uncompiled function");
+    }
+    const auto state = beginScriptRun();
+    try {
+        callScriptFunction(function->getFunctionStart());
+        executeScript();
+        if (m_yielded) {
+            fault("Aggregate script calls cannot yield");
+        }
+    } catch (...) {
+        m_yielded = false;
+        restoreScriptRun(state);
+        throw;
+    }
+    restoreScriptRun(state);
+}
+
 void VirtualMachine::run(
     const ScriptFunction* function,
     const std::vector<RuntimeValue>& args,

@@ -65,11 +65,16 @@ public:
         return m_stack[m_parameterIndex - pointerOffset].getStorageAddress()[fieldOffset];
     }
     void pushStorageAddress(RuntimeValue* address);
+    // Copies raw slots without retaining references; fails before changing the stack if the range will not fit.
+    void pushStorage(std::span<const RuntimeValue> storage);
     [[nodiscard]] RuntimeValue& getStorage(const NomadIndex offset) {
         return m_intermediate.getStorageAddress()[offset];
     }
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
+    // Compiler-verified arguments and hidden pointers are already on the stack; the caller owns/frees them.
+    // Aggregate calls are synchronous; yielding requires a separate suspended-storage contract.
+    void runPreparedFunction(const ScriptFunction* function);
     // Compiler-verified constructor and body; arguments are owned stack copies the caller frees/pops.
     [[nodiscard]] NomadObject* createNativeObject(CallableId constructorId);
     [[nodiscard]] NomadObject* createScriptObject(CallableId constructorId);

@@ -672,21 +672,16 @@ void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    if (getType()->isStruct()) {
-        context.setError("Struct-returning function calls are not supported by the interpreter");
-        return;
-    }
     std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    m_arguments.evaluate(context, evaluatedArguments, values);
+    m_arguments.evaluate(context, evaluatedArguments);
     if (context.hasError()) {
         return;
     }
 
     if (const auto* native = m_function->asNativeFunction()) {
-        context.evaluateNativeFunctionCall(native->getId(), values);
+        context.evaluateNativeFunctionCallWithStorage(native->getId(), evaluatedArguments);
     } else if (const auto* script = m_function->asScriptFunction()) {
-        context.evaluateFunctionCall(script->getId(), values);
+        context.evaluateFunctionCallWithStorage(script->getId(), evaluatedArguments);
     } else {
         raiseException("Unsupported implementation of function '" + m_name + "'");
     }
@@ -1548,63 +1543,12 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    if (getType()->isStruct()) {
-        raiseException("Interpreter construction does not support struct value storage");
-    }
-    auto* machine = context.getVirtualMachine();
-    const auto& arguments = m_arguments.getArguments();
-    auto pushed = NomadIndex{0};
-    auto prepared = false;
-    const auto releaseArguments = [&]() {
-        for (auto index = NomadIndex{0}; index < pushed; ++index) {
-            const auto argumentIndex = prepared ? index : pushed - index - 1;
-            auto value = machine->popValue();
-            arguments[argumentIndex]->getType()->freeValue(&value);
-        }
-    };
-    NomadObject* created = nullptr;
-    try {
-        for (const auto& argument : arguments) {
-            const auto value = argument->evaluate(context);
-            if (context.hasError()) {
-                releaseArguments();
-                return;
-            }
-            if (argument->getType()->isStruct()) {
-                raiseException("Interpreter construction does not support struct argument storage");
-            }
-            RuntimeValue copy;
-            argument->getType()->copyValue(&value.getValue(), &copy);
-            try {
-                machine->pushValue(copy);
-            } catch (...) {
-                argument->getType()->freeValue(&copy);
-                throw;
-            }
-            ++pushed;
-        }
-        if (pushed != 0) {
-            std::reverse(machine->getStackAddress(pushed - 1), machine->getStackAddress(0) + 1);
-        }
-        prepared = true;
-        created = m_constructor->asNativeConstructor() != nullptr
-            ? machine->createNativeObject(m_constructor->getId())
-            : machine->createScriptObject(m_constructor->getId());
-    } catch (...) {
-        releaseArguments();
-        throw;
-    }
-    releaseArguments();
-    const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(
-        created, release
-    );
+    std::vector<TypedValue> evaluatedArguments;
+    m_arguments.evaluate(context, evaluatedArguments);
     if (context.hasError()) {
         return;
     }
-    RuntimeValue value;
-    value.setObjectValue(object.get());
-    context.setResult(getType(), value);
+    context.evaluateConstructorCall(m_constructor->getId(), evaluatedArguments);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

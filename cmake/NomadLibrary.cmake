@@ -58,6 +58,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/InstructionDump.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterCallFrame.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp

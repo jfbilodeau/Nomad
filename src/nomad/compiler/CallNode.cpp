@@ -10,6 +10,8 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <algorithm>
+
 namespace nomad {
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -153,20 +155,31 @@ void ArgumentList::compile(Compiler* compiler, ScriptCallableBase* function) con
 
 void ArgumentList::evaluate(
     InterpreterContext& context,
-    std::vector<TypedValue>& evaluatedArguments,
-    std::vector<RuntimeValue>& values
+    std::vector<TypedValue>& evaluatedArguments
 ) const {
     evaluatedArguments.reserve(m_arguments.size());
-    values.reserve(m_arguments.size());
-
-    for (const auto& argument : m_arguments) {
-        auto value = argument->evaluate(context);
+    for (auto argument = m_arguments.rbegin(); argument != m_arguments.rend(); ++argument) {
+        auto value = (*argument)->evaluate(context);
         if (context.hasError()) {
             return;
         }
-
-        values.push_back(value.getValue());
         evaluatedArguments.push_back(std::move(value));
+    }
+    std::reverse(evaluatedArguments.begin(), evaluatedArguments.end());
+}
+
+void ArgumentList::evaluate(
+    InterpreterContext& context,
+    std::vector<TypedValue>& evaluatedArguments,
+    std::vector<RuntimeValue>& values
+) const {
+    evaluate(context, evaluatedArguments);
+    if (context.hasError()) {
+        return;
+    }
+    values.reserve(evaluatedArguments.size());
+    for (const auto& value : evaluatedArguments) {
+        values.push_back(value.getValue());
     }
 }
 
@@ -323,22 +336,16 @@ void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    if (m_function->getReturnType() != nullptr && m_function->getReturnType()->isStruct()) {
-        context.setError("Struct-returning function calls are not supported by the interpreter");
-        return;
-    }
-
     std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    getArguments()->evaluate(context, evaluatedArguments, values);
+    getArguments()->evaluate(context, evaluatedArguments);
     if (context.hasError()) {
         return;
     }
 
     if (const auto* native = m_function->asNativeFunction()) {
-        context.evaluateNativeFunctionCall(native->getId(), values);
+        context.evaluateNativeFunctionCallWithStorage(native->getId(), evaluatedArguments);
     } else if (const auto* script = m_function->asScriptFunction()) {
-        context.evaluateFunctionCall(script->getId(), values);
+        context.evaluateFunctionCallWithStorage(script->getId(), evaluatedArguments);
     } else {
         raiseException("Unsupported implementation of function '" + m_name + "'");
     }

@@ -32,8 +32,9 @@ public:
 
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
     void compile(Compiler* compiler, ScriptCallableBase* function) const;
-    // Evaluates arguments in order. The entries of values share the storage owned by evaluatedArguments.
-    // Stops at the first argument that reports an error through the context->
+    // Evaluates right-to-left, retaining values in logical parameter order. Stops at the first reported error.
+    void evaluate(InterpreterContext& context, std::vector<TypedValue>& evaluatedArguments) const;
+    // Scalar adapter; entries of values borrow ownership from evaluatedArguments.
     void evaluate(
         InterpreterContext& context,
         std::vector<TypedValue>& evaluatedArguments,
