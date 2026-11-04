@@ -483,6 +483,18 @@ bool Type::isString() const {
     return false;
 }
 
+bool Type::isStruct() const {
+    return asStructType() != nullptr;
+}
+
+bool Type::isClass() const {
+    return asClassType() != nullptr;
+}
+
+bool Type::isComposite() const {
+    return asCompositeType() != nullptr;
+}
+
 NomadString getTypeDisplayName(const Type* type) {
     if (type == nullptr) {
         return "<unknown>";

@@ -55,7 +55,7 @@ const Type* parseTypeName(
             if (argument == nullptr) {
                 return nullptr;
             }
-            if (argument->isVoid() || argument->isInternal() || argument->asStructType() != nullptr) {
+            if (argument->isVoid() || argument->isInternal() || argument->isStruct()) {
                 context->reportError("Invalid type argument '" + argument->getTypeName() + "' for '" + name + "'", tokens);
                 return nullptr;
             }
@@ -242,11 +242,11 @@ std::unique_ptr<Expression> createNativeMemberExpression(
         IdentifierDefinition definition;
         context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
         receiverType = definition.valueType;
-        if (definition.valueType != nullptr && definition.valueType->asCompositeType() != nullptr) {
+        if (const auto* composite = receiverType != nullptr ? receiverType->asCompositeType() : nullptr) {
             storedField = context->getRuntime()->getMemberType(
                 context->getRuntime()->getNativeMemberId(definition.valueType, memberName)
             ) == MemberType::Unknown && !std::ranges::any_of(
-                definition.valueType->asCompositeType()->getMethods(),
+                composite->getMethods(),
                 [&](const auto* method) { return method->getName() == memberName; }
             );
         }
@@ -875,7 +875,7 @@ std::unique_ptr<Expression> parseNewExpression(
             if (argument == nullptr) {
                 return nullptr;
             }
-            if (argument->asStructType() != nullptr) {
+            if (argument->isStruct()) {
                 context->reportError("Struct type argument '" + argument->getTypeName() +
                     "' is not supported for constructor '" + constructorName + "'", tokens);
                 return nullptr;
@@ -932,8 +932,8 @@ std::unique_ptr<Expression> parseNewExpression(
     }
     const Constructor* shape = nullptr;
     const auto* classType = runtime->getTypeByName(constructorName);
-    if (classType != nullptr && classType->asCompositeType() != nullptr) {
-        for (const auto* constructor : classType->asCompositeType()->getConstructors()) {
+    if (const auto* composite = classType != nullptr ? classType->asCompositeType() : nullptr) {
+        for (const auto* constructor : composite->getConstructors()) {
             if (shape == nullptr || constructor->getParameterCount() > shape->getParameterCount()) {
                 shape = constructor;
             }
@@ -1104,7 +1104,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             return nullptr;
         }
         if (context->getMode() != CompilerMode::Interpreter &&
-            context->getCompiler()->getReceiverType(function)->asClassType() != nullptr &&
+            context->getCompiler()->getReceiverType(function)->isClass() &&
             target.starts_with("this.") && target.find('.', 5) == NomadString::npos &&
             tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
             auto name = tokens->next().textValue;

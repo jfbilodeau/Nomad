@@ -140,11 +140,11 @@ CallStorageLayout Callable::getCallStorageLayout(const NomadIndex argumentSlotCo
             throw NomadException("Cannot calculate call storage layout: receiver type of '" + m_name + "' is unresolved");
         }
         const auto receiverSize = m_classType->getSize();
-        if (m_classType->asStructType() != nullptr && receiverSize != 0) {
+        if (m_classType->isStruct() && receiverSize != 0) {
             layout.receiverOffset = appendPointer();
         }
     }
-    if (m_returnType->asStructType() != nullptr && returnSize != 0) {
+    if (m_returnType->isStruct() && returnSize != 0) {
         layout.returnOffset = appendPointer();
     }
     return layout;

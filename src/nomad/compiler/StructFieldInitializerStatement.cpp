@@ -19,7 +19,7 @@ void StructFieldInitializerStatement::onResolve(CompilerContext* context, Script
     if (!initializer->resolve(context, function)) {
         return;
     }
-    if (initializer->getType() != nullptr && initializer->getType()->asStructType() != nullptr &&
+    if (initializer->getType() != nullptr && initializer->getType()->isStruct() &&
         m_stagingVariable.isInvalid()) {
         m_stagingVariable = function->registerVariable(
             "$fieldInitializer" + std::to_string(function->getVariableCount()), initializer->getType());

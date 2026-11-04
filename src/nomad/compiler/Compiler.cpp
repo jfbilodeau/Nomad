@@ -947,7 +947,7 @@ void Compiler::addFunctionCallIntoLocal(
     }
     const auto* returnType = target->getReturnType();
     const auto* destinationType = function->getVariableType(destinationId);
-    if (returnType == nullptr || returnType->asStructType() == nullptr || destinationType == nullptr ||
+    if (returnType == nullptr || !returnType->isStruct() || destinationType == nullptr ||
         !returnType->sameType(destinationType) || arguments->getReceiverType() != nullptr) {
         reportInternalError("Struct destination call requires a same-type local and free-function arguments");
     }
@@ -1016,14 +1016,14 @@ void Compiler::addStructMethodCall(
     }
     const auto* receiverType = method->getClassType();
     const auto* returnType = method->getReturnType();
-    if (receiverType == nullptr || receiverType->asStructType() == nullptr || returnType == nullptr) {
+    if (receiverType == nullptr || !receiverType->isStruct() || returnType == nullptr) {
         reportInternalError("Struct method call requires a resolved struct receiver and return type");
     }
     if (receiver.getType() != receiverType) {
         reportInternalError("Struct method receiver storage has the wrong type");
     }
     receiver.validate(function);
-    const auto returnsStruct = returnType->asStructType() != nullptr;
+    const auto returnsStruct = returnType->isStruct();
     if ((returnsStruct && (destinationId.isInvalid() || function->getVariableType(destinationId) != returnType)) ||
         (!returnsStruct && destinationId.isValid())) {
         reportInternalError("Struct method result requires a matching local only for struct returns");
@@ -1142,7 +1142,7 @@ void Compiler::addStructCreationIntoLocal(
 ) {
     const auto* constructor = m_runtime->getConstructor(constructorId);
     const auto* type = constructor != nullptr ? constructor->getConstructedType() : nullptr;
-    if (type == nullptr || type->asStructType() == nullptr ||
+    if (type == nullptr || !type->isStruct() ||
         function->getVariableType(destinationId) != type) {
         reportInternalError("Struct creation requires a resolved constructor and matching local destination");
     }
@@ -1443,7 +1443,7 @@ void Compiler::addPropertyAccess(const PropertyId id, const bool write) {
     }
     const auto* type = property->getValueType();
     if (property->asNativeProperty() != nullptr || property->getClassType() == nullptr ||
-        type->asStructType() != nullptr || type->getSize() != 1) {
+        type->isStruct() || type->getSize() != 1) {
         addOpCode(write ? OpCodes::op_native_property_set : OpCodes::op_native_property_get);
         addId(id.id);
         return;
@@ -1466,7 +1466,7 @@ void Compiler::compilePropertyInitializer(const FunctionCompilation& source) {
         if (property->asNativeProperty() != nullptr || property->hasExplicitInitializer()) {
             continue;
         }
-        if (owner->asStructType() != nullptr) {
+        if (owner->isStruct()) {
             if (property->getValueType()->getSize() != 0) {
                 IdentifierDefinition receiver;
                 receiver.identifierType = IdentifierType::Receiver;
@@ -1477,7 +1477,7 @@ void Compiler::compilePropertyInitializer(const FunctionCompilation& source) {
             }
             continue;
         }
-        if (property->getValueType()->asStructType() != nullptr) {
+        if (property->getValueType()->isStruct()) {
             if (property->getValueType()->getSize() != 0) {
                 const auto storage = StorageLocation(property);
                 storage.emitRetainOwner(*this, function);
@@ -1503,7 +1503,7 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
     constructor->setFunctionStart(m_instructions.size());
     addFunctionEntry(constructor);
-    if (constructor->getClassType()->asStructType() != nullptr) {
+    if (constructor->getClassType()->isStruct()) {
         source.ast->compile(this, constructor);
         addFunctionReturn(constructor);
         constructor->setFunctionEnd(m_instructions.size());
@@ -1546,7 +1546,7 @@ void Compiler::addStoreParameter(const NomadIndex offset, const Type* type) {
 }
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
-    if (const auto* receiver = function->getClassType(); receiver != nullptr && receiver->asStructType() != nullptr) {
+    if (const auto* receiver = function->getClassType(); receiver != nullptr && receiver->isStruct()) {
         if (receiver->getSize() != 0) {
             receiver->emitLoadStorageParameter(*this, *function->getCallStorageLayout().receiverOffset, 0, target);
         }
@@ -2032,7 +2032,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     for (const auto& source : m_functions) {
         const auto* owner = source.function->getClassType();
         if (source.kind != CompilationCallableTarget::PropertyInitializer ||
-            owner == nullptr || owner->asStructType() == nullptr) {
+            owner == nullptr || !owner->isStruct()) {
             continue;
         }
         try {

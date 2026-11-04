@@ -247,7 +247,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
             context, function, m_identifier.substr(5), expressionType,
             context->getRuntime()->getConstructor(function->getId()) != nullptr, getLine(), getColumn()
         );
-        if (property != nullptr && expressionType != nullptr && expressionType->asStructType() != nullptr &&
+        if (property != nullptr && expressionType != nullptr && expressionType->isStruct() &&
             m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(
                 "@assignment" + std::to_string(function->getVariableCount()), expressionType);
@@ -381,7 +381,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
         }
 
         function->setVariableType(identifier.variableId, expressionType);
-        if (expressionType->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+        if (expressionType->isStruct() && m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(
                 "@assignment" + std::to_string(function->getVariableCount()), expressionType);
         }
@@ -442,7 +442,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
             reportError(context, function, "Cannot change type of parameter '" + m_identifier + "'");
             return;
         }
-        if (expressionType->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+        if (expressionType->isStruct() && m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(
                 "@assignment" + std::to_string(function->getVariableCount()), expressionType);
         }
@@ -625,7 +625,7 @@ void ExpressionStatement::onResolve(CompilerContext* context, ScriptCallableBase
         return;
     }
     if (context->getMode() == CompilerMode::Script && function != nullptr &&
-        m_expression->getType()->asStructType() != nullptr && m_destination.isInvalid()) {
+        m_expression->getType()->isStruct() && m_destination.isInvalid()) {
         m_destination = function->registerVariable(
             "$discard" + std::to_string(function->getVariableCount()), m_expression->getType());
     }

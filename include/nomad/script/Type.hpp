@@ -191,6 +191,10 @@ public:
     // Is the type a string type?
     [[nodiscard]] virtual bool isString() const;
 
+    [[nodiscard]] bool isStruct() const;
+    [[nodiscard]] bool isClass() const;
+    [[nodiscard]] bool isComposite() const;
+
     // Determine if two types are the same
     [[nodiscard]] virtual bool sameType(const Type* other) const;
 

@@ -393,7 +393,7 @@ void InterpreterContext::evaluateFunctionCall(const CallableId functionId, const
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted function call");
     }
-    if (function->getReturnType()->asStructType() != nullptr) {
+    if (function->getReturnType()->isStruct()) {
         setError("Struct-returning function calls are not supported by the interpreter");
         return;
     }
@@ -425,7 +425,7 @@ void InterpreterContext::evaluateNativeFunctionCall(const CallableId functionId,
     if (function == nullptr || function->getReturnType() == nullptr) {
         throw NomadBug("Invalid interpreted native function call");
     }
-    if (function->getReturnType()->asStructType() != nullptr) {
+    if (function->getReturnType()->isStruct()) {
         setError("Struct-returning function calls are not supported by the interpreter");
         return;
     }

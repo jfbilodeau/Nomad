@@ -1256,7 +1256,7 @@ bool Runtime::canRegisterNativeMember(const Type* classType, const NomadString& 
     }
 
     const auto* owner = classType->asCompositeType();
-    if (owner == nullptr || (type != MemberType::Method && classType->asClassType() == nullptr)) {
+    if (owner == nullptr || (type != MemberType::Method && !classType->isClass())) {
         error = "only class types can have native members";
         return false;
     }
@@ -1365,7 +1365,7 @@ CallableId Runtime::addConstructor(
     NativeConstructorDefinition definition
 ) {
     const auto owner = getType(id);
-    if (owner.has_value() && (*owner)->asStructType() != nullptr && id == createdTypeId) {
+    if (owner.has_value() && (*owner)->isStruct() && id == createdTypeId) {
         return registerNativeStructConstructor(id, std::move(definition));
     }
     return registerNativeClassConstructor(id, createdTypeId, std::move(definition));
@@ -1454,7 +1454,7 @@ PropertyId Runtime::registerProperty(
     const Type* valueType
 ) {
     const auto type = getType(ownerId);
-    if (type.has_value() && (*type)->asClassType() != nullptr) {
+    if (type.has_value() && (*type)->isClass()) {
         return registerScriptClassProperty(ownerId, name, valueType);
     }
     return registerScriptStructProperty(ownerId, name, valueType);
@@ -1559,7 +1559,7 @@ CallableId Runtime::registerScriptMethod(
     NomadString source
 ) {
     const auto type = getType(id);
-    if (type.has_value() && (*type)->asClassType() != nullptr) {
+    if (type.has_value() && (*type)->isClass()) {
         return registerScriptClassMethod(
             id, std::move(name), std::move(parameters), std::move(path), std::move(source)
         );
@@ -1576,7 +1576,7 @@ CallableId Runtime::registerScriptConstructor(
     NomadString source
 ) {
     const auto type = getType(id);
-    if (type.has_value() && (*type)->asStructType() != nullptr) {
+    if (type.has_value() && (*type)->isStruct()) {
         return registerScriptStructConstructor(
             id, std::move(parameters), std::move(path), std::move(source)
         );
@@ -1588,7 +1588,7 @@ CallableId Runtime::registerScriptConstructor(
 
 CallableId Runtime::addMethod(const TypeId id, NativeMethodDefinition definition) {
     const auto type = getType(id);
-    if (type.has_value() && (*type)->asClassType() != nullptr) {
+    if (type.has_value() && (*type)->isClass()) {
         return registerNativeClassMethod(id, std::move(definition));
     }
     return registerNativeStructMethod(id, std::move(definition));

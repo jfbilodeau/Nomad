@@ -410,6 +410,11 @@ lifecycle and bytecode-emission APIs. Concrete built-in descriptors such as `Int
 `<nomad/script/ClassType.hpp>`. Include the descriptor's header when deriving
 from it or accessing its category-specific APIs.
 
+Use `Type::isClass()`, `isStruct()`, and `isComposite()` to query type categories.
+Classes and structs are composite types; an empty struct is still a struct and
+not `void`. Use `asClassType()`, `asStructType()`, or `asCompositeType()` when you
+need the corresponding descriptor instead of a boolean result.
+
 `Runtime::getTypeManager()` returns the runtime-owned `TypeManager` by reference;
 the const runtime overload returns a const reference. Include
 `<nomad/script/TypeManager.hpp>` to use its APIs. The manager and its descriptors

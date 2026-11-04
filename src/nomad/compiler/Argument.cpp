@@ -209,7 +209,7 @@ void ExpressionArgument::onResolve(CompilerContext* context, ScriptCallableBase*
         );
         return;
     }
-    if (context->getMode() == CompilerMode::Script && expressionType->asStructType() != nullptr) {
+    if (context->getMode() == CompilerMode::Script && expressionType->isStruct()) {
         m_directStack = m_expression->getStorageLocation().has_value();
         if (!m_directStack && m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(
@@ -220,7 +220,7 @@ void ExpressionArgument::onResolve(CompilerContext* context, ScriptCallableBase*
 
 NomadIndex ExpressionArgument::getStackValueCount() const {
     const auto* type = getType();
-    return type != nullptr && type->asStructType() != nullptr ? type->getSize() : 1;
+    return type != nullptr && type->isStruct() ? type->getSize() : 1;
 }
 
 void ExpressionArgument::onCompile(Compiler* compiler, ScriptCallableBase* function) {

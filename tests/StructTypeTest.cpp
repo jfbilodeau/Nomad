@@ -76,6 +76,57 @@ private:
 
 BOOST_AUTO_TEST_SUITE(struct_type)
 
+BOOST_AUTO_TEST_CASE(type_category_predicates_distinguish_structs_classes_and_other_types) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("EmptyCategory");
+    const auto nonemptyId = runtime.registerStruct("NonemptyCategory");
+    BOOST_REQUIRE(emptyId.isValid() && nonemptyId.isValid());
+    const auto* empty = runtime.getTypeByName("EmptyCategory");
+    const auto* nonempty = runtime.getTypeByName("NonemptyCategory");
+    BOOST_REQUIRE(runtime.registerProperty(nonemptyId, "value", runtime.getIntegerType()).isValid());
+    for (const auto* type : {empty, nonempty}) {
+        BOOST_TEST(type->isStruct());
+        BOOST_TEST(!type->isClass());
+        BOOST_TEST(type->isComposite());
+        BOOST_TEST(!type->isVoid());
+        BOOST_TEST(!type->asCompositeType()->isFieldLayoutFinalized());
+        runtime.finalizeCompositeFieldLayout(type->getId());
+        BOOST_TEST(type->isStruct());
+        BOOST_TEST(!type->isClass());
+        BOOST_TEST(type->isComposite());
+    }
+    BOOST_TEST(empty->getSize() == 0U);
+    BOOST_TEST(nonempty->getSize() == 1U);
+
+    BOOST_REQUIRE(runtime.registerClass("ClosedCategory", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerClass("OpenedCategory", ClassMode::Opened).isValid());
+    for (const auto* type : std::vector<const Type*>{
+        runtime.getTypeByName("ClosedCategory"), runtime.getTypeByName("OpenedCategory"),
+        runtime.getStringType(), runtime.getFileNameType()
+    }) {
+        BOOST_TEST_CONTEXT(type->getTypeName()) {
+            BOOST_TEST(!type->isStruct());
+            BOOST_TEST(type->isClass());
+            BOOST_TEST(type->isComposite());
+        }
+    }
+
+    const auto enumId = runtime.createEnum("CategoryState", {{"Ready", 1}});
+    BOOST_REQUIRE(enumId.isValid());
+    for (const auto* type : std::vector<const Type*>{
+        runtime.getVoidType(), runtime.getIntegerType(), runtime.getFloatType(), runtime.getBooleanType(),
+        runtime.getType(enumId).value(),
+        runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType())
+    }) {
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST_CONTEXT(type->getTypeName()) {
+            BOOST_TEST(!type->isStruct());
+            BOOST_TEST(!type->isClass());
+            BOOST_TEST(!type->isComposite());
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(object_aggregate_assignment_cleans_partial_scratch_and_preserves_destination) {
     const auto before = RuntimeValue::getLiveStringCount();
     Runtime runtime;

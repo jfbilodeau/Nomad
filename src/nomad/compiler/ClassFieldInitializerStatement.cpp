@@ -19,7 +19,7 @@ void ClassFieldInitializerStatement::onResolve(CompilerContext* context, ScriptC
     if (!initializer->resolve(context, function)) {
         return;
     }
-    if (initializer->getType() != nullptr && initializer->getType()->asStructType() != nullptr &&
+    if (initializer->getType() != nullptr && initializer->getType()->isStruct() &&
         m_stagingVariable.isInvalid()) {
         m_stagingVariable = function->registerVariable(
             "$fieldInitializer" + std::to_string(function->getVariableCount()), initializer->getType());
@@ -29,7 +29,7 @@ void ClassFieldInitializerStatement::onResolve(CompilerContext* context, ScriptC
 void ClassFieldInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     auto* initializer = m_member->getInitializer();
     const auto* receiverType = function->getClassType();
-    if (initializer->getType()->asStructType() != nullptr) {
+    if (initializer->getType()->isStruct()) {
         const auto* property = compiler->getRuntime()->getProperty(m_member->getPropertyId());
         StorageLocation(property).emitAssignment(*compiler, function, *initializer, m_stagingVariable);
         return;

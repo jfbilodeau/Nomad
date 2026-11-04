@@ -193,7 +193,7 @@ PropertyId TypeManager::registerScriptClassProperty(
     const Type* valueType
 ) {
     auto* owner = getMutableCompositeType(ownerId);
-    const auto isClassOwner = owner != nullptr && owner->asClassType() != nullptr;
+    const auto isClassOwner = owner != nullptr && owner->isClass();
     auto* classOwner = isClassOwner ? owner : nullptr;
     return registerScriptProperty(classOwner, name, valueType);
 }
@@ -247,7 +247,7 @@ PropertyId TypeManager::registerScriptStructProperty(
     const Type* valueType
 ) {
     auto* owner = getMutableCompositeType(ownerId);
-    const auto isStructOwner = owner != nullptr && owner->asStructType() != nullptr;
+    const auto isStructOwner = owner != nullptr && owner->isStruct();
     auto* structOwner = isStructOwner ? owner : nullptr;
     return registerScriptProperty(structOwner, name, valueType);
 }
@@ -302,7 +302,7 @@ CallableId TypeManager::registerScriptStructMethod(
     NomadString source
 ) {
     auto* owner = getMutableCompositeType(ownerId);
-    return registerScriptMethod(owner != nullptr && owner->asStructType() != nullptr ? owner : nullptr,
+    return registerScriptMethod(owner != nullptr && owner->isStruct() ? owner : nullptr,
         std::move(name), std::move(parameters), std::move(path), std::move(source));
 }
 
@@ -360,7 +360,7 @@ CallableId TypeManager::registerScriptStructConstructor(
     NomadString source
 ) {
     const auto type = getType(ownerId);
-    auto* owner = type.has_value() && (*type)->asStructType() != nullptr ? getMutableCompositeType(ownerId) : nullptr;
+    auto* owner = type.has_value() && (*type)->isStruct() ? getMutableCompositeType(ownerId) : nullptr;
     return registerScriptConstructor(owner, std::move(parameters), std::move(path), std::move(source));
 }
 
@@ -410,7 +410,7 @@ CallableId TypeManager::registerNativeStructMethod(
     NativeMethodDefinition definition
 ) {
     auto* owner = getMutableCompositeType(ownerId);
-    return registerNativeMethod(owner != nullptr && owner->asStructType() != nullptr ? owner : nullptr,
+    return registerNativeMethod(owner != nullptr && owner->isStruct() ? owner : nullptr,
         std::move(definition));
 }
 
@@ -499,7 +499,7 @@ CallableId TypeManager::registerNativeStructConstructor(
     NativeConstructorDefinition definition
 ) {
     const auto type = getType(ownerId);
-    auto* owner = type.has_value() && (*type)->asStructType() != nullptr ? getMutableCompositeType(ownerId) : nullptr;
+    auto* owner = type.has_value() && (*type)->isStruct() ? getMutableCompositeType(ownerId) : nullptr;
     if (owner == nullptr) {
         log::error("Cannot register constructor: owner must identify a struct type");
         return CallableId::INVALID;
@@ -537,7 +537,7 @@ CallableId TypeManager::registerNativeConstructor(
         return CallableId::INVALID;
     }
     for (const auto& parameter : parameters) {
-        if (owner->asStructType() != nullptr && (parameter.type->isInternal() || parameter.name == "this")) {
+        if (owner->isStruct() && (parameter.type->isInternal() || parameter.name == "this")) {
             log::error("Cannot register struct constructor: invalid parameter type or receiver parameter");
             return CallableId::INVALID;
         }

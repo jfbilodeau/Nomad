@@ -75,7 +75,7 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase
         );
         return;
     }
-    if (returnType->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+    if (returnType->isStruct() && m_stagingVariable.isInvalid()) {
         m_stagingVariable = function->registerVariable(
             "$return" + std::to_string(function->getVariableCount()), returnType);
     }

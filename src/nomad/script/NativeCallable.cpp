@@ -111,7 +111,7 @@ NativeConstructor::NativeConstructor(
     NomadString doc
 ):
     Constructor(CallableSource::Native, std::move(name), classType, std::move(parameters),
-        classType->asStructType() != nullptr ? classType->getRuntime()->getVoidType() : createdType, std::move(doc)),
+        classType->isStruct() ? classType->getRuntime()->getVoidType() : createdType, std::move(doc)),
     m_fn(std::move(fn)),
     m_createdType(createdType)
 {

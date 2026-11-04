@@ -24,8 +24,8 @@ StorageLocation::StorageLocation(const IdentifierDefinition root):
 StorageLocation::StorageLocation(const Property* property):
     m_type(property != nullptr ? property->getValueType() : nullptr),
     m_objectProperty(property) {
-    if (property == nullptr || property->getOwnerType()->asClassType() == nullptr ||
-        property->asNativeProperty() != nullptr || m_type == nullptr || m_type->asStructType() == nullptr) {
+    if (property == nullptr || !property->getOwnerType()->isClass() ||
+        property->asNativeProperty() != nullptr || m_type == nullptr || !m_type->isStruct()) {
         throw NomadBug("Object storage location requires a stored class-owned struct property");
     }
     m_root.valueType = m_type;
@@ -44,7 +44,7 @@ const Type* StorageLocation::getType() const {
 }
 
 StorageLocation StorageLocation::getProperty(const Property& property) const {
-    if (m_type->asStructType() == nullptr || property.getOwnerType() != m_type ||
+    if (!m_type->isStruct() || property.getOwnerType() != m_type ||
         property.asNativeProperty() != nullptr) {
         throw NomadBug("Storage property requires matching stored struct metadata");
     }
@@ -141,7 +141,7 @@ void StorageLocation::emitAssignment(
     const VariableId stagingVariable
 ) const {
     validate(function);
-    const auto aggregate = m_type->asStructType() != nullptr;
+    const auto aggregate = m_type->isStruct();
     if (expression.getType() != m_type ||
         (aggregate && (stagingVariable.isInvalid() || function->getVariableType(stagingVariable) != m_type))) {
         compiler.reportInternalError("Storage assignment requires a same-type expression and aggregate staging local");
@@ -212,7 +212,7 @@ void StorageLocation::emitLoad(
 ) const {
     validate(function);
     if (m_objectProperty != nullptr) {
-        if (m_type->asStructType() != nullptr && target != ExpressionTarget::Stack) {
+        if (m_type->isStruct() && target != ExpressionTarget::Stack) {
             compiler.reportError("Struct storage loads require stack copies or a local destination");
         }
         emitRetainOwner(compiler, function);
@@ -247,7 +247,7 @@ void StorageLocation::emitLoad(
 
 void StorageLocation::emitStoreResult(Compiler& compiler, const ScriptCallableBase* function) const {
     validate(function);
-    if (m_type->asStructType() != nullptr || m_type->getSize() != 1) {
+    if (m_type->isStruct() || m_type->getSize() != 1) {
         throw NomadBug("Result storage requires a single-slot non-struct value");
     }
     if (m_objectProperty != nullptr) {

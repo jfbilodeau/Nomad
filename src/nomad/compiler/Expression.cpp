@@ -78,7 +78,7 @@ void Expression::onCompileIntoLocal(
     ScriptCallableBase* function,
     const VariableId destination
 ) {
-    if (m_type->asStructType() != nullptr) {
+    if (m_type->isStruct()) {
         compiler->reportError("Struct expression local destination is not supported for this expression");
     }
     compile(compiler, function, ExpressionTarget::Result);
@@ -596,7 +596,7 @@ void FunctionCallExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    if (getType()->asStructType() != nullptr) {
+    if (getType()->isStruct()) {
         compiler->reportError("Struct function calls require a local destination");
     }
     if (const auto* native = m_function->asNativeFunction()) {
@@ -615,7 +615,7 @@ void FunctionCallExpression::onCompileIntoLocal(
     ScriptCallableBase* function,
     const VariableId destination
 ) {
-    if (getType()->asStructType() == nullptr) {
+    if (!getType()->isStruct()) {
         Expression::onCompileIntoLocal(compiler, function, destination);
         return;
     }
@@ -645,7 +645,7 @@ void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    if (getType()->asStructType() != nullptr) {
+    if (getType()->isStruct()) {
         context.setError("Struct-returning function calls are not supported by the interpreter");
         return;
     }
@@ -737,7 +737,7 @@ bool NativeMemberExpression::resolveMember(
     }
 
     if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
-        if (m_receiver->getType()->asStructType() != nullptr) {
+        if (m_receiver->getType()->isStruct()) {
             const auto* property = composite->getProperty(m_memberName);
             if (assignment && context->getMode() == CompilerMode::Script) {
                 const auto* identifier = dynamic_cast<const IdentifierExpression*>(m_receiver.get());
@@ -788,7 +788,7 @@ bool NativeMemberExpression::resolveMember(
                     return false;
                 }
                 if (context->getMode() == CompilerMode::Script && function != nullptr &&
-                    property->getValueType() != nullptr && property->getValueType()->asStructType() != nullptr &&
+                    property->getValueType() != nullptr && property->getValueType()->isStruct() &&
                     property->asNativeProperty() == nullptr) {
                     m_storage = StorageLocation(m_receiver.get(), property);
                 }
@@ -834,7 +834,7 @@ bool NativeMemberExpression::resolveAssignmentTarget(
             context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
         }
         setType(property->getValueType());
-        if (m_storage.has_value() && getType()->asStructType() != nullptr && m_stagingVariable.isInvalid()) {
+        if (m_storage.has_value() && getType()->isStruct() && m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(
                 "$property" + std::to_string(function->getVariableCount()), getType());
         }
@@ -911,7 +911,7 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             reportError(context, function, "Method '" + m_qualifiedName + "' has not been compiled");
             return;
         }
-        if (m_receiver->getType()->asStructType() != nullptr) {
+        if (m_receiver->getType()->isStruct()) {
             if (context->getMode() != CompilerMode::Script || function == nullptr) {
                 reportError(context, function, "Struct method calls are not supported by the interpreter");
                 return;
@@ -952,14 +952,14 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
         compiler->reportInternalError("Native member has not been resolved: " + m_qualifiedName);
     }
     const auto* receiverType = m_receiver->getType();
-    if (getType()->asStructType() != nullptr && (!m_storage.has_value() || target != ExpressionTarget::Stack)) {
+    if (getType()->isStruct() && (!m_storage.has_value() || target != ExpressionTarget::Stack)) {
         compiler->reportError("Struct member values require a local destination or stack copies");
     }
     if (m_storage.has_value()) {
         m_storage->emitLoad(*compiler, function, target);
         return;
     }
-    if (m_memberType == MemberType::Method && receiverType->asStructType() != nullptr) {
+    if (m_memberType == MemberType::Method && receiverType->isStruct()) {
         compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver);
         if (!getType()->isVoid()) {
             compiler->addMoveResult(getType(), target);
@@ -996,7 +996,7 @@ void NativeMemberExpression::onCompileIntoLocal(
     ScriptCallableBase* function,
     const VariableId destination
 ) {
-    if (getType()->asStructType() == nullptr) {
+    if (!getType()->isStruct()) {
         Expression::onCompileIntoLocal(compiler, function, destination);
         return;
     }
@@ -1004,7 +1004,7 @@ void NativeMemberExpression::onCompileIntoLocal(
         m_storage->emitCopyToLocal(*compiler, function, destination);
         return;
     }
-    if (m_memberType != MemberType::Method || m_receiver->getType()->asStructType() == nullptr) {
+    if (m_memberType != MemberType::Method || !m_receiver->getType()->isStruct()) {
         compiler->reportError("Struct local destinations currently require a struct method receiver");
     }
     compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver, destination);
@@ -1014,7 +1014,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     if (m_memberType == MemberType::Unknown) {
         raiseException("Native member has not been resolved: " + m_qualifiedName);
     }
-    if (m_receiver->getType()->asStructType() != nullptr || getType()->asStructType() != nullptr) {
+    if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
         context.setError("Struct member values are not supported by the interpreter");
         return;
     }
@@ -1108,7 +1108,7 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallabl
 }
 
 void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
-    if (m_receiver->getType()->asStructType() != nullptr || getType()->asStructType() != nullptr) {
+    if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
         context.setError("Struct member values are not supported by the interpreter");
         return;
     }
@@ -1406,7 +1406,7 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
             return;
         }
         for (const auto* argument : inference.typeArguments) {
-            if (argument->asStructType() != nullptr) {
+            if (argument->isStruct()) {
                 reportError(context, function, "Struct type argument '" + argument->getTypeName() +
                     "' is not supported for constructor '" + m_constructorName + "'");
                 return;
@@ -1445,7 +1445,7 @@ void ConstructorExpression::onCompile(Compiler* compiler, ScriptCallableBase* fu
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    if (getType()->asStructType() != nullptr) {
+    if (getType()->isStruct()) {
         compiler->reportError("Struct construction requires a local destination");
     }
     if (m_constructor->asNativeConstructor() != nullptr) {
@@ -1461,7 +1461,7 @@ void ConstructorExpression::onCompileIntoLocal(
     ScriptCallableBase* function,
     const VariableId destination
 ) {
-    if (getType()->asStructType() == nullptr) {
+    if (!getType()->isStruct()) {
         Expression::onCompileIntoLocal(compiler, function, destination);
         return;
     }
@@ -1475,7 +1475,7 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    if (getType()->asStructType() != nullptr) {
+    if (getType()->isStruct()) {
         raiseException("Interpreter construction does not support struct value storage");
     }
     auto* machine = context.getVirtualMachine();
@@ -1497,7 +1497,7 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
                 releaseArguments();
                 return;
             }
-            if (argument->getType()->asStructType() != nullptr) {
+            if (argument->getType()->isStruct()) {
                 raiseException("Interpreter construction does not support struct argument storage");
             }
             RuntimeValue copy;
@@ -2021,7 +2021,7 @@ void IdentifierExpression::onCompileIntoLocal(
     ScriptCallableBase* function,
     const VariableId destination
 ) {
-    if (getType()->asStructType() == nullptr) {
+    if (!getType()->isStruct()) {
         Expression::onCompileIntoLocal(compiler, function, destination);
         return;
     }
@@ -2268,7 +2268,7 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     if (captureType == nullptr) {
         return false;
     }
-    if (captureType->asStructType() != nullptr) {
+    if (captureType->isStruct()) {
         compiler->reportError("Struct captures are not yet supported");
     }
 

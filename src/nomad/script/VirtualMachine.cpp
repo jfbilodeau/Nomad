@@ -128,7 +128,7 @@ void VirtualMachine::run(
             closures.size() != function->getCaptureCount()) {
             fault("Incorrect script argument or capture count");
         }
-        if (function->getReturnType() != nullptr && function->getReturnType()->asStructType() != nullptr) {
+        if (function->getReturnType() != nullptr && function->getReturnType()->isStruct()) {
             fault("Host script calls do not support struct return storage");
         }
         if (m_stackIndex >= m_stack.size() ||
@@ -205,7 +205,7 @@ void VirtualMachine::pushHostArgument(
     if (type == nullptr) {
         fault("Host argument has no parameter type");
     }
-    if (type->asStructType() != nullptr) {
+    if (type->isStruct()) {
         fault("Host calls do not support struct argument storage");
     }
     pushValue(RuntimeValue{});
@@ -630,7 +630,7 @@ void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const 
     if (function->getReturnType() == nullptr) {
         fault("NativeFunction '" + function->getName() + "' has no return type");
     }
-    if (function->getReturnType()->asStructType() != nullptr) {
+    if (function->getReturnType()->isStruct()) {
         fault("Host native calls do not support struct return storage");
     }
     if (!function->getReturnType()->isVoid()) {
@@ -683,7 +683,7 @@ void VirtualMachine::runScriptMethod(
         script->getFunctionStart() >= script->getFunctionEnd()) {
         fault("Cannot call script method: invalid or uncompiled method");
     }
-    if (method->getClassType()->asStructType() != nullptr || method->getReturnType()->asStructType() != nullptr) {
+    if (method->getClassType()->isStruct() || method->getReturnType()->isStruct()) {
         fault("Host method calls do not support struct receiver or return storage");
     }
     if (args.size() != method->getParameterCount()) {
@@ -737,7 +737,7 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
     if (method->getReturnType() == nullptr) {
         fault("Native method '" + method->getName() + "' has no return type");
     }
-    if (method->getClassType()->asStructType() != nullptr || method->getReturnType()->asStructType() != nullptr) {
+    if (method->getClassType()->isStruct() || method->getReturnType()->isStruct()) {
         fault("Host method calls do not support struct receiver or return storage");
     }
     if (!method->getReturnType()->isVoid()) {
