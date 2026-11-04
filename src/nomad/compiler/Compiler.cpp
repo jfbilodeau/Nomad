@@ -1067,6 +1067,47 @@ void Compiler::addFunctionCallIntoLocal(
     addOpCode(OpCodes::op_pop_this);
 }
 
+void Compiler::addFunctionCallIntoReturn(
+    const CallableId targetFunctionId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    const auto* target = m_runtime->getFunction(targetFunctionId);
+    if (target == nullptr || function == nullptr || arguments == nullptr) {
+        reportInternalError("Struct return call requires a resolved function, caller, and arguments");
+    }
+    const auto* returnType = target->getReturnType();
+    if (returnType == nullptr || !returnType->isStruct() || function->getReturnType() != returnType ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct return call requires a matching caller result and free-function arguments");
+    }
+    const auto layout = target->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.returnOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Struct return call requires matching destination storage");
+    }
+    addOpCode(OpCodes::op_push_this);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    arguments->compile(this, function);
+    if (target->asScriptFunction() != nullptr) {
+        addOpCode(OpCodes::op_call_script_function);
+        addFunctionLink(targetFunctionId, m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_function);
+        addId(targetFunctionId.id);
+    }
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    addOpCode(OpCodes::op_pop_this);
+}
+
 void Compiler::addStructMethodCall(
     const CallableId methodId,
     ScriptCallableBase* function,

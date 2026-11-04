@@ -100,6 +100,8 @@ public:
         ScriptCallableBase* function,
         VariableId destination
     );
+    [[nodiscard]] virtual bool supportsReturnDestination() const;
+    void compileIntoReturn(Compiler* compiler, ScriptCallableBase* function);
     [[nodiscard]] virtual bool isWritable() const;
     [[nodiscard]] virtual std::optional<StorageLocation> getStorageLocation() const;
     [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
@@ -143,6 +145,7 @@ protected:
         ScriptCallableBase* function,
         VariableId destination
     );
+    virtual void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function);
     virtual void onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;

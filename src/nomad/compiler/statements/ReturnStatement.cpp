@@ -75,7 +75,8 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase
         );
         return;
     }
-    if (returnType->isStruct() && m_stagingVariable.isInvalid()) {
+    m_forwardReturn = returnType->isStruct() && m_expression->supportsReturnDestination();
+    if (returnType->isStruct() && !m_forwardReturn && m_stagingVariable.isInvalid()) {
         m_stagingVariable = function->registerVariable(
             "$return" + std::to_string(function->getVariableCount()), returnType);
     }
@@ -83,7 +84,9 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase
 
 void ReturnStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_expression != nullptr) {
-        if (m_stagingVariable.isValid()) {
+        if (m_forwardReturn) {
+            m_expression->compileIntoReturn(compiler, function);
+        } else if (m_stagingVariable.isValid()) {
             m_expression->compileIntoLocal(compiler, function, m_stagingVariable);
             const auto layout = function->getCallStorageLayout();
             if (layout.returnOffset.has_value()) {

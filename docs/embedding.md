@@ -928,13 +928,31 @@ staging local before replacing an existing live target when required.
 This API does not resolve arguments, initialize storage, run constructors, or
 choose copy-elision eligibility.
 
+`Compiler::addFunctionCallIntoReturn(targetId, caller, arguments)` calls a
+resolved script/native free function using the enclosing callable's struct
+return destination. Both return types must match, arguments must contain only
+explicit free-function arguments, and destination fields must be cleared or
+valid owned values. Empty results require no destination pointer. The API does
+not reserve local storage or stage an existing assignment target.
+
+Custom struct expressions can opt into this return path by overriding
+`Expression::supportsReturnDestination()` and `onCompileIntoReturn`.
+`compileIntoReturn(compiler, caller)` requires a resolved expression with the
+same struct type as the enclosing callable's result. Expressions default to
+the existing local-and-copy return path unless they opt in.
+
 Compiled free-function expressions returning a struct support local destinations,
 including staged assignments and struct arguments. Script `return` statements
 support struct locals, parameters, and nested function calls. Returned fields are
-copied into the caller's destination before local cleanup. Existing assignment
+copied into the caller's destination before local cleanup, except that
+`return makePoint ...` forwards a struct-returning free-function call directly
+to that destination without an intermediate return local or copy. This also
+works inside struct methods, without confusing the result destination with
+the borrowed receiver. Local/parameter, construction, and method-result returns
+retain their copy paths. Existing assignment
 targets are replaced only after their source expression finishes. Discarded
 struct results are released, and empty results still execute their side effects.
-Return-call forwarding and named-return copy elision are not yet supported.
+Named-return copy elision is not yet supported.
 
 `Compiler::addStructMethodCall(methodId, caller, arguments, receiver,
 destinationId)` emits resolved script/native method calls borrowing a struct

@@ -2277,15 +2277,8 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     BOOST_TEST(forward->getParameterStorageSize() == 2U);
     BOOST_REQUIRE(forward->getCallStorageLayout().returnOffset.has_value());
     BOOST_TEST(*forward->getCallStorageLayout().returnOffset == 2U);
-    auto returnLocals = NomadIndex{0};
-    for (auto index = NomadIndex{0}; index < forward->getVariableCount(); ++index) {
-        const auto id = VariableId{toNomadId(index)};
-        if (forward->getVariableName(id).starts_with("$return")) {
-            ++returnLocals;
-            BOOST_TEST(forward->getVisibleVariableName(id).empty());
-        }
-    }
-    BOOST_TEST(returnLocals == 1U);
+    BOOST_TEST(forward->getVariableCount() == 0U);
+    BOOST_TEST(forward->getVariableStorageSize() == 0U);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     for (auto index = 0; index < 3; ++index) {
         const auto outcome = fixture.execute("main");
@@ -2308,6 +2301,104 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     BOOST_REQUIRE(interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);
     BOOST_TEST(calls == 9);
+}
+
+BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_order_and_assignment_staging) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.registerStruct("ForwardedPayload");
+    const auto* type = runtime.getTypeByName("ForwardedPayload");
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    const auto ownerId = runtime.registerClass("ForwardingOwner", ClassMode::Closed);
+    const auto* ownerType = runtime.getTypeByName("ForwardingOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", type).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeForwardingOwner",
+        [ownerType](VirtualMachine* active) {
+            active->getResult().setObjectValue(new ScriptObject(ownerType));
+        },
+        {},
+        ownerType,
+        ""
+    ).isValid());
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "argument",
+        [&](VirtualMachine* active) {
+            const auto value = active->getIntegerParameter(0);
+            calls.push_back(value);
+            active->setIntegerResult(value);
+        },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeForwardedPayload",
+        [&](VirtualMachine* active) {
+            calls.push_back(100);
+            BOOST_TEST(active->getIntegerParameter(1) == 2);
+            BOOST_TEST(active->getIntegerParameter(2) == 3);
+            auto* destination = active->getParameter(3).getStorageAddress();
+            auto* owner = static_cast<ScriptObject*>(active->getParameter(0).getObjectValue());
+            const auto stored = owner->getFieldStorage(0);
+            BOOST_TEST(destination != stored.data());
+            BOOST_TEST(active->getEnclosingParameterStorage(1, 1)[0].getStorageAddress() == destination);
+            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("success"));
+            active->run(success, {});
+            BOOST_TEST(active->getIntegerResult() == 42);
+            BOOST_TEST(active->getParameter(3).getStorageAddress() == destination);
+            BOOST_TEST(active->getEnclosingParameterStorage(1, 1)[0].getStorageAddress() == destination);
+            destination[0].setIntegerValue(17);
+            destination[1].freeObjectValue();
+            destination[1].setStringValue("forwarded");
+            BOOST_TEST(stored[0].getIntegerValue() == 5);
+        },
+        {
+            defParameter("owner", ownerType, ""),
+            defParameter("first", runtime.getIntegerType(), ""),
+            defParameter("second", runtime.getIntegerType(), "")
+        },
+        type,
+        ""
+    ).isValid());
+    fixture.addFunction("success", "return 42");
+    fixture.addFunction("main",
+        "fun relay owner:ForwardingOwner\n"
+        "return makeForwardedPayload owner (argument 2) (argument 3)\nend\n"
+        "fun relayAgain owner:ForwardingOwner\nreturn relay owner\nend\n"
+        "owner = makeForwardingOwner\nowner.payload.number = 5\n"
+        "owner.payload = relayAgain owner\n"
+        "assert owner.payload.text == \"forwarded\"\nreturn owner.payload.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    for (const auto* name : {"relay", "relayAgain"}) {
+        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(wrapper != nullptr);
+        BOOST_TEST(wrapper->getVariableCount() == 0U);
+        BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
+        std::ostringstream dump;
+        dumpInstructions(runtime, *wrapper, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    }
+    const std::vector<NomadInteger> expectedCalls{3, 2, 100};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 17);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_results) {

@@ -31,6 +31,7 @@ protected:
 private:
     std::unique_ptr<Expression> m_expression;
     VariableId m_stagingVariable = VariableId::INVALID;
+    bool m_forwardReturn = false;
 };
 
 std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);

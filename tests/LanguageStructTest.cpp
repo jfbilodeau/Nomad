@@ -16,6 +16,7 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/Hub.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -25,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <sstream>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -37,6 +39,116 @@ static_assert(!std::is_base_of_v<ClassDeclaration, StructDeclaration>);
 static_assert(!std::is_base_of_v<ClassMemberDeclaration, StructMemberDeclaration>);
 
 BOOST_AUTO_TEST_SUITE(language_structs)
+
+BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_storage_and_copies) {
+    nomad::test::LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "struct Payload\n"
+        "number = 0\ntext = \"payload\"\n"
+        "init number:int\nthis.number = number\nend\n"
+        "fun rebuilt\nreturn build this.number\nend\n"
+        "end\n"
+        "fun build number:int\nreturn new Payload number\nend\n"
+        "fun relay number:int\nreturn build number\nend\n"
+        "fun relayAgain number:int\nreturn relay number\nend\n"
+        "fun identity value:Payload\nreturn value\nend\n"
+        "fun fromParameter value:Payload\nreturn identity value\nend\n"
+        "fun methodResult value:Payload\nreturn value.rebuilt\nend\n"
+        "original = new Payload 7\n"
+        "copy = relayAgain 9\nparameterCopy = fromParameter original\n"
+        "rebuilt = original.rebuilt\nfromMethod = methodResult original\n"
+        "original.number = 99\n"
+        "assert copy.text == \"payload\"\nassert parameterCopy.number == 7\n"
+        "assert rebuilt.number == 7\nassert fromMethod.number == 7\n"
+        "return copy.number + parameterCopy.number + rebuilt.number + fromMethod.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    for (const auto* name : {"relay", "relayAgain", "fromParameter"}) {
+        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(wrapper != nullptr);
+        BOOST_TEST(wrapper->getVariableCount() == 0U);
+        BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
+        std::ostringstream dump;
+        dumpInstructions(runtime, *wrapper, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    }
+    for (const auto* name : {"build", "identity", "methodResult"}) {
+        const auto* copying = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(copying != nullptr);
+        BOOST_TEST(copying->getVariableCount() == 1U);
+        BOOST_TEST(copying->getVariableStorageSize() == 2U);
+        BOOST_TEST(copying->getVariableName(VariableId{0}).starts_with("$return"));
+        BOOST_TEST(copying->getVisibleVariableName(VariableId{0}).empty());
+    }
+    const auto* type = runtime.getTypeByName("Payload")->asStructType();
+    const auto methods = type->getMethods();
+    const auto rebuilt = std::ranges::find_if(methods, [](const auto* candidate) {
+        return candidate->getName() == "rebuilt";
+    });
+    BOOST_REQUIRE(rebuilt != methods.end());
+    const auto* callable = (*rebuilt)->asScriptCallable();
+    BOOST_REQUIRE(callable != nullptr);
+    BOOST_TEST(callable->getVariableCount() == 0U);
+    BOOST_REQUIRE(callable->getCallStorageLayout().returnOffset.has_value());
+    BOOST_TEST(*callable->getCallStorageLayout().returnOffset == 1U);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 30);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(empty_free_function_return_forwarding_omits_storage_and_preserves_calls) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "note",
+        [&](VirtualMachine*) { ++calls; },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "struct Empty\ninit\nnote\nend\nend\n"
+        "fun leaf\nreturn new Empty\nend\n"
+        "fun forward\nreturn leaf\nend\n"
+        "fun chain\nreturn forward\nend\n"
+        "value = chain\nchain\nreturn 17");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    for (const auto* name : {"forward", "chain"}) {
+        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(wrapper != nullptr);
+        BOOST_TEST(wrapper->getVariableCount() == 0U);
+        BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
+        BOOST_TEST(!wrapper->getCallStorageLayout().returnOffset.has_value());
+        std::ostringstream dump;
+        dumpInstructions(runtime, *wrapper, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+    }
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls = 0;
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 17);
+        BOOST_TEST(calls == 2);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(temporary_script_receivers_preserve_results_and_release_owned_fields_after_calls) {
     nomad::test::LanguageTestFixture fixture;

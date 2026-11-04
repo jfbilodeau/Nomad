@@ -87,6 +87,22 @@ void Expression::onCompileIntoLocal(
     m_type->emitStoreFunctionVariable(*compiler, destinationOffset);
 }
 
+bool Expression::supportsReturnDestination() const {
+    return false;
+}
+
+void Expression::compileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (function == nullptr || !supportsReturnDestination() || m_type == nullptr ||
+        !m_type->isStruct() || function->getReturnType() != m_type) {
+        compiler->reportInternalError("Expression return destination requires a supported matching struct result");
+    }
+    onCompileIntoReturn(compiler, function);
+}
+
+void Expression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase*) {
+    compiler->reportInternalError("Expression does not support a struct return destination");
+}
+
 bool Expression::isWritable() const {
     return false;
 }
@@ -627,6 +643,17 @@ void FunctionCallExpression::onCompileIntoLocal(
 
 void FunctionCallExpression::addArgument(std::unique_ptr<Argument> argument) {
     m_arguments.add(std::move(argument));
+}
+
+bool FunctionCallExpression::supportsReturnDestination() const {
+    return getType() != nullptr && getType()->isStruct();
+}
+
+void FunctionCallExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_function == nullptr) {
+        raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    compiler->addFunctionCallIntoReturn(m_function->getId(), function, &m_arguments);
 }
 
 ArgumentList* FunctionCallExpression::getArguments() {

@@ -4,8 +4,8 @@ Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
-has been reviewed. Temporary struct method receivers are implemented and
-awaiting review.
+has been reviewed, along with temporary struct method receivers. Free-function
+return-destination forwarding is implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2479,6 +2479,51 @@ Implementation and validation:
   rooted in temporary structs remains separate; interpreter/capture/formatting/
   host parity and NRVO remain later work. Gameplay and fault recovery were not
   validated.
+
+### Step 4C: Free-function return-destination forwarding
+
+Approved scope:
+
+- Forward struct-returning free-function calls in `return makePoint ...`
+  directly into the enclosing callable's caller-provided destination.
+- Avoid the intermediate return local and field-wise copy. Let expressions
+  declare forwarding support rather than adding an AST-type list to return
+  handling.
+- Reuse the hidden-pointer call ABI and existing storage-address instructions.
+  Preserve argument order, owned argument cleanup, zero-width side effects,
+  and assignment-site staging.
+- Keep returns of locals, parameters, constructor expressions, and method
+  results on their existing copy paths. NRVO and VM fault handling remain
+  outside this slice.
+
+Implementation and validation:
+
+- Expressions default to no return-destination support. Resolved struct-valued
+  free-function expressions opt in and use the specialized
+  `addFunctionCallIntoReturn` compiler entry point.
+- Nonempty calls push the enclosing callable's existing hidden return pointer;
+  empty calls omit it. No opcode or VM call-ABI changes were needed.
+- Return resolution does not reserve a staging local for eligible calls.
+  Other return forms retain their staging and copy behavior.
+- Metadata and instruction-dump assertions verify zero wrapper local slots,
+  forwarding address pushes, and absence of local-address pushes and destination
+  copy stores. Nonforwarded construction/parameter/method returns retain their
+  return locals.
+- Source execution covers script forwarding chains, copied struct arguments,
+  empty results, and forwarding a free-function result from a struct method
+  with distinct receiver and return-pointer offsets.
+- Native execution checks exact destination-pointer identity across forwarding
+  and successful host reentry, right-to-left argument order, and preservation of
+  the old class-owned assignment target after the result destination is filled.
+- Each new execution scenario runs three times with exact results/side effects
+  and restoration of live string/object counts after normal return.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, four documentation preparation tests, and
+  whitespace validation passed.
+- Stop for review. Next, extend return-destination forwarding to construction
+  and method-call expressions in separately approved slices. Temporary-rooted
+  property access, interpreter/capture/formatting/host parity, and NRVO remain
+  later work. Gameplay, performance, and fault recovery were not validated.
 
 ### Step 5: Interpreter, captures, formatting, and host parity
 

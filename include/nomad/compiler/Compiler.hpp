@@ -185,6 +185,11 @@ public:
         const ArgumentList* arguments,
         VariableId destinationId
     );
+    void addFunctionCallIntoReturn(
+        CallableId targetFunctionId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments
+    );
     // Borrows a resolved struct local, parameter, or enclosing method receiver.
     // Struct results require a reserved same-type destination, disjoint from the receiver and arguments.
     void addStructMethodCall(
