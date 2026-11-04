@@ -18,6 +18,7 @@ class ScriptCallableBase;
 class StorageLocation {
 public:
     explicit StorageLocation(IdentifierDefinition root);
+    StorageLocation(Expression* value, VariableId variable);
     explicit StorageLocation(const Property* property);
     StorageLocation(Expression* owner, const Property* property);
 
@@ -25,7 +26,7 @@ public:
     [[nodiscard]] StorageLocation getProperty(const Property& property) const;
     void validate(const ScriptCallableBase* function) const;
     void emitRetainOwner(Compiler& compiler, ScriptCallableBase* function) const;
-    void emitFreeOwner(Compiler& compiler) const;
+    void emitFreeOwner(Compiler& compiler, const ScriptCallableBase* function) const;
     void emitAssignment(
         Compiler& compiler,
         ScriptCallableBase* function,
@@ -63,6 +64,7 @@ private:
     const Type* m_type;
     std::vector<const Property*> m_properties;
     Expression* m_owner = nullptr;
+    Expression* m_temporary = nullptr;
     const Property* m_objectProperty = nullptr;
 };
 

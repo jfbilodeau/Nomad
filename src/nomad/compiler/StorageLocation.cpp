@@ -21,6 +21,17 @@ StorageLocation::StorageLocation(const IdentifierDefinition root):
     }
 }
 
+StorageLocation::StorageLocation(Expression* value, const VariableId variable):
+    m_type(value != nullptr ? value->getType() : nullptr),
+    m_temporary(value) {
+    if (m_type == nullptr || !m_type->isStruct() || variable.isInvalid()) {
+        throw NomadBug("Temporary storage location requires a resolved struct value and local");
+    }
+    m_root.identifierType = IdentifierType::FunctionVariable;
+    m_root.variableId = variable;
+    m_root.valueType = m_type;
+}
+
 StorageLocation::StorageLocation(const Property* property):
     m_type(property != nullptr ? property->getValueType() : nullptr),
     m_objectProperty(property) {
@@ -115,6 +126,9 @@ void StorageLocation::validate(const ScriptCallableBase* function) const {
 }
 
 void StorageLocation::emitRetainOwner(Compiler& compiler, ScriptCallableBase* function) const {
+    if (m_temporary != nullptr) {
+        m_temporary->compileIntoLocal(&compiler, function, m_root.variableId);
+    }
     if (m_objectProperty != nullptr) {
         if (m_owner != nullptr) {
             m_owner->compile(&compiler, function, ExpressionTarget::Stack);
@@ -127,10 +141,13 @@ void StorageLocation::emitRetainOwner(Compiler& compiler, ScriptCallableBase* fu
     }
 }
 
-void StorageLocation::emitFreeOwner(Compiler& compiler) const {
+void StorageLocation::emitFreeOwner(Compiler& compiler, const ScriptCallableBase* function) const {
     if (m_objectProperty != nullptr) {
         m_objectProperty->getOwnerType()->emitFreeStackValue(compiler, 0);
         compiler.addOpCode(OpCodes::op_pop_1);
+    }
+    if (m_temporary != nullptr) {
+        m_root.valueType->emitFreeFunctionVariable(compiler, function->getVariableOffset(m_root.variableId));
     }
 }
 
@@ -163,7 +180,7 @@ void StorageLocation::emitAssignment(
     } else {
         emitStoreResult(compiler, function);
     }
-    emitFreeOwner(compiler);
+    emitFreeOwner(compiler, function);
     if (aggregate) {
         m_type->emitFreeFunctionVariable(compiler, function->getVariableOffset(stagingVariable));
     }
@@ -227,9 +244,10 @@ void StorageLocation::emitLoad(
             }
             m_type->emitLoadStorage(compiler, 0, target);
         }
-        emitFreeOwner(compiler);
+        emitFreeOwner(compiler, function);
         return;
     }
+    emitRetainOwner(compiler, function);
     switch (m_root.identifierType) {
     case IdentifierType::FunctionVariable:
         m_type->emitLoadFunctionVariable(compiler, getOffset(function), target);
@@ -243,6 +261,7 @@ void StorageLocation::emitLoad(
     default:
         throw NomadBug("Invalid storage load root");
     }
+    emitFreeOwner(compiler, function);
 }
 
 void StorageLocation::emitStoreResult(Compiler& compiler, const ScriptCallableBase* function) const {
@@ -292,10 +311,12 @@ void StorageLocation::emitCopyToLocal(
             compiler.addOpCode(OpCodes::op_pop_i);
             m_type->emitCopyStorageToFunctionVariable(compiler, 0, function->getVariableOffset(destination));
         }
-        emitFreeOwner(compiler);
+        emitFreeOwner(compiler, function);
         return;
     }
+    emitRetainOwner(compiler, function);
     if (m_type->getSize() == 0) {
+        emitFreeOwner(compiler, function);
         return;
     }
     const auto offset = function->getVariableOffset(destination);
@@ -312,6 +333,7 @@ void StorageLocation::emitCopyToLocal(
     default:
         throw NomadBug("Invalid storage copy source");
     }
+    emitFreeOwner(compiler, function);
 }
 
 void StorageLocation::emitCopyFromLocal(

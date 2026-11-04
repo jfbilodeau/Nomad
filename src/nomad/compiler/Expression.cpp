@@ -791,11 +791,13 @@ bool NativeMemberExpression::resolveMember(
                 reportError(context, function, "Struct properties are not supported by the interpreter");
                 return false;
             }
-            const auto storage = m_receiver->getStorageLocation();
+            auto storage = m_receiver->getStorageLocation();
             if (!storage.has_value()) {
-                reportError(context, function,
-                    "Struct property receivers currently require local, parameter, or borrowed storage");
-                return false;
+                if (m_receiverVariable.isInvalid()) {
+                    m_receiverVariable = function->registerVariable(
+                        "$propertyReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
+                }
+                storage = StorageLocation(m_receiver.get(), m_receiverVariable);
             }
             m_storage = storage->getProperty(*property);
             m_memberId = property->getId();

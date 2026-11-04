@@ -1187,7 +1187,7 @@ void Compiler::addStructMethodCall(
     } else if (hiddenSlotCount == 2) {
         addOpCode(OpCodes::op_pop_2);
     }
-    receiver.emitFreeOwner(*this);
+    receiver.emitFreeOwner(*this, function);
 }
 
 void Compiler::addStructMethodCallIntoReturn(
@@ -1239,7 +1239,7 @@ void Compiler::addStructMethodCallIntoReturn(
     } else if (hiddenSlotCount == 2) {
         addOpCode(OpCodes::op_pop_2);
     }
-    receiver.emitFreeOwner(*this);
+    receiver.emitFreeOwner(*this, function);
 }
 
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
@@ -1703,7 +1703,7 @@ void Compiler::compilePropertyInitializer(const FunctionCompilation& source) {
                 storage.emitAddress(*this, function);
                 addOpCode(OpCodes::op_pop_i);
                 property->getValueType()->emitInitStorage(*this, 0);
-                storage.emitFreeOwner(*this);
+                storage.emitFreeOwner(*this, function);
             }
             continue;
         }

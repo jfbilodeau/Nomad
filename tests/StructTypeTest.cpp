@@ -3521,12 +3521,119 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
     BOOST_TEST(assignmentOrder == expectedAssignments, boost::test_tools::per_element());
 }
 
-BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_unsupported_storage) {
+BOOST_AUTO_TEST_CASE(native_temporary_property_paths_preserve_receiver_storage_and_result_ownership) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto innerId = runtime.registerStruct("TemporaryInner");
+    const auto outerId = runtime.registerStruct("TemporaryOuter");
+    const auto* inner = runtime.getTypeByName("TemporaryInner");
+    const auto* outer = runtime.getTypeByName("TemporaryOuter");
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "unrelated", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(outerId);
+    auto roots = 0;
+    auto stringsBeforeRoot = RuntimeValue::getLiveStringCount();
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "produceTemporary",
+        [&](VirtualMachine* active) {
+            ++roots;
+            stringsBeforeRoot = RuntimeValue::getLiveStringCount();
+            auto* destination = active->getParameter(1).getStorageAddress();
+            destination[0] = active->getParameter(0);
+            destination[1].freeObjectValue();
+            destination[1].setStringValue("inner");
+            destination[2].freeObjectValue();
+            destination[2].setStringValue("outer");
+        },
+        {defParameter("number", runtime.getIntegerType(), "")},
+        outer,
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "temporaryArgument",
+        [&](VirtualMachine* active) {
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBeforeRoot + 2);
+            active->setIntegerResult(3);
+        },
+        {},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "temporaryReleased",
+        [&](VirtualMachine*) {
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBeforeRoot);
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.addMethod(innerId, {
+        .name = "shifted",
+        .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
+        .returnTypeId = innerId,
+        .function = [inner](VirtualMachine* active) {
+            auto* receiver = active->getParameter(1).getStorageAddress();
+            auto* destination = active->getParameter(2).getStorageAddress();
+            BOOST_TEST(receiver != destination);
+            BOOST_TEST(receiver[1].getObjectValue()->getReferenceCount() == 1U);
+            receiver[0].setIntegerValue(receiver[0].getIntegerValue() + active->getIntegerParameter(0));
+            inner->freeValue(destination);
+            inner->copyValue(receiver, destination);
+            BOOST_TEST(receiver[1].getObjectValue()->getReferenceCount() == 2U);
+        }
+    }).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "inspectTemporary",
+        [](VirtualMachine* active) {
+            const auto value = active->getParameterStorage(0, 2);
+            BOOST_TEST(value[1].getObjectValue()->getReferenceCount() ==
+                static_cast<NomadIndex>(active->getIntegerParameter(2)));
+            BOOST_TEST(value[1].getStringObject()->getString() == "inner");
+            active->setIntegerResult(value[0].getIntegerValue());
+        },
+        {defParameter("value", inner, ""), defParameter("references", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "fun forwardTemporary number:int\nreturn (produceTemporary number).inner.shifted temporaryArgument\nend\n"
+        "copy = forwardTemporary 7\n"
+        "assert (inspectTemporary copy 2) == 10\n"
+        "assert (produceTemporary 11).inner.number == 11\ntemporaryReleased\n"
+        "assert (produceTemporary 12).inner.text == \"inner\"\ntemporaryReleased\n"
+        "assert (inspectTemporary (produceTemporary 13).inner 1) == 13\ntemporaryReleased\n"
+        "(produceTemporary 14).inner.number = temporaryArgument\ntemporaryReleased\n"
+        "return copy.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto* forward = runtime.getScriptFunction(runtime.getFunctionId("forwardTemporary"));
+    BOOST_REQUIRE(forward != nullptr);
+    BOOST_TEST(forward->getVariableCount() == 1U);
+    BOOST_TEST(forward->getVariableStorageSize() == 3U);
+    BOOST_TEST(forward->getVariableName(VariableId{0}).starts_with("$propertyReceiver"));
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        roots = 0;
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 10);
+        BOOST_TEST(roots == 5);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_type_mismatches) {
     const std::array<std::pair<NomadString, NomadString>, 7> cases{{
         {"value = makeBoundaryLeaf\nreturn value.missing", "Unknown struct property"},
         {"value = makeBoundaryLeaf\nvalue.missing = 3", "Unknown struct property"},
         {"value = makeBoundaryLeaf\nvalue.number = \"bad\"", "Cannot assign value of type"},
-        {"return (makeBoundaryLeaf).number", "Struct property receivers currently require"},
+        {"return (makeBoundaryLeaf).missing", "Unknown struct property"},
         {"owner = makeBoundaryOwner\nowner.value.number = \"bad\"", "Cannot assign value of type"},
         {"owner = makeBoundaryOwner\nowner.value = 3",
             "Cannot assign type 'int' to class field 'value' of type 'BoundaryLeaf'"},

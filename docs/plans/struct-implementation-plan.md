@@ -5,8 +5,9 @@ Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
 has been reviewed, along with temporary struct method receivers and free-function
-return-destination forwarding and direct construction returns. Method-result
-forwarding on struct receivers is implemented and awaiting review.
+return-destination forwarding, direct construction returns, and method-result
+forwarding on struct receivers. Temporary-rooted stored property access is
+implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2609,6 +2610,51 @@ Implementation and validation:
 - Stop for review. Next is temporary-rooted property access, followed by
   interpreter/capture/formatting/host parity. NRVO remains separate. Gameplay,
   performance, and fault recovery were not validated.
+
+### Step 4F: Temporary-rooted stored property access
+
+Approved scope:
+
+- Read and assign stored properties rooted in temporary structs, including
+  nested fields and method receivers such as `(makeOuter).point.move 2`.
+- Evaluate the root once before assignment RHS expressions or explicit method
+  arguments. Preserve existing argument order and assignment staging.
+- Keep the complete root alive until the operation finishes, then release its
+  owned fields. Extracted strings, class references, and struct copies remain
+  independently owned. Preserve side effects for zero-slot fields and roots.
+- Native accessor-backed struct properties, interpreter aggregates, and VM
+  fault cleanup remain out of scope.
+
+Implementation and validation:
+
+- Temporary-rooted field access reserves a compiler-owned local. Nested stored
+  property paths preserve that root through existing storage lifetime hooks.
+  Reads, local copies, assignments, and native/script methods release the
+  complete root after use, including unrelated owned fields.
+- Existing storage instructions and call layouts are reused; no boxing,
+  opcodes, or ABI changes were introduced. Existing stored receivers and
+  return-destination forwarding retain their behavior.
+- Source regressions cover construction, free-function and method results,
+  nested scalar/reference/struct reads and writes, shared class references,
+  method mutation, and forwarded struct method results.
+- Recorded effects verify single evaluation, receiver-before-RHS/arguments,
+  and existing right-to-left argument order. Native callbacks verify the full
+  root remains alive during argument/RHS evaluation, borrowed receiver and
+  destination storage are disjoint, and extracted fields retain ownership.
+- Immediate live-object/string checks verify root cleanup before the next
+  statement, including nonempty roots with empty fields. Empty roots and
+  fields preserve initialization, assignment, argument, and method effects.
+  Metadata verifies zero physical slots for empty roots and no intermediate
+  return local for forwarded method results.
+- New execution scenarios run three times, restoring live string/object counts
+  after normal return; looped reads also verify immediate cleanup.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, four documentation preparation tests, and
+  whitespace validation passed.
+- Stop for review. Next, scope a bounded Step 5 parity slice. Struct-valued
+  methods on class receivers and native accessor-backed struct properties
+  remain separate compiled gaps; NRVO and fatal-fault cleanup remain deferred.
+  Gameplay and performance were not validated.
 
 ### Step 5: Interpreter, captures, formatting, and host parity
 

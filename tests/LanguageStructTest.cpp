@@ -40,6 +40,208 @@ static_assert(!std::is_base_of_v<ClassMemberDeclaration, StructMemberDeclaration
 
 BOOST_AUTO_TEST_SUITE(language_structs)
 
+BOOST_AUTO_TEST_CASE(temporary_rooted_reads_preserve_nested_values_and_release_the_complete_root) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto roots = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "rootCreated",
+        [&](VirtualMachine*) { ++roots; },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "ownedText",
+        [](VirtualMachine* active) { active->setStringResult("owned"); },
+        {},
+        runtime.getStringType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "liveObjects",
+        [](VirtualMachine* active) {
+            active->setIntegerResult(static_cast<NomadInteger>(NomadObject::getLiveObjectCount()));
+        },
+        {},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "class Owner\nnumber = 11\ntext = ownedText\nend\n"
+        "struct Point\nnumber = 7\ntext = ownedText\nowner = new Owner\n"
+        "fun copied\nreturn this\nend\nend\n"
+        "struct Outer\npoint = new Point\nunrelated = ownedText\ninit\nrootCreated\nend\nend\n"
+        "fun makeOuter\nreturn new Outer\nend\n"
+        "fun readText\nreturn (makeOuter).point.text\nend\n"
+        "fun readOwner\nreturn (makeOuter).point.owner\nend\n"
+        "fun readPoint\nreturn (makeOuter).point\nend\n"
+        "fun methodPoint\nreturn (makeOuter).point.copied\nend\n"
+        "fun takeText value:string\nreturn value == \"owned\"\nend\n"
+        "fun takePoint value:Point\nvalue.number = 99\nreturn value.text == \"owned\"\nend\n"
+        "before = liveObjects\nindex = 0\n"
+        "while index < 3\n"
+        "assert (new Outer).point.number == 7\nassert liveObjects == before\n"
+        "assert (makeOuter).point.text == \"owned\"\nassert liveObjects == before\n"
+        "assert (takeText (makeOuter).point.text)\nassert liveObjects == before\n"
+        "assert (takePoint (makeOuter).point)\nassert liveObjects == before\n"
+        "assert (makeOuter).point.owner.number == 11\nassert liveObjects == before\n"
+        "assert ((makeOuter).point.copied).text == \"owned\"\nassert liveObjects == before\n"
+        "index = index + 1\nend\n"
+        "number = (makeOuter).point.number + (makeOuter).point.number\n"
+        "assert liveObjects == before\n"
+        "text = readText\nassert text == \"owned\"\nassert liveObjects == before + 1\n"
+        "owner = readOwner\nassert owner.text == \"owned\"\nassert liveObjects == before + 3\n"
+        "point = readPoint\npoint.number = 17\nassert point.text == \"owned\"\n"
+        "method = methodPoint\nassert method.number == 7\n"
+        "return number + point.number + method.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto* readPoint = runtime.getScriptFunction(runtime.getFunctionId("readPoint"));
+    BOOST_REQUIRE(readPoint != nullptr);
+    BOOST_TEST(readPoint->getVariableCount() == 2U);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        roots = 0;
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 38);
+        BOOST_TEST(roots == 24);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(temporary_rooted_writes_and_methods_evaluate_the_root_once_before_arguments) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "record",
+        [&](VirtualMachine* active) {
+            const auto number = active->getIntegerParameter(0);
+            calls.push_back(number);
+            active->setIntegerResult(number);
+        },
+        {defParameter("number", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "class Shared\nnumber = 0\nend\n"
+        "struct Point\nnumber = 7\ntext = \"point\"\nshared = new Shared\n"
+        "fun move first:int second:int\n"
+        "this.number = this.number + first + second\n"
+        "this.shared.number = this.number\nrecord 100\nreturn this\nend\nend\n"
+        "struct Outer\npoint = new Point\nlabel = \"outer\"\nend\n"
+        "fun make shared:Shared\nrecord 1\nvalue = new Outer\nvalue.point.shared = shared\nreturn value\nend\n"
+        "fun replacement shared:Shared\nrecord 4\npoint = new Point\npoint.shared = shared\nreturn point\nend\n"
+        "fun forwarded shared:Shared\nreturn (make shared).point.move (record 2) (record 3)\nend\n"
+        "shared = new Shared\n"
+        "(make shared).point.number = record 2\n"
+        "(make shared).point = replacement shared\n"
+        "(make shared).point.shared.number = record 9\nassert shared.number == 9\n"
+        "result = forwarded shared\nassert shared.number == 12\nassert result.number == 12\n"
+        "return result.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto* forwarded = runtime.getScriptFunction(runtime.getFunctionId("forwarded"));
+    BOOST_REQUIRE(forwarded != nullptr);
+    BOOST_TEST(forwarded->getVariableCount() == 1U);
+    BOOST_TEST(forwarded->getVariableName(VariableId{0}).starts_with("$propertyReceiver"));
+    const std::vector<NomadInteger> expectedCalls{1, 2, 1, 4, 1, 9, 1, 3, 2, 100};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 12);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(empty_temporary_properties_preserve_root_and_method_side_effects_without_slots) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "ownedEmptyRootText",
+        [](VirtualMachine* active) { active->setStringResult("owned empty root"); },
+        {},
+        runtime.getStringType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "emptyRootObjects",
+        [](VirtualMachine* active) {
+            active->setIntegerResult(static_cast<NomadInteger>(NomadObject::getLiveObjectCount()));
+        },
+        {},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "note",
+        [&](VirtualMachine* active) { calls.push_back(active->getIntegerParameter(0)); },
+        {defParameter("number", runtime.getIntegerType(), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "struct Empty\nfun touch\nnote 2\nend\nend\n"
+        "struct Outer\nempty = new Empty\ninit\nnote 1\nend\nend\n"
+        "struct OwnedOuter\nempty = new Empty\ntext = ownedEmptyRootText\ninit\nnote 4\nend\nend\n"
+        "fun make\nreturn new Outer\nend\n"
+        "fun take value:Empty\nnote 3\nend\n"
+        "fun read\nreturn (make).empty\nend\n"
+        "(make).empty.touch\n"
+        "value = (make).empty\n"
+        "take (make).empty\n"
+        "(make).empty = read\n"
+        "return 17");
+    fixture.addFunction("owned",
+        "before = emptyRootObjects\n"
+        "value = (new OwnedOuter).empty\nassert emptyRootObjects == before\n"
+        "(new OwnedOuter).empty.touch\nassert emptyRootObjects == before\n"
+        "take (new OwnedOuter).empty\nassert emptyRootObjects == before\n"
+        "(new OwnedOuter).empty = (new OwnedOuter).empty\nassert emptyRootObjects == before\n"
+        "return 19");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    BOOST_TEST(runtime.getTypeByName("Outer")->getSize() == 0U);
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    BOOST_REQUIRE(main != nullptr);
+    BOOST_TEST(main->getVariableStorageSize() == 0U);
+    const std::vector<NomadInteger> expectedCalls{1, 2, 1, 1, 3, 1, 1};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 17);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        calls.clear();
+        const auto owned = fixture.execute("owned");
+        BOOST_REQUIRE_MESSAGE(!owned.fault.has_value(), owned.fault.value_or(""));
+        BOOST_TEST(owned.integerValue == 19);
+        const std::vector<NomadInteger> ownedCalls{4, 4, 2, 4, 3, 4, 4};
+        BOOST_TEST(calls == ownedCalls, boost::test_tools::per_element());
+        BOOST_TEST(owned.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_storage_and_copies) {
     nomad::test::LanguageTestFixture fixture;
     fixture.addFunction("main",

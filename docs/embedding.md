@@ -1018,11 +1018,11 @@ Compiled struct method calls also accept temporary receivers, such as
 before explicit arguments, and its owned fields are released when the call
 finishes. Returned strings, class references, and struct copies remain valid
 after that release. Chained method returns and empty temporary receivers follow
-the same rules. This does not add property reads or writes rooted in temporary
-struct values, or interpreter aggregate support.
+the same rules. Interpreter aggregate support remains separate.
 
 Stored struct properties rooted in locals, ordinary struct parameters,
-borrowed struct `this`, or class objects can be read and assigned.
+borrowed struct `this`, class objects, or temporary struct values can be read
+and assigned in compiled scripts.
 Nested scalar/reference properties load and store directly. Struct property
 values can be copied into locals, passed as ordinary arguments, or returned.
 Aggregate property assignments evaluate the complete right-hand side in reserved
@@ -1030,6 +1030,17 @@ local storage before replacing the property, including self-assignment and
 method calls that mutate the target. Reference properties retain ordinary
 reference semantics. Empty property calls and assignment expressions still
 execute their side effects.
+
+Temporary-rooted access, such as `(makePoint).x`, `(new Outer).point.x`, or
+`(makeOuter).point.move 2`, evaluates the complete root once before the
+assignment's right-hand side or the method's explicit arguments. The complete
+root remains alive until the read, assignment, or call finishes, then its owned
+fields are released. Extracted strings, class references, and struct copies
+remain independently owned. Assigning to or calling a mutating method on a
+temporary field changes only that temporary, except for shared class references
+stored in its fields. Empty fields still evaluate and release their root.
+Native accessor-backed struct properties and interpreter aggregates remain
+unsupported.
 
 Object-owned reads evaluate the owner once and keep it alive until copied values
 are independently owned. Writes retain the original owner and capture the
@@ -1045,8 +1056,7 @@ uses existing type defaults recursively; copying or initializing storage does
 not run a struct constructor. Existing initializer restrictions on user-written
 `this` expressions remain unchanged.
 
-Temporary struct-value receivers and struct closure captures remain unsupported
-and produce compilation errors. This does not
+Struct closure captures remain unsupported and produce compilation errors. This does not
 prevent accessing ordinary class properties through a reference stored inside
 a supported struct.
 
@@ -1080,13 +1090,25 @@ Both forms support receiver addresses, value loads, local copies, and assignment
 `emitFreeOwner` releases and pops that slot when it is back at the stack top.
 For object-owned locations, `emitAddress` takes the owner's current stack
 distance, including any result descriptor already pushed. The struct-method
-call emitter sequences these operations automatically. Other storage roots
-emit no owner retention or cleanup. Empty receivers still evaluate and retain
+call emitter sequences these operations automatically. Ordinary local,
+parameter, and borrowed receiver roots emit no owner retention or cleanup.
+Empty receivers still evaluate and retain
 their class owner, but emit no receiver address.
 Object-owned `emitLoad` and `emitCopyToLocal` evaluate and release their owner
 automatically. Low-level `emitStoreResult` and `emitCopyFromLocal` instead
 require a captured destination address in intermediate and a retained owner;
 use `emitAssignment` to prepare and clean up that scope.
+
+`StorageLocation(valueExpression, variableId)` describes a resolved temporary
+struct in a same-type reserved local. The expression must remain alive through
+emission, and the local must be disjoint from destinations and argument storage.
+`getProperty` preserves this root's lifetime across nested field selection.
+`emitRetainOwner(compiler, caller)` evaluates the root into the local;
+`emitFreeOwner(compiler, caller)` releases the complete root's owned fields.
+Value loads, local copies, assignments, and struct method calls sequence these
+operations automatically, including zero-slot fields. Low-level address and
+store/copy-from-local operations require the caller to establish and clean up
+this lifetime scope; they do not reevaluate the root.
 
 `op_stored_property_address_push(ownerOffset, firstOffset, lastOffset)` provides
 the address primitive for object-owned struct access. `ownerOffset` is
