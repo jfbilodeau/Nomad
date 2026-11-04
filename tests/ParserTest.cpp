@@ -12,6 +12,54 @@
 
 using namespace nomad;
 
+BOOST_AUTO_TEST_CASE(block_discovery_preserves_builtin_statement_forms) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto checkBlockCount = [&](const NomadString& source, const NomadIndex expected) {
+        BOOST_TEST_CONTEXT(source) {
+            CompilerContext context(compiler.get());
+            Tokenizer tokens(&context, "blocks.nomad", source);
+            (void)tokens.nextLine();
+            BOOST_TEST(parser::countBlockOpenings(compiler.get(), &tokens) == expected);
+            BOOST_TEST(!context.hasError());
+        }
+    };
+    checkBlockCount("", 0);
+    checkBlockCount("while true", 1);
+    checkBlockCount("until false", 1);
+    checkBlockCount("do", 1);
+    checkBlockCount("for index in range 1 2", 1);
+    checkBlockCount("hub Model", 1);
+    checkBlockCount("class Point", 1);
+    checkBlockCount("struct Point", 1);
+    checkBlockCount("enum Color", 1);
+    checkBlockCount("open hub Model", 1);
+    checkBlockCount("open class Point", 1);
+    checkBlockCount("open struct Point", 0);
+    checkBlockCount("open", 0);
+    checkBlockCount("open \"class\"", 0);
+    checkBlockCount("fun process", 1);
+    checkBlockCount("callback = factory fun value", 1);
+    checkBlockCount("invoke fun first fun second", 2);
+    checkBlockCount("if predicate fun value", 2);
+    checkBlockCount("if true", 1);
+    checkBlockCount("if true break", 0);
+    checkBlockCount("if false continue", 0);
+    checkBlockCount("if \"break\" == \"continue\"", 1);
+    checkBlockCount("if $\"break {value} continue\" == value", 1);
+    checkBlockCount("if true # continue fun", 1);
+    checkBlockCount("else if true", 0);
+    checkBlockCount("invoke then value", 0);
+    checkBlockCount("end", 0);
+    checkBlockCount("end while true", 0);
+    checkBlockCount("end until false", 0);
+    checkBlockCount("end fun", 0);
+    checkBlockCount("value = \"fun\"", 0);
+    checkBlockCount("value = $\"fun {value} struct if\"", 0);
+    checkBlockCount("\"fun\"", 0);
+    checkBlockCount("# fun while class", 0);
+}
+
 BOOST_AUTO_TEST_CASE(parser_reports_expression_errors_without_throwing)
 {
     Runtime runtime;

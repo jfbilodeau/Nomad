@@ -25,6 +25,12 @@ enum class StatementAvailability {
     Both
 };
 
+enum class StatementBlockMode {
+    None = 1,
+    Statement,
+    Inline
+};
+
 enum class PreParsePhase {
     Declarations = 1,
     Signatures
@@ -37,6 +43,7 @@ enum class PreParsePhase {
 using PreParseStatementFn = bool (*)(CompilerContext*, ScriptCallableBase*, Tokenizer*, PreParsePhase);
 // Returns nullptr on error.
 using ParseStatementFn = std::unique_ptr<Statement> (*)(CompilerContext*, ScriptCallableBase*, Tokenizer*);
+using StatementBlockFn = bool (*)(const Tokenizer*);
 
 namespace parser {
 
@@ -47,7 +54,7 @@ namespace parser {
     std::vector<Parameter>& parameters
 );
 // Counts end-delimited blocks opened on a line, including inline fun callbacks but not then continuations.
-[[nodiscard]] NomadIndex countBlockOpenings(const Tokenizer* tokens);
+[[nodiscard]] NomadIndex countBlockOpenings(const Compiler* compiler, const Tokenizer* tokens);
 
 [[nodiscard]] bool expectEndOfLine(
     CompilerContext* context,

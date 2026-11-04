@@ -2320,6 +2320,32 @@ Specialization validation:
 - Source struct coverage remains analysis-only; this refactoring does not claim
   additional executable struct functionality or gameplay validation.
 
+Statement-owned block discovery follow-up:
+
+- Statement registrations now declare whether they open a block at the start
+  of a line, anywhere on a line, or not at all. Existing custom registrations
+  default to non-block statements.
+- Optional statement-owned classifiers handle contextual `if`, `open`, and
+  `fun` forms. Inline loop controls, supported open declarations, inline
+  callbacks, and closing lines retain their block behavior.
+- Class/struct member scans, function pre-parsing, and language-server source
+  scans use the same registered block rules. No syntax, opcode, or VM changes
+  were introduced.
+- Regression coverage includes built-in forms, string/format-string and comment
+  contents, multiple inline callbacks, custom registered blocks and classifiers,
+  custom blocks inside function bodies, and nested struct member source spans.
+- CTest built the changes directly. Language, remaining, and tooling unit groups,
+  compiler export, and LSP process integration tests passed. Four documentation
+  preparation tests and whitespace validation passed.
+- Validation initially caught a test-only AST return-type mismatch, invalid
+  comma/comment syntax in scanner fixtures, and a missing native callback
+  registration in the struct fixture; these were corrected before passing runs.
+- Source struct coverage remains analysis-only; executable source structs and
+  gameplay were not validated by this slice.
+- Stop for review. Next, assess remaining storage/lifecycle and call-frame gaps
+  against the foundation already implemented in Step 1, then propose a bounded
+  Step 3 slice rather than duplicating existing support.
+
 ### Step 3: Storage, lifecycle, and VM call-frame support
 
 Prerequisite: step 2 approved.

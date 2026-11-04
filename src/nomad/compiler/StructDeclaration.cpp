@@ -41,7 +41,7 @@ bool readCallableBody(
                 return parser::expectEndOfLine(context, function, tokens);
             }
         } else {
-            depth += parser::countBlockOpenings(tokens);
+            depth += parser::countBlockOpenings(context->getCompiler(), tokens);
         }
         sourceLines.push_back(takeSourceLine(tokens));
     }
@@ -100,7 +100,7 @@ std::unique_ptr<StructMemberDeclaration> parseMember(
             context->reportError("Struct field '" + name + "' requires an initializer", tokens);
             return nullptr;
         }
-        auto depth = parser::countBlockOpenings(tokens);
+        auto depth = parser::countBlockOpenings(context->getCompiler(), tokens);
         sourceLines.push_back(takeSourceLine(tokens));
         while (depth > 0) {
             if (!tokens->nextLine()) {
@@ -110,7 +110,7 @@ std::unique_ptr<StructMemberDeclaration> parseMember(
             if (tokens->is(TokenType::Identifier) && tokens->is("end")) {
                 --depth;
             } else {
-                depth += parser::countBlockOpenings(tokens);
+                depth += parser::countBlockOpenings(context->getCompiler(), tokens);
             }
             sourceLines.push_back(takeSourceLine(tokens));
         }

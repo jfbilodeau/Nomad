@@ -95,6 +95,69 @@ BOOST_AUTO_TEST_CASE(struct_declarations_have_specialized_ast_members_and_source
     BOOST_TEST(declaration->getType()->getMethods().size() == 2U);
 }
 
+BOOST_AUTO_TEST_CASE(struct_member_scanning_balances_blocks_callbacks_and_loop_closers) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto* callbackType = runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "invoke",
+        [](VirtualMachine*) {},
+        {defParameter("callback", callbackType, "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
+        *compiler, CompilationTarget::Analysis).succeeded());
+    BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
+    auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(&context, "blocks.nomad",
+        "struct Point\n"
+        "label = \"fun\"\n"
+        "init\n"
+        "do\n"
+        "if true break\n"
+        "end until true\n"
+        "end\n"
+        "fun process\n"
+        "while true\n"
+        "if false continue\n"
+        "if true\n"
+        "value = $\"fun {label}\"\n"
+        "end\n"
+        "end\n"
+        "invoke fun item\n"
+        "return item\n"
+        "end\n"
+        "invoke then item\n"
+        "return item\n"
+        "end\n"
+        "last = 42\n"
+        "end\n"
+        "return 7");
+    BOOST_REQUIRE(tokens.nextLine());
+    BOOST_REQUIRE(tokens.expect("struct"));
+    BOOST_REQUIRE(preParseStructStatement(&context, function, &tokens, PreParsePhase::Signatures));
+    tokens.reset();
+    BOOST_REQUIRE(tokens.nextLine());
+    const auto statement = parser::parseLine(&context, function, &tokens);
+    const auto* declaration = dynamic_cast<const StructDeclaration*>(statement.get());
+    BOOST_REQUIRE_MESSAGE(declaration != nullptr,
+        (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Missing struct AST"));
+    BOOST_TEST(!context.hasError());
+    const auto& members = declaration->getMembers();
+    BOOST_REQUIRE(members.size() == 4U);
+    BOOST_TEST((members[1]->getKind() == StructMemberKind::Constructor));
+    BOOST_REQUIRE(members[1]->getSourceLines().size() == 3U);
+    BOOST_TEST(members[1]->getSourceLines().back().tokens[0].textValue == "end");
+    BOOST_TEST((members[2]->getKind() == StructMemberKind::Method));
+    BOOST_TEST(members[2]->getSourceLines().front().tokens[0].textValue == "while");
+    BOOST_TEST(members[2]->getSourceLines().back().tokens[0].textValue == "return");
+    BOOST_TEST(members[3]->getName() == "last");
+    BOOST_REQUIRE(tokens.nextLine());
+    BOOST_TEST(tokens.is("return"));
+}
+
 BOOST_AUTO_TEST_CASE(symbols_precede_cross_file_signatures_and_analysis_does_not_emit) {
     for (const auto reversed : {false, true}) {
         Runtime runtime;

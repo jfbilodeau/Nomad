@@ -146,7 +146,7 @@ ApiAnalysis analyzeApiSymbols(
             const auto classHeader = tokens.is("class") ||
                 (tokens.is("open") && tokens.getTokenCount() > 1 && tokens.getTokenAt(1) == "class");
             const auto constructorHeader = !classBlocks.empty() && classBlocks.back() && tokens.is("init");
-            auto openings = parser::countBlockOpenings(&tokens);
+            auto openings = parser::countBlockOpenings(compiler.get(), &tokens);
             if (constructorHeader) ++openings;
             for (auto index = NomadIndex{0}; index < openings; ++index) {
                 classBlocks.push_back(classHeader && index == 0);

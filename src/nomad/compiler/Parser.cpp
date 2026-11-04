@@ -126,39 +126,13 @@ bool parseParameters(
     return true;
 }
 
-NomadIndex countBlockOpenings(const Tokenizer* tokens) {
-    if (tokens->getTokenCount() == 0) {
-        return 0;
-    }
-    const auto statement = tokens->getTokenTypeAt(0) == TokenType::Identifier ?
-        tokens->getTokenAt(0) : NomadString{};
-    if (statement == "end") {
-        return 0;
-    }
+NomadIndex countBlockOpenings(const Compiler* compiler, const Tokenizer* tokens) {
     auto count = NomadIndex{0};
-    if (statement == "while" || statement == "until" || statement == "do" ||
-        statement == "for" || statement == "hub" || statement == "class" || statement == "struct" || statement == "enum") {
-        ++count;
-    }
-    if (statement == "open" && tokens->getTokenCount() > 1 &&
-        (tokens->getTokenAt(1) == "hub" || tokens->getTokenAt(1) == "class")) {
-        ++count;
-    }
-    auto inlineLoopControl = false;
     for (auto index = NomadIndex{0}; index < tokens->getTokenCount(); ++index) {
-        if (tokens->getTokenTypeAt(index) != TokenType::Identifier) {
-            continue;
-        }
-        const auto& token = tokens->getTokenAt(index);
-        if (token == "fun") {
+        if (tokens->getTokenTypeAt(index) == TokenType::Identifier &&
+            compiler->statementOpensBlock(tokens, index)) {
             ++count;
         }
-        if (statement == "if" && (token == "break" || token == "continue")) {
-            inlineLoopControl = true;
-        }
-    }
-    if (statement == "if" && !inlineLoopControl) {
-        ++count;
     }
     return count;
 }

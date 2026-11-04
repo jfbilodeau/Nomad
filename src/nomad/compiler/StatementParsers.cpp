@@ -135,6 +135,25 @@ bool expectOpenStatement(CompilerContext* context, Tokenizer* tokens, NomadStrin
 
 } // namespace
 
+bool isFunStatementBlock(const Tokenizer* tokens) {
+    return tokens->getTokenTypeAt(0) != TokenType::Identifier || tokens->getTokenAt(0) != "end";
+}
+
+bool isIfStatementBlock(const Tokenizer* tokens) {
+    for (auto index = NomadIndex{0}; index < tokens->getTokenCount(); ++index) {
+        if (tokens->getTokenTypeAt(index) == TokenType::Identifier &&
+            (tokens->getTokenAt(index) == "break" || tokens->getTokenAt(index) == "continue")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isOpenStatementBlock(const Tokenizer* tokens) {
+    return tokens->getTokenCount() > 1 && tokens->getTokenTypeAt(1) == TokenType::Identifier &&
+        (tokens->getTokenAt(1) == "hub" || tokens->getTokenAt(1) == "class");
+}
+
 bool preParseHubStatement(
     CompilerContext* context,
     ScriptCallableBase* function,

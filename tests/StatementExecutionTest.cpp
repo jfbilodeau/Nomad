@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/LoopStatement.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
@@ -152,6 +153,83 @@ BOOST_AUTO_TEST_CASE(statement_availability_is_enforced_from_registration)
             BOOST_TEST(context.hasError() == !allowed);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(block_discovery_uses_custom_statement_registrations) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    compiler->registerParseStatementFn("ordinary", StatementAvailability::Both, parseExecutableTestStatement);
+    compiler->registerParseStatementFn(
+        "section",
+        StatementAvailability::Compiler,
+        parseExecutableTestStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
+    compiler->registerParseStatementFn(
+        "callback",
+        StatementAvailability::Compiler,
+        parseExecutableTestStatement,
+        nullptr,
+        StatementBlockMode::Inline
+    );
+    compiler->registerParseStatementFn(
+        "conditional",
+        StatementAvailability::Compiler,
+        parseExecutableTestStatement,
+        nullptr,
+        StatementBlockMode::Statement,
+        [](const Tokenizer* tokens) {
+            return tokens->getTokenCount() > 1 && tokens->getTokenAt(1) == "enabled";
+        }
+    );
+    CompilerContext context(compiler.get());
+    const auto checkBlockCount = [&](const NomadString& source, const NomadIndex expected) {
+        BOOST_TEST_CONTEXT(source) {
+            Tokenizer tokens(&context, "registration.nomad", source);
+            BOOST_REQUIRE(tokens.nextLine());
+            BOOST_TEST(parser::countBlockOpenings(compiler.get(), &tokens) == expected);
+            BOOST_TEST(!context.hasError());
+        }
+    };
+    checkBlockCount("ordinary", 0);
+    checkBlockCount("unknown", 0);
+    checkBlockCount("section", 1);
+    checkBlockCount("value = section", 0);
+    checkBlockCount("value = callback callback", 2);
+    checkBlockCount("section callback", 2);
+    checkBlockCount("conditional enabled", 1);
+    checkBlockCount("conditional disabled", 0);
+    checkBlockCount("value = conditional enabled", 0);
+    checkBlockCount("value = \"callback\"", 0);
+}
+
+BOOST_AUTO_TEST_CASE(custom_registered_blocks_preserve_function_source_boundaries) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    compiler->registerParseStatementFn(
+        "section",
+        StatementAvailability::Compiler,
+        parseDoStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"main", {"blocks.nomad",
+        "fun outer\n"
+        "section\n"
+        "value = 3\n"
+        "end until true\n"
+        "return value\n"
+        "end\n"
+        "fun sibling\n"
+        "return 7\n"
+        "end"
+    }}}, {}});
+    BOOST_REQUIRE_MESSAGE(compiler->compileFunctions(&context),
+        (context.getFirstError() ? context.getFirstError()->message : "Compilation failed"));
+    BOOST_TEST(runtime.getFunctionId("outer").isValid());
+    BOOST_TEST(runtime.getFunctionId("sibling").isValid());
 }
 
 BOOST_AUTO_TEST_CASE(statement_pre_parser_receives_both_phases_without_separate_callbacks)

@@ -39,23 +39,92 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     }
 
     registerParseStatementFn("const", StatementAvailability::Compiler, parseConstStatement, preParseConstStatement);
-    registerParseStatementFn("enum", StatementAvailability::Compiler, parseEnumStatement, preParseEnumStatement);
+    registerParseStatementFn(
+        "enum",
+        StatementAvailability::Compiler,
+        parseEnumStatement,
+        preParseEnumStatement,
+        StatementBlockMode::Statement
+    );
     registerParseStatementFn("event", StatementAvailability::Compiler, parseEventStatement, preParseEventStatement);
-    registerParseStatementFn("fun", StatementAvailability::Compiler, parseFunStatement, preParseFunStatement);
-    registerParseStatementFn("hub", StatementAvailability::Compiler, parseHubStatement, preParseHubStatement);
-    registerParseStatementFn("class", StatementAvailability::Compiler, parseClassStatement, preParseClassStatement);
-    registerParseStatementFn("struct", StatementAvailability::Compiler, parseStructStatement, preParseStructStatement);
-    registerParseStatementFn("open", StatementAvailability::Compiler, parseOpenStatement, preParseOpenStatement);
+    registerParseStatementFn(
+        "fun",
+        StatementAvailability::Compiler,
+        parseFunStatement,
+        preParseFunStatement,
+        StatementBlockMode::Inline,
+        isFunStatementBlock
+    );
+    registerParseStatementFn(
+        "hub",
+        StatementAvailability::Compiler,
+        parseHubStatement,
+        preParseHubStatement,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "class",
+        StatementAvailability::Compiler,
+        parseClassStatement,
+        preParseClassStatement,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "struct",
+        StatementAvailability::Compiler,
+        parseStructStatement,
+        preParseStructStatement,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "open",
+        StatementAvailability::Compiler,
+        parseOpenStatement,
+        preParseOpenStatement,
+        StatementBlockMode::Statement,
+        isOpenStatementBlock
+    );
     registerParseStatementFn("assert", StatementAvailability::Compiler, parseAssertStatement);
-    registerParseStatementFn("if", StatementAvailability::Both, parseIfStatement);
+    registerParseStatementFn(
+        "if",
+        StatementAvailability::Both,
+        parseIfStatement,
+        nullptr,
+        StatementBlockMode::Statement,
+        isIfStatementBlock
+    );
     registerParseStatementFn("params", StatementAvailability::Compiler, nullptr, preParseParamsStatement);
     registerParseStatementFn("return", StatementAvailability::Compiler, parseReturnStatement);
-    registerParseStatementFn("while", StatementAvailability::Both, parseWhileStatement);
-    registerParseStatementFn("until", StatementAvailability::Both, parseUntilStatement);
-    registerParseStatementFn("do", StatementAvailability::Both, parseDoStatement);
+    registerParseStatementFn(
+        "while",
+        StatementAvailability::Both,
+        parseWhileStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "until",
+        StatementAvailability::Both,
+        parseUntilStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "do",
+        StatementAvailability::Both,
+        parseDoStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
     registerParseStatementFn("break", StatementAvailability::Both, parseBreakStatement);
     registerParseStatementFn("continue", StatementAvailability::Both, parseContinueStatement);
-    registerParseStatementFn("for", StatementAvailability::Both, parseForStatement);
+    registerParseStatementFn(
+        "for",
+        StatementAvailability::Both,
+        parseForStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
 
 }
 
@@ -162,9 +231,33 @@ void Compiler::registerParseStatementFn(
     const NomadString& name,
     const StatementAvailability availability,
     const ParseStatementFn fn,
-    const PreParseStatementFn preFn)
-{
-    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability });
+    const PreParseStatementFn preFn,
+    const StatementBlockMode blockMode,
+    const StatementBlockFn blockFn
+) {
+    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability, blockMode, blockFn });
+}
+
+bool Compiler::statementOpensBlock(const Tokenizer* tokens, const NomadIndex tokenIndex) const {
+    const auto registration = m_statements.find(tokens->getTokenAt(tokenIndex));
+    if (registration == m_statements.end()) {
+        return false;
+    }
+    const auto& statement = registration->second;
+    switch (statement.blockMode) {
+    case StatementBlockMode::None:
+        return false;
+    case StatementBlockMode::Statement:
+        if (tokenIndex != 0) {
+            return false;
+        }
+        break;
+    case StatementBlockMode::Inline:
+        break;
+    default:
+        reportInternalError("Unknown statement block mode");
+    }
+    return statement.blockFn == nullptr || statement.blockFn(tokens);
 }
 
 bool Compiler::isStatement(const NomadString& name) const {
@@ -1287,7 +1380,7 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
         if (statement == "enum") {
             continue; // Enum pre-parsing consumes its own closing end.
         }
-        for (auto count = parser::countBlockOpenings(&tokens); count > 0; --count) {
+        for (auto count = parser::countBlockOpenings(this, &tokens); count > 0; --count) {
             blocks.push_back({context->getHub(), false});
         }
     }

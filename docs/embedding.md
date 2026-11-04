@@ -1998,14 +1998,22 @@ matching backing files. Module hosts configure their resolved module roots
 automatically, including for compiler tools using the host's runtime.
 
 Custom statements register with
-`registerParseStatementFn(name, availability, parser, preParser)`.
+`registerParseStatementFn(name, availability, parser, preParser, blockMode, blockClassifier)`.
 The required `StatementAvailability` is `Compiler`, `Interpreter`, or `Both`;
 dispatch rejects a statement in an unavailable mode before calling its parser.
 The optional pre-parser receives `PreParsePhase::Declarations` first, then
 `PreParsePhase::Signatures`. Publish early type/namespace declarations in the
 first phase and resolve signatures in the second without registering declarations
 again. Interpreter-only statements do not run pre-parsers during compilation.
-Both enums and the callback types are declared in `<nomad/compiler/Parser.hpp>`.
+Statements default to `StatementBlockMode::None`. Use `Statement` for a block
+opened at the start of a line, or `Inline` for a block that can start anywhere
+on the line, such as a callback. Each opening requires a matching `end`.
+The optional `StatementBlockFn` classifier receives the complete current line
+through a read-only `Tokenizer` and returns whether that occurrence opens a
+block. Block discovery does not advance the tokenizer; classifiers must not
+consume input. Compiler declaration scans and language-server source scans use
+these registrations.
+The enums and callback types are declared in `<nomad/compiler/Parser.hpp>`.
 Parser and AST callbacks receive a `ScriptCallableBase*`, so the same callbacks
 can work with script functions, methods, and constructors. The interface exposes
 parameters, local variables, captures, source locations, and compilation ranges;

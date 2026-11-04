@@ -67,8 +67,11 @@ public:
         const NomadString& name,
         StatementAvailability availability,
         ParseStatementFn fn,
-        PreParseStatementFn preFn = nullptr
+        PreParseStatementFn preFn = nullptr,
+        StatementBlockMode blockMode = StatementBlockMode::None,
+        StatementBlockFn blockFn = nullptr
     );
+    [[nodiscard]] bool statementOpensBlock(const Tokenizer* tokens, NomadIndex tokenIndex) const;
     [[nodiscard]] bool isStatement(const NomadString& name) const;
     [[nodiscard]] bool getParseStatementFn(
         const NomadString& name,
@@ -332,6 +335,8 @@ private:
         PreParseStatementFn preFn;
         ParseStatementFn fn;
         StatementAvailability availability;
+        StatementBlockMode blockMode;
+        StatementBlockFn blockFn;
     };
 
     struct OpCodeRegistration {
