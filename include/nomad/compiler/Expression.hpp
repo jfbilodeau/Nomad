@@ -126,6 +126,7 @@ public:
     [[nodiscard]] bool isTerminal() const override;
     [[nodiscard]] bool isWritable() const override;
     [[nodiscard]] std::optional<StorageLocation> getStorageLocation() const override;
+    [[nodiscard]] bool supportsReturnDestination() const override;
     [[nodiscard]] NativeMemberExpression* asNativeExpression() override;
     [[nodiscard]] const NativeMemberExpression* asNativeExpression() const override;
 
@@ -144,6 +145,7 @@ protected:
         ScriptCallableBase* function,
         VariableId destination
     ) override;
+    void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) override;
     void onEvaluate(InterpreterContext& context) const override;
 
 private:

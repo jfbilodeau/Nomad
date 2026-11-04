@@ -1055,6 +1055,21 @@ void NativeMemberExpression::onCompileIntoLocal(
     }
 }
 
+bool NativeMemberExpression::supportsReturnDestination() const {
+    return m_memberType == MemberType::Method && m_structReceiver.has_value() &&
+        getType() != nullptr && getType()->isStruct();
+}
+
+void NativeMemberExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_receiverVariable.isValid()) {
+        m_receiver->compileIntoLocal(compiler, function, m_receiverVariable);
+    }
+    compiler->addStructMethodCallIntoReturn(m_method->getId(), function, &m_arguments, *m_structReceiver);
+    if (m_receiverVariable.isValid()) {
+        m_receiver->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_receiverVariable));
+    }
+}
+
 void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     if (m_memberType == MemberType::Unknown) {
         raiseException("Native member has not been resolved: " + m_qualifiedName);

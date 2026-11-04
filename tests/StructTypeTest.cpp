@@ -2515,6 +2515,115 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     }
 }
 
+BOOST_AUTO_TEST_CASE(native_method_return_forwarding_preserves_borrowed_storage_order_reentry_and_staging) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.registerStruct("MethodReturnPayload");
+    const auto* type = runtime.getTypeByName("MethodReturnPayload");
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    const auto ownerId = runtime.registerClass("MethodReturnOwner", ClassMode::Closed);
+    const auto* ownerType = runtime.getTypeByName("MethodReturnOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", type).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeMethodOwner",
+        [ownerType](VirtualMachine* active) {
+            active->getResult().setObjectValue(new ScriptObject(ownerType));
+        },
+        {},
+        ownerType,
+        ""
+    ).isValid());
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "selectMethodOwner",
+        [&](VirtualMachine* active) {
+            calls.push_back(1);
+            active->getResult().copyObjectValue(active->getParameter(0));
+        },
+        {defParameter("owner", ownerType, "")},
+        ownerType,
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "methodArgument",
+        [&](VirtualMachine* active) {
+            const auto number = active->getIntegerParameter(0);
+            calls.push_back(number);
+            active->setIntegerResult(number);
+        },
+        {defParameter("number", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "copied",
+        .parameters = {
+            {ownerId, "owner", ""},
+            {runtime.getIntegerType()->getId(), "first", ""},
+            {runtime.getIntegerType()->getId(), "second", ""}
+        },
+        .returnTypeId = typeId,
+        .function = [&](VirtualMachine* active) {
+            calls.push_back(100);
+            BOOST_TEST(active->getIntegerParameter(1) == 2);
+            BOOST_TEST(active->getIntegerParameter(2) == 3);
+            auto* receiver = active->getParameter(3).getStorageAddress();
+            auto* destination = active->getParameter(4).getStorageAddress();
+            auto* owner = static_cast<ScriptObject*>(active->getParameter(0).getObjectValue());
+            BOOST_TEST(receiver == owner->getFieldStorage(0).data());
+            BOOST_TEST(receiver != destination);
+            BOOST_TEST(active->getEnclosingParameterStorage(1, 1)[0].getStorageAddress() == destination);
+            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("methodSuccess"));
+            active->run(success, {});
+            BOOST_TEST(active->getIntegerResult() == 42);
+            BOOST_TEST(active->getParameter(3).getStorageAddress() == receiver);
+            BOOST_TEST(active->getParameter(4).getStorageAddress() == destination);
+            const auto referencesBeforeCopy = receiver[1].getObjectValue()->getReferenceCount();
+            type->freeValue(destination);
+            type->copyValue(receiver, destination);
+            destination[0].setIntegerValue(17);
+            BOOST_TEST(receiver[0].getIntegerValue() == 5);
+            BOOST_TEST(receiver[1].getStringObject()->getReferenceCount() == referencesBeforeCopy + 1U);
+        }
+    }).isValid());
+    fixture.addFunction("methodSuccess", "return 42");
+    fixture.addFunction("main",
+        "fun forwardMethod owner:MethodReturnOwner\n"
+        "return (selectMethodOwner owner).payload.copied owner (methodArgument 2) (methodArgument 3)\nend\n"
+        "owner = makeMethodOwner\nowner.payload.number = 5\nowner.payload.text = \"owned\"\n"
+        "owner.payload = forwardMethod owner\n"
+        "assert owner.payload.text == \"owned\"\nreturn owner.payload.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardMethod"));
+    BOOST_REQUIRE(wrapper != nullptr);
+    BOOST_TEST(wrapper->getVariableCount() == 0U);
+    BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
+    std::ostringstream dump;
+    dumpInstructions(runtime, *wrapper, dump);
+    BOOST_TEST(dump.str().find(OpCodes::op_call_native_method) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_stored_property_address_push) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    const std::vector<NomadInteger> expectedCalls{1, 3, 2, 100};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 17);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_results) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();

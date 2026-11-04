@@ -1190,6 +1190,58 @@ void Compiler::addStructMethodCall(
     receiver.emitFreeOwner(*this);
 }
 
+void Compiler::addStructMethodCallIntoReturn(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const StorageLocation& receiver
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    if (method == nullptr || function == nullptr || arguments == nullptr ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct method return call requires a resolved method, caller, and explicit arguments");
+    }
+    const auto* receiverType = method->getClassType();
+    const auto* returnType = method->getReturnType();
+    if (receiverType == nullptr || !receiverType->isStruct() || returnType == nullptr ||
+        !returnType->isStruct() || function->getReturnType() != returnType ||
+        receiver.getType() != receiverType) {
+        reportInternalError("Struct method return call requires matching receiver storage and caller result");
+    }
+    receiver.validate(function);
+    const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.returnOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Struct method return call requires matching destination storage");
+    }
+    receiver.emitRetainOwner(*this, function);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    if (layout.receiverOffset.has_value()) {
+        receiver.emitAddress(*this, function, layout.returnOffset.has_value() ? 1 : 0);
+    }
+    arguments->compile(this, function);
+    if (method->asScriptMethod() != nullptr) {
+        addOpCode(OpCodes::op_call_script_method);
+        addFunctionLink(methodId, m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_method);
+        addId(methodId.id);
+    }
+    addFreeArguments(arguments);
+    const auto hiddenSlotCount = layout.stackSlotCount - layout.argumentSlotCount;
+    if (hiddenSlotCount == 1) {
+        addOpCode(OpCodes::op_pop_1);
+    } else if (hiddenSlotCount == 2) {
+        addOpCode(OpCodes::op_pop_2);
+    }
+    receiver.emitFreeOwner(*this);
+}
+
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
     const auto stackCount = arguments->getStackCount();
 

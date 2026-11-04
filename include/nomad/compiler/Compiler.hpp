@@ -206,6 +206,12 @@ public:
         const StorageLocation& receiver,
         VariableId destinationId = VariableId::INVALID
     );
+    void addStructMethodCallIntoReturn(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        const StorageLocation& receiver
+    );
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addScriptObjectCreation(
         CallableId constructorId,

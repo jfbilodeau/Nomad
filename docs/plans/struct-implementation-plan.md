@@ -5,8 +5,8 @@ Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
 has been reviewed, along with temporary struct method receivers and free-function
-return-destination forwarding. Direct construction returns are implemented and
-awaiting review.
+return-destination forwarding and direct construction returns. Method-result
+forwarding on struct receivers is implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2567,6 +2567,48 @@ Implementation and validation:
 - Stop for review. Next is method-result forwarding, followed by temporary-rooted
   property access and interpreter/capture/formatting/host parity. NRVO remains
   separate. Gameplay, performance, and fault recovery were not validated.
+
+### Step 4E: Struct-method return-destination forwarding
+
+Approved scope:
+
+- Forward native/script struct results in `return point.copy ...` directly into
+  the enclosing callable's return destination.
+- Reuse expression forwarding and the hidden-pointer ABI, preserving stored,
+  borrowed, class-owned, and temporary struct receiver lifetimes.
+- Preserve receiver-first evaluation, argument order, empty-value side effects,
+  owned cleanup, and assignment-site staging. Verify intermediate return
+  local/copy elimination and exact destination identity.
+- Local/parameter/property returns retain their copy paths. Struct-valued
+  methods on class receivers, NRVO, and VM fault handling remain out of scope.
+
+Implementation and validation:
+
+- Resolved struct-valued method expressions with struct receiver storage opt
+  into forwarding. The specialized `addStructMethodCallIntoReturn` emitter
+  forwards the enclosing return pointer and borrows the existing receiver.
+- Class owners remain retained until argument and hidden-pointer cleanup
+  completes. Temporary struct receivers are populated once before arguments
+  and released after the call, before enclosing local cleanup.
+- Existing opcodes and call layouts handle nonempty/empty receiver and result
+  combinations; no VM or ABI changes were introduced.
+- Metadata and instruction dumps verify removal of return locals/copy stores,
+  while preserving only required local/temporary receiver storage and the
+  property-return copy fallback.
+- Script execution covers parameter copies, locals, enclosing borrowed receivers,
+  nested class-owned fields, temporary class owners, temporary structs, chained
+  method results, and empty receiver/result combinations.
+- Native coverage verifies receiver/destination disjointness and pointer identity
+  across successful host reentry, receiver-first/right-to-left argument order,
+  preserved source fields after destination writes, and copied field ownership.
+- New execution scenarios run three times with exact results/side effects and
+  restoration of live string/object counts after normal return.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, four documentation preparation tests, and
+  whitespace validation passed.
+- Stop for review. Next is temporary-rooted property access, followed by
+  interpreter/capture/formatting/host parity. NRVO remains separate. Gameplay,
+  performance, and fault recovery were not validated.
 
 ### Step 5: Interpreter, captures, formatting, and host parity
 

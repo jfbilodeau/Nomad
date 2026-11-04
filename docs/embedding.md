@@ -956,10 +956,12 @@ support struct locals, parameters, and nested function calls. Returned fields ar
 copied into the caller's destination before local cleanup, except that
 `return makePoint ...` forwards a struct-returning free-function call directly
 to that destination, and `return new Point ...` constructs there directly,
-without an intermediate return local or copy. This also
+without an intermediate return local or copy. `return point.copy ...` also
+forwards a struct result from a method on a struct receiver. This also
 works inside struct methods, without confusing the result destination with
-the borrowed receiver. Local/parameter and method-result returns
-retain their copy paths. Existing assignment
+the borrowed receiver. Local/parameter/property returns retain their copy paths.
+Struct-valued method calls on class receivers are not supported by this path.
+Existing assignment
 targets are replaced only after their source expression finishes. Discarded
 struct results are released, and empty results still execute their side effects.
 Named-return copy elision is not yet supported.
@@ -986,6 +988,16 @@ not `VirtualMachine::getThis()`. Existing call frames preserve the enclosing
 object receiver without an additional `push_this`/`pop_this` pair. This emission
 API does not register methods, resolve source expressions, or compile method
 bodies.
+
+`Compiler::addStructMethodCallIntoReturn(methodId, caller, arguments, receiver)`
+forwards a native/script method's struct result into the enclosing callable's
+return destination. The method must have a struct receiver and the same result
+type as the caller. `receiver` is a resolved `StorageLocation`; explicit arguments
+must not include an object receiver. Destination fields must be cleared or valid
+owned values, disjoint from borrowed receiver and argument storage. Enclosing
+class owners are retained across argument evaluation and the call, then released.
+Empty receivers and results omit only their respective hidden pointers. This API
+does not allocate receiver temporaries or stage assignment targets.
 
 Compiled member expressions can call registered struct methods on locals,
 ordinary parameters, a struct method's `this`, and nested struct properties

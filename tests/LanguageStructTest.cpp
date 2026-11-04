@@ -64,7 +64,7 @@ BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_sto
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    for (const auto* name : {"build", "relay", "relayAgain", "fromParameter"}) {
+    for (const auto* name : {"build", "relay", "relayAgain", "fromParameter", "methodResult"}) {
         const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         BOOST_TEST(wrapper->getVariableCount() == 0U);
@@ -75,7 +75,7 @@ BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_sto
         BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
         BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
     }
-    for (const auto* name : {"identity", "methodResult"}) {
+    for (const auto* name : {"identity"}) {
         const auto* copying = runtime.getScriptFunction(runtime.getFunctionId(name));
         BOOST_REQUIRE(copying != nullptr);
         BOOST_TEST(copying->getVariableCount() == 1U);
@@ -222,6 +222,137 @@ BOOST_AUTO_TEST_CASE(construction_returns_preserve_initialization_order_early_re
         const auto outcome = fixture.execute("main");
         BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
         BOOST_TEST(outcome.integerValue == 10);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(method_return_forwarding_preserves_stored_borrowed_and_temporary_receiver_values) {
+    nomad::test::LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "struct Payload\n"
+        "number = 0\ntext = \"payload\"\n"
+        "init number:int\nthis.number = number\nend\n"
+        "fun copied amount:int\nthis.number = this.number + amount\nreturn this\nend\n"
+        "fun relay amount:int\nreturn this.copied amount\nend\n"
+        "end\n"
+        "struct Nested\npayload = new Payload 4\nend\n"
+        "class Owner\nnested = new Nested\nend\n"
+        "fun fromParameter value:Payload\nreturn value.copied 1\nend\n"
+        "fun fromLocal number:int\nvalue = new Payload number\nreturn value.copied 2\nend\n"
+        "fun fromOwner owner:Owner\nreturn owner.nested.payload.copied 3\nend\n"
+        "fun fromClassTemporary\nreturn (new Owner).nested.payload.copied 4\nend\n"
+        "fun fromTemporary number:int\nreturn (new Payload number).copied 4\nend\n"
+        "fun fromChain number:int\nreturn ((new Payload number).copied 5).copied 6\nend\n"
+        "fun propertyCopy owner:Owner\nreturn owner.nested.payload\nend\n"
+        "owner = new Owner\noriginal = new Payload 10\n"
+        "first = fromParameter original\nsecond = fromLocal 20\n"
+        "third = fromOwner owner\nfourth = fromTemporary 30\nfifth = fromChain 40\n"
+        "sixth = original.relay 7\nproperty = propertyCopy owner\n"
+        "classTemporary = fromClassTemporary\nassert classTemporary.number == 8\n"
+        "owner.nested.payload = fromParameter owner.nested.payload\n"
+        "assert original.number == 17\nassert first.number == 11\n"
+        "assert second.number == 22\nassert third.number == 7\n"
+        "assert fourth.number == 34\nassert fifth.number == 51\nassert sixth.number == 17\n"
+        "assert owner.nested.payload.number == 8\nassert property.number == 7\n"
+        "assert first.text == \"payload\"\nassert fifth.text == \"payload\"\n"
+        "return first.number + second.number + third.number + fourth.number + fifth.number + sixth.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    for (const auto* name : {
+        "fromParameter", "fromLocal", "fromOwner", "fromClassTemporary", "fromTemporary", "fromChain"
+    }) {
+        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(wrapper != nullptr);
+        for (auto index = NomadIndex{0}; index < wrapper->getVariableCount(); ++index) {
+            BOOST_TEST(!wrapper->getVariableName(VariableId{toNomadId(index)}).starts_with("$return"));
+        }
+        std::ostringstream dump;
+        dumpInstructions(runtime, *wrapper, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    }
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromParameter"))->getVariableCount() == 0U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromOwner"))->getVariableCount() == 0U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromTemporary"))->getVariableCount() == 1U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromChain"))->getVariableCount() == 2U);
+    const auto* propertyCopy = runtime.getScriptFunction(runtime.getFunctionId("propertyCopy"));
+    BOOST_TEST(propertyCopy->getVariableCount() == 1U);
+    BOOST_TEST(propertyCopy->getVariableName(VariableId{0}).starts_with("$return"));
+    const auto* payload = runtime.getTypeByName("Payload")->asStructType();
+    const auto methods = payload->getMethods();
+    const auto relay = std::ranges::find_if(methods, [](const auto* method) {
+        return method->getName() == "relay";
+    });
+    BOOST_REQUIRE(relay != methods.end());
+    const auto* callable = (*relay)->asScriptCallable();
+    BOOST_REQUIRE(callable != nullptr);
+    BOOST_TEST(callable->getVariableCount() == 0U);
+    BOOST_REQUIRE(callable->getCallStorageLayout().returnOffset.has_value());
+    BOOST_REQUIRE(callable->getCallStorageLayout().receiverOffset.has_value());
+    BOOST_TEST(*callable->getCallStorageLayout().returnOffset == 2U);
+    BOOST_TEST(*callable->getCallStorageLayout().receiverOffset == 1U);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 142);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(method_return_forwarding_handles_empty_receiver_and_result_combinations) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "note",
+        [&](VirtualMachine* active) { calls.push_back(active->getIntegerParameter(0)); },
+        {defParameter("number", runtime.getIntegerType(), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "struct Empty\n"
+        "fun copied\nnote 1\nreturn this\nend\n"
+        "fun payload\nnote 2\nreturn new Payload\nend\n"
+        "end\n"
+        "struct Payload\nnumber = 17\ntext = \"payload\"\n"
+        "fun empty\nnote 3\nreturn new Empty\nend\nend\n"
+        "class Owner\nempty = new Empty\nend\n"
+        "fun emptyBoth value:Empty\nreturn value.copied\nend\n"
+        "fun nonemptyResult value:Empty\nreturn value.payload\nend\n"
+        "fun emptyResult value:Payload\nreturn value.empty\nend\n"
+        "fun classOwnedEmpty owner:Owner\nreturn owner.empty.payload\nend\n"
+        "empty = new Empty\nemptyBoth empty\n"
+        "value = nonemptyResult empty\nemptyResult value\n"
+        "owner = new Owner\nother = classOwnedEmpty owner\nreturn value.number + other.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    for (const auto* name : {"emptyBoth", "nonemptyResult", "emptyResult", "classOwnedEmpty"}) {
+        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(wrapper != nullptr);
+        BOOST_TEST(wrapper->getVariableCount() == 0U);
+        BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
+        std::ostringstream dump;
+        dumpInstructions(runtime, *wrapper, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    }
+    const std::vector<NomadInteger> expectedCalls{1, 2, 3, 2};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 34);
         BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
         BOOST_TEST(outcome.leakedStrings == 0);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
