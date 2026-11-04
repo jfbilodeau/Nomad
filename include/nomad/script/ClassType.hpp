@@ -36,7 +36,7 @@ public:
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
     void initValue(RuntimeValue* value) const override;
-    void freeValue(RuntimeValue* value) const override;
+    void freeValue(RuntimeValue* value) const noexcept override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
     [[nodiscard]] bool needsFree() const override;

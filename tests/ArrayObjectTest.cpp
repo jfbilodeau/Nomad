@@ -80,7 +80,7 @@ public:
     [[nodiscard]] NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& text) const override;
     void initValue(RuntimeValue* value) const override;
-    void freeValue(RuntimeValue* value) const override;
+    void freeValue(RuntimeValue* value) const noexcept override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
 
     mutable NomadIndex initialized = 0;
@@ -105,7 +105,7 @@ void FailingElementType::initValue(RuntimeValue* value) const {
     }
 }
 
-void FailingElementType::freeValue(RuntimeValue* value) const {
+void FailingElementType::freeValue(RuntimeValue* value) const noexcept {
     ++freed;
     ClassType::freeValue(value);
 }

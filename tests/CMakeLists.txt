@@ -145,6 +145,16 @@ endif()
 
 nomad_copy_runtime_dependencies(nomad_test)
 
+add_executable(nomad-value-cleanup-test ValueCleanupContractTest.cpp)
+target_link_libraries(nomad-value-cleanup-test PRIVATE Nomad::Language)
+nomad_copy_runtime_dependencies(nomad-value-cleanup-test)
+
+add_test(NAME nomad_value_cleanup_contract
+    COMMAND "${CMAKE_COMMAND}"
+        "-DNOMAD_VALUE_CLEANUP_TEST=$<TARGET_FILE:nomad-value-cleanup-test>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/ValueCleanupProcessTest.cmake")
+set_tests_properties(nomad_value_cleanup_contract PROPERTIES LABELS unit TIMEOUT 60)
+
 # Filters select top-level suites. The remaining test catches all other suites and root-level cases,
 # including newly added tests, so splitting the runner cannot silently omit coverage.
 set(NOMAD_TEST_AUDIO_FILTER "audio")

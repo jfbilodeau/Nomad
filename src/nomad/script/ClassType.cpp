@@ -32,7 +32,7 @@ void ClassType::initValue(RuntimeValue* value) const {
     value->setObjectValue(nullptr);
 }
 
-void ClassType::freeValue(RuntimeValue* value) const {
+void ClassType::freeValue(RuntimeValue* value) const noexcept {
     value->freeObjectValue();
 }
 

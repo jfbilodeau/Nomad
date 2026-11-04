@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/DeferredType.hpp>
 
+#include <exception>
 #include <utility>
 
 namespace nomad {
@@ -33,8 +34,8 @@ void DeferredType::initValue(RuntimeValue*) const {
     reportUnresolved();
 }
 
-void DeferredType::freeValue(RuntimeValue*) const {
-    reportUnresolved();
+void DeferredType::freeValue(RuntimeValue*) const noexcept {
+    std::terminate();
 }
 
 void DeferredType::emitFreeParameter(OpCodeEmitter&, NomadIndex) const {

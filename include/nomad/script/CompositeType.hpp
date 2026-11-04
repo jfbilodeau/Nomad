@@ -7,6 +7,7 @@
 #include <nomad/script/Type.hpp>
 
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace nomad {
@@ -18,6 +19,12 @@ enum class ClassMode {
 
 class CompositeType : public Type {
 public:
+    struct StoredFieldLayout {
+        const Type* type;
+        NomadIndex offset;
+        NomadIndex size;
+    };
+
     ~CompositeType() override;
 
     using Type::toString;
@@ -47,7 +54,10 @@ public:
     [[nodiscard]] NomadIndex getFieldIndex(PropertyId id) const;
     [[nodiscard]] NomadIndex getFieldOffset(PropertyId id) const;
     [[nodiscard]] NomadIndex getFieldStorageSize() const;
-    [[nodiscard]] bool isFieldLayoutFinalized() const;
+    // Runtime views require a finalized layout; violations terminate.
+    [[nodiscard]] NomadIndex getFinalizedFieldStorageSize() const noexcept;
+    [[nodiscard]] std::span<const StoredFieldLayout> getFinalizedFields() const noexcept;
+    [[nodiscard]] bool isFieldLayoutFinalized() const noexcept;
     void finalizeFieldLayout();
     [[nodiscard]] virtual NomadIndex getPropertyCount() const;
 
@@ -75,6 +85,7 @@ private:
     std::vector<std::unique_ptr<Method>> m_methods;
     FieldLayoutState m_fieldLayoutState = FieldLayoutState::Unresolved;
     NomadIndex m_finalizedFieldStorageSize = 0;
+    std::vector<StoredFieldLayout> m_finalizedFields;
 };
 
 } // namespace nomad

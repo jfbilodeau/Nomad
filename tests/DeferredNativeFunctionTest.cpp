@@ -84,7 +84,7 @@ BOOST_AUTO_TEST_CASE(placeholders_are_compiler_owned_named_types_not_runtime_typ
     BOOST_CHECK_THROW(type->initValue(&value), NomadException);
     BOOST_CHECK_THROW(type->copyValue(&value, &value), NomadException);
     BOOST_CHECK_THROW(type->assignValue(&value, &value), NomadException);
-    BOOST_CHECK_THROW(type->freeValue(&value), NomadException);
+    BOOST_TEST(noexcept(type->freeValue(&value)));
     BOOST_CHECK_THROW(type->toString(value, text), NomadException);
     BOOST_CHECK_THROW((void)compiler->deferType({""}), NomadException);
 }

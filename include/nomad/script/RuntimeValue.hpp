@@ -68,7 +68,7 @@ public:
     // Transfers the object from `other`, which is left null.
     void moveObjectValue(RuntimeValue& other);
 
-    void freeObjectValue();
+    void freeObjectValue() noexcept;
 
     // Number of non-empty string objects currently alive. Only tracked in debug builds; always 0 otherwise.
     [[nodiscard]] static NomadInteger getLiveStringCount();

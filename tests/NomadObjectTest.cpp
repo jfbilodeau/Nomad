@@ -69,7 +69,7 @@ public:
     NomadString getTypeName() const override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
-    void freeValue(RuntimeValue* value) const override;
+    void freeValue(RuntimeValue* value) const noexcept override;
 
     mutable NomadIndex freeCalls = 0;
 };
@@ -90,7 +90,7 @@ void UnmanagedType::copyValue(const RuntimeValue* source, RuntimeValue* destinat
     *destination = *source;
 }
 
-void UnmanagedType::freeValue(RuntimeValue*) const {
+void UnmanagedType::freeValue(RuntimeValue*) const noexcept {
     ++freeCalls;
 }
 
@@ -147,12 +147,9 @@ public:
         }
     }
 
-    void freeValue(RuntimeValue* values) const override {
+    void freeValue(RuntimeValue* values) const noexcept override {
         for (auto index = NomadIndex{0}; index < m_size; ++index) {
             m_slotType.freeValue(values + index);
-        }
-        if (failFreeStorage != nullptr && values == failFreeStorage) {
-            throw NomadException("Slot release failed");
         }
     }
 
@@ -161,7 +158,6 @@ public:
     }
 
     NomadIndex failCopyAfterSlot = 0;
-    RuntimeValue* failFreeStorage = nullptr;
 
 private:
     const NomadIndex m_size;
@@ -362,7 +358,7 @@ BOOST_AUTO_TEST_CASE(SingleSlotCopyFailurePreservesOwnedDestinationWithoutExtern
     BOOST_TEST(destinationDestroyed == 1U);
 }
 
-BOOST_AUTO_TEST_CASE(DestinationReleaseFailureDoesNotLeakThePreparedCopy) {
+BOOST_AUTO_TEST_CASE(NonthrowingDestinationReleaseTransfersThePreparedCopy) {
     Runtime runtime;
     AssignmentStorageType type(&runtime, 3);
     std::array<NomadIndex, 6> destroyed{};
@@ -373,20 +369,16 @@ BOOST_AUTO_TEST_CASE(DestinationReleaseFailureDoesNotLeakThePreparedCopy) {
         source[index].setObjectValue(new CountingObject(destroyed[index]));
         destination[index].setObjectValue(new CountingObject(destroyed[index + 3]));
     }
-    type.failFreeStorage = destination.data();
-    BOOST_CHECK_EXCEPTION(type.assignValue(source.data(), destination.data(), scratch.data()), NomadException,
-        [](const NomadException& error) {
-            return NomadString{error.what()}.find("Slot release failed") != NomadString::npos;
-        });
+    type.assignValue(source.data(), destination.data(), scratch.data());
     for (auto index = NomadIndex{0}; index < source.size(); ++index) {
-        BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 1U);
-        BOOST_TEST(destination[index].getObjectValue() == nullptr);
+        BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 2U);
+        BOOST_TEST(destination[index].getObjectValue() == source[index].getObjectValue());
         BOOST_TEST(scratch[index].getObjectValue() == nullptr);
         BOOST_TEST(destroyed[index] == 0U);
         BOOST_TEST(destroyed[index + 3] == 1U);
     }
-    type.failFreeStorage = nullptr;
     type.freeValue(source.data());
+    type.freeValue(destination.data());
     for (const auto count : destroyed) {
         BOOST_TEST(count == 1U);
     }

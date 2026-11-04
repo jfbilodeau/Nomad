@@ -8,6 +8,7 @@
 #include <nomad/script/Runtime.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <limits>
 #include <utility>
 
@@ -216,7 +217,7 @@ NomadIndex CompositeType::getFieldOffset(const PropertyId id) const {
 
 NomadIndex CompositeType::getFieldStorageSize() const {
     if (isFieldLayoutFinalized()) {
-        return m_finalizedFieldStorageSize;
+        return getFinalizedFieldStorageSize();
     }
 
     auto size = NomadIndex{0};
@@ -233,7 +234,21 @@ NomadIndex CompositeType::getFieldStorageSize() const {
     return size;
 }
 
-bool CompositeType::isFieldLayoutFinalized() const {
+NomadIndex CompositeType::getFinalizedFieldStorageSize() const noexcept {
+    if (!isFieldLayoutFinalized()) {
+        std::terminate();
+    }
+    return m_finalizedFieldStorageSize;
+}
+
+std::span<const CompositeType::StoredFieldLayout> CompositeType::getFinalizedFields() const noexcept {
+    if (!isFieldLayoutFinalized()) {
+        std::terminate();
+    }
+    return m_finalizedFields;
+}
+
+bool CompositeType::isFieldLayoutFinalized() const noexcept {
     return m_fieldLayoutState == FieldLayoutState::Finalized;
 }
 
@@ -248,6 +263,8 @@ void CompositeType::finalizeFieldLayout() {
     m_fieldLayoutState = FieldLayoutState::Resolving;
     try {
         auto size = NomadIndex{0};
+        std::vector<StoredFieldLayout> fields;
+        fields.reserve(m_properties.size());
         for (const auto& property : m_properties) {
             if (property->asNativeProperty() != nullptr) {
                 continue;
@@ -265,8 +282,10 @@ void CompositeType::finalizeFieldLayout() {
             if (fieldSize > std::numeric_limits<NomadIndex>::max() - size) {
                 throw NomadException("Field storage size exceeds the maximum slot count at '" + property->getName() + "'");
             }
+            fields.push_back({type, size, fieldSize});
             size += fieldSize;
         }
+        m_finalizedFields = std::move(fields);
         m_finalizedFieldStorageSize = size;
         m_fieldLayoutState = FieldLayoutState::Finalized;
     } catch (...) {

@@ -40,7 +40,8 @@ public:
     // Storage points to getSize() contiguous RuntimeValue slots. Zero-size types access no slots.
     // Initializes cleared, unowned storage with an owned default value. Does not run script constructors.
     virtual void initValue(RuntimeValue* value) const = 0;
-    virtual void freeValue(RuntimeValue* value) const;
+    // Releases valid owned or cleared storage; invalid runtime metadata is a fatal invariant violation.
+    virtual void freeValue(RuntimeValue* value) const noexcept;
     // Copies into empty RuntimeValue storage or replaces an owned value; does not require initValue first.
     virtual void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const = 0;
 

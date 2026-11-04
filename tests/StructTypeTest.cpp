@@ -17,6 +17,7 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
+#include <nomad/script/TypedValue.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -33,8 +34,49 @@ using namespace nomad;
 static_assert(!std::is_abstract_v<StructType>);
 static_assert(std::is_base_of_v<CompositeType, StructType>);
 static_assert(!std::is_base_of_v<ClassType, StructType>);
+static_assert(noexcept(std::declval<const Type&>().freeValue(nullptr)));
+static_assert(noexcept(std::declval<const ClassType&>().freeValue(nullptr)));
+static_assert(noexcept(std::declval<const StructType&>().freeValue(nullptr)));
+static_assert(noexcept(std::declval<RuntimeValue&>().freeObjectValue()));
+static_assert(!noexcept(std::declval<const Type&>().initValue(nullptr)));
+static_assert(!noexcept(std::declval<const Type&>().copyValue(nullptr, nullptr)));
+static_assert(!noexcept(std::declval<const Type&>().assignValue(nullptr, nullptr)));
 
 namespace {
+
+class CleanupLayoutProbeType final : public ClassType {
+public:
+    CleanupLayoutProbeType(
+        Runtime* runtime,
+        TypeId id,
+        NomadString name,
+        ClassMode mode,
+        CleanupLayoutProbeType*& descriptor
+    ):
+        ClassType(runtime, id, std::move(name), mode)
+    {
+        descriptor = this;
+    }
+
+    [[nodiscard]] NomadIndex getSize() const override {
+        requireQueriesAllowed();
+        return ClassType::getSize();
+    }
+
+    [[nodiscard]] bool needsFree() const override {
+        requireQueriesAllowed();
+        return ClassType::needsFree();
+    }
+
+    bool rejectQueries = false;
+
+private:
+    void requireQueriesAllowed() const {
+        if (rejectQueries) {
+            throw NomadException("Cleanup must not query field metadata");
+        }
+    }
+};
 
 class FailingFieldType final : public ClassType {
 public:
@@ -75,6 +117,71 @@ private:
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(struct_type)
+
+BOOST_AUTO_TEST_CASE(finalized_cleanup_uses_cached_nested_layouts_without_field_queries) {
+    Runtime runtime;
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    CleanupLayoutProbeType* field = nullptr;
+    const auto fieldId = runtime.registerClass<CleanupLayoutProbeType>("CleanupProbe", ClassMode::Closed, field);
+    BOOST_REQUIRE(fieldId.isValid());
+    const auto emptyId = runtime.registerStruct("CleanupEmpty");
+    const auto innerId = runtime.registerStruct("CleanupInner");
+    const auto outerId = runtime.registerStruct("CleanupOuter");
+    const auto* empty = runtime.getTypeByName("CleanupEmpty")->asStructType();
+    const auto* inner = runtime.getTypeByName("CleanupInner")->asStructType();
+    const auto* outer = runtime.getTypeByName("CleanupOuter")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "reference", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(outerId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(outerId);
+
+    const auto fields = outer->getFinalizedFields();
+    BOOST_REQUIRE(fields.size() == 4U);
+    BOOST_TEST(outer->getFinalizedFieldStorageSize() == 4U);
+    BOOST_TEST(fields[0].type == runtime.getIntegerType());
+    BOOST_TEST(fields[0].offset == 0U);
+    BOOST_TEST(fields[0].size == 1U);
+    BOOST_TEST(fields[1].type == empty);
+    BOOST_TEST(fields[1].offset == 1U);
+    BOOST_TEST(fields[1].size == 0U);
+    BOOST_TEST(fields[2].type == inner);
+    BOOST_TEST(fields[2].offset == 1U);
+    BOOST_TEST(fields[2].size == 2U);
+    BOOST_TEST(fields[3].type == runtime.getStringType());
+    BOOST_TEST(fields[3].offset == 3U);
+    BOOST_TEST(fields[3].size == 1U);
+    BOOST_TEST(empty->getFinalizedFields().empty());
+    BOOST_TEST(empty->getFinalizedFieldStorageSize() == 0U);
+    empty->freeValue(nullptr);
+    runtime.finalizeCompositeFieldLayout(outerId);
+    BOOST_TEST(outer->getFinalizedFields().data() == fields.data());
+
+    for (auto index = 0; index < 3; ++index) {
+        std::array<RuntimeValue, 4> values{};
+        values[0].setIntegerValue(42);
+        values[1].setObjectValue(new NomadObject());
+        values[2].setStringValue("inner");
+        values[3].setStringValue("outer");
+        {
+            TypedValue copy(outer, values);
+            field->rejectQueries = true;
+            BOOST_CHECK_THROW((void)field->getSize(), NomadException);
+            BOOST_CHECK_THROW((void)field->needsFree(), NomadException);
+            outer->freeValue(values.data());
+            BOOST_TEST(values[1].getObjectValue() == nullptr);
+            BOOST_TEST(values[2].getObjectValue() == nullptr);
+            BOOST_TEST(values[3].getObjectValue() == nullptr);
+            BOOST_TEST(copy.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+        }
+        field->rejectQueries = false;
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(type_category_predicates_distinguish_structs_classes_and_other_types) {
     Runtime runtime;
@@ -190,7 +297,7 @@ BOOST_AUTO_TEST_CASE(registration_identity_and_unresolved_layout_contracts) {
     BOOST_CHECK_THROW((void)type->getAssignmentScratchSize(), NomadException);
     BOOST_CHECK_THROW(type->initValue(nullptr), NomadException);
     BOOST_CHECK_THROW(type->copyValue(nullptr, nullptr), NomadException);
-    BOOST_CHECK_THROW(type->freeValue(nullptr), NomadException);
+    BOOST_TEST(noexcept(type->freeValue(nullptr)));
     std::vector<Instruction> instructions;
     Compiler compiler(&runtime, instructions);
     const auto instructionCount = instructions.size();

@@ -30,7 +30,7 @@ const NomadString& Type::getDocumentation() const {
     return m_documentation;
 }
 
-void Type::freeValue(RuntimeValue* /*value*/) const {
+void Type::freeValue(RuntimeValue* /*value*/) const noexcept {
     // Default implementation does nothing
 }
 

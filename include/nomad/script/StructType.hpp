@@ -23,7 +23,7 @@ public:
     [[nodiscard]] bool needsFree() const override;
     void initValue(RuntimeValue* value) const override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
-    void freeValue(RuntimeValue* value) const override;
+    void freeValue(RuntimeValue* value) const noexcept override;
     void toString(const RuntimeValue& value, NomadString& string) const override;
 
     void emitInitResult(OpCodeEmitter& emitter) const override;

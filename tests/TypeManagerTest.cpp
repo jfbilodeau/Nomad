@@ -44,7 +44,7 @@ public:
         m_destroyed = true;
     }
 
-    void freeValue(RuntimeValue* value) const override {
+    void freeValue(RuntimeValue* value) const noexcept override {
         BOOST_TEST(!m_destroyed);
         ++m_released;
         ClassType::freeValue(value);

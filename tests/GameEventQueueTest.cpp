@@ -33,7 +33,7 @@ public:
         return "tracking";
     }
 
-    void freeValue(RuntimeValue* /*value*/) const override {
+    void freeValue(RuntimeValue* /*value*/) const noexcept override {
         m_valueFreed = true;
     }
 
