@@ -4,9 +4,8 @@
 
 #include <nomad/script/RuntimeValue.hpp>
 
-#include <memory>
 #include <span>
-#include <variant>
+#include <vector>
 
 namespace nomad {
 
@@ -23,18 +22,16 @@ public:
     ~TypedValue();
 
     [[nodiscard]] const Type* getType() const;
-    // Scalar access only; structs, including empty structs, require getStorage().
+    // Scalar access only; empty values and structs require getStorage().
     [[nodiscard]] const RuntimeValue& getValue() const;
-    // Borrowed slots remain valid until this value is replaced or destroyed; moves preserve struct addresses.
+    // Borrowed slots remain valid until this value is replaced or destroyed; moves preserve slot addresses.
     [[nodiscard]] std::span<const RuntimeValue> getStorage() const;
 
 private:
-    [[nodiscard]] RuntimeValue* getStorageAddress();
-    [[nodiscard]] const RuntimeValue* getStorageAddress() const;
     void release() noexcept;
 
     const Type* m_type;
-    std::variant<RuntimeValue, std::unique_ptr<RuntimeValue[]>> m_storage;
+    std::vector<RuntimeValue> m_storage;
 };
 
 } // namespace nomad

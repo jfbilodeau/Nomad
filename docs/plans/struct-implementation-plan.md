@@ -8,7 +8,7 @@ has been reviewed, along with temporary struct method receivers and free-functio
 return-destination forwarding, direct construction returns, and method-result
 forwarding on struct receivers and temporary-rooted stored property access.
 Step 5A interpreter-owned struct values and frame access, including the
-standalone variant-backed `TypedValue` follow-up, is implemented and awaiting
+standalone vector-backed `TypedValue` follow-up, is implemented and awaiting
 review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
@@ -2725,19 +2725,23 @@ Implementation and validation:
   separate compiled gaps. NRVO and fatal-fault cleanup remain deferred.
   Gameplay and performance were not validated.
 
-### Step 5A follow-up: Standalone variant-backed typed values
+### Step 5A follow-up: Standalone vector-backed typed values
 
 - Move `TypedValue` into its own matching header/source files, independent of
   interpreter-context definitions. Keep one owned-value abstraction rather than
   introducing a separate scalar wrapper.
-- Use `std::variant<RuntimeValue, std::unique_ptr<RuntimeValue[]>>` to share
-  inline scalar and owned array storage. Type metadata remains outside the
-  variant; the array contains raw runtime slots, not per-field typed wrappers.
+- Replace the initially selected scalar/array variant with
+  `std::vector<RuntimeValue>`. Each live value owns exactly its type's physical
+  slot count; the vector contains raw runtime slots, not per-field typed
+  wrappers. Scalars now allocate one slot rather than living inline.
 - Preserve existing checked scalar access, complete storage views, type-driven
-  copy/free operations, and stable struct addresses across moves. Nonempty
-  one-slot structs remain allocated; empty values require no allocation.
+  copy/free operations, and stable slot addresses across moves. Nonempty
+  one-slot structs remain allocated; empty structs and void require no
+  allocation. Scalar access to empty or moved-from values fails explicitly
+  rather than returning a placeholder.
 - Standalone-header tests verify scalar/array/empty/void transitions, ownership,
-  self-assignment, single-slot struct moves, and partial-copy cleanup. Existing
+  self-assignment, scalar and single-slot struct moves, empty scalar-access
+  rejection, and partial-copy cleanup. Existing
   nested ownership and interpreter/frame regressions also pass. No memory
   reduction is claimed.
 - Language, remaining, bindings, and tooling CTest groups, compiler-export and

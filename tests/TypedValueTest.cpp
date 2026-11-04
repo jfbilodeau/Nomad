@@ -34,7 +34,7 @@ public:
 
 BOOST_AUTO_TEST_SUITE(typed_values)
 
-BOOST_AUTO_TEST_CASE(scalars_copy_and_move_owned_references_without_array_storage) {
+BOOST_AUTO_TEST_CASE(scalars_copy_and_move_owned_references_in_single_slot_storage) {
     Runtime runtime;
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
@@ -46,8 +46,11 @@ BOOST_AUTO_TEST_CASE(scalars_copy_and_move_owned_references_without_array_storag
             BOOST_TEST(value.getStorage().data() == &value.getValue());
             BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
             TypedValue copy(value);
+            BOOST_TEST(copy.getStorage().data() != value.getStorage().data());
             BOOST_TEST(source.getObjectValue()->getReferenceCount() == 3U);
+            const auto* copyAddress = copy.getStorage().data();
             TypedValue moved(std::move(copy));
+            BOOST_TEST(moved.getStorage().data() == copyAddress);
             BOOST_TEST(copy.getType() == nullptr);
             BOOST_TEST(copy.getStorage().empty());
             BOOST_TEST(moved.getValue().getStringValue() == "scalar");
@@ -57,7 +60,9 @@ BOOST_AUTO_TEST_CASE(scalars_copy_and_move_owned_references_without_array_storag
             const auto* alias = &value;
             value = *alias;
             BOOST_TEST(source.getObjectValue()->getReferenceCount() == 3U);
+            const auto* valueAddress = value.getStorage().data();
             moved = std::move(value);
+            BOOST_TEST(moved.getStorage().data() == valueAddress);
             BOOST_TEST(value.getType() == nullptr);
             BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
         }
@@ -66,6 +71,33 @@ BOOST_AUTO_TEST_CASE(scalars_copy_and_move_owned_references_without_array_storag
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
     }
+}
+
+BOOST_AUTO_TEST_CASE(empty_and_moved_values_have_no_scalar_slot) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("EmptyScalarSlot");
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    const auto* empty = runtime.getTypeByName("EmptyScalarSlot");
+    TypedValue value(runtime.getVoidType(), RuntimeValue{});
+    BOOST_TEST(value.getType()->isVoid());
+    BOOST_TEST(value.getStorage().empty());
+    BOOST_TEST(value.getStorage().data() == nullptr);
+    BOOST_CHECK_THROW(static_cast<void>(value.getValue()), std::invalid_argument);
+    value = TypedValue(empty, std::span<const RuntimeValue>{});
+    BOOST_TEST(value.getType() == empty);
+    BOOST_TEST(!value.getType()->isVoid());
+    BOOST_TEST(value.getStorage().empty());
+    BOOST_TEST(value.getStorage().data() == nullptr);
+    BOOST_CHECK_THROW(static_cast<void>(value.getValue()), std::invalid_argument);
+    value = TypedValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{5}});
+    const auto* address = value.getStorage().data();
+    TypedValue moved(std::move(value));
+    BOOST_TEST(moved.getStorage().data() == address);
+    BOOST_TEST(moved.getValue().getIntegerValue() == 5);
+    BOOST_TEST(value.getType() == nullptr);
+    BOOST_TEST(value.getStorage().empty());
+    BOOST_TEST(value.getStorage().data() == nullptr);
+    BOOST_CHECK_THROW(static_cast<void>(value.getValue()), std::invalid_argument);
 }
 
 BOOST_AUTO_TEST_CASE(storage_transitions_preserve_empty_types_and_single_slot_struct_addresses) {
