@@ -743,7 +743,7 @@ bool NativeMemberExpression::resolveMember(
                 const auto* identifier = dynamic_cast<const IdentifierExpression*>(m_receiver.get());
                 if (identifier != nullptr && identifier->getIdentifier() == "this" &&
                     context->getCompiler()->getReceiverType(function) == composite) {
-                    property = context->getCompiler()->resolveClassField(
+                    property = context->getCompiler()->resolveStructField(
                         context, function, m_memberName, valueType,
                         runtime->getConstructor(function->getId()) != nullptr, getLine(), getColumn());
                     if (property == nullptr) {

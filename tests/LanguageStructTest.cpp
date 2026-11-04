@@ -5,9 +5,13 @@
 #include <nomad/collections/RegisterListType.hpp>
 #include <nomad/collections/RegisterMapType.hpp>
 
+#include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Source.hpp>
+#include <nomad/compiler/StructDeclaration.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -17,10 +21,79 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <type_traits>
+#include <utility>
 
 using namespace nomad;
 
+static_assert(std::is_same_v<decltype(std::declval<const ClassDeclaration&>().getType()), const ClassType*>);
+static_assert(std::is_same_v<decltype(std::declval<const StructDeclaration&>().getType()), const StructType*>);
+static_assert(!std::is_base_of_v<ClassDeclaration, StructDeclaration>);
+static_assert(!std::is_base_of_v<ClassMemberDeclaration, StructMemberDeclaration>);
+
 BOOST_AUTO_TEST_SUITE(language_structs)
+
+BOOST_AUTO_TEST_CASE(struct_declarations_have_specialized_ast_members_and_source_spans) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
+        *compiler, CompilationTarget::Analysis).succeeded());
+    BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
+    auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
+    CompilerContext context(compiler.get());
+    std::unique_ptr<Statement> statement;
+    {
+        Tokenizer tokens(&context, "point.nomad",
+            "struct Point\n"
+            "    label = \"point\"\n"
+            "    init value:int\n"
+            "        this.x = value\n"
+            "    end\n"
+            "    fun copy value:Point\n"
+            "        return value\n"
+            "    end\n"
+            "end\n"
+            "return 42");
+        BOOST_REQUIRE(tokens.nextLine());
+        BOOST_REQUIRE(tokens.expect("struct"));
+        BOOST_REQUIRE(preParseStructStatement(&context, function, &tokens, PreParsePhase::Signatures));
+        tokens.reset();
+        BOOST_REQUIRE(tokens.nextLine());
+        statement = parser::parseLine(&context, function, &tokens);
+        BOOST_REQUIRE_MESSAGE(statement != nullptr,
+            (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Missing struct AST"));
+        BOOST_TEST(tokens.getLineIndex() == 9U);
+        BOOST_REQUIRE(tokens.nextLine());
+        BOOST_TEST(tokens.is("return"));
+    }
+    const auto* declaration = dynamic_cast<const StructDeclaration*>(statement.get());
+    BOOST_REQUIRE(declaration != nullptr);
+    BOOST_TEST(dynamic_cast<const ClassDeclaration*>(statement.get()) == nullptr);
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(declaration->isDeclaration());
+    BOOST_TEST(declaration->getType() == runtime.getTypeByName("Point")->asStructType());
+    BOOST_TEST(declaration->getLine() == 1U);
+    BOOST_TEST(declaration->getEndLine() == 9U);
+    const auto& members = declaration->getMembers();
+    BOOST_REQUIRE(members.size() == 3U);
+    BOOST_TEST((members[0]->getKind() == StructMemberKind::Field));
+    BOOST_TEST(members[0]->getName() == "label");
+    BOOST_TEST(members[0]->getLine() == 2U);
+    BOOST_TEST(members[0]->getColumn() == 5U);
+    BOOST_REQUIRE(members[0]->getSourceLines().size() == 1U);
+    BOOST_TEST(members[0]->getSourceLines()[0].tokens[0].textValue == "point");
+    BOOST_REQUIRE(members[0]->getInitializer() != nullptr);
+    BOOST_TEST((members[1]->getKind() == StructMemberKind::Constructor));
+    BOOST_TEST(members[1]->getCallableId().isValid());
+    BOOST_REQUIRE(members[1]->getParameters().size() == 1U);
+    BOOST_TEST(members[1]->getParameters()[0].type == runtime.getIntegerType());
+    BOOST_TEST(members[1]->getEndLine() == 5U);
+    BOOST_TEST((members[2]->getKind() == StructMemberKind::Method));
+    BOOST_REQUIRE(members[2]->getParameters().size() == 1U);
+    BOOST_TEST(members[2]->getParameters()[0].type == declaration->getType());
+    BOOST_TEST(declaration->getType()->getConstructors().size() == 1U);
+    BOOST_TEST(declaration->getType()->getMethods().size() == 2U);
+}
 
 BOOST_AUTO_TEST_CASE(symbols_precede_cross_file_signatures_and_analysis_does_not_emit) {
     for (const auto reversed : {false, true}) {

@@ -9,7 +9,7 @@ namespace nomad {
 
 enum class PreParsePhase;
 
-class CompositeType;
+class ClassType;
 class Tokenizer;
 
 class ClassDeclaration final : public Statement {
@@ -17,10 +17,10 @@ public:
     ClassDeclaration(
         NomadIndex line,
         NomadIndex column,
-        const CompositeType* type,
+        const ClassType* type,
         std::vector<std::unique_ptr<ClassMemberDeclaration>> members
     );
-    [[nodiscard]] const CompositeType* getType() const;
+    [[nodiscard]] const ClassType* getType() const;
     [[nodiscard]] const std::vector<std::unique_ptr<ClassMemberDeclaration>>& getMembers() const;
     [[nodiscard]] NomadBoolean isDeclaration() const override;
 
@@ -28,7 +28,7 @@ protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
 
 private:
-    const CompositeType* m_type;
+    const ClassType* m_type;
     std::vector<std::unique_ptr<ClassMemberDeclaration>> m_members;
 };
 
@@ -45,12 +45,4 @@ bool preParseOpenClassStatement(
     PreParsePhase phase
 );
 std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);
-bool preParseStructStatement(
-    CompilerContext* context,
-    ScriptCallableBase* function,
-    Tokenizer* tokens,
-    PreParsePhase phase
-);
-std::unique_ptr<Statement> parseStructStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);
-
 } // namespace nomad

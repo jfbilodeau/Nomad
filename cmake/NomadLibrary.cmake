@@ -22,6 +22,9 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SourceLoader.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/StatementParsers.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/StorageLocation.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StructDeclaration.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StructFieldInitializerStatement.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StructMemberDeclaration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SyntaxTree.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
 

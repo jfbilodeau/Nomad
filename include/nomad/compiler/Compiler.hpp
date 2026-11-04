@@ -118,7 +118,16 @@ public:
     [[nodiscard]] const Property* resolveObjectField(
         CompilerContext* context,
         ScriptCallableBase* function,
-        const CompositeType* owner,
+        const ClassType* owner,
+        const NomadString& name,
+        const Type* valueType,
+        bool allowDeclaration,
+        NomadIndex line,
+        NomadIndex column
+    );
+    [[nodiscard]] const Property* resolveStructField(
+        CompilerContext* context,
+        ScriptCallableBase* function,
         const NomadString& name,
         const Type* valueType,
         bool allowDeclaration,

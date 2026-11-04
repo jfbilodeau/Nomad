@@ -12,6 +12,7 @@
 #include <nomad/compiler/NativePropertyTypeTarget.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
+#include <nomad/compiler/StructDeclaration.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/compiler/statements/EventStatement.hpp>
@@ -20,6 +21,7 @@
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/StructType.hpp>
 
 #include <nomad/system/String.hpp>
 
@@ -449,7 +451,7 @@ const Property* Compiler::resolveClassField(
     const NomadIndex column
 ) {
     const auto* receiver = getReceiverType(function);
-    const auto* owner = receiver != nullptr ? receiver->asCompositeType() : nullptr;
+    const auto* owner = receiver != nullptr ? receiver->asClassType() : nullptr;
     if (owner == nullptr) {
         reportInternalError("Class field resolution requires an object receiver");
     }
@@ -473,7 +475,7 @@ const Property* Compiler::resolveClassField(
 const Property* Compiler::resolveObjectField(
     CompilerContext* context,
     ScriptCallableBase* function,
-    const CompositeType* owner,
+    const ClassType* owner,
     const NomadString& name,
     const Type* valueType,
     const bool allowDeclaration,
@@ -483,45 +485,105 @@ const Property* Compiler::resolveObjectField(
     const auto report = [&](const NomadString& message) {
         context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
     };
-    const auto category = NomadString(owner->asStructType() != nullptr ? "struct" : "class");
     if (name.empty() || name.find('.') != NomadString::npos) {
-        report("Expected an unqualified " + category + " field name: '" + name + "'");
+        report("Expected an unqualified class field name: '" + name + "'");
         return nullptr;
     }
     for (const auto* method : owner->getMethods()) {
         if (method->getName() == name) {
-            report(NomadString(owner->asStructType() != nullptr ? "Struct" : "Class") +
-                " field '" + name + "' conflicts with a method");
+            report("Class field '" + name + "' conflicts with a method");
             return nullptr;
         }
     }
     const auto* property = owner->getProperty(name);
     if (property == nullptr && !allowDeclaration) {
-        report("Unknown " + category + " field '" + name + "'");
+        report("Unknown class field '" + name + "'");
         return nullptr;
     }
     if (valueType == nullptr) {
-        report("Cannot determine type of " + category + " field '" + name + "'");
+        report("Cannot determine type of class field '" + name + "'");
         return nullptr;
     }
     if (valueType->isVoid() || valueType->isInternal()) {
-        report("Invalid type for " + category + " field '" + name + "'");
+        report("Invalid type for class field '" + name + "'");
         return nullptr;
     }
     if (property != nullptr) {
         if (property->getValueType() != valueType) {
-            report("Cannot assign type '" + valueType->getTypeName() + "' to " + category + " field '" + name +
+            report("Cannot assign type '" + valueType->getTypeName() + "' to class field '" + name +
                 "' of type '" + property->getValueType()->getTypeName() + "'");
             return nullptr;
         }
         return property;
     }
-    const auto id = m_runtime->registerProperty(owner->getId(), name, valueType);
+    const auto id = m_runtime->getTypeManager().registerScriptClassProperty(owner->getId(), name, valueType);
     if (id.isInvalid()) {
-        report("Cannot register " + category + " field '" + name + "'");
+        report("Cannot register class field '" + name + "'");
         return nullptr;
     }
     m_externalFields.push_back({id, function != nullptr ? function->getPath() : NomadString{}, line, column});
+    return m_runtime->getProperty(id);
+}
+
+const Property* Compiler::resolveStructField(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const NomadString& name,
+    const Type* valueType,
+    const bool allowDeclaration,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+    const auto* receiver = getReceiverType(function);
+    const auto* owner = receiver != nullptr ? receiver->asStructType() : nullptr;
+    if (owner == nullptr) {
+        reportInternalError("Struct field resolution requires a struct receiver");
+    }
+    const auto report = [&](const NomadString& message) {
+        context->reportError(message, function->getPath(), line, column);
+    };
+    IdentifierDefinition receiverDefinition;
+    if (!resolveIdentifier("this", this, function, receiverDefinition)) {
+        report("Cannot capture the struct receiver 'this'");
+        return nullptr;
+    }
+    if (name.empty() || name.find('.') != NomadString::npos) {
+        report("Expected an unqualified struct field name: '" + name + "'");
+        return nullptr;
+    }
+    for (const auto* method : owner->getMethods()) {
+        if (method->getName() == name) {
+            report("Struct field '" + name + "' conflicts with a method");
+            return nullptr;
+        }
+    }
+    const auto* property = owner->getProperty(name);
+    if (property == nullptr && !allowDeclaration) {
+        report("Unknown struct field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType == nullptr) {
+        report("Cannot determine type of struct field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType->isVoid() || valueType->isInternal()) {
+        report("Invalid type for struct field '" + name + "'");
+        return nullptr;
+    }
+    if (property != nullptr) {
+        if (property->getValueType() != valueType) {
+            report("Cannot assign type '" + valueType->getTypeName() + "' to struct field '" + name +
+                "' of type '" + property->getValueType()->getTypeName() + "'");
+            return nullptr;
+        }
+        return property;
+    }
+    const auto id = m_runtime->getTypeManager().registerScriptStructProperty(owner->getId(), name, valueType);
+    if (id.isInvalid()) {
+        report("Cannot register struct field '" + name + "'");
+        return nullptr;
+    }
+    m_internalFields.insert(id);
     return m_runtime->getProperty(id);
 }
 

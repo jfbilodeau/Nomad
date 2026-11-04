@@ -3,11 +3,11 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/ClassFieldInitializerStatement.hpp>
-#include <nomad/compiler/ClassMemberDeclaration.hpp>
 #include <nomad/compiler/CompilerException.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/StructFieldInitializerStatement.hpp>
+#include <nomad/compiler/StructMemberDeclaration.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/InstructionDump.hpp>
@@ -3203,12 +3203,12 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
         scriptType->asCompositeType()->getInitializerName(), {}, "", "");
     BOOST_REQUIRE(nativeInitializer.isValid());
     BOOST_REQUIRE(scriptInitializer.isValid());
-    auto nativeDeclaration = std::make_unique<ClassMemberDeclaration>(
-        0, 0, ClassMemberKind::Field, "number", std::vector<Parameter>{}, std::vector<ClassMemberSourceLine>{});
+    auto nativeDeclaration = std::make_unique<StructMemberDeclaration>(
+        0, 0, StructMemberKind::Field, "number", std::vector<Parameter>{}, std::vector<StructMemberSourceLine>{});
     nativeDeclaration->setPropertyId(nativeNumber);
     nativeDeclaration->setInitializer(std::make_unique<FunctionCallExpression>(nullptr, 0, 0, "initialNumber"));
-    auto scriptDeclaration = std::make_unique<ClassMemberDeclaration>(
-        0, 0, ClassMemberKind::Field, "number", std::vector<Parameter>{}, std::vector<ClassMemberSourceLine>{});
+    auto scriptDeclaration = std::make_unique<StructMemberDeclaration>(
+        0, 0, StructMemberKind::Field, "number", std::vector<Parameter>{}, std::vector<StructMemberSourceLine>{});
     scriptDeclaration->setPropertyId(scriptNumber);
     scriptDeclaration->setInitializer(std::make_unique<FunctionCallExpression>(nullptr, 0, 0, "initialNumber"));
     fixture.addFunction("createCopy",
@@ -3238,7 +3238,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
             fixture.getCompiler().registerMemberCompilation(
                 id, runtime.getFunctionId("main"), CompilationCallableTarget::PropertyInitializer);
             auto body = std::make_unique<FunctionNode>(0, 0);
-            body->addStatement(std::make_unique<ClassFieldInitializerStatement>(
+            body->addStatement(std::make_unique<StructFieldInitializerStatement>(
                 id == nativeInitializer ? nativeDeclaration.get() : scriptDeclaration.get()));
             fixture.getCompiler().setFunctionBody(id, std::move(body));
         }

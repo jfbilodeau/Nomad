@@ -2245,8 +2245,9 @@ executable struct support at this stage.
 
 Approved scope:
 
-- Implement source declaration analysis in one reviewable slice, reusing the
-  class declaration and composite member-resolution paths.
+- Implement source declaration analysis in one reviewable slice. The reviewed
+  follow-up specializes class/struct declaration and field-resolution paths
+  rather than selecting their behavior with type-condition branches.
 - Finalize source struct layouts after inference and member discovery in the
   existing Resolve phase. Do not add a compilation phase, opcode, or ABI.
 - Retain resolved property paths during inference and query physical offsets
@@ -2262,8 +2263,10 @@ Implementation:
   supports hub-qualified declarations, explicit initializer fields,
   constructor-inferred fields, methods, overloaded constructors, and generated
   `$init`/default constructors.
-- Shared declaration AST and callable registration use composite metadata;
-  existing class parser entry points remain available.
+- Separate `ClassDeclaration` and `StructDeclaration` ASTs retain their concrete
+  type descriptors. Struct members and field initializer statements have their
+  own classes, and class/struct registration and field resolution use specialized
+  entry points.
 - Empty structs retain their type identity in parameters and return expressions.
   Nested layouts finalize after semantic resolution, with source diagnostics for
   inline cycles.
@@ -2290,6 +2293,32 @@ Validation:
   points remain uncompiled. Existing compiled/interpreter/host regressions pass,
   but complete executable source structs and gameplay were not validated.
 - Whitespace validation passed. Published language documentation is unchanged.
+
+Declaration-specialization follow-up:
+
+- Restore class-specific declaration parsing and metadata. Add matching
+  `StructDeclaration`, `StructMemberDeclaration`, and
+  `StructFieldInitializerStatement` headers/sources for structs.
+- Preserve declaration syntax, inference, layout timing, and construction
+  semantics. Use existing explicit class/struct registration APIs.
+- Add direct AST/type-contract tests and migrate registered-struct initializer
+  fixtures to the struct-specific statement.
+- Validate through the workspace CTest build-and-test workflow, without a
+  separate preliminary build invocation.
+- Stop for review after specialization. Statement-owned block classification
+  remains the next separate reviewable step; do not change block discovery here.
+
+Specialization validation:
+
+- The CTest workflow built the changes before running tests; no separate build
+  invocation was needed. An assertion-message macro compilation error in the
+  new AST test was corrected before the successful retry.
+- Language, remaining, bindings, and tooling unit groups passed, including
+  concrete class/struct AST type contracts, struct member spans, constructor
+  metadata, and the migrated registered-struct initializer execution fixture.
+- Compiler export and LSP process integration tests passed.
+- Source struct coverage remains analysis-only; this refactoring does not claim
+  additional executable struct functionality or gameplay validation.
 
 ### Step 3: Storage, lifecycle, and VM call-frame support
 
@@ -2442,6 +2471,8 @@ scope. No commit or push without a separate request.
 - Members/declarations/inference:
   [ClassDeclaration.cpp](../../src/nomad/compiler/ClassDeclaration.cpp),
   [ClassFieldInitializerStatement.cpp](../../src/nomad/compiler/ClassFieldInitializerStatement.cpp),
+  [StructDeclaration.cpp](../../src/nomad/compiler/StructDeclaration.cpp),
+  [StructFieldInitializerStatement.cpp](../../src/nomad/compiler/StructFieldInitializerStatement.cpp),
   [Property.hpp](../../include/nomad/script/Property.hpp),
   [Compiler.cpp](../../src/nomad/compiler/Compiler.cpp).
 - Logical versus physical calls:
