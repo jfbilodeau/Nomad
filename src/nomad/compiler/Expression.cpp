@@ -918,9 +918,15 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             }
             m_structReceiver = m_receiver->getStorageLocation();
             if (!m_structReceiver.has_value()) {
-                reportError(context, function,
-                    "Struct method receivers currently require local, parameter, borrowed, or stored object-property storage");
-                return;
+                if (m_receiverVariable.isInvalid()) {
+                    m_receiverVariable = function->registerVariable(
+                        "$methodReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
+                }
+                IdentifierDefinition receiver;
+                receiver.identifierType = IdentifierType::FunctionVariable;
+                receiver.variableId = m_receiverVariable;
+                receiver.valueType = m_receiver->getType();
+                m_structReceiver = StorageLocation(receiver);
             }
         }
         for (NomadIndex index = 0; index < arguments.size(); ++index) {
@@ -960,7 +966,13 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
         return;
     }
     if (m_memberType == MemberType::Method && receiverType->isStruct()) {
+        if (m_receiverVariable.isValid()) {
+            m_receiver->compileIntoLocal(compiler, function, m_receiverVariable);
+        }
         compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver);
+        if (m_receiverVariable.isValid()) {
+            receiverType->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_receiverVariable));
+        }
         if (!getType()->isVoid()) {
             compiler->addMoveResult(getType(), target);
         }
@@ -1007,7 +1019,13 @@ void NativeMemberExpression::onCompileIntoLocal(
     if (m_memberType != MemberType::Method || !m_receiver->getType()->isStruct()) {
         compiler->reportError("Struct local destinations currently require a struct method receiver");
     }
+    if (m_receiverVariable.isValid()) {
+        m_receiver->compileIntoLocal(compiler, function, m_receiverVariable);
+    }
     compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver, destination);
+    if (m_receiverVariable.isValid()) {
+        m_receiver->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_receiverVariable));
+    }
 }
 
 void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {

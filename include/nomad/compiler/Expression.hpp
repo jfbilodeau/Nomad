@@ -158,6 +158,7 @@ private:
     MemberType m_memberType = MemberType::Unknown;
     const Method* m_method = nullptr;
     std::optional<StorageLocation> m_structReceiver;
+    VariableId m_receiverVariable = VariableId::INVALID;
     std::optional<StorageLocation> m_storage;
     VariableId m_stagingVariable = VariableId::INVALID;
     bool m_allowVoid = false;

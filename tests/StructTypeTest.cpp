@@ -2460,7 +2460,100 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
     BOOST_TEST(shiftCalls == 18);
 }
 
-BOOST_AUTO_TEST_CASE(source_struct_methods_reject_unsupported_receivers_and_interpreter_storage) {
+BOOST_AUTO_TEST_CASE(native_methods_borrow_temporary_receivers_and_preserve_owned_results) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.registerStruct("NativeTemporary");
+    const auto* type = runtime.getTypeByName("NativeTemporary");
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(typeId);
+    auto factories = 0;
+    auto touches = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeNativeTemporary",
+        [&](VirtualMachine* active) {
+            ++factories;
+            auto* destination = active->getParameter(1).getStorageAddress();
+            destination[0] = active->getParameter(0);
+            destination[1].freeObjectValue();
+            destination[1].setStringValue("native temporary");
+        },
+        {defParameter("number", runtime.getIntegerType(), "")},
+        type,
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "shift",
+        .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            auto& number = active->getStorageParameter(1, 0);
+            number.setIntegerValue(number.getIntegerValue() + active->getIntegerParameter(0));
+            active->setIntegerResult(number.getIntegerValue());
+        }
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "label",
+        .parameters = {},
+        .returnTypeId = runtime.getStringType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->getResult().copyObjectValue(active->getStorageParameter(0, 1));
+        }
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "copied",
+        .parameters = {},
+        .returnTypeId = typeId,
+        .function = [type](VirtualMachine* active) {
+            auto* destination = active->getParameter(1).getStorageAddress();
+            type->freeValue(destination);
+            type->copyValue(&active->getStorageParameter(0, 0), destination);
+        }
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(typeId, {
+        .name = "touch",
+        .parameters = {},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine*) { ++touches; }
+    }).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "inspectTemporaryCopy",
+        [](VirtualMachine* active) {
+            const auto value = active->getParameterStorage(0, 2);
+            BOOST_TEST(value[1].getStringObject()->getReferenceCount() == 2U);
+            active->setIntegerResult(value[0].getIntegerValue());
+        },
+        {defParameter("value", type, "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "first = (makeNativeTemporary 4).shift 3\n"
+        "text = (makeNativeTemporary 8).label\nassert text == \"native temporary\"\n"
+        "copy = (makeNativeTemporary 11).copied\nassert (inspectTemporaryCopy copy) == 11\n"
+        "(makeNativeTemporary 9).touch\n"
+        "assert (((makeNativeTemporary 13).copied).shift 2) == 15\n"
+        "return first + copy.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        factories = 0;
+        touches = 0;
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 18);
+        BOOST_TEST(factories == 5);
+        BOOST_TEST(touches == 1);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_receivers_but_reject_interpreter_storage) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     const auto typeId = runtime.registerStruct("ReceiverChecks");
@@ -2477,9 +2570,16 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_reject_unsupported_receivers_and_inte
     BOOST_REQUIRE(runtime.registerNativeFunction("makeReceiverCheck", [](VirtualMachine*) {},
         {}, type, "").isValid());
     fixture.addFunction("main", "return (makeReceiverCheck).readReceiverCheck");
-    BOOST_TEST(!fixture.compile());
-    BOOST_TEST(fixture.hasError("Struct method receivers currently require"));
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     BOOST_TEST(calls == 0);
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    BOOST_TEST(main->getVariableCount() == 1U);
+    BOOST_TEST(main->getVariableStorageSize() == 0U);
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.integerValue == 1);
+    BOOST_TEST(calls == 1);
     ScriptFunction caller(CallableId{}, "checks", "checks.nomad", "");
     caller.setReturnType(runtime.getVoidType());
     caller.registerVariable("value", type);
@@ -2495,7 +2595,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_reject_unsupported_receivers_and_inte
     expression.evaluate(interpreter);
     BOOST_REQUIRE(interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);
-    BOOST_TEST(calls == 0);
+    BOOST_TEST(calls == 1);
     const auto scriptId = runtime.registerScriptMethod(typeId, "checkProperties", {}, "properties.nomad", "");
     auto* script = runtime.getScriptCallable(scriptId);
     BOOST_REQUIRE(script != nullptr);

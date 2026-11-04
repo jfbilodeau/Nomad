@@ -973,6 +973,14 @@ A script method can copy or return `this`, or pass it as an ordinary struct
 argument; those uses copy its fields rather than expose the borrowed address.
 Empty receivers and results still execute their calls.
 
+Compiled struct method calls also accept temporary receivers, such as
+`(new Point 3).move 2` or `(makePoint).read`. The receiver is evaluated once
+before explicit arguments, and its owned fields are released when the call
+finishes. Returned strings, class references, and struct copies remain valid
+after that release. Chained method returns and empty temporary receivers follow
+the same rules. This does not add property reads or writes rooted in temporary
+struct values, or interpreter aggregate support.
+
 Stored struct properties rooted in locals, ordinary struct parameters,
 borrowed struct `this`, or class objects can be read and assigned.
 Nested scalar/reference properties load and store directly. Struct property

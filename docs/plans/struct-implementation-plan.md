@@ -4,7 +4,8 @@ Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
-is implemented and awaiting review.
+has been reviewed. Temporary struct method receivers are implemented and
+awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2435,6 +2436,49 @@ Implementation and validation:
   return-destination forwarding in separately approved slices, then proceed to
   interpreter/capture/formatting/host parity. NRVO remains later work. Gameplay,
   fault recovery, and full struct parity were not validated.
+
+### Step 4B: Temporary struct method receivers
+
+Approved scope:
+
+- Allow direct method calls on temporary struct construction and call results,
+  including chained method returns.
+- Evaluate each receiver once before explicit arguments, borrow its storage for
+  the call, and release owned fields immediately afterward.
+- Preserve scalar, string/class, struct, and void results; support native/script
+  methods and zero-width receivers.
+- Reuse existing local storage, call lowering, and cleanup instructions. No
+  boxing, opcode, or ABI changes. Stored receivers retain their existing paths.
+- Keep property access rooted in temporary structs, return-destination forwarding,
+  interpreter aggregates, and VM fault unwinding out of this slice.
+
+Implementation and validation:
+
+- Member resolution reserves one compiler-owned receiver local when the source
+  has no stored receiver location. Repeated resolution reuses that local.
+- Scalar/reference/void calls and destination-based struct results populate the
+  receiver local before calling and release its owned fields before returning
+  the result to the surrounding expression.
+- Script execution tests cover direct construction, call results, chained method
+  returns, discarded results, returned strings/class references/struct copies,
+  and repeated evaluation of the same expression inside a loop.
+- Live-object checks immediately after calls verify that temporary receivers
+  are released before the next statement, rather than only at function return.
+  Returned owned values remain valid after receiver release.
+- Recorded nested calls verify exactly-once receiver-first evaluation followed
+  by the existing right-to-left explicit argument order.
+- Native method tests cover mutation, scalar/string/struct/void results,
+  chained calls, and reference counts of copied aggregate fields.
+- Empty native/script receivers execute their side effects without physical
+  local slots or hidden receiver pointers. A focused metadata assertion verifies
+  that repeated resolution does not reserve duplicate receiver locals.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, four documentation preparation tests, and
+  whitespace validation passed.
+- Stop for review. Next is direct return-destination forwarding. Property access
+  rooted in temporary structs remains separate; interpreter/capture/formatting/
+  host parity and NRVO remain later work. Gameplay and fault recovery were not
+  validated.
 
 ### Step 5: Interpreter, captures, formatting, and host parity
 

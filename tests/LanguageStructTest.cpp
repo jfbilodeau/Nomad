@@ -38,6 +38,151 @@ static_assert(!std::is_base_of_v<ClassMemberDeclaration, StructMemberDeclaration
 
 BOOST_AUTO_TEST_SUITE(language_structs)
 
+BOOST_AUTO_TEST_CASE(temporary_script_receivers_preserve_results_and_release_owned_fields_after_calls) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "countObjects",
+        [](VirtualMachine* machine) {
+            machine->setIntegerResult(static_cast<NomadInteger>(NomadObject::getLiveObjectCount()));
+        },
+        {},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "ownedText",
+        [](VirtualMachine* machine) { machine->setStringResult("owned"); },
+        {},
+        runtime.getStringType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "class Owner\nvalue = 0\ntext = ownedText\nend\n"
+        "struct Point\n"
+        "value = 0\nowner = new Owner\n"
+        "init value:int\nthis.value = value\nthis.owner.value = value\nend\n"
+        "fun move amount:int\nthis.value = this.value + amount\nend\n"
+        "fun read\nreturn this.value\nend\n"
+        "fun text\nreturn this.owner.text\nend\n"
+        "fun getOwner\nreturn this.owner\nend\n"
+        "fun copied\nreturn this\nend\n"
+        "end\n"
+        "fun matches text:string\nreturn text == \"owned\"\nend\n"
+        "fun inspect owner:Owner\nreturn owner.value\nend\n"
+        "before = countObjects\n"
+        "index = 0\nwhile index < 4\n"
+        "(new Point index).move 2\nassert countObjects == before\n"
+        "index = index + 1\n"
+        "end\n"
+        "assert (new Point 2).read == 2\nassert countObjects == before\n"
+        "assert (new Point 3).text == \"owned\"\nassert countObjects == before\n"
+        "assert matches ((new Point 4).text)\nassert countObjects == before\n"
+        "assert (inspect ((new Point 5).getOwner)) == 5\nassert countObjects == before\n"
+        "assert ((new Point 6).copied).read == 6\nassert countObjects == before\n"
+        "(new Point 7).copied\nassert countObjects == before\n"
+        "text = (new Point 8).text\nassert text == \"owned\"\n"
+        "assert countObjects == before + 1\n"
+        "copy = (new Point 9).copied\ncopy.move 1\n"
+        "return copy.read + (new Point 11).read");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 21);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(temporary_receivers_are_evaluated_once_before_right_to_left_nested_arguments) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "record",
+        [&](VirtualMachine* machine) {
+            const auto value = machine->getIntegerParameter(0);
+            calls.push_back(value);
+            machine->setIntegerResult(value);
+        },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "struct Point\n"
+        "value = 0\nlabel = \"point\"\n"
+        "init value:int\nthis.value = value\nend\n"
+        "fun read\nreturn this.value\nend\n"
+        "fun mix first:int second:int\n"
+        "record 100\nreturn this.value + first + second\nend\n"
+        "end\n"
+        "fun make value:int\nrecord value\npoint = new Point value\nreturn point\nend\n"
+        "return (make 1).mix ((make 2).read) ((make 3).read)");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const std::vector<NomadInteger> expectedCalls{1, 3, 2, 100};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 6);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(empty_temporary_receivers_preserve_construction_copy_and_method_side_effects) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "note",
+        [&](VirtualMachine* machine) { calls.push_back(machine->getIntegerParameter(0)); },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction("main",
+        "struct Empty\n"
+        "init\nnote 1\nend\n"
+        "fun ping value:int\nnote value\nend\n"
+        "fun copied\nnote 3\nreturn this\nend\n"
+        "end\n"
+        "fun make\nnote 2\nvalue = new Empty\nreturn value\nend\n"
+        "(new Empty).ping 4\n"
+        "(make).ping 5\n"
+        "((new Empty).copied).ping 6\n"
+        "(new Empty).copied\n"
+        "return 17");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    BOOST_TEST(runtime.getTypeByName("Empty")->getSize() == 0U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("main"))->getVariableStorageSize() == 0U);
+    const std::vector<NomadInteger> expectedCalls{1, 4, 2, 1, 5, 1, 3, 6, 1, 3};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 17);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(compiled_constructors_run_field_initializers_before_selected_bodies) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
