@@ -2,8 +2,9 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
-Steps 1AP through 1BB have been reviewed. Step 2 source declaration analysis is
-implemented and awaiting review.
+Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
+block discovery have been reviewed. The first compiled source execution slice
+is implemented and awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -89,6 +90,9 @@ This draft is not part of the published language guide.
 - Future struct collection initialization should run a parameterless constructor
   when available, otherwise the generated `$init`. Record this requirement, but
   do not implement struct collections in this milestone.
+- VM faults are treated as fatal for the current implementation work. Fault
+  unwinding, post-fault recovery, and failure-path ownership cleanup are deferred;
+  successful calls must still release their owned values normally.
 
 ## 2. Engineering constraints
 
@@ -2364,6 +2368,18 @@ Prerequisite: step 2 approved.
 Review stop: storage/ABI implementation, lifecycle evidence, and regression
 results.
 
+Successful-path assessment:
+
+- Physical local/object widths, aggregate initialization/copy/replacement,
+  parameter and temporary widths, borrowed receiver/destination handling,
+  nested-call restoration, and zero-width calls already have implementation
+  and registered-runtime coverage from Step 1.
+- Do not duplicate those mechanisms. The user explicitly deferred VM fault
+  handling and post-fault recovery, treating faults as fatal for now.
+- Proceed with a bounded compiled source execution slice using the existing
+  storage/lifecycle and call-frame paths. This does not claim fault-unwind
+  ownership cleanup.
+
 ### Step 4: Executable struct expressions and methods
 
 Prerequisite: step 3 approved.
@@ -2383,6 +2399,42 @@ Prerequisite: step 3 approved.
 
 Review stop: first end-to-end compiled struct behavior. Distinguish execution
 tests from compilation-only checks.
+
+### Step 4A: Compiled source construction, copies, and stored receivers
+
+Approved scope:
+
+- Exercise source-declared fields, generated initialization, overloaded
+  constructors, local assignments, copied parameters, struct returns, stored
+  receiver mutation, nested structs, and class-owned struct fields.
+- Verify empty-struct side effects and normal-return string/object ownership.
+  Keep VM fault unwinding and recovery out of scope.
+- Use existing opcodes and ABI. Fix only demonstrated execution gaps, validate
+  through CTest, and stop for review without committing.
+
+Implementation and validation:
+
+- Added four end-to-end source execution regressions. The existing compiler and
+  VM paths handled the approved successful-path behavior; no production code,
+  opcodes, or ABI changes were needed.
+- Constructor tests verify exact field-initializer/body side-effect order and
+  overload selection; copying does not rerun initialization or constructors.
+- Parameter, nested-call, early-return, and method-return tests verify independent
+  struct values and mutation through borrowed stored receivers.
+- Nested struct/class tests verify independent inline fields, shared contained
+  class references, property replacement, and unaffected neighboring fields.
+- Cross-file hub tests verify zero-slot construction, copies, parameter/return
+  flow, methods, and nested empty fields. Hub references remain explicitly
+  qualified, as required by the existing language rules.
+- Each scenario executes three times and checks its exact result, side effects
+  where applicable, and restoration of live string/object counts after normal
+  return. This is runtime execution evidence, not just analysis or compilation.
+- CTest built and passed language, remaining, bindings, and tooling groups.
+  Documentation preparation tests and whitespace validation passed.
+- Stop for review. Next, handle temporary struct receivers and direct
+  return-destination forwarding in separately approved slices, then proceed to
+  interpreter/capture/formatting/host parity. NRVO remains later work. Gameplay,
+  fault recovery, and full struct parity were not validated.
 
 ### Step 5: Interpreter, captures, formatting, and host parity
 

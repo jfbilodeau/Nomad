@@ -463,7 +463,12 @@ Class factories still return their declared constructed class type.
 
 Registered native and script struct constructors support `new` expressions into
 local destinations, including staged assignments, argument copies, returns,
-and class property initializers. Struct declaration syntax and interpreter
+and class property initializers. Compiled source can declare closed structs with
+field initializers, constructor-inferred fields, overloaded `init` bodies, and
+methods. Structs may be nested inline in structs and classes. Copies, ordinary
+parameters, and returns have independent struct storage; contained class fields
+retain reference semantics. Methods mutate their stored receiver. Empty structs
+occupy no slots but still run constructor and method side effects. Interpreter
 aggregate values remain unsupported.
 
 Register class and struct types with
