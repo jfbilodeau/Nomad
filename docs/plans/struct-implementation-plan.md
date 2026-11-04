@@ -7,8 +7,9 @@ block discovery have been reviewed. The first compiled source execution slice
 has been reviewed, along with temporary struct method receivers and free-function
 return-destination forwarding, direct construction returns, and method-result
 forwarding on struct receivers and temporary-rooted stored property access.
-Step 5A interpreter-owned struct values and frame access is implemented and
-awaiting review.
+Step 5A interpreter-owned struct values and frame access, including the
+standalone variant-backed `TypedValue` follow-up, is implemented and awaiting
+review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2723,6 +2724,27 @@ Implementation and validation:
   accessor-backed struct properties and class-receiver struct returns remain
   separate compiled gaps. NRVO and fatal-fault cleanup remain deferred.
   Gameplay and performance were not validated.
+
+### Step 5A follow-up: Standalone variant-backed typed values
+
+- Move `TypedValue` into its own matching header/source files, independent of
+  interpreter-context definitions. Keep one owned-value abstraction rather than
+  introducing a separate scalar wrapper.
+- Use `std::variant<RuntimeValue, std::unique_ptr<RuntimeValue[]>>` to share
+  inline scalar and owned array storage. Type metadata remains outside the
+  variant; the array contains raw runtime slots, not per-field typed wrappers.
+- Preserve existing checked scalar access, complete storage views, type-driven
+  copy/free operations, and stable struct addresses across moves. Nonempty
+  one-slot structs remain allocated; empty values require no allocation.
+- Standalone-header tests verify scalar/array/empty/void transitions, ownership,
+  self-assignment, single-slot struct moves, and partial-copy cleanup. Existing
+  nested ownership and interpreter/frame regressions also pass. No memory
+  reduction is claimed.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, four documentation preparation tests, and
+  whitespace validation passed.
+- Stop for review without expanding interpreter construction, calls, properties,
+  captures, formatting, or host aggregate APIs.
 
 ### Step 6: Conservative named return-value optimization
 

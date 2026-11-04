@@ -8,6 +8,7 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/RuntimeValue.hpp>
+#include <nomad/script/TypedValue.hpp>
 #include <nomad/script/Variable.hpp>
 
 #include <memory>
@@ -22,30 +23,6 @@ class Runtime;
 class ScriptCallableBase;
 class ScriptFunction;
 class VirtualMachine;
-
-class TypedValue {
-public:
-    TypedValue(const Type* type, const RuntimeValue& value);
-    TypedValue(const Type* type, std::span<const RuntimeValue> storage);
-    TypedValue(const TypedValue& other);
-    TypedValue(TypedValue&& other) noexcept;
-    TypedValue& operator=(const TypedValue& other);
-    TypedValue& operator=(TypedValue&& other) noexcept;
-    ~TypedValue();
-
-    [[nodiscard]] const Type* getType() const;
-    // Scalar access only; structs, including empty structs, require getStorage().
-    [[nodiscard]] const RuntimeValue& getValue() const;
-    // Borrowed slots remain valid until this value is replaced or destroyed; moves preserve struct addresses.
-    [[nodiscard]] std::span<const RuntimeValue> getStorage() const;
-
-private:
-    void release() noexcept;
-
-    const Type* m_type;
-    RuntimeValue m_value;
-    std::unique_ptr<RuntimeValue[]> m_storage;
-};
 
 struct InterpreterVariableInfo {
     NomadString name;

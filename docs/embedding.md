@@ -2254,12 +2254,16 @@ supplies `point`, `copy = point` creates an independent field-wise copy, and
 their ordinary reference semantics. Empty structs remain typed values even
 though they occupy no slots.
 
-`TypedValue(type, storage)` copies a `std::span<const RuntimeValue>` containing
+Include `<nomad/script/TypedValue.hpp>` to use owned typed values independently
+of an interpreter context. `TypedValue(type, storage)` copies a
+`std::span<const RuntimeValue>` containing
 exactly `type->getSize()` contiguous slots. The type's layout must be finalized.
 `getStorage()` borrows the complete owned value. Copies own separate slot
 storage; moving a struct value preserves its slot addresses. The runtime and
 type metadata must outlive the value. Scalar values keep their existing inline
-representation.
+representation. Nonempty structs, including one-slot structs, retain separate
+contiguous storage; empty values allocate no slots. `getValue()` provides
+checked scalar access, while `getStorage()` exposes the complete value.
 
 Use the span overloads of `InterpreterContext::setVariable(name, type, storage)`
 and `setResult(type, storage)` for structs. Both copy the complete value before
