@@ -1216,7 +1216,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
             const auto executed = Interpreter{}.execute(source, evaluation);
             BOOST_REQUIRE_MESSAGE(executed, (evaluation.getError() ? *evaluation.getError() : source));
         }
-        BOOST_TEST(calls == "23");
+        BOOST_TEST(calls == "32");
         BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 6);
         const auto* grid = evaluation.getVariableValue("grid")->asObject<Array2dObject>();
         BOOST_TEST(grid->getDimensionSize(0) == 2u);

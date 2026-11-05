@@ -115,14 +115,14 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
             machine->pushInteger(1234);
             InterpreterContext context(*machine);
             const auto construct = Interpreter{}.execute("source = new CallOuter (new CallLeaf 17 \"source\")", context);
-            BOOST_REQUIRE_MESSAGE(construct, context.getError() ? *context.getError() : "");
+            BOOST_REQUIRE_MESSAGE(construct, (context.getError() ? *context.getError() : ""));
             const auto source = context.getVariableStorage("source");
             BOOST_REQUIRE_EQUAL(source.size(), 4U);
             BOOST_TEST(source[0].getIntegerValue() == 17);
             BOOST_TEST(source[1].getStringValue() == "source");
             BOOST_TEST(source[3].getStringValue() == "outer");
             const auto copied = Interpreter{}.execute("copy = copyAggregate source (new CallEmpty) 41", context);
-            BOOST_REQUIRE_MESSAGE(copied, context.getError() ? *context.getError() : "");
+            BOOST_REQUIRE_MESSAGE(copied, (context.getError() ? *context.getError() : ""));
             const auto copy = context.getVariableStorage("copy");
             BOOST_TEST(copy.data() != source.data());
             BOOST_TEST(copy[0].getIntegerValue() == 41);
@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
         InterpreterContext nested(*active);
         nested.setVariable("value", valueType, source);
         const auto evaluated = Interpreter{}.evaluateExpression("nativeCallScore value", nested);
-        BOOST_REQUIRE_MESSAGE(evaluated, nested.getError() ? *nested.getError() : "");
+        BOOST_REQUIRE_MESSAGE(evaluated, (nested.getError() ? *nested.getError() : ""));
         BOOST_TEST(nested.getResult()->getValue().getIntegerValue() == source[0].getIntegerValue());
         BOOST_TEST(active->getIntegerParameter(2) == tail);
         valueType->copyValue(source.data(), destination);
@@ -296,6 +296,26 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
     }, {defParameter("first", runtime.getIntegerType(), ""), defParameter("second", runtime.getIntegerType(), "")},
         runtime.getIntegerType(), "");
     BOOST_REQUIRE(noteId.isValid() && pairId.isValid());
+    const auto boxId = runtime.registerClass("CallOrderBox", ClassMode::Closed);
+    const auto* boxType = runtime.getTypeByName("CallOrderBox");
+    const auto makeBoxId = runtime.registerNativeFunction("makeCallOrderBox", [&](VirtualMachine* active) {
+        order.push_back(0);
+        active->getResult().setObjectValue(new NomadObject());
+    }, {}, boxType, "");
+    const auto combineId = runtime.addMethod(boxId, {
+        .name = "combine",
+        .parameters = {
+            {runtime.getIntegerType()->getId(), "first", ""},
+            {runtime.getIntegerType()->getId(), "second", ""}
+        },
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            BOOST_TEST(active->getThis() != nullptr);
+            order.push_back(3);
+            active->setIntegerResult(active->getIntegerParameter(0) * 10 + active->getIntegerParameter(1));
+        }
+    });
+    BOOST_REQUIRE(makeBoxId.isValid() && combineId.isValid());
     fixture.addFunction("scriptCallPair",
         "params first:int second:int\ncallNote 3\nreturn first * 10 + second");
     fixture.addFunction("types",
@@ -305,7 +325,8 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
         "first = nativeCallPair (callNote 1) (callNote 2)\n"
         "second = scriptCallPair (callNote 1) (callNote 2)\n"
         "third = new OrderedCallValue (callNote 1) (callNote 2)\n"
-        "return first + second + third.number");
+        "fourth = (makeCallOrderBox).combine (callNote 1) (callNote 2)\n"
+        "return first + second + third.number + fourth");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     auto machine = runtime.createVirtualMachine();
@@ -317,22 +338,121 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
     }) {
         order.clear();
         const auto evaluated = Interpreter{}.evaluateExpression(source, context);
-        BOOST_REQUIRE_MESSAGE(evaluated, context.getError() ? *context.getError() : "");
+        BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : ""));
         BOOST_REQUIRE_EQUAL(order.size(), 3U);
         BOOST_TEST(order[0] == 2);
         BOOST_TEST(order[1] == 1);
         BOOST_TEST(order[2] == 3);
     }
     order.clear();
+    BOOST_REQUIRE(Interpreter{}.evaluateExpression(
+        "(makeCallOrderBox).combine (callNote 1) (callNote 2)", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 12);
+    BOOST_REQUIRE_EQUAL(order.size(), 4U);
+    BOOST_TEST(order[0] == 0);
+    BOOST_TEST(order[1] == 2);
+    BOOST_TEST(order[2] == 1);
+    BOOST_TEST(order[3] == 3);
+    order.clear();
     const auto outcome = fixture.execute("main");
     BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
-    BOOST_TEST(outcome.integerValue == 36);
-    BOOST_REQUIRE_EQUAL(order.size(), 9U);
-    for (auto offset = NomadIndex{0}; offset < order.size(); offset += 3) {
+    BOOST_TEST(outcome.integerValue == 48);
+    BOOST_REQUIRE_EQUAL(order.size(), 13U);
+    for (auto offset = NomadIndex{0}; offset < 9; offset += 3) {
         BOOST_TEST(order[offset] == 2);
         BOOST_TEST(order[offset + 1] == 1);
         BOOST_TEST(order[offset + 2] == 3);
     }
+    BOOST_TEST(order[9] == 0);
+    BOOST_TEST(order[10] == 2);
+    BOOST_TEST(order[11] == 1);
+    BOOST_TEST(order[12] == 3);
+}
+
+BOOST_AUTO_TEST_CASE(aggregate_calls_preserve_active_method_frames_during_native_inspection) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto emptyId = runtime.registerNativeFunction(
+        "recordEmptyCall", [](VirtualMachine*) {}, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(emptyId.isValid());
+    auto visits = 0;
+    const auto inspectId = runtime.registerNativeFunction("inspectPreparedAggregateCalls", [&](VirtualMachine* active) {
+        const auto* callable = active->getCurrentCallable();
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(callable->getClassType() == runtime.getTypeByName("CallFrameHost"));
+        const auto variableCount = callable->getVariableCount();
+        const auto parameterCount = callable->getParameterCount();
+        const auto instructionCount = runtime.getInstructions().size();
+        const auto instructionIndex = active->getInstructionIndex();
+        const auto savedResult = active->getResult();
+        const auto savedIntermediate = active->getIntermediate();
+        InterpreterContext context(*active, *callable);
+        BOOST_TEST(context.getFunction() == nullptr);
+        const auto source = context.getVariableStorage("value");
+        BOOST_REQUIRE_EQUAL(source.size(), 4U);
+        BOOST_TEST(source[0].getIntegerValue() == 17);
+        const auto copied = Interpreter{}.execute("local = copyAggregate value empty 71", context);
+        BOOST_REQUIRE_MESSAGE(copied, (context.getError() ? *context.getError() : ""));
+        BOOST_TEST(context.getVariableStorage("local")[0].getIntegerValue() == 71);
+        BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 17);
+        BOOST_REQUIRE(Interpreter{}.evaluateExpression("readAggregateText local", context));
+        BOOST_TEST(context.getResult()->getValue().getStringValue() == "frame");
+        BOOST_REQUIRE(Interpreter{}.execute("created = makeAggregate tail", context));
+        BOOST_TEST(context.getVariableStorage("created")[0].getIntegerValue() == 23);
+        BOOST_TEST(context.getVariableValue("tail")->getIntegerValue() == 23);
+        BOOST_TEST(context.getVariableValue("prefix")->getStringValue() == "prefix");
+        BOOST_TEST(active->getCurrentCallable() == callable);
+        BOOST_TEST(active->getInstructionIndex() == instructionIndex);
+        BOOST_TEST(active->getResult().getIntegerValue() == savedResult.getIntegerValue());
+        BOOST_TEST(active->getIntermediate().getIntegerValue() == savedIntermediate.getIntegerValue());
+        BOOST_TEST(callable->getVariableCount() == variableCount);
+        BOOST_TEST(callable->getParameterCount() == parameterCount);
+        BOOST_TEST(runtime.getInstructions().size() == instructionCount);
+        ++visits;
+    }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(inspectId.isValid());
+    addAggregateCallSources(fixture);
+    fixture.addFunction("frameCallTypes",
+        "class CallFrameHost\nmarker = 5\n"
+        "fun inspect value:CallOuter empty:CallEmpty tail:int\n"
+        "prefix = \"prefix\"\nlocal = value\ninspectPreparedAggregateCalls\n"
+        "assert value.leaf.number == 17\nassert local.leaf.number == 71\n"
+        "return local.leaf.number + tail + this.marker\nend\nend\nreturn 0");
+    fixture.addFunction("main",
+        "source = new CallOuter (new CallLeaf 17 \"frame\")\n"
+        "host = new CallFrameHost\nresult = host.inspect source (new CallEmpty) 23\n"
+        "assert source.leaf.number == 17\nreturn result");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 99);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(visits == 3);
+}
+
+BOOST_AUTO_TEST_CASE(raw_storage_push_checks_full_width_before_mutating_the_stack) {
+    Runtime runtime;
+    VirtualMachine machine(&runtime, 4);
+    machine.pushInteger(17);
+    const std::array<RuntimeValue, 3> overflow{
+        RuntimeValue{NomadInteger{19}}, RuntimeValue{NomadInteger{23}}, RuntimeValue{NomadInteger{29}}
+    };
+    BOOST_CHECK_THROW(machine.pushStorage(overflow), VirtualMachineException);
+    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 17);
+    machine.pushStorage(std::span<const RuntimeValue>{overflow}.first(2));
+    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 23);
+    BOOST_TEST(machine.peekStack(1).getIntegerValue() == 19);
+    machine.pushStorage({});
+    machine.pop2();
+    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 17);
+    machine.pop1();
 }
 
 BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_owned_storage) {

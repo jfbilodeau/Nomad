@@ -468,8 +468,9 @@ field initializers, constructor-inferred fields, overloaded `init` bodies, and
 methods. Structs may be nested inline in structs and classes. Copies, ordinary
 parameters, and returns have independent struct storage; contained class fields
 retain reference semantics. Methods mutate their stored receiver. Empty structs
-occupy no slots but still run constructor and method side effects. Interpreter
-aggregate values remain unsupported.
+occupy no slots but still run constructor and method side effects. The interpreter
+supports owned struct values, construction, and free-function arguments/results;
+interpreter struct property and method access remain unsupported.
 
 Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
@@ -837,8 +838,9 @@ order and staging ownership is released. The caller releases nested argument
 fields after the call using `StructType::emitFreeStackValue`, then pops physical
 argument slots. Arguments still evaluate right-to-left. Empty structs consume
 zero argument slots; scalar and specialized event argument shapes are unchanged.
-Local and parameter struct sources are supported. Struct-returning calls,
-host aggregate argument APIs, and interpreter aggregate arguments remain unsupported.
+Local and parameter struct sources and struct-returning calls are supported.
+Legacy scalar host argument containers do not accept structs; interpreter calls
+use complete typed storage.
 Struct local/parameter load emission supports `ExpressionTarget::Stack`, returning
 the first emitted operand position, or `NOMAD_INVALID_INDEX` for empty structs.
 Result and intermediate register loads remain unsupported.
@@ -1179,11 +1181,26 @@ register under the existing local-copy ownership contract. Empty types emit
 nothing. Initialization supplies existing type defaults separately and does not
 run constructors.
 
-Struct declarations and construction, aggregate
-interpreter/host values, and aggregate yield/resume support remain unsupported.
-Host free-function calls reject struct arguments and returns instead of using
-single-slot values for aggregate storage. Host method calls likewise reject
-struct receivers and struct returns.
+Compiled source and the interpreter support struct construction and free-function
+arguments/results. Aggregate yield/resume support remains unsupported.
+The scalar host free-function entry points, including `VirtualMachine::run` and
+`runNativeFunction`, reject struct arguments and returns instead of using
+single-slot values for aggregate storage. Scalar host method entry points
+likewise reject struct receivers and struct returns.
+
+`VirtualMachine::runPreparedFunction(function)` executes a compiled free function
+whose arguments and hidden return pointer are already on the stack. Use
+`Callable::getCallStorageLayout()` to prepare the physical layout. The caller
+owns and releases the current argument values, pops their slots and hidden
+pointers, and owns the destination fields. The entry point restores the enclosing
+call frame and receiver but does not preserve result/intermediate registers.
+It is synchronous and does not support yielding. VM faults remain fatal; this is
+not a fault-recovery or frame-unwinding API.
+
+`pushStorage(storage)` copies contiguous raw slots onto the VM stack without
+retaining references. The caller supplies ownership for those slots and must
+eventually release and pop them. The complete range must fit; an overflow fails
+before changing the stack. An empty view pushes no slots.
 
 ### Class type property metadata
 
@@ -1475,13 +1492,13 @@ default-initialize remaining properties. Without a registered property initializ
 creation supplies ordinary type defaults before the constructor body.
 Copying a nested struct does not execute its constructor.
 
-Creation argument handling and call bookkeeping allocate no heap storage.
+The low-level VM creation entry points allocate no argument or bookkeeping storage.
 Native factories and script objects allocate their actual object storage;
 initializer and constructor code can itself allocate values. Struct lifecycle
 operations traverse properties without allocating temporary catalogs.
-Interpreter object construction preserves its existing left-to-right argument
-evaluation, then arranges those values in stack-call order without an argument
-vector. Interpreter struct values remain unsupported.
+Interpreter construction evaluates arguments right-to-left, copies complete
+argument values, and keeps destination storage alive through initialization and
+the constructor body.
 
 Script and struct constructor callables have a `void` return type;
 `Constructor::getConstructedType()` reports the produced value type, including
@@ -2219,6 +2236,11 @@ not register input as a compiled function. Declarations, `return`, assertions,
 and inline callbacks remain unsupported by the interpreter. Loops execute
 synchronously on the caller's thread.
 
+Call and constructor arguments evaluate right-to-left, matching compiled code;
+method receivers still evaluate before their arguments. This also applies to
+existing scalar interpreter calls, which previously evaluated arguments
+left-to-right.
+
 Loop bindings are ordinary mutable locals or compatible parameters and remain
 available after the loop. Frame-backed interpretation can reassign script
 parameters without replacing the caller's arguments; their declared types remain
@@ -2253,14 +2275,26 @@ survive another evaluation; do not free the context's result manually.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
 
-### Struct values and frame inspection
+### Struct construction, calls, and frame inspection
 
-The interpreter can read and assign complete struct values supplied by the
-host or present in an active compiled script frame. For example, after the host
-supplies `point`, `copy = point` creates an independent field-wise copy, and
+The interpreter can construct registered structs and pass or return complete
+struct values through native and compiled script free functions. For example,
+`point = new Point 3 4` runs the registered initializer and selected constructor;
+`copy = transform point` passes an independent struct copy and owns the returned
+value. Struct constructor parameters may themselves be structs. Class
+constructors can also accept struct arguments.
+
+The interpreter can also read and assign complete struct values supplied by the
+host or present in an active compiled script frame. For example,
+`copy = point` creates an independent field-wise copy, and
 `point = point` safely preserves the value. Contained class references retain
 their ordinary reference semantics. Empty structs remain typed values even
 though they occupy no slots.
+
+Empty constructors and calls still execute their side effects. Returning an
+empty struct retains its type without a slot pointer. A function call used as a
+statement releases its result, including owned fields in a returned struct.
+Aggregate calls execute synchronously; aggregate yield/resume remains unsupported.
 
 Include `<nomad/script/TypedValue.hpp>` to use owned typed values independently
 of an interpreter context. `TypedValue(type, storage)` copies a
@@ -2301,9 +2335,17 @@ frame, not the original caller's copied arguments. New interpreter variables
 remain context-owned. Borrowed frame storage is valid only while that frame is
 active; it must not be used after the frame returns.
 
+For already resolved calls, `evaluateFunctionCallWithStorage`,
+`evaluateNativeFunctionCallWithStorage`, and `evaluateConstructorCall` accept
+a callable ID and `std::span<const TypedValue>` in logical parameter order.
+The caller supplies arguments matching the resolved signature. These entry
+points copy argument storage, preserve the enclosing VM registers/frame, and
+leave an owned result in the context. The existing scalar-vector call entry
+points remain scalar-only.
+
 `listVariables()` displays struct type names rather than formatting their
-fields. Interpreter struct construction, struct arguments/results in calls,
-stored property access, methods, and aggregate captures remain unsupported.
+fields. Interpreter struct stored-property access, methods, aggregate captures,
+and field-aware formatting remain unsupported.
 
 ## Parameterized types
 

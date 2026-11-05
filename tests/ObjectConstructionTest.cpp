@@ -1023,7 +1023,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
     BOOST_TEST(runtime.getScriptFunction(id)->getReturnType() == runtime.getTypeByName("Same<int>"));
 }
 
-BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_preserve_execution_mode_evaluation_order) {
+BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_match_compiled_evaluation_order) {
     Runtime runtime;
     std::vector<NomadInteger> markers;
     runtime.registerNativeFunction(
@@ -1071,8 +1071,8 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_preserve_execution_mode_eval
     InterpreterContext context(*machine);
     BOOST_REQUIRE(Interpreter{}.execute("new Pair (mark 1) (mark 2)", context));
     BOOST_REQUIRE(markers.size() == 2u);
-    BOOST_TEST(markers[0] == 1);
-    BOOST_TEST(markers[1] == 2);
+    BOOST_TEST(markers[0] == 2);
+    BOOST_TEST(markers[1] == 1);
 }
 
 BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constructor) {

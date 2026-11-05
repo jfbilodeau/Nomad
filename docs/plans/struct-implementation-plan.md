@@ -7,9 +7,10 @@ block discovery have been reviewed. The first compiled source execution slice
 has been reviewed, along with temporary struct method receivers and free-function
 return-destination forwarding, direct construction returns, and method-result
 forwarding on struct receivers and temporary-rooted stored property access.
-Step 5A interpreter-owned struct values and frame access, including the
-standalone vector-backed `TypedValue` follow-up, is implemented and awaiting
-review.
+Step 5A interpreter-owned struct values and frame access, standalone vector-backed
+`TypedValue`, and nonthrowing cleanup/runtime layout access are implemented.
+Step 5B interpreter construction and free-function aggregate calls is implemented
+and validated, awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2197,8 +2198,9 @@ Implementation:
 - Struct lifecycle traversal and initializer lookup no longer allocate catalog
   copies. Scalar indirect default initialization now loads the actual type default
   rather than relying on a no-op scalar register initializer.
-- Interpreter constructor arguments retain left-to-right evaluation and are
-  reversed in-place into stack-call order.
+- At this milestone, interpreter constructor arguments retained left-to-right
+  evaluation and were reversed in-place into stack-call order. Step 5B below
+  aligns shared interpreter argument evaluation with compiled code.
 - Creation paths trust compiler-verified constructor categories, compiled bodies,
   initializer signatures, and prepared stack arguments rather than checking them
   again at runtime. Direct host callers share these preconditions.
@@ -2775,6 +2777,48 @@ Implementation and validation:
   documentation preparation tests, and whitespace validation passed. Gameplay
   and performance were not validated.
 - Stop for review without expanding interpreter support or committing.
+
+### Step 5B: Interpreter struct construction and free-function calls
+
+Approved scope:
+
+- Construct registered native/script structs and pass or return complete struct
+  values through free functions, including nested and empty values. Support
+  struct arguments to class constructors without expanding struct property or
+  method interpretation.
+- Align shared interpreter argument evaluation with compiled right-to-left
+  behavior, including existing scalar calls; preserve receiver-first evaluation.
+- Add a narrow prepared-frame VM entry point using the existing physical ABI.
+  Leave scalar host call containers unchanged. Aggregate yield/resume and VM
+  fault recovery remain outside this slice.
+
+Implementation and validation:
+
+- Construction runs registered property initializers and native/script bodies
+  using owned destination storage. Function calls retain complete arguments in
+  logical parameter order, copy physical argument slots independently, and
+  supply hidden destination pointers only when required by the existing layout.
+- Owned call storage releases reassigned parameter values and partial copies,
+  keeps returned fields alive, and restores enclosing registers and frame state.
+  Empty values preserve types and side effects without physical slots or pointers.
+- Expressions, assignments, nested calls, and discarded statement results share
+  the complete-value call path. Scalar host APIs and scalar script call behavior
+  remain available without new aggregate suspension semantics.
+- Regression coverage compares compiled/interpreted construction and calls,
+  nested strings/class references, parameter mutation without source changes,
+  empty returns, result snapshots, native reentry, active method-frame inspection,
+  receiver-first/right-to-left order, partial-copy and initialization failures,
+  and exact full-width stack overflow checks before mutation.
+- New ownership scenarios run three times and restore live string/object counts.
+  Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, the isolated cleanup-contract test, four
+  documentation preparation tests, and whitespace checks passed. The LSP process
+  test passed on a clean retry after an initial timeout left its fixture directory.
+  Gameplay and performance were not validated.
+- Stop for review without committing. Next is interpreter stored properties and
+  methods, followed by captures, formatting, and remaining host parity. Native
+  accessor-backed struct properties and class-receiver struct returns remain
+  separate compiled gaps; NRVO and fatal-fault cleanup stay deferred.
 
 ### Step 6: Conservative named return-value optimization
 

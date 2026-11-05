@@ -444,6 +444,8 @@ Constructor arguments follow the name and any type arguments, separated by space
 expression syntax as function arguments. Their number and types are checked at
 compile time; value restrictions are checked by the constructor at runtime. 
 Construction is also available in interpreter expressions.
+Constructor and function arguments evaluate right-to-left in both compiled code
+and the interpreter; a method receiver is evaluated before its arguments.
 
 Constructors can be overloaded by argument count or types. The selected
 constructor determines the result's type; overloads may return different types.
