@@ -17,6 +17,8 @@ Step 5D1 statement-owned field assignments for named struct roots is implemented
 and validated, awaiting review.
 The immutable `InterpreterValue` rename and interpreter-produced replacement
 operations are implemented and validated, awaiting review.
+Conventional stored-property name/path and direct-ID APIs are implemented and
+validated, awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2923,6 +2925,35 @@ Implementation and validation:
 - Stop for review without committing. Next are conventional property-name/direct-ID
   APIs, followed by general construction/function operations and method calls.
   Class-owned/temporary-rooted writes and remaining struct parity stay separate.
+
+### Step 5D1 follow-up: Conventional stored-property APIs
+
+Scope:
+
+- Add context-free `Interpreter::getProperty` and `setProperty` overloads taking
+  either a direct property ID or a field name/dotted path.
+- Preserve immutable value contents and return owned field/replacement values.
+- Replace public property-ID-chain spans on context variable/receiver setters
+  with direct IDs or names/paths. Keep chain handling internal to the interpreter.
+- Retain existing stored-struct support. Class/native property execution and
+  class-owned/temporary-rooted struct writes remain separate slices.
+
+Implementation and validation:
+
+- IDs select only direct fields owned by the supplied receiver's type; dotted
+  paths resolve relative to the receiver and traverse stored struct fields.
+- Assignment statements keep a relative property path rather than an ID chain.
+  Stored-struct expression reads delegate to the interpreter's value operation.
+- Host tests cover ID/name agreement, nested field copies, empty roots/fields,
+  retained references and extracted-value lifetimes, malformed/unknown paths,
+  wrong-owner IDs, type mismatches, and context-result preservation.
+- Direct context selector tests cover variables, frame locals/parameters, struct
+  receivers, and zero-slot receivers. Existing sibling-update and copy-failure
+  regressions remain enabled.
+- The language and remaining CTest groups, four documentation preparation tests,
+  and whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing. Next are general construction/function
+  operations, followed by method calls and remaining property/struct parity.
 
 ### Step 6: Conservative named return-value optimization
 

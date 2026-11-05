@@ -1091,11 +1091,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
             }
             const InterpreterValue receiver(*evaluatedReceiver);
             if (receiver.getType()->isStruct()) {
-                const auto size = getType()->getSize();
-                const auto offset = property->getOwnerType()->getFieldOffset(property->getId());
-                const auto storage = receiver.getStorage();
-                context.setResult(getType(), size == 0 ? std::span<const RuntimeValue>{} :
-                    storage.subspan(offset, size));
+                context.setResult(Interpreter{}.getProperty(receiver, property->getId()));
             } else {
                 const auto* object = dynamic_cast<const ScriptObject*>(receiver.getValue().getObjectValue());
                 if (object == nullptr || object->getClassType() != property->getOwnerType()) {

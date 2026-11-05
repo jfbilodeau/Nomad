@@ -2319,15 +2319,36 @@ the value's lifetime; referenced class objects retain their normal mutable
 reference semantics. Copying and cleanup use the value's `const Type*`, without
 a separate ownership or cleanup discriminator.
 
-`Interpreter::setProperty(receiver, properties, value)` returns a new
-`InterpreterValue` with a replaced stored field. Neither input is modified, and
-the interpreter retains no returned value. `properties` is a nonempty
-`std::span<const PropertyId>` describing the field path; every intermediate owner
-must be a struct. The supplied value must have the final field's exact type.
-Nested structs copy by value and class fields retain reference semantics.
-Invalid paths or types throw `std::invalid_argument`; failed copying releases
-partial results and leaves both inputs unchanged. This value operation does not
-require an interpreter context or change a context's result.
+`Interpreter::getProperty(receiver, property)` returns an owned field value.
+`setProperty(receiver, property, value)` returns a new `InterpreterValue` with
+that field replaced. Neither operation modifies its inputs or retains returned
+values. Each accepts either:
+
+- A runtime-local `PropertyId` for a direct stored field of the receiver's type.
+  An ID for a nested field cannot be applied directly to its outer struct.
+- A `NomadStringView` containing a field name or dotted path, such as `"leaf"` or
+  `"leaf.number"`, relative to the supplied receiver.
+
+The receiver and every intermediate owner must be structs. Nested structs copy
+by value; strings and class-valued fields retain reference semantics. Class
+references can be read or replaced as final fields, but paths cannot traverse
+class objects or native accessors yet. Empty fields return their type and an
+empty storage view without a slot pointer.
+
+For example:
+
+```cpp
+const Interpreter interpreter;
+const auto leaf = interpreter.getProperty(rootValue, "leaf");
+const auto number = interpreter.getProperty(leaf, numberPropertyId);
+const auto updated = interpreter.setProperty(rootValue, "leaf.number", replacement);
+```
+
+The replacement must have the final field's exact type. Unknown names, invalid
+or wrong-owner IDs, empty paths/segments, non-struct owners, and incompatible
+replacement types throw `std::invalid_argument`. Failed copying releases partial
+results and leaves both inputs unchanged. These value operations require no
+interpreter context and do not change a context's result.
 
 Use the span overloads of `InterpreterContext::setVariable(name, type, storage)`
 and `setResult(type, storage)` for structs. Both copy the complete value before
@@ -2387,13 +2408,15 @@ For example, `root.leaf.number = 31`, `root.leaf = source`, and
 Copies remain independent, contained class references remain shared, and empty
 field assignments still evaluate the RHS.
 
-`InterpreterContext::setVariableProperty(name, properties, value)` updates a
+`InterpreterContext::setVariableProperty(name, property, value)` updates a
 stored field in a named variable or frame parameter/local.
-`setReceiverProperty(properties, value)` updates a stored field in the active
-struct receiver. Both accept resolved property-ID paths and an owned value.
+`setReceiverProperty(property, value)` updates a stored field in the active
+struct receiver. Each accepts either a direct `PropertyId` or a field name/dotted
+path, with the same selector rules as the interpreter's value operations.
 They copy the current root at write time, so unrelated field changes made during
 the RHS are preserved. Failed copying before replacement leaves the destination
-unchanged. Returned assignment results are owned snapshots.
+unchanged. These setters do not change the context's result; source assignment
+statements separately publish their owned assignment snapshots.
 
 Class-owned and temporary-rooted struct writes, interpreter struct method calls,
 aggregate captures, and field-aware struct formatting remain unsupported.

@@ -23,6 +23,61 @@ namespace nomad {
 
 namespace {
 
+struct StoredPropertySelection {
+    const Type* type;
+    NomadIndex offset;
+};
+
+StoredPropertySelection resolveStoredProperty(
+    const Type* type,
+    const std::span<const PropertyId> properties
+) {
+    if (properties.empty()) {
+        throw std::invalid_argument("A stored property path cannot be empty");
+    }
+    auto offset = NomadIndex{0};
+    for (const auto propertyId : properties) {
+        if (type == nullptr || !type->isStruct()) {
+            throw std::invalid_argument("Stored property paths require struct owners");
+        }
+        const auto* owner = type->asCompositeType();
+        const auto* property = owner->getProperty(propertyId);
+        if (property == nullptr || property->asNativeProperty() != nullptr) {
+            throw std::invalid_argument("Stored property path does not match the struct type");
+        }
+        offset += owner->getFieldOffset(propertyId);
+        type = property->getValueType();
+    }
+    return {type, offset};
+}
+
+std::vector<PropertyId> resolveStoredPropertyPath(const Type* type, const NomadStringView propertyPath) {
+    std::vector<PropertyId> properties;
+    auto start = NomadIndex{0};
+    while (true) {
+        const auto separator = propertyPath.find('.', start);
+        const auto name = propertyPath.substr(start,
+            separator == NomadStringView::npos ? separator : separator - start);
+        if (name.empty()) {
+            throw std::invalid_argument("A stored property path cannot contain empty names");
+        }
+        if (type == nullptr || !type->isStruct()) {
+            throw std::invalid_argument("Stored property paths require struct owners");
+        }
+        const auto* property = type->asCompositeType()->getProperty(NomadString{name});
+        if (property == nullptr || property->asNativeProperty() != nullptr) {
+            throw std::invalid_argument("Unknown stored property '" + NomadString{name} +
+                "' on type '" + type->getTypeName() + "'");
+        }
+        properties.push_back(property->getId());
+        type = property->getValueType();
+        if (separator == NomadStringView::npos) {
+            return properties;
+        }
+        start = separator + 1;
+    }
+}
+
 void retainDiagnostics(InterpreterContext& evaluation, std::span<const Diagnostic> diagnostics,
     const NomadString& sourceName) {
     for (auto diagnostic : diagnostics) {
@@ -54,28 +109,53 @@ private:
 
 } // namespace
 
+InterpreterValue Interpreter::getProperty(
+    const InterpreterValue& receiver,
+    const PropertyId propertyId
+) const {
+    return getStoredProperty(receiver, std::span<const PropertyId>{&propertyId, 1});
+}
+
+InterpreterValue Interpreter::getProperty(
+    const InterpreterValue& receiver,
+    const NomadStringView propertyPath
+) const {
+    const auto properties = resolveStoredPropertyPath(receiver.getType(), propertyPath);
+    return getStoredProperty(receiver, properties);
+}
+
 InterpreterValue Interpreter::setProperty(
+    const InterpreterValue& receiver,
+    const PropertyId propertyId,
+    const InterpreterValue& value
+) const {
+    return setStoredProperty(receiver, std::span<const PropertyId>{&propertyId, 1}, value);
+}
+
+InterpreterValue Interpreter::setProperty(
+    const InterpreterValue& receiver,
+    const NomadStringView propertyPath,
+    const InterpreterValue& value
+) const {
+    const auto properties = resolveStoredPropertyPath(receiver.getType(), propertyPath);
+    return setStoredProperty(receiver, properties, value);
+}
+
+InterpreterValue Interpreter::getStoredProperty(
+    const InterpreterValue& receiver,
+    const std::span<const PropertyId> properties
+) const {
+    const auto [type, offset] = resolveStoredProperty(receiver.getType(), properties);
+    return InterpreterValue(type, type->getSize() == 0 ? std::span<const RuntimeValue>{} :
+        receiver.getStorage().subspan(offset, type->getSize()));
+}
+
+InterpreterValue Interpreter::setStoredProperty(
     const InterpreterValue& receiver,
     const std::span<const PropertyId> properties,
     const InterpreterValue& value
 ) const {
-    if (properties.empty()) {
-        throw std::invalid_argument("A stored property path cannot be empty");
-    }
-    const auto* type = receiver.getType();
-    auto offset = NomadIndex{0};
-    for (const auto propertyId : properties) {
-        if (type == nullptr || !type->isStruct()) {
-            throw std::invalid_argument("Stored property paths require struct owners");
-        }
-        const auto* owner = type->asCompositeType();
-        const auto* property = owner->getProperty(propertyId);
-        if (property == nullptr || property->asNativeProperty() != nullptr) {
-            throw std::invalid_argument("Stored property path does not match the struct type");
-        }
-        offset += owner->getFieldOffset(propertyId);
-        type = property->getValueType();
-    }
+    const auto [type, offset] = resolveStoredProperty(receiver.getType(), properties);
     if (type != value.getType()) {
         throw std::invalid_argument("Stored property assignment requires a matching value type");
     }

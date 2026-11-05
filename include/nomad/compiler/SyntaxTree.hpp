@@ -259,7 +259,7 @@ private:
     NomadString m_targetName;
     NomadString m_rootName;
     IdentifierDefinition m_rootDefinition;
-    std::vector<PropertyId> m_properties;
+    NomadString m_propertyPath;
 };
 
 class ExpressionStatement final : public Statement {

@@ -108,7 +108,7 @@ void InterpreterContext::clearVariableValue(const NomadString& name) {
 
 void InterpreterContext::setVariableProperty(
     const NomadString& name,
-    const std::span<const PropertyId> properties,
+    const PropertyId propertyId,
     const InterpreterValue& value
 ) {
     const auto* type = getVariableType(name);
@@ -116,7 +116,21 @@ void InterpreterContext::setVariableProperty(
         throw std::invalid_argument("Stored property assignment requires an assigned variable");
     }
     const InterpreterValue current(type, getVariableStorage(name));
-    const auto replacement = Interpreter{}.setProperty(current, properties, value);
+    const auto replacement = Interpreter{}.setProperty(current, propertyId, value);
+    setVariable(name, type, replacement.getStorage());
+}
+
+void InterpreterContext::setVariableProperty(
+    const NomadString& name,
+    const NomadStringView propertyPath,
+    const InterpreterValue& value
+) {
+    const auto* type = getVariableType(name);
+    if (type == nullptr) {
+        throw std::invalid_argument("Stored property assignment requires an assigned variable");
+    }
+    const InterpreterValue current(type, getVariableStorage(name));
+    const auto replacement = Interpreter{}.setProperty(current, propertyPath, value);
     setVariable(name, type, replacement.getStorage());
 }
 
@@ -400,13 +414,26 @@ std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
 }
 
 void InterpreterContext::setReceiverProperty(
-    const std::span<const PropertyId> properties,
+    const PropertyId propertyId,
     const InterpreterValue& value
 ) {
     const auto storage = getReceiverStorage();
+    const InterpreterValue current(m_frameCallable->getClassType(), storage);
+    replaceReceiver(Interpreter{}.setProperty(current, propertyId, value));
+}
+
+void InterpreterContext::setReceiverProperty(
+    const NomadStringView propertyPath,
+    const InterpreterValue& value
+) {
+    const auto storage = getReceiverStorage();
+    const InterpreterValue current(m_frameCallable->getClassType(), storage);
+    replaceReceiver(Interpreter{}.setProperty(current, propertyPath, value));
+}
+
+void InterpreterContext::replaceReceiver(const InterpreterValue& replacement) {
+    const auto storage = getReceiverStorage();
     const auto* type = m_frameCallable->getClassType();
-    const InterpreterValue current(type, storage);
-    const auto replacement = Interpreter{}.setProperty(current, properties, value);
     if (storage.empty()) {
         return;
     }

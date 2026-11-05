@@ -592,7 +592,7 @@ MemberAssignmentStatement::MemberAssignmentStatement(
 }
 
 void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
-    m_properties.clear();
+    m_propertyPath.clear();
     if (!m_expression->resolve(context, function)) {
         return;
     }
@@ -635,7 +635,6 @@ bool MemberAssignmentStatement::resolveStructTarget(CompilerContext* context, Sc
             }
             auto* runtime = context->getRuntime();
             const auto* type = definition.valueType;
-            std::vector<PropertyId> properties;
             auto start = separator + 1;
             while (start < m_targetName.size()) {
                 const auto end = m_targetName.find('.', start);
@@ -658,7 +657,6 @@ bool MemberAssignmentStatement::resolveStructTarget(CompilerContext* context, Sc
                 if (property->asNativeProperty() != nullptr) {
                     return false;
                 }
-                properties.push_back(property->getId());
                 type = property->getValueType();
                 if (end == NomadString::npos) {
                     break;
@@ -673,7 +671,7 @@ bool MemberAssignmentStatement::resolveStructTarget(CompilerContext* context, Sc
             }
             m_rootName = rootName;
             m_rootDefinition = definition;
-            m_properties = std::move(properties);
+            m_propertyPath = m_targetName.substr(separator + 1);
             return true;
         }
         separator = m_targetName.rfind('.', separator - 1);
@@ -686,7 +684,7 @@ void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase
 }
 
 void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
-    if (m_properties.empty()) {
+    if (m_propertyPath.empty()) {
         m_target->evaluateAssignment(context, m_expression.get());
         return;
     }
@@ -706,9 +704,9 @@ void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
     }
     const InterpreterValue assigned(*result);
     if (isReceiver) {
-        context.setReceiverProperty(m_properties, assigned);
+        context.setReceiverProperty(m_propertyPath, assigned);
     } else {
-        context.setVariableProperty(m_rootName, m_properties, assigned);
+        context.setVariableProperty(m_rootName, m_propertyPath, assigned);
     }
     context.setResult(assigned);
 }

@@ -12,10 +12,23 @@ namespace nomad {
 
 class Interpreter {
 public:
+    [[nodiscard]] InterpreterValue getProperty(
+        const InterpreterValue& receiver,
+        PropertyId propertyId
+    ) const;
+    [[nodiscard]] InterpreterValue getProperty(
+        const InterpreterValue& receiver,
+        NomadStringView propertyPath
+    ) const;
     // Returns a replacement struct without modifying either input.
     [[nodiscard]] InterpreterValue setProperty(
         const InterpreterValue& receiver,
-        std::span<const PropertyId> properties,
+        PropertyId propertyId,
+        const InterpreterValue& value
+    ) const;
+    [[nodiscard]] InterpreterValue setProperty(
+        const InterpreterValue& receiver,
+        NomadStringView propertyPath,
         const InterpreterValue& value
     ) const;
 
@@ -27,6 +40,17 @@ public:
         const SourceText& source,
         InterpreterContext& context,
         NomadIndex sourceLine = 1
+    ) const;
+
+private:
+    [[nodiscard]] InterpreterValue getStoredProperty(
+        const InterpreterValue& receiver,
+        std::span<const PropertyId> properties
+    ) const;
+    [[nodiscard]] InterpreterValue setStoredProperty(
+        const InterpreterValue& receiver,
+        std::span<const PropertyId> properties,
+        const InterpreterValue& value
     ) const;
 };
 

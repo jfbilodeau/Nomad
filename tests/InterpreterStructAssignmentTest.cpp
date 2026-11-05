@@ -152,6 +152,20 @@ BOOST_AUTO_TEST_CASE(frame_updates_preserve_rhs_sibling_changes_and_original_cal
         const auto savedResult = machine->getResult();
         const auto savedIntermediate = machine->getIntermediate();
         InterpreterContext context(*machine, *callable);
+        const auto* rootType = callable->getClassType() == nullptr ?
+            context.getVariableType("local") : callable->getClassType();
+        const auto siblingPropertyId = rootType->asCompositeType()->getProperty("sibling")->getId();
+        const InterpreterValue alternate(runtime.getIntegerType(), RuntimeValue{NomadInteger{5}});
+        const InterpreterValue original(runtime.getIntegerType(), RuntimeValue{NomadInteger{3}});
+        if (callable->getClassType() != nullptr) {
+            context.setReceiverProperty(siblingPropertyId, alternate);
+            context.setReceiverProperty("sibling", original);
+        } else {
+            context.setVariableProperty("local", siblingPropertyId, alternate);
+            context.setVariableProperty("local", "sibling", original);
+            context.setVariableProperty("value", siblingPropertyId, alternate);
+            context.setVariableProperty("value", "sibling", original);
+        }
         const auto* source = callable->getClassType() == nullptr ?
             "value.leaf.number = 31\nlocal.leaf.number = changeAssignmentSibling" :
             "this.leaf.number = changeAssignmentSibling";
@@ -204,6 +218,10 @@ BOOST_AUTO_TEST_CASE(empty_receiver_writes_preserve_effects_without_storage_poin
         BOOST_REQUIRE(callable != nullptr);
         BOOST_TEST(!callable->getCallStorageLayout().receiverOffset.has_value());
         InterpreterContext context(*machine, *callable);
+        const auto* property = callable->getClassType()->asCompositeType()->getProperty("empty");
+        const InterpreterValue emptyValue(property->getValueType(), std::span<const RuntimeValue>{});
+        context.setReceiverProperty(property->getId(), emptyValue);
+        context.setReceiverProperty("empty", emptyValue);
         const auto success = Interpreter{}.execute("this.empty = makeEmptyAssignment", context);
         BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : ""));
         BOOST_TEST(context.getResult()->getStorage().data() == nullptr);

@@ -69,7 +69,8 @@ public:
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
     // Borrows the complete struct receiver of an active method/constructor frame.
     [[nodiscard]] std::span<const RuntimeValue> getReceiverStorage() const;
-    void setReceiverProperty(std::span<const PropertyId> properties, const InterpreterValue& value);
+    void setReceiverProperty(PropertyId propertyId, const InterpreterValue& value);
+    void setReceiverProperty(NomadStringView propertyPath, const InterpreterValue& value);
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const Type* type, std::span<const RuntimeValue> storage);
@@ -93,7 +94,12 @@ public:
     // Copies the current root at write time, preserving unrelated RHS changes.
     void setVariableProperty(
         const NomadString& name,
-        std::span<const PropertyId> properties,
+        PropertyId propertyId,
+        const InterpreterValue& value
+    );
+    void setVariableProperty(
+        const NomadString& name,
+        NomadStringView propertyPath,
         const InterpreterValue& value
     );
     void clearVariableValue(const NomadString& name);
@@ -111,6 +117,7 @@ private:
     friend class Interpreter;
 
     void validateFrame() const;
+    void replaceReceiver(const InterpreterValue& replacement);
 
     Runtime* m_runtime;
     std::unique_ptr<ScriptCallableBase> m_function;
