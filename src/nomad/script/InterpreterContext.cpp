@@ -105,6 +105,20 @@ void InterpreterContext::clearVariableValue(const NomadString& name) {
     }
 }
 
+void InterpreterContext::setVariableProperty(
+    const NomadString& name,
+    const std::span<const PropertyId> properties,
+    const TypedValue& value
+) {
+    const auto* type = getVariableType(name);
+    if (type == nullptr) {
+        throw std::invalid_argument("Stored property assignment requires an assigned variable");
+    }
+    TypedValue replacement(type, getVariableStorage(name));
+    replacement.setProperty(properties, value);
+    setVariable(name, type, replacement.getStorage());
+}
+
 const Type* InterpreterContext::getVariableType(const NomadString& name) const {
     const auto parameterId = m_function->getParameterId(name);
     if (parameterId != NOMAD_INVALID_ID) {
@@ -382,6 +396,24 @@ std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
     }
     const auto pointer = m_virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1);
     return {pointer[0].getStorageAddress(), size};
+}
+
+void InterpreterContext::setReceiverProperty(
+    const std::span<const PropertyId> properties,
+    const TypedValue& value
+) {
+    const auto storage = getReceiverStorage();
+    const auto* type = m_frameCallable->getClassType();
+    TypedValue replacement(type, storage);
+    replacement.setProperty(properties, value);
+    if (storage.empty()) {
+        return;
+    }
+    const auto layout = m_frameCallable->getCallStorageLayout();
+    const auto pointer = m_virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1);
+    std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+    type->assignValue(replacement.getStorage().data(), pointer[0].getStorageAddress(),
+        scratch.empty() ? nullptr : scratch.data());
 }
 
 void InterpreterContext::setParameter(

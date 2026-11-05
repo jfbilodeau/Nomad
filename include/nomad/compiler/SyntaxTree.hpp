@@ -238,8 +238,13 @@ private:
 
 class MemberAssignmentStatement final : public Statement {
 public:
-    MemberAssignmentStatement(NomadIndex line, NomadIndex column, std::unique_ptr<Expression> target,
-                              std::unique_ptr<Expression> expression);
+    MemberAssignmentStatement(
+        NomadIndex line,
+        NomadIndex column,
+        std::unique_ptr<Expression> target,
+        std::unique_ptr<Expression> expression,
+        NomadString targetName = {}
+    );
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -247,8 +252,14 @@ protected:
     void onEvaluate(InterpreterContext& context) const override;
 
 private:
+    [[nodiscard]] bool resolveStructTarget(CompilerContext* context, ScriptCallableBase* function);
+
     std::unique_ptr<Expression> m_target;
     std::unique_ptr<Expression> m_expression;
+    NomadString m_targetName;
+    NomadString m_rootName;
+    IdentifierDefinition m_rootDefinition;
+    std::vector<PropertyId> m_properties;
 };
 
 class ExpressionStatement final : public Statement {

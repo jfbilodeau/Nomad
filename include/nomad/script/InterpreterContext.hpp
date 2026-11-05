@@ -68,6 +68,7 @@ public:
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
     // Borrows the complete struct receiver of an active method/constructor frame.
     [[nodiscard]] std::span<const RuntimeValue> getReceiverStorage() const;
+    void setReceiverProperty(std::span<const PropertyId> properties, const TypedValue& value);
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const Type* type, std::span<const RuntimeValue> storage);
@@ -88,6 +89,12 @@ public:
 
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
     void setVariable(const NomadString& name, const Type* type, std::span<const RuntimeValue> storage);
+    // Copies the current root at write time, preserving unrelated RHS changes.
+    void setVariableProperty(
+        const NomadString& name,
+        std::span<const PropertyId> properties,
+        const TypedValue& value
+    );
     void clearVariableValue(const NomadString& name);
 
     [[nodiscard]] const Type* getVariableType(const NomadString& name) const;

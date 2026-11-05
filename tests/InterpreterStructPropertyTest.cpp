@@ -121,8 +121,10 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
             BOOST_TEST(!Interpreter{}.evaluateExpression("root.missing", context));
             BOOST_TEST(context.hasError());
             BOOST_TEST(context.getResult() == nullptr);
-            BOOST_TEST(!Interpreter{}.execute("root.leaf.number = 99", context));
-            BOOST_TEST(!Interpreter{}.execute("root.leaf = new ReadLeaf", context));
+            BOOST_REQUIRE(Interpreter{}.execute("root.leaf.number = 99", context));
+            BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.number", context));
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 99);
+            BOOST_REQUIRE(Interpreter{}.execute("root.leaf = new ReadLeaf", context));
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
             context.clearVariableValue("root");

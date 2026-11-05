@@ -2,6 +2,7 @@
 
 #include <nomad/script/TypedValue.hpp>
 
+#include <nomad/script/CompositeType.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <stdexcept>
@@ -100,6 +101,36 @@ std::span<const RuntimeValue> TypedValue::getStorage() const {
         return {};
     }
     return m_storage;
+}
+
+void TypedValue::setProperty(
+    const std::span<const PropertyId> properties,
+    const TypedValue& value
+) {
+    if (properties.empty()) {
+        throw std::invalid_argument("A stored property path cannot be empty");
+    }
+    const auto* type = m_type;
+    auto offset = NomadIndex{0};
+    for (const auto propertyId : properties) {
+        if (type == nullptr || !type->isStruct()) {
+            throw std::invalid_argument("Stored property paths require struct owners");
+        }
+        const auto* owner = type->asCompositeType();
+        const auto* property = owner->getProperty(propertyId);
+        if (property == nullptr || property->asNativeProperty() != nullptr) {
+            throw std::invalid_argument("Stored property path does not match the struct type");
+        }
+        offset += owner->getFieldOffset(propertyId);
+        type = property->getValueType();
+    }
+    if (type != value.getType()) {
+        throw std::invalid_argument("Stored property assignment requires a matching value type");
+    }
+    std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+    type->assignValue(value.getStorage().data(),
+        type->getSize() == 0 ? nullptr : m_storage.data() + offset,
+        scratch.empty() ? nullptr : scratch.data());
 }
 
 void TypedValue::release() noexcept {

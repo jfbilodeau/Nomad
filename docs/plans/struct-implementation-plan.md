@@ -13,6 +13,8 @@ Step 5B interpreter construction and free-function aggregate calls is implemente
 and validated, awaiting review.
 Step 5C interpreter stored-property reads is implemented and validated, awaiting
 review.
+Step 5D1 statement-owned field assignments for named struct roots is implemented
+and validated, awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2852,9 +2854,42 @@ Implementation and validation:
 - Language, remaining, bindings, and tooling CTest groups, compiler-export and
   LSP process integration tests, four documentation preparation tests, and
   whitespace validation passed. Gameplay and performance were not validated.
-- Stop for review without committing. Next is borrowed-storage property
+- Stop for review without committing. Next is statement-owned property
   assignment, then struct method calls, captures, formatting, and remaining host
   parity. NRVO and VM fault cleanup remain deferred.
+
+### Step 5D1: Statement-owned assignments to named struct roots
+
+Approved scope:
+
+- Assign stored fields rooted in interpreter struct variables, frame locals and
+  parameters, and struct `this`, including nested struct fields.
+- Keep expressions value-only. Do not add writable-storage evaluation hooks or
+  interpreter-driven AST accessors; the context must not inspect AST nodes.
+- Copy the current root at write time, update the selected field, and replace
+  the root through context setters. Preserve unrelated sibling-field changes
+  made while evaluating the RHS.
+- Leave class-owned and temporary-rooted struct writes for the next slice.
+
+Implementation and validation:
+
+- Member assignment statements retain the named target and resolve its root
+  and stored property-ID path. Existing compiled assignment paths are unchanged.
+- New unqualified interpreter variables are reserved during parsing so a later
+  assignment in the same input can resolve a field of an earlier variable.
+- `TypedValue::setProperty` updates owned struct fields using existing type
+  assignment operations. Context property setters accept names/property IDs and
+  typed values, not expressions or writable expression storage.
+- Regression tests cover scalar/reference/nested/whole-struct writes, independent
+  sources, self-assignment, owned results, shared class references, invalid paths
+  and types, frame parameters/locals/receivers, empty receiver constructors and
+  methods, RHS reentry changing sibling fields, and partial-copy failures before
+  replacement. Ownership scenarios restore live counts over three repetitions.
+- The language and remaining CTest groups, four documentation preparation tests,
+  and whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing. Next are class-owned and temporary-rooted
+  struct writes, then struct method calls, captures, formatting, and remaining
+  host parity. NRVO and VM fault cleanup remain deferred.
 
 ### Step 6: Conservative named return-value optimization
 

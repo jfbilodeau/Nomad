@@ -1175,7 +1175,8 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             return nullptr;
         }
 
-        return std::make_unique<MemberAssignmentStatement>(line, column, std::move(target), std::move(expression));
+        return std::make_unique<MemberAssignmentStatement>(
+            line, column, std::move(target), std::move(expression), variableName);
     }
 
     if (identifierDefinition.identifierType == IdentifierType::Unknown && function != nullptr) {
@@ -1189,7 +1190,8 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             if (variableId.isInvalid()) {
                 context->getCompiler()->reportInternalError("Failed to register context variable: " + variableName);
             }
-        } else if (context->getMode() == CompilerMode::Script) {
+        } else if (context->getMode() == CompilerMode::Script ||
+            (context->getMode() == CompilerMode::Interpreter && variableName.find('.') == NomadString::npos)) {
             function->registerVariable(variableName, nullptr);
         }
     }

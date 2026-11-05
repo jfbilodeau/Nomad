@@ -189,4 +189,53 @@ BOOST_AUTO_TEST_CASE(failed_scalar_and_array_copies_release_partial_ownership) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(stored_property_updates_are_owned_and_validate_the_complete_path) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("PropertyEmpty");
+    const auto leafId = runtime.registerStruct("PropertyLeaf");
+    const auto rootId = runtime.registerStruct("PropertyRoot");
+    const auto* empty = runtime.getTypeByName("PropertyEmpty");
+    const auto* leaf = runtime.getTypeByName("PropertyLeaf");
+    const auto* root = runtime.getTypeByName("PropertyRoot");
+    const auto numberId = runtime.registerProperty(leafId, "number", runtime.getIntegerType());
+    const auto textId = runtime.registerProperty(leafId, "text", runtime.getStringType());
+    const auto emptyPropertyId = runtime.registerProperty(rootId, "empty", empty);
+    const auto leafPropertyId = runtime.registerProperty(rootId, "leaf", leaf);
+    BOOST_REQUIRE(numberId.isValid() && textId.isValid() &&
+        emptyPropertyId.isValid() && leafPropertyId.isValid());
+    runtime.finalizeCompositeFieldLayout(rootId);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    {
+        std::array<RuntimeValue, 2> source{
+            RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadString{"original"}}};
+        TypedValue value(root, source);
+        root->freeValue(source.data());
+        const TypedValue snapshot(value);
+        const std::array textPath{leafPropertyId, textId};
+        RuntimeValue text{NomadString{"updated"}};
+        const TypedValue replacement(runtime.getStringType(), text);
+        text.freeObjectValue();
+        value.setProperty(textPath, replacement);
+        BOOST_TEST(value.getStorage()[1].getStringValue() == "updated");
+        BOOST_TEST(snapshot.getStorage()[1].getStringValue() == "original");
+        const std::array numberPath{leafPropertyId, numberId};
+        TypedValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{31}});
+        value.setProperty(numberPath, number);
+        BOOST_TEST(value.getStorage()[0].getIntegerValue() == 31);
+        BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 17);
+        const std::array emptyPath{emptyPropertyId};
+        const TypedValue emptyValue(empty, std::span<const RuntimeValue>{});
+        value.setProperty(emptyPath, emptyValue);
+        BOOST_CHECK_THROW(value.setProperty({}, number), std::invalid_argument);
+        BOOST_CHECK_THROW(value.setProperty(textPath, number), std::invalid_argument);
+        const std::array wrongOwnerPath{numberId};
+        BOOST_CHECK_THROW(value.setProperty(wrongOwnerPath, number), std::invalid_argument);
+        const std::array scalarTraversal{leafPropertyId, numberId, textId};
+        BOOST_CHECK_THROW(value.setProperty(scalarTraversal, replacement), std::invalid_argument);
+        BOOST_CHECK_THROW(number.setProperty(numberPath, number), std::invalid_argument);
+        BOOST_TEST(value.getStorage()[0].getIntegerValue() == 31);
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

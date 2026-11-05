@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 
 #include <span>
@@ -26,6 +27,8 @@ public:
     [[nodiscard]] const RuntimeValue& getValue() const;
     // Borrowed slots remain valid until this value is replaced or destroyed; moves preserve slot addresses.
     [[nodiscard]] std::span<const RuntimeValue> getStorage() const;
+    // Replaces a stored field within this owned struct, following struct-only property paths.
+    void setProperty(std::span<const PropertyId> properties, const TypedValue& value);
 
 private:
     void release() noexcept;
