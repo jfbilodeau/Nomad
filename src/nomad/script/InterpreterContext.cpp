@@ -366,6 +366,24 @@ std::span<const RuntimeValue> InterpreterContext::getParameterStorage(const Noma
         m_frameCallable->getParameterType(parameterId)->getSize());
 }
 
+std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
+    if (!isFrameBacked() || m_frameCallable->getClassType() == nullptr ||
+        !m_frameCallable->getClassType()->isStruct()) {
+        throw NomadBug("Struct receiver storage requires an active struct callable frame");
+    }
+    validateFrame();
+    const auto size = m_frameCallable->getClassType()->getSize();
+    if (size == 0) {
+        return {};
+    }
+    const auto layout = m_frameCallable->getCallStorageLayout();
+    if (!layout.receiverOffset.has_value()) {
+        throw NomadBug("Nonempty struct callable has no receiver storage pointer");
+    }
+    const auto pointer = m_virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1);
+    return {pointer[0].getStorageAddress(), size};
+}
+
 void InterpreterContext::setParameter(
     const NomadId parameterId,
     const std::span<const RuntimeValue> storage

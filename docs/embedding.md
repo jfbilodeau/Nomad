@@ -470,7 +470,8 @@ parameters, and returns have independent struct storage; contained class fields
 retain reference semantics. Methods mutate their stored receiver. Empty structs
 occupy no slots but still run constructor and method side effects. The interpreter
 supports owned struct values, construction, and free-function arguments/results;
-interpreter struct property and method access remain unsupported.
+it can also read stored struct properties. Interpreter struct property assignment
+and struct method calls remain unsupported.
 
 Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
@@ -1041,8 +1042,9 @@ fields are released. Extracted strings, class references, and struct copies
 remain independently owned. Assigning to or calling a mutating method on a
 temporary field changes only that temporary, except for shared class references
 stored in its fields. Empty fields still evaluate and release their root.
-Native accessor-backed struct properties and interpreter struct property access
-remain unsupported.
+The interpreter can read stored struct properties through these roots and owns
+the extracted value. Interpreter struct property assignments and struct method
+calls remain unsupported, as do native accessor-backed struct properties.
 
 Object-owned reads evaluate the owner once and keep it alive until copied values
 are independently owned. Writes retain the original owner and capture the
@@ -2335,6 +2337,13 @@ frame, not the original caller's copied arguments. New interpreter variables
 remain context-owned. Borrowed frame storage is valid only while that frame is
 active; it must not be used after the frame returns.
 
+`getReceiverStorage()` borrows the complete struct receiver of an active
+method or constructor frame, including from an intervening native callback.
+It returns an empty view without a pointer for an empty struct. Calling it on
+a non-frame context or a class/free-function frame throws `NomadBug`.
+The interpreter can read `this` and its stored fields in such struct frames;
+the resulting values are owned copies, not mutable receiver aliases.
+
 For already resolved calls, `evaluateFunctionCallWithStorage`,
 `evaluateNativeFunctionCallWithStorage`, and `evaluateConstructorCall` accept
 a callable ID and `std::span<const TypedValue>` in logical parameter order.
@@ -2344,8 +2353,18 @@ leave an owned result in the context. The existing scalar-vector call entry
 points remain scalar-only.
 
 `listVariables()` displays struct type names rather than formatting their
-fields. Interpreter struct stored-property access, methods, aggregate captures,
-and field-aware formatting remain unsupported.
+fields. Stored fields can be read through struct variables, ordinary parameters,
+borrowed struct `this`, class-owned structs, and temporary construction/call
+results. For example, `copy = holder.value.point` owns a field-wise struct copy,
+and `(makeOuter).point.name` retains the extracted string after releasing the
+temporary root. Nested scalar/reference fields and one-slot/empty structs are
+supported. Empty reads still evaluate their receiver's side effects. Contained
+class references remain shared; their existing property/method APIs remain
+available.
+
+Interpreter assignment to struct fields, struct method calls, aggregate captures,
+and field-aware struct formatting remain unsupported. Class-owned struct fields
+can be read but not assigned through the interpreter yet.
 
 ## Parameterized types
 

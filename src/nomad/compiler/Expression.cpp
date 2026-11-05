@@ -17,6 +17,7 @@
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
@@ -782,19 +783,20 @@ bool NativeMemberExpression::resolveMember(
                 reportError(context, function, "Struct property '" + m_qualifiedName + "' does not take arguments");
                 return false;
             }
-            if (context->getMode() != CompilerMode::Script || function == nullptr) {
-                reportError(context, function, "Struct properties are not supported by the interpreter");
+            if (context->getMode() == CompilerMode::Script && function != nullptr) {
+                auto storage = m_receiver->getStorageLocation();
+                if (!storage.has_value()) {
+                    if (m_receiverVariable.isInvalid()) {
+                        m_receiverVariable = function->registerVariable(
+                            "$propertyReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
+                    }
+                    storage = StorageLocation(m_receiver.get(), m_receiverVariable);
+                }
+                m_storage = storage->getProperty(*property);
+            } else if (assignment) {
+                reportError(context, function, "Struct property assignments are not supported by the interpreter");
                 return false;
             }
-            auto storage = m_receiver->getStorageLocation();
-            if (!storage.has_value()) {
-                if (m_receiverVariable.isInvalid()) {
-                    m_receiverVariable = function->registerVariable(
-                        "$propertyReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
-                }
-                storage = StorageLocation(m_receiver.get(), m_receiverVariable);
-            }
-            m_storage = storage->getProperty(*property);
             m_memberId = property->getId();
             m_memberType = MemberType::Property;
             return true;
@@ -1070,6 +1072,40 @@ void NativeMemberExpression::onCompileIntoReturn(Compiler* compiler, ScriptCalla
 void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     if (m_memberType == MemberType::Unknown) {
         raiseException("Native member has not been resolved: " + m_qualifiedName);
+    }
+    if (m_memberType == MemberType::Property &&
+        (m_receiver->getType()->isStruct() || getType()->isStruct())) {
+        const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
+        if (property == nullptr) {
+            raiseException("Invalid property getter: " + m_qualifiedName);
+        }
+        if (property->asNativeProperty() == nullptr) {
+            m_receiver->evaluate(context);
+            if (context.hasError()) {
+                return;
+            }
+            const auto* evaluatedReceiver = context.getResult();
+            if (evaluatedReceiver == nullptr) {
+                context.setError("Stored property receiver did not produce a value");
+                return;
+            }
+            const TypedValue receiver(*evaluatedReceiver);
+            if (receiver.getType()->isStruct()) {
+                const auto size = getType()->getSize();
+                const auto offset = property->getOwnerType()->getFieldOffset(property->getId());
+                const auto storage = receiver.getStorage();
+                context.setResult(getType(), size == 0 ? std::span<const RuntimeValue>{} :
+                    storage.subspan(offset, size));
+            } else {
+                const auto* object = dynamic_cast<const ScriptObject*>(receiver.getValue().getObjectValue());
+                if (object == nullptr || object->getClassType() != property->getOwnerType()) {
+                    context.getVirtualMachine()->fault("Stored property receiver has no matching field storage");
+                }
+                context.setResult(getType(), object->getFieldStorage(
+                    property->getOwnerType()->getFieldIndex(property->getId())));
+            }
+            return;
+        }
     }
     if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
         context.setError("Struct member values are not supported by the interpreter");
@@ -2126,6 +2162,10 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
 void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Receiver: {
+        if (getType()->isStruct()) {
+            context.setResult(getType(), context.getReceiverStorage());
+            break;
+        }
         RuntimeValue receiver;
         receiver.setObjectValue(context.getVirtualMachine()->getThis());
         context.setResult(getType(), receiver);

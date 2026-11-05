@@ -11,6 +11,8 @@ Step 5A interpreter-owned struct values and frame access, standalone vector-back
 `TypedValue`, and nonthrowing cleanup/runtime layout access are implemented.
 Step 5B interpreter construction and free-function aggregate calls is implemented
 and validated, awaiting review.
+Step 5C interpreter stored-property reads is implemented and validated, awaiting
+review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2819,6 +2821,40 @@ Implementation and validation:
   methods, followed by captures, formatting, and remaining host parity. Native
   accessor-backed struct properties and class-receiver struct returns remain
   separate compiled gaps; NRVO and fatal-fault cleanup stay deferred.
+
+### Step 5C: Interpreter stored-property reads
+
+Scope:
+
+- Read stored scalar/reference and struct fields through interpreter-owned
+  values, ordinary parameters/locals, borrowed struct `this`, class-owned
+  structs, and temporary construction or free-function results.
+- Keep property assignments and struct method calls for subsequent slices:
+  reads return owned values rather than mutable borrowed aliases.
+- Preserve existing class-reference semantics, scalar property APIs, and
+  explicit rejection of unsupported writes and native accessor-backed structs.
+
+Implementation and validation:
+
+- Resolve stored struct fields without adding compiled staging locals to
+  interpreter metadata. Nested reads evaluate each receiver once and retain it
+  until the extracted value is independently owned.
+- Use complete field storage for class-owned struct reads. Struct reads select
+  the field's physical range and copy it into the context-owned result.
+- Add `getReceiverStorage()` for active struct method/constructor frames and
+  use it for interpreted `this` reads. Empty receivers and fields access no
+  slots and return no pointer while preserving execution side effects.
+- Tests cover nested scalar/reference/whole-struct fields, one-slot and empty
+  fields, class-reference sharing, temporary-root single evaluation, immediate
+  cleanup of unrelated owned fields, snapshots, frame parameters/locals/receivers,
+  empty receiver constructors/methods, unsupported writes, and unchanged metadata
+  and VM registers. Ownership scenarios repeat three times and restore live counts.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export and
+  LSP process integration tests, four documentation preparation tests, and
+  whitespace validation passed. Gameplay and performance were not validated.
+- Stop for review without committing. Next is borrowed-storage property
+  assignment, then struct method calls, captures, formatting, and remaining host
+  parity. NRVO and VM fault cleanup remain deferred.
 
 ### Step 6: Conservative named return-value optimization
 

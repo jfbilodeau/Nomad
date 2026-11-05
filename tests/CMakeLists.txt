@@ -29,6 +29,7 @@ add_executable(
     ./GameStartupTest.cpp
     ./GeometryTest.cpp
     ./InterpreterStructCallTest.cpp
+    ./InterpreterStructPropertyTest.cpp
     ./InterpreterTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageClassTest.cpp

@@ -66,6 +66,8 @@ public:
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
+    // Borrows the complete struct receiver of an active method/constructor frame.
+    [[nodiscard]] std::span<const RuntimeValue> getReceiverStorage() const;
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const Type* type, std::span<const RuntimeValue> storage);
