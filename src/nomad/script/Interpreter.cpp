@@ -9,11 +9,15 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/CompositeType.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
+
+#include <stdexcept>
+#include <vector>
 
 namespace nomad {
 
@@ -49,6 +53,48 @@ private:
 };
 
 } // namespace
+
+InterpreterValue Interpreter::setProperty(
+    const InterpreterValue& receiver,
+    const std::span<const PropertyId> properties,
+    const InterpreterValue& value
+) const {
+    if (properties.empty()) {
+        throw std::invalid_argument("A stored property path cannot be empty");
+    }
+    const auto* type = receiver.getType();
+    auto offset = NomadIndex{0};
+    for (const auto propertyId : properties) {
+        if (type == nullptr || !type->isStruct()) {
+            throw std::invalid_argument("Stored property paths require struct owners");
+        }
+        const auto* owner = type->asCompositeType();
+        const auto* property = owner->getProperty(propertyId);
+        if (property == nullptr || property->asNativeProperty() != nullptr) {
+            throw std::invalid_argument("Stored property path does not match the struct type");
+        }
+        offset += owner->getFieldOffset(propertyId);
+        type = property->getValueType();
+    }
+    if (type != value.getType()) {
+        throw std::invalid_argument("Stored property assignment requires a matching value type");
+    }
+    const auto* receiverType = receiver.getType();
+    std::vector<RuntimeValue> storage(receiver.getStorage().size());
+    try {
+        receiverType->copyValue(receiver.getStorage().data(), storage.data());
+        std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+        type->assignValue(value.getStorage().data(),
+            type->getSize() == 0 ? nullptr : storage.data() + offset,
+            scratch.empty() ? nullptr : scratch.data());
+        InterpreterValue result(receiverType, storage);
+        receiverType->freeValue(storage.data());
+        return result;
+    } catch (...) {
+        receiverType->freeValue(storage.data());
+        throw;
+    }
+}
 
 bool Interpreter::evaluateExpression(const NomadString& source, InterpreterContext& evaluation) const {
     return evaluateExpression(SourceText{evaluation.m_function->getPath(), source}, evaluation);

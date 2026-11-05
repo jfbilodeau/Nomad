@@ -28,7 +28,7 @@ public:
         UnaryOperator unaryOperator,
         std::unique_ptr<Expression> expression
     );
-    [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
+    [[nodiscard]] std::unique_ptr<InterpreterValue> getInitialValue(Compiler* compiler) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -64,7 +64,7 @@ public:
 
     [[nodiscard]]
     bool isTerminal() const override;
-    [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
+    [[nodiscard]] std::unique_ptr<InterpreterValue> getInitialValue(Compiler* compiler) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -345,7 +345,7 @@ public:
     [[nodiscard]] std::optional<StorageLocation> getStorageLocation() const override;
     [[nodiscard]] IdentifierExpression* asIdentifierExpression() override;
     [[nodiscard]] const IdentifierExpression* asIdentifierExpression() const override;
-    [[nodiscard]] std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const override;
+    [[nodiscard]] std::unique_ptr<InterpreterValue> getInitialValue(Compiler* compiler) const override;
     void compileStore(Compiler* compiler, const ScriptCallableBase* function) const;
     void evaluateStore(InterpreterContext& context, const RuntimeValue& value) const;
 

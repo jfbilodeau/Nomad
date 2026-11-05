@@ -34,7 +34,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     // Resolves `m_expression`, so overload resolution and the regular resolve pass can both ask for its type.
@@ -72,7 +72,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     CallableId m_functionId;
@@ -119,7 +119,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_fileName;
@@ -134,7 +134,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_functionName;
@@ -149,7 +149,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    [[nodiscard]] TypedValue onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
 
@@ -234,14 +234,14 @@ void ExpressionArgument::onCompile(Compiler* compiler, ScriptCallableBase* funct
     m_expression->compile(compiler, function, ExpressionTarget::Stack);
 }
 
-TypedValue ExpressionArgument::onEvaluate(InterpreterContext& context) const {
+InterpreterValue ExpressionArgument::onEvaluate(InterpreterContext& context) const {
     m_expression->evaluate(context);
     const auto* value = context.getResult();
 
     if (value == nullptr) {
         if (context.hasError()) {
             // The caller stops on the reported error; the returned value is never used.
-            return TypedValue(context.getRuntime()->getVoidType(), RuntimeValue{});
+            return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
         }
 
         throw AstException("Argument expression did not produce a value", getLine(), getColumn());
@@ -312,7 +312,7 @@ void CallbackArgument::onCompile(Compiler* compiler, ScriptCallableBase* /*funct
     compiler->addIndex(toNomadIndex(m_functionId.id));
 }
 
-TypedValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
+InterpreterValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
     const auto* runtime = context.getRuntime();
     const auto* function = runtime->getScriptCallable(m_functionId);
     const auto* callbackType = getType() == nullptr ? nullptr : getType()->asCallback();
@@ -345,7 +345,7 @@ TypedValue CallbackArgument::onEvaluate(InterpreterContext& context) const {
         }
     }
 
-    return TypedValue(getType(), RuntimeValue{m_functionId.id});
+    return InterpreterValue(getType(), RuntimeValue{m_functionId.id});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -408,10 +408,10 @@ void FileNameArgument::onCompile(Compiler* compiler, ScriptCallableBase* /*funct
     compiler->addLoadStringValue(m_fileName, ExpressionTarget::Stack);
 }
 
-TypedValue FileNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue FileNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
     RuntimeValue value;
     value.setStringValue(m_fileName);
-    TypedValue result(getType(), value);
+    InterpreterValue result(getType(), value);
     value.freeObjectValue();
 
     return result;
@@ -435,10 +435,10 @@ void FunctionNameArgument::onCompile(Compiler* compiler, ScriptCallableBase* /*f
     compiler->addLoadStringValue(m_functionName, ExpressionTarget::Stack);
 }
 
-TypedValue FunctionNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue FunctionNameArgument::onEvaluate(InterpreterContext& /*context*/) const {
     RuntimeValue value;
     value.setStringValue(m_functionName);
-    TypedValue result(getType(), value);
+    InterpreterValue result(getType(), value);
     value.freeObjectValue();
 
     return result;
@@ -453,8 +453,8 @@ void LineNumberArgument::onCompile(Compiler* compiler, ScriptCallableBase* /*fun
     compiler->addLoadIntegerValue(static_cast<NomadInteger>(getLine()), ExpressionTarget::Stack);
 }
 
-TypedValue LineNumberArgument::onEvaluate(InterpreterContext& /*context*/) const {
-    return TypedValue(getType(), RuntimeValue{static_cast<NomadInteger>(getLine())});
+InterpreterValue LineNumberArgument::onEvaluate(InterpreterContext& /*context*/) const {
+    return InterpreterValue(getType(), RuntimeValue{static_cast<NomadInteger>(getLine())});
 }
 
 ///////////////////////////////////////////////////////////////////////////////

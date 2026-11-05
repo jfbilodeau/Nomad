@@ -2021,7 +2021,7 @@ void Compiler::registerScriptInitializer(
     throw NomadBug("Missing script initialization function");
 }
 
-const TypedValue* Compiler::getHubInitialValue(const NomadString& name) const {
+const InterpreterValue* Compiler::getHubInitialValue(const NomadString& name) const {
     if (m_allowInitialValueLookup) {
         for (const auto* initializer : m_scriptInitializers) {
             if (initializer->getIdentifier() == name) {

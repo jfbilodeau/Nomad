@@ -270,7 +270,7 @@ public:
         NomadId scriptId,
         std::unique_ptr<HubInitializerStatement> initializer
     );
-    [[nodiscard]] const TypedValue* getHubInitialValue(const NomadString& name) const;
+    [[nodiscard]] const InterpreterValue* getHubInitialValue(const NomadString& name) const;
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(
         FormatStringLiteral* literal,

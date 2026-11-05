@@ -36,11 +36,11 @@ const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptCa
     return nullptr;
 }
 
-TypedValue Argument::evaluate(InterpreterContext& context) const {
+InterpreterValue Argument::evaluate(InterpreterContext& context) const {
     return onEvaluate(context);
 }
 
-TypedValue Argument::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue Argument::onEvaluate(InterpreterContext& /*context*/) const {
     throw AstException("Argument kind is not supported by the interpreter", getLine(), getColumn());
 }
 
@@ -155,7 +155,7 @@ void ArgumentList::compile(Compiler* compiler, ScriptCallableBase* function) con
 
 void ArgumentList::evaluate(
     InterpreterContext& context,
-    std::vector<TypedValue>& evaluatedArguments
+    std::vector<InterpreterValue>& evaluatedArguments
 ) const {
     evaluatedArguments.reserve(m_arguments.size());
     for (auto argument = m_arguments.rbegin(); argument != m_arguments.rend(); ++argument) {
@@ -170,7 +170,7 @@ void ArgumentList::evaluate(
 
 void ArgumentList::evaluate(
     InterpreterContext& context,
-    std::vector<TypedValue>& evaluatedArguments,
+    std::vector<InterpreterValue>& evaluatedArguments,
     std::vector<RuntimeValue>& values
 ) const {
     evaluate(context, evaluatedArguments);
@@ -336,7 +336,7 @@ void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    std::vector<TypedValue> evaluatedArguments;
+    std::vector<InterpreterValue> evaluatedArguments;
     getArguments()->evaluate(context, evaluatedArguments);
     if (context.hasError()) {
         return;

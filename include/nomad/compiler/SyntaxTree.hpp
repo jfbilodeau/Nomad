@@ -22,7 +22,7 @@ class Compiler;
 class CompilerContext;
 class FunStatementNode;  // Defined in StatementParsers.hpp
 class InterpreterContext;
-class TypedValue;
+class InterpreterValue;
 class Runtime;
 class ScriptCallableBase;
 class FunctionBuilder;
@@ -123,7 +123,7 @@ public:
     [[nodiscard]] bool hasType() const;
     [[nodiscard]] bool hasValue() const;
     [[nodiscard]] bool isParsed() const;
-    [[nodiscard]] virtual std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const;
+    [[nodiscard]] virtual std::unique_ptr<InterpreterValue> getInitialValue(Compiler* compiler) const;
     // Is the expression terminal (no further computation necessary) or compound (needs further evaluation)
     // ie: the r/i registers will be used if false.
     [[nodiscard]]
@@ -223,8 +223,8 @@ public:
     );
     ~HubInitializerStatement() override;
     [[nodiscard]] const NomadString& getSourceName() const;
-    [[nodiscard]] const TypedValue* getInitialValue() const;
-    void setInitialValue(std::unique_ptr<TypedValue> value);
+    [[nodiscard]] const InterpreterValue* getInitialValue() const;
+    void setInitialValue(std::unique_ptr<InterpreterValue> value);
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -233,7 +233,7 @@ protected:
 private:
     ScriptCallableBase* m_sourceFunction;
     NomadString m_hub;
-    std::unique_ptr<TypedValue> m_initialValue;
+    std::unique_ptr<InterpreterValue> m_initialValue;
 };
 
 class MemberAssignmentStatement final : public Statement {

@@ -2,11 +2,11 @@
 
 #include <nomad/script/Interpreter.hpp>
 #include <nomad/script/InterpreterCallFrame.hpp>
+#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
-#include <nomad/script/TypedValue.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -129,7 +129,7 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
             BOOST_TEST(source[0].getIntegerValue() == 17);
             BOOST_TEST(copy[2].getObjectValue() == source[2].getObjectValue());
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("readAggregateText copy", context));
-            const TypedValue text(*context.getResult());
+            const InterpreterValue text(*context.getResult());
             BOOST_TEST(text.getValue().getStringValue() == "source");
             BOOST_REQUIRE(Interpreter{}.execute("holder = new CallHolder source", context));
             const auto* holder = dynamic_cast<const ScriptObject*>(context.getVariableValue("holder")->getObjectValue());
@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
             BOOST_TEST(context.getResult()->getType() == outer);
             BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 23);
             BOOST_TEST(context.getResult()->getStorage()[1].getStringValue() == "created");
-            const TypedValue snapshot(*context.getResult());
+            const InterpreterValue snapshot(*context.getResult());
             const auto emptyBefore = emptyCalls;
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("copyCallEmpty (new CallEmpty)", context));
             BOOST_TEST(emptyCalls == emptyBefore + 1);
@@ -491,13 +491,13 @@ BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_own
             std::array<RuntimeValue, 2> source{};
             source[0].setStringValue("first source");
             source[1].setStringValue("second source");
-            const TypedValue argument(valueType, source);
+            const InterpreterValue argument(valueType, source);
             valueType->freeValue(source.data());
             const auto live = RuntimeValue::getLiveStringCount();
             field->copyCount = 0;
             field->failCopyAt = 2;
             BOOST_CHECK_THROW(context.evaluateNativeFunctionCallWithStorage(
-                consumeId, std::span<const TypedValue>{&argument, 1}), NomadException);
+                consumeId, std::span<const InterpreterValue>{&argument, 1}), NomadException);
             BOOST_TEST(argument.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
             BOOST_TEST(argument.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
             BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
@@ -512,7 +512,7 @@ BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_own
             BOOST_CHECK_THROW(context.evaluateConstructorCall(constructorId, {}), NomadException);
             BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
             field->failInitialization = false;
-            context.evaluateNativeFunctionCallWithStorage(consumeId, std::span<const TypedValue>{&argument, 1});
+            context.evaluateNativeFunctionCallWithStorage(consumeId, std::span<const InterpreterValue>{&argument, 1});
             BOOST_TEST(context.getResult()->getType()->isVoid());
             BOOST_TEST(machine->getIntegerResult() == 41);
             BOOST_TEST(machine->getIntegerIntermediate() == 43);

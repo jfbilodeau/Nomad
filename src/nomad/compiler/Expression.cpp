@@ -197,8 +197,8 @@ bool Expression::isParsed() const {
     return hasType() && hasValue();
 }
 
-std::unique_ptr<TypedValue> Expression::getInitialValue(Compiler* /*compiler*/) const {
-    return isParsed() ? std::make_unique<TypedValue>(getType(), getValue()) : nullptr;
+std::unique_ptr<InterpreterValue> Expression::getInitialValue(Compiler* /*compiler*/) const {
+    return isParsed() ? std::make_unique<InterpreterValue>(getType(), getValue()) : nullptr;
 }
 
 bool Expression::isTerminal() const {
@@ -292,7 +292,7 @@ void UnaryExpression::onCompile(Compiler* compiler, ScriptCallableBase* function
     compiler->addOpCode(opcode);
 }
 
-std::unique_ptr<TypedValue> UnaryExpression::getInitialValue(Compiler* compiler) const {
+std::unique_ptr<InterpreterValue> UnaryExpression::getInitialValue(Compiler* compiler) const {
     if (isParsed()) {
         return Expression::getInitialValue(compiler);
     }
@@ -304,7 +304,7 @@ std::unique_ptr<TypedValue> UnaryExpression::getInitialValue(Compiler* compiler)
     if (!compiler->foldUnary(m_unaryOperator, operand->getType(), operand->getValue(), value)) {
         return nullptr;
     }
-    auto result = std::make_unique<TypedValue>(getType(), value);
+    auto result = std::make_unique<InterpreterValue>(getType(), value);
     getType()->freeValue(&value);
     return result;
 }
@@ -316,7 +316,7 @@ void UnaryExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const TypedValue operand(*evaluatedOperand);
+    const InterpreterValue operand(*evaluatedOperand);
     RuntimeValue result;
     if (!context.getRuntime()->foldUnary(m_unaryOperator, operand.getType(), operand.getValue(), result)) {
         raiseException("Cannot evaluate unary operator '" + toString(m_unaryOperator) + "'");
@@ -390,7 +390,7 @@ bool BinaryExpression::isTerminal() const {
     return false;
 }
 
-std::unique_ptr<TypedValue> BinaryExpression::getInitialValue(Compiler* compiler) const {
+std::unique_ptr<InterpreterValue> BinaryExpression::getInitialValue(Compiler* compiler) const {
     if (isParsed()) {
         return Expression::getInitialValue(compiler);
     }
@@ -405,7 +405,7 @@ std::unique_ptr<TypedValue> BinaryExpression::getInitialValue(Compiler* compiler
     )) {
         return nullptr;
     }
-    auto result = std::make_unique<TypedValue>(getType(), value);
+    auto result = std::make_unique<InterpreterValue>(getType(), value);
     getType()->freeValue(&value);
     return result;
 }
@@ -510,7 +510,7 @@ void BinaryExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const TypedValue lhs(*evaluatedLhs);
+    const InterpreterValue lhs(*evaluatedLhs);
 
     // Resolution guarantees logical operators have boolean operands.
     if (m_binaryOperator == BinaryOperator::AndAnd || m_binaryOperator == BinaryOperator::PipePipe) {
@@ -528,7 +528,7 @@ void BinaryExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const TypedValue rhs(*evaluatedRhs);
+    const InterpreterValue rhs(*evaluatedRhs);
     RuntimeValue result;
     if (!context.getRuntime()->foldBinary(
         m_binaryOperator,
@@ -673,7 +673,7 @@ void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    std::vector<TypedValue> evaluatedArguments;
+    std::vector<InterpreterValue> evaluatedArguments;
     m_arguments.evaluate(context, evaluatedArguments);
     if (context.hasError()) {
         return;
@@ -1089,7 +1089,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
                 context.setError("Stored property receiver did not produce a value");
                 return;
             }
-            const TypedValue receiver(*evaluatedReceiver);
+            const InterpreterValue receiver(*evaluatedReceiver);
             if (receiver.getType()->isStruct()) {
                 const auto size = getType()->getSize();
                 const auto offset = property->getOwnerType()->getFieldOffset(property->getId());
@@ -1150,7 +1150,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     const auto* method = m_method;
     const auto* returnType = method->getReturnType();
 
-    std::vector<TypedValue> evaluatedArguments;
+    std::vector<InterpreterValue> evaluatedArguments;
     std::vector<RuntimeValue> values;
     m_arguments.evaluate(context, evaluatedArguments, values);
     if (context.hasError()) {
@@ -1351,8 +1351,8 @@ void IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expre
     if (context.hasError()) {
         return;
     }
-    const TypedValue receiver(*context.getResult());
-    std::vector<TypedValue> arguments;
+    const InterpreterValue receiver(*context.getResult());
+    std::vector<InterpreterValue> arguments;
     arguments.reserve(m_indexes.size() + (assigned != nullptr ? 1 : 0));
     if (assigned != nullptr) {
         assigned->evaluate(context);
@@ -1579,7 +1579,7 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    std::vector<TypedValue> evaluatedArguments;
+    std::vector<InterpreterValue> evaluatedArguments;
     m_arguments.evaluate(context, evaluatedArguments);
     if (context.hasError()) {
         return;
@@ -2085,12 +2085,12 @@ void IdentifierExpression::onCompileIntoLocal(
     storage->emitCopyToLocal(*compiler, function, destination);
 }
 
-std::unique_ptr<TypedValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {
+std::unique_ptr<InterpreterValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {
     if (isParsed()) {
         return Expression::getInitialValue(compiler);
     }
     const auto* value = compiler->getHubInitialValue(m_identifier);
-    return value != nullptr ? std::make_unique<TypedValue>(*value) : nullptr;
+    return value != nullptr ? std::make_unique<InterpreterValue>(*value) : nullptr;
 }
 
 IdentifierExpression* IdentifierExpression::asIdentifierExpression() {

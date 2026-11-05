@@ -9,7 +9,7 @@
 
 namespace nomad {
 
-class TypedValue;
+class InterpreterValue;
 struct EventDefinition;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,11 +33,11 @@ public:
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
     void compile(Compiler* compiler, ScriptCallableBase* function) const;
     // Evaluates right-to-left, retaining values in logical parameter order. Stops at the first reported error.
-    void evaluate(InterpreterContext& context, std::vector<TypedValue>& evaluatedArguments) const;
+    void evaluate(InterpreterContext& context, std::vector<InterpreterValue>& evaluatedArguments) const;
     // Scalar adapter; entries of values borrow ownership from evaluatedArguments.
     void evaluate(
         InterpreterContext& context,
-        std::vector<TypedValue>& evaluatedArguments,
+        std::vector<InterpreterValue>& evaluatedArguments,
         std::vector<RuntimeValue>& values
     ) const;
 

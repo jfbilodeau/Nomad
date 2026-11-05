@@ -60,6 +60,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterCallFrame.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterValue.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
@@ -83,7 +84,6 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/StructType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/TypeManager.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/TypedValue.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ValueType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp

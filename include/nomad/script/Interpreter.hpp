@@ -5,11 +5,20 @@
 #include <nomad/compiler/Source.hpp>
 
 #include <nomad/script/InterpreterContext.hpp>
+#include <nomad/script/InterpreterValue.hpp>
+#include <nomad/script/Property.hpp>
 
 namespace nomad {
 
 class Interpreter {
 public:
+    // Returns a replacement struct without modifying either input.
+    [[nodiscard]] InterpreterValue setProperty(
+        const InterpreterValue& receiver,
+        std::span<const PropertyId> properties,
+        const InterpreterValue& value
+    ) const;
+
     [[nodiscard]] NomadBoolean execute(const NomadString& source, InterpreterContext& context) const;
     [[nodiscard]] NomadBoolean execute(const SourceText& source, InterpreterContext& context) const;
     // Requires one non-void expression. Syntax/type errors are retained; execution faults propagate.

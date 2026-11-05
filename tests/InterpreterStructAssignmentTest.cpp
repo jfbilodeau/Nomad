@@ -2,8 +2,8 @@
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/TypedValue.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(named_roots_copy_nested_fields_and_preserve_shared_referenc
             BOOST_TEST(context.getResult()->getValue().getStringValue() == "owned assignment");
             execute("root.leaf = root.leaf");
             BOOST_TEST(context.getResult()->getType() == runtime.getTypeByName("AssignmentLeaf"));
-            const TypedValue snapshot(*context.getResult());
+            const InterpreterValue snapshot(*context.getResult());
             execute("root.leaf.number = 53");
             BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 41);
             execute("root.leaf.owner = source.owner\nroot.leaf.owner.number = 67");
@@ -259,7 +259,7 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
             root->freeValue(oldValues.data());
             pair->freeValue(newValues.data());
             const auto live = RuntimeValue::getLiveStringCount();
-            for (const auto failAt : {2, 6, 8, 10}) {
+            for (const auto failAt : {2, 6, 8, 10, 12, 14}) {
                 field->copyCount = 0;
                 field->failCopyAt = failAt;
                 BOOST_TEST(!Interpreter{}.execute("root.pair = source", context));

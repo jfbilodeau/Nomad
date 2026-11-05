@@ -2,6 +2,7 @@
 
 #include <nomad/script/InterpreterContext.hpp>
 
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/InterpreterCallFrame.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeFunction.hpp>
@@ -80,7 +81,7 @@ void InterpreterContext::setVariable(
         return;
     }
 
-    auto replacement = std::make_unique<TypedValue>(type, storage);
+    auto replacement = std::make_unique<InterpreterValue>(type, storage);
 
     auto variableId = m_function->getVariableId(name);
     if (variableId.isInvalid()) {
@@ -108,14 +109,14 @@ void InterpreterContext::clearVariableValue(const NomadString& name) {
 void InterpreterContext::setVariableProperty(
     const NomadString& name,
     const std::span<const PropertyId> properties,
-    const TypedValue& value
+    const InterpreterValue& value
 ) {
     const auto* type = getVariableType(name);
     if (type == nullptr) {
         throw std::invalid_argument("Stored property assignment requires an assigned variable");
     }
-    TypedValue replacement(type, getVariableStorage(name));
-    replacement.setProperty(properties, value);
+    const InterpreterValue current(type, getVariableStorage(name));
+    const auto replacement = Interpreter{}.setProperty(current, properties, value);
     setVariable(name, type, replacement.getStorage());
 }
 
@@ -299,12 +300,12 @@ void InterpreterContext::setResult(const Type* type, const RuntimeValue& value) 
 }
 
 void InterpreterContext::setResult(const Type* type, const std::span<const RuntimeValue> storage) {
-    TypedValue replacement(type, storage);
+    InterpreterValue replacement(type, storage);
     m_result = std::move(replacement);
 }
 
-void InterpreterContext::setResult(const TypedValue& value) {
-    TypedValue replacement(value);
+void InterpreterContext::setResult(const InterpreterValue& value) {
+    InterpreterValue replacement(value);
     m_result = std::move(replacement);
 }
 
@@ -316,7 +317,7 @@ void InterpreterContext::setVoidResult() {
     setResult(getRuntime()->getVoidType(), RuntimeValue{});
 }
 
-const TypedValue* InterpreterContext::getResult() const {
+const InterpreterValue* InterpreterContext::getResult() const {
     return m_result ? &*m_result : nullptr;
 }
 
@@ -400,12 +401,12 @@ std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
 
 void InterpreterContext::setReceiverProperty(
     const std::span<const PropertyId> properties,
-    const TypedValue& value
+    const InterpreterValue& value
 ) {
     const auto storage = getReceiverStorage();
     const auto* type = m_frameCallable->getClassType();
-    TypedValue replacement(type, storage);
-    replacement.setProperty(properties, value);
+    const InterpreterValue current(type, storage);
+    const auto replacement = Interpreter{}.setProperty(current, properties, value);
     if (storage.empty()) {
         return;
     }
@@ -493,7 +494,7 @@ void InterpreterContext::evaluateNativeFunctionCall(const CallableId functionId,
 
 void InterpreterContext::evaluateFunctionCallWithStorage(
     const CallableId functionId,
-    const std::span<const TypedValue> arguments
+    const std::span<const InterpreterValue> arguments
 ) {
     const auto* function = getRuntime()->getScriptFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
@@ -516,7 +517,7 @@ void InterpreterContext::evaluateFunctionCallWithStorage(
 
 void InterpreterContext::evaluateNativeFunctionCallWithStorage(
     const CallableId functionId,
-    const std::span<const TypedValue> arguments
+    const std::span<const InterpreterValue> arguments
 ) {
     const auto* function = getRuntime()->getNativeFunction(functionId);
     if (function == nullptr || function->getReturnType() == nullptr) {
@@ -529,7 +530,7 @@ void InterpreterContext::evaluateNativeFunctionCallWithStorage(
 
 void InterpreterContext::evaluateConstructorCall(
     const CallableId constructorId,
-    const std::span<const TypedValue> arguments
+    const std::span<const InterpreterValue> arguments
 ) {
     const auto* constructor = getRuntime()->getConstructor(constructorId);
     if (constructor == nullptr || constructor->getReturnType() == nullptr) {

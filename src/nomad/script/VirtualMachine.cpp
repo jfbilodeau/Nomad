@@ -814,7 +814,7 @@ void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vecto
     releaseArguments();
 }
 
-std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction* function) const {
+std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(const ScriptFunction* function) const {
     if (function == nullptr || function->getParentId() == CallableId{}) {
         fault("Invalid function for current-frame capture");
     }
@@ -824,7 +824,7 @@ std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction
         fault("Format expression does not belong to the current script frame");
     }
 
-    std::vector<TypedValue> values;
+    std::vector<InterpreterValue> values;
     values.reserve(function->getCaptureCount());
     for (const auto& capture : function->getCaptures()) {
         if (capture.type == nullptr || capture.type->isVoid()) {

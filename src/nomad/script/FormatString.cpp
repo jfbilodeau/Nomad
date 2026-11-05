@@ -122,7 +122,7 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
             interpreter->fault("Internal error: Invalid function in format string segment");
         }
 
-        const auto captures = captureFrame ? interpreter->captureCurrentFrame(function) : std::vector<TypedValue>{};
+        const auto captures = captureFrame ? interpreter->captureCurrentFrame(function) : std::vector<InterpreterValue>{};
         std::vector<RuntimeValue> values;
         values.reserve(captures.size());
         for (const auto& capture : captures) {

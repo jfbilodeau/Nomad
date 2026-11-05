@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 
 #include <span>
@@ -12,23 +11,21 @@ namespace nomad {
 
 class Type;
 
-class TypedValue {
+class InterpreterValue {
 public:
-    TypedValue(const Type* type, const RuntimeValue& value);
-    TypedValue(const Type* type, std::span<const RuntimeValue> storage);
-    TypedValue(const TypedValue& other);
-    TypedValue(TypedValue&& other) noexcept;
-    TypedValue& operator=(const TypedValue& other);
-    TypedValue& operator=(TypedValue&& other) noexcept;
-    ~TypedValue();
+    InterpreterValue(const Type* type, const RuntimeValue& value);
+    InterpreterValue(const Type* type, std::span<const RuntimeValue> storage);
+    InterpreterValue(const InterpreterValue& other);
+    InterpreterValue(InterpreterValue&& other) noexcept;
+    InterpreterValue& operator=(const InterpreterValue& other);
+    InterpreterValue& operator=(InterpreterValue&& other) noexcept;
+    ~InterpreterValue();
 
     [[nodiscard]] const Type* getType() const;
     // Scalar access only; empty values and structs require getStorage().
     [[nodiscard]] const RuntimeValue& getValue() const;
     // Borrowed slots remain valid until this value is replaced or destroyed; moves preserve slot addresses.
     [[nodiscard]] std::span<const RuntimeValue> getStorage() const;
-    // Replaces a stored field within this owned struct, following struct-only property paths.
-    void setProperty(std::span<const PropertyId> properties, const TypedValue& value);
 
 private:
     void release() noexcept;

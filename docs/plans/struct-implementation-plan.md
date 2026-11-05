@@ -8,13 +8,15 @@ has been reviewed, along with temporary struct method receivers and free-functio
 return-destination forwarding, direct construction returns, and method-result
 forwarding on struct receivers and temporary-rooted stored property access.
 Step 5A interpreter-owned struct values and frame access, standalone vector-backed
-`TypedValue`, and nonthrowing cleanup/runtime layout access are implemented.
+`InterpreterValue`, and nonthrowing cleanup/runtime layout access are implemented.
 Step 5B interpreter construction and free-function aggregate calls is implemented
 and validated, awaiting review.
 Step 5C interpreter stored-property reads is implemented and validated, awaiting
 review.
 Step 5D1 statement-owned field assignments for named struct roots is implemented
 and validated, awaiting review.
+The immutable `InterpreterValue` rename and interpreter-produced replacement
+operations are implemented and validated, awaiting review.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -2701,7 +2703,7 @@ Approved scope:
 
 Implementation and validation:
 
-- `TypedValue` copies and releases all physical slots through existing type
+- `InterpreterValue` copies and releases all physical slots through existing type
   ownership operations. Struct storage survives moves without relocation;
   empty values retain their type without a slot pointer or allocation.
 - Interpreter variables and results accept exact-size source spans. Replacement
@@ -2733,7 +2735,7 @@ Implementation and validation:
 
 ### Step 5A follow-up: Standalone vector-backed typed values
 
-- Move `TypedValue` into its own matching header/source files, independent of
+- Move `InterpreterValue` into its own matching header/source files, independent of
   interpreter-context definitions. Keep one owned-value abstraction rather than
   introducing a separate scalar wrapper.
 - Replace the initially selected scalar/array variant with
@@ -2877,9 +2879,9 @@ Implementation and validation:
   and stored property-ID path. Existing compiled assignment paths are unchanged.
 - New unqualified interpreter variables are reserved during parsing so a later
   assignment in the same input can resolve a field of an earlier variable.
-- `TypedValue::setProperty` updates owned struct fields using existing type
-  assignment operations. Context property setters accept names/property IDs and
-  typed values, not expressions or writable expression storage.
+- `Interpreter::setProperty` returns replacement struct values using existing
+  type assignment operations. Context property setters accept names/property IDs
+  and typed values, not expressions or writable expression storage.
 - Regression tests cover scalar/reference/nested/whole-struct writes, independent
   sources, self-assignment, owned results, shared class references, invalid paths
   and types, frame parameters/locals/receivers, empty receiver constructors and
@@ -2890,6 +2892,37 @@ Implementation and validation:
 - Stop for review without committing. Next are class-owned and temporary-rooted
   struct writes, then struct method calls, captures, formatting, and remaining
   host parity. NRVO and VM fault cleanup remain deferred.
+
+### Step 5D1 follow-up: Immutable interpreter values
+
+Approved scope:
+
+- Rename the value class and matching files to `InterpreterValue`, updating all
+  compiler, VM, context, call-frame, test, build, and documentation references.
+- Keep immutable value contents: scalars by value, independent struct storage,
+  and retained object/string references. Whole-value replacement remains possible;
+  referenced objects retain their normal mutable reference semantics.
+- Keep only the type pointer and complete storage. Use the `const Type*` copy
+  and cleanup contracts, without another ownership or cleanup discriminator.
+- Move field replacement into `Interpreter`, returning an independent value and
+  retaining neither returned values nor references to input values.
+- Preserve current named-root assignment behavior. Context setters store the
+  returned replacement rather than modifying an existing interpreter value.
+
+Implementation and validation:
+
+- The value no longer exposes `setProperty` or writable storage. The existing
+  property-ID path API now belongs to `Interpreter::setProperty`.
+- Host tests exercise const inputs, independent replacement storage, values
+  surviving interpreter/input destruction, retained strings/class references,
+  invalid paths/types, and cleanup. Assignment failure coverage includes partial
+  copies of replacement results and copying into the destination.
+- Language, remaining, bindings, and tooling CTest groups, compiler-export checks,
+  four documentation preparation tests, and whitespace checks passed. Gameplay
+  and performance were not validated.
+- Stop for review without committing. Next are conventional property-name/direct-ID
+  APIs, followed by general construction/function operations and method calls.
+  Class-owned/temporary-rooted writes and remaining struct parity stay separate.
 
 ### Step 6: Conservative named return-value optimization
 

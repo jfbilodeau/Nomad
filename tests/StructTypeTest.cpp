@@ -12,12 +12,12 @@
 
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/InterpreterContext.hpp>
+#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
-#include <nomad/script/TypedValue.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -167,7 +167,7 @@ BOOST_AUTO_TEST_CASE(finalized_cleanup_uses_cached_nested_layouts_without_field_
         values[2].setStringValue("inner");
         values[3].setStringValue("outer");
         {
-            TypedValue copy(outer, values);
+            InterpreterValue copy(outer, values);
             field->rejectQueries = true;
             BOOST_CHECK_THROW((void)field->getSize(), NomadException);
             BOOST_CHECK_THROW((void)field->needsFree(), NomadException);

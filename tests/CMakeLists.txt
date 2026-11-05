@@ -32,6 +32,7 @@ add_executable(
     ./InterpreterStructCallTest.cpp
     ./InterpreterStructPropertyTest.cpp
     ./InterpreterTest.cpp
+    ./InterpreterValueTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageClassTest.cpp
     ./LanguageConstantTest.cpp
@@ -95,7 +96,6 @@ add_executable(
     ./TileMapTest.cpp
     ./TypeManagerTest.cpp
     ./TypedNativeFunctionTest.cpp
-    ./TypedValueTest.cpp
     ./TokenizerTest.cpp
     ./VariablePersistenceTest.cpp
     ./VirtualMachineStorageTest.cpp

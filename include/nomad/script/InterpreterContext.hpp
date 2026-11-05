@@ -7,8 +7,9 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/InterpreterValue.hpp>
+#include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
-#include <nomad/script/TypedValue.hpp>
 #include <nomad/script/Variable.hpp>
 
 #include <memory>
@@ -59,23 +60,23 @@ public:
     void evaluateFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
     // Resolved interpreter calls use complete typed arguments, including zero-slot values.
-    void evaluateFunctionCallWithStorage(CallableId functionId, std::span<const TypedValue> arguments);
-    void evaluateNativeFunctionCallWithStorage(CallableId functionId, std::span<const TypedValue> arguments);
-    void evaluateConstructorCall(CallableId constructorId, std::span<const TypedValue> arguments);
+    void evaluateFunctionCallWithStorage(CallableId functionId, std::span<const InterpreterValue> arguments);
+    void evaluateNativeFunctionCallWithStorage(CallableId functionId, std::span<const InterpreterValue> arguments);
+    void evaluateConstructorCall(CallableId constructorId, std::span<const InterpreterValue> arguments);
     void setParameterResult(NomadId parameterId);
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
     // Borrows the complete struct receiver of an active method/constructor frame.
     [[nodiscard]] std::span<const RuntimeValue> getReceiverStorage() const;
-    void setReceiverProperty(std::span<const PropertyId> properties, const TypedValue& value);
+    void setReceiverProperty(std::span<const PropertyId> properties, const InterpreterValue& value);
 
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const Type* type, std::span<const RuntimeValue> storage);
-    void setResult(const TypedValue& value);
+    void setResult(const InterpreterValue& value);
     void setVoidResult();
     void clearResult();
-    [[nodiscard]] const TypedValue* getResult() const;
+    [[nodiscard]] const InterpreterValue* getResult() const;
 
     void setError(const NomadString& error);
     void addDiagnostic(const Diagnostic& diagnostic);
@@ -93,7 +94,7 @@ public:
     void setVariableProperty(
         const NomadString& name,
         std::span<const PropertyId> properties,
-        const TypedValue& value
+        const InterpreterValue& value
     );
     void clearVariableValue(const NomadString& name);
 
@@ -118,11 +119,11 @@ private:
     NomadIndex m_parameterIndex = 0;
     NomadIndex m_variableIndex = 0;
     NomadIndex m_frameVariableCount = 0;
-    std::optional<TypedValue> m_result;
+    std::optional<InterpreterValue> m_result;
     LoopControl m_loopControl = LoopControl::None;
     std::vector<Diagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
-    std::vector<std::unique_ptr<TypedValue>> m_variables;
+    std::vector<std::unique_ptr<InterpreterValue>> m_variables;
 };
 
 } // namespace nomad

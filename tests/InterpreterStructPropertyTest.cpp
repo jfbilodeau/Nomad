@@ -1,9 +1,9 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
-#include <nomad/script/TypedValue.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -101,13 +101,13 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("single.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.owner", context));
-            const TypedValue owner(*context.getResult());
+            const InterpreterValue owner(*context.getResult());
             BOOST_TEST(owner.getValue().getObjectValue() == root[ownerOffset].getObjectValue());
             BOOST_REQUIRE(Interpreter{}.execute("copy.owner.number = 31", context));
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.owner.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 31);
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("holder.value.leaf", context));
-            const TypedValue leaf(*context.getResult());
+            const InterpreterValue leaf(*context.getResult());
             BOOST_TEST(leaf.getStorage()[0].getIntegerValue() == 17);
             BOOST_TEST(leaf.getStorage()[1].getStringValue() == "owned property");
             for (const auto* source : {"root.empty", "root.leaf.empty", "holder.empty", "(new ReadEmptyRoot).empty",

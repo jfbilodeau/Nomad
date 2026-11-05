@@ -1,7 +1,7 @@
 #pragma once
 
+#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/RuntimeValue.hpp>
-#include <nomad/script/TypedValue.hpp>
 
 #include <span>
 #include <vector>
@@ -17,7 +17,7 @@ public:
     InterpreterCallFrame(
         VirtualMachine& machine,
         const Callable& callable,
-        std::span<const TypedValue> arguments,
+        std::span<const InterpreterValue> arguments,
         const Type* resultType
     );
     InterpreterCallFrame(const InterpreterCallFrame&) = delete;

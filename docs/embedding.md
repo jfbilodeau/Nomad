@@ -2272,7 +2272,7 @@ Each new evaluation clears previous diagnostics; inspect or copy them before
 executing more input. Call `clearError()` to dismiss both errors and warnings
 without starting another evaluation.
 
-Results are owned by the context. Copy a result using `TypedValue` if it must
+Results are owned by the context. Copy a result using `InterpreterValue` if it must
 survive another evaluation; do not free the context's result manually.
 `listVariables()` lists interpreter-owned variables, not borrowed frame slots.
 Different contexts have independent interpreter variables even when borrowing
@@ -2299,8 +2299,8 @@ empty struct retains its type without a slot pointer. A function call used as a
 statement releases its result, including owned fields in a returned struct.
 Aggregate calls execute synchronously; aggregate yield/resume remains unsupported.
 
-Include `<nomad/script/TypedValue.hpp>` to use owned typed values independently
-of an interpreter context. `TypedValue(type, storage)` copies a
+Include `<nomad/script/InterpreterValue.hpp>` to use immutable interpreter values
+independently of an interpreter context. `InterpreterValue(type, storage)` copies a
 `std::span<const RuntimeValue>` containing
 exactly `type->getSize()` contiguous slots. The type's layout must be finalized.
 `getStorage()` borrows the complete owned value. Copies own separate slot
@@ -2312,21 +2312,31 @@ provides checked scalar access, while `getStorage()` exposes the complete value.
 Void and moved-from values have no scalar slot; calling `getValue()` on them
 throws `std::invalid_argument` rather than returning a placeholder.
 
-`TypedValue::setProperty(properties, value)` replaces a stored field within an
-owned struct. `properties` is a nonempty `std::span<const PropertyId>` describing
-the field path; every intermediate owner must be a struct. The supplied value
-must have the final field's exact type. Nested structs copy by value and class
-fields retain reference semantics. Invalid paths or types throw
-`std::invalid_argument`; failed field copying preserves the previous field.
+An `InterpreterValue` has no field setters or writable storage views. Copy/move
+assignment replaces the complete value; it does not edit its fields. Struct
+copies have independent storage. Strings and class references are retained for
+the value's lifetime; referenced class objects retain their normal mutable
+reference semantics. Copying and cleanup use the value's `const Type*`, without
+a separate ownership or cleanup discriminator.
+
+`Interpreter::setProperty(receiver, properties, value)` returns a new
+`InterpreterValue` with a replaced stored field. Neither input is modified, and
+the interpreter retains no returned value. `properties` is a nonempty
+`std::span<const PropertyId>` describing the field path; every intermediate owner
+must be a struct. The supplied value must have the final field's exact type.
+Nested structs copy by value and class fields retain reference semantics.
+Invalid paths or types throw `std::invalid_argument`; failed copying releases
+partial results and leaves both inputs unchanged. This value operation does not
+require an interpreter context or change a context's result.
 
 Use the span overloads of `InterpreterContext::setVariable(name, type, storage)`
 and `setResult(type, storage)` for structs. Both copy the complete value before
 releasing what they replace, so their own storage can be supplied as the source.
-`setResult(const TypedValue&)` likewise takes an owned copy.
+`setResult(const InterpreterValue&)` likewise takes an owned copy.
 `getVariableStorage(name)` and `getVariableStorageById(variableId)` borrow
 complete variable storage; `getResult()->getStorage()` borrows result storage.
 Replacing or clearing an owning variable/result invalidates its views. Copy into
-a `TypedValue` when a snapshot must survive those operations.
+an `InterpreterValue` when a snapshot must survive those operations.
 
 An empty view can mean either an empty struct or a missing variable; check
 `getVariableType` or `getVariableTypeById` to distinguish them. Empty struct
@@ -2354,7 +2364,7 @@ the resulting values are owned copies, not mutable receiver aliases.
 
 For already resolved calls, `evaluateFunctionCallWithStorage`,
 `evaluateNativeFunctionCallWithStorage`, and `evaluateConstructorCall` accept
-a callable ID and `std::span<const TypedValue>` in logical parameter order.
+a callable ID and `std::span<const InterpreterValue>` in logical parameter order.
 The caller supplies arguments matching the resolved signature. These entry
 points copy argument storage, preserve the enclosing VM registers/frame, and
 leave an owned result in the context. The existing scalar-vector call entry

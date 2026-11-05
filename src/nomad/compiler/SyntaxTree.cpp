@@ -199,11 +199,11 @@ const NomadString& HubInitializerStatement::getSourceName() const {
     return m_sourceFunction->getPath();
 }
 
-const TypedValue* HubInitializerStatement::getInitialValue() const {
+const InterpreterValue* HubInitializerStatement::getInitialValue() const {
     return m_initialValue.get();
 }
 
-void HubInitializerStatement::setInitialValue(std::unique_ptr<TypedValue> value) {
+void HubInitializerStatement::setInitialValue(std::unique_ptr<InterpreterValue> value) {
     m_initialValue = std::move(value);
 }
 
@@ -541,7 +541,7 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
         raiseException("Assignment expression did not produce a value");
     }
 
-    const TypedValue assignedValue(*value);
+    const InterpreterValue assignedValue(*value);
     const auto* type = assignedValue.getType();
 
     switch (m_identifierDefinition.identifierType) {
@@ -704,7 +704,7 @@ void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
     if (result == nullptr) {
         raiseException("Assignment expression did not produce a value");
     }
-    const TypedValue assigned(*result);
+    const InterpreterValue assigned(*result);
     if (isReceiver) {
         context.setReceiverProperty(m_properties, assigned);
     } else {

@@ -139,27 +139,27 @@ BOOST_AUTO_TEST_CASE(interpreter_typed_values_own_complete_nested_storage_and_ke
         source[3].setObjectValue(new NomadObject);
         source[4].setStringValue("suffix");
         {
-            TypedValue value(outer, source);
+            InterpreterValue value(outer, source);
             BOOST_REQUIRE_EQUAL(value.getStorage().size(), 5U);
             BOOST_TEST(value.getStorage().data() != source.data());
             BOOST_TEST(source[2].getObjectValue()->getReferenceCount() == 2U);
             BOOST_TEST(source[3].getObjectValue()->getReferenceCount() == 2U);
-            TypedValue copied(value);
+            InterpreterValue copied(value);
             BOOST_TEST(copied.getStorage().data() != value.getStorage().data());
             BOOST_TEST(source[2].getObjectValue()->getReferenceCount() == 3U);
             source[1].setIntegerValue(99);
             BOOST_TEST(copied.getStorage()[1].getIntegerValue() == 7);
             const auto* address = copied.getStorage().data();
-            TypedValue moved(std::move(copied));
+            InterpreterValue moved(std::move(copied));
             BOOST_TEST(moved.getStorage().data() == address);
             BOOST_TEST(copied.getType() == nullptr);
             BOOST_TEST(copied.getStorage().empty());
-            TypedValue assigned(runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
+            InterpreterValue assigned(runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
             assigned = moved;
             const auto* alias = &assigned;
             assigned = *alias;
             BOOST_TEST(assigned.getStorage()[4].getStringValue() == "suffix");
-            TypedValue moveAssigned(runtime.getBooleanType(), RuntimeValue{true});
+            InterpreterValue moveAssigned(runtime.getBooleanType(), RuntimeValue{true});
             moveAssigned = std::move(assigned);
             BOOST_TEST(assigned.getType() == nullptr);
             BOOST_TEST(moveAssigned.getStorage()[3].getObjectValue() == source[3].getObjectValue());
@@ -167,20 +167,20 @@ BOOST_AUTO_TEST_CASE(interpreter_typed_values_own_complete_nested_storage_and_ke
             const auto* moveAddress = moveAssigned.getStorage().data();
             moveAssigned = std::move(*moveAlias);
             BOOST_TEST(moveAssigned.getStorage().data() == moveAddress);
-            std::vector<TypedValue> relocated;
+            std::vector<InterpreterValue> relocated;
             relocated.push_back(std::move(moveAssigned));
             for (auto count = 0; count < 32; ++count) {
                 relocated.emplace_back(runtime.getIntegerType(), RuntimeValue{NomadInteger{count}});
             }
             BOOST_TEST(relocated.front().getStorage().data() == moveAddress);
             BOOST_CHECK_THROW(static_cast<void>(value.getValue()), std::invalid_argument);
-            BOOST_CHECK_THROW((TypedValue{outer, source[0]}), std::invalid_argument);
-            BOOST_CHECK_THROW((TypedValue{outer, std::span<const RuntimeValue>{source}.first(4)}),
+            BOOST_CHECK_THROW((InterpreterValue{outer, source[0]}), std::invalid_argument);
+            BOOST_CHECK_THROW((InterpreterValue{outer, std::span<const RuntimeValue>{source}.first(4)}),
                 std::invalid_argument);
-            BOOST_CHECK_THROW((TypedValue{runtime.getIntegerType(), source}), std::invalid_argument);
-            BOOST_CHECK_THROW((TypedValue{nullptr, std::span<const RuntimeValue>{}}), std::invalid_argument);
-            TypedValue emptyValue(empty, std::span<const RuntimeValue>{});
-            TypedValue emptyCopy(emptyValue);
+            BOOST_CHECK_THROW((InterpreterValue{runtime.getIntegerType(), source}), std::invalid_argument);
+            BOOST_CHECK_THROW((InterpreterValue{nullptr, std::span<const RuntimeValue>{}}), std::invalid_argument);
+            InterpreterValue emptyValue(empty, std::span<const RuntimeValue>{});
+            InterpreterValue emptyCopy(emptyValue);
             BOOST_TEST(emptyCopy.getType() == empty);
             BOOST_TEST(emptyCopy.getStorage().empty());
             BOOST_TEST(emptyCopy.getStorage().data() == nullptr);
@@ -227,7 +227,7 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
             BOOST_TEST(context.getResult()->getStorage()[1].getStringValue() == "host value");
             context.setResult(*context.getResult());
             context.setResult(pair, context.getResult()->getStorage());
-            const TypedValue snapshot(*context.getResult());
+            const InterpreterValue snapshot(*context.getResult());
             BOOST_REQUIRE(Interpreter{}.execute("copy = source\nsource = source\nemptyCopy = empty", context));
             BOOST_TEST(context.getVariableStorage("copy").data() != root);
             BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 17);
@@ -308,7 +308,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_
             BOOST_TEST(context.getVariableStorage("empty").empty());
             BOOST_TEST(context.getVariableStorage("emptyLocal").empty());
             BOOST_REQUIRE(Interpreter{}.evaluateExpression("value", context));
-            const TypedValue snapshot(*context.getResult());
+            const InterpreterValue snapshot(*context.getResult());
             BOOST_TEST(snapshot.getStorage().data() != input.data());
             BOOST_REQUIRE(Interpreter{}.execute("saved = value\nlocal = value\nvalue = local\nvalue = value\n"
                 "tail = tail + 1\nemptyLocal = empty\nempty = emptyLocal", context));

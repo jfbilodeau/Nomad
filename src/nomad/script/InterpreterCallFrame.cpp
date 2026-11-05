@@ -9,7 +9,7 @@ namespace nomad {
 InterpreterCallFrame::InterpreterCallFrame(
     VirtualMachine& machine,
     const Callable& callable,
-    const std::span<const TypedValue> arguments,
+    const std::span<const InterpreterValue> arguments,
     const Type* resultType
 ):
     m_machine(machine),
