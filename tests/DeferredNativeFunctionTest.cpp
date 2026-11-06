@@ -11,7 +11,6 @@
 #include <nomad/modules/ScriptBindings.hpp>
 
 #include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -21,6 +20,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 using namespace nomad;
@@ -270,10 +270,9 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(runtime.describeResolveFailure("updateConfiguration", unresolved).find("unresolved") != NomadString::npos);
     VirtualMachine machine(&runtime);
     BOOST_CHECK_THROW(machine.runNativeFunction(id, {RuntimeValue{}, RuntimeValue{}, RuntimeValue{}}), NomadException);
-    const Interpreter interpreterEvaluator(machine);
-    InterpreterContext interpreter(interpreterEvaluator);
-    runtime.executeNativeFunction(id, {RuntimeValue{}, RuntimeValue{}, RuntimeValue{}}, interpreter);
-    BOOST_TEST(interpreter.hasError());
+    const Interpreter interpreter(machine);
+    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callFunction(id, {})), std::invalid_argument,
+        [](const auto& error) { return NomadString{error.what()}.find("unresolved signature") != NomadString::npos; });
     BOOST_TEST(calls == 0);
     std::ostringstream documentation;
     runtime.dumpDocumentation(documentation);

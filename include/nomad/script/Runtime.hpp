@@ -45,7 +45,6 @@ class Closure;
 class FormatString;
 class Hub;
 class VirtualMachine;
-class InterpreterContext;
 class NomadStringObject;
 class Parser;
 class FunctionBuilder;
@@ -628,7 +627,6 @@ public:
     void executeFunction(CallableId functionId);
     void executeFunction(CallableId functionId, const std::vector<RuntimeValue> &args);
     void executeFunction(CallableId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue);
-    void executeNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args, InterpreterContext& context);
 
     // Debug
     void dumpDocumentation(std::ostream& out) const;

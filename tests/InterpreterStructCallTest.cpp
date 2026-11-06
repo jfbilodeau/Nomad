@@ -740,7 +740,14 @@ BOOST_AUTO_TEST_CASE(host_call_validation_rejects_bad_metadata_and_arguments_bef
     BOOST_TEST(constructed.getStorage().data() == nullptr);
     BOOST_TEST(calls == 2);
     InterpreterContext context(interpreter);
-    runtime.executeNativeFunction(functionId, {RuntimeValue{NomadInteger{25}}}, context);
+    context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{19}});
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(functionId, {})), std::invalid_argument);
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 19);
+    const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{25}});
+    const auto returned = interpreter.callFunction(functionId, {&argument, 1});
+    BOOST_TEST(returned.getValue().getIntegerValue() == 25);
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 19);
+    context.setResult(returned);
     BOOST_REQUIRE(!context.hasError());
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 25);
     BOOST_TEST(calls == 3);

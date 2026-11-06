@@ -9,7 +9,6 @@
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NativeFunctions.hpp>
 #include <nomad/script/NativeMembers.hpp>
 #include <nomad/script/NativeProperty.hpp>
@@ -2352,21 +2351,21 @@ bool Runtime::canGetDynamicVariable(const DynamicVariableId id) const {
     return m_dynamicVariables[dynamicVariableIndex].getFn != nullptr;
 }
 
-void Runtime::setDynamicVariable(VirtualMachine* interpreter, const DynamicVariableId id, const RuntimeValue& value) {
+void Runtime::setDynamicVariable(VirtualMachine* vm, const DynamicVariableId id, const RuntimeValue& value) {
     const auto dynamicVariableIndex = toNomadIndex(id.id);
-    m_dynamicVariables[dynamicVariableIndex].setFn(interpreter, value);
+    m_dynamicVariables[dynamicVariableIndex].setFn(vm, value);
 }
 
-void Runtime::getDynamicVariableValue(VirtualMachine* interpreter, const DynamicVariableId id, RuntimeValue& value) const {
+void Runtime::getDynamicVariableValue(VirtualMachine* vm, const DynamicVariableId id, RuntimeValue& value) const {
     const auto dynamicVariableIndex = toNomadIndex(id.id);
-    m_dynamicVariables[dynamicVariableIndex].getFn(interpreter, value);
+    m_dynamicVariables[dynamicVariableIndex].getFn(vm, value);
 }
 
-void Runtime::setStringDynamicVariable(VirtualMachine* interpreter, const DynamicVariableId id, const NomadString& value) {
+void Runtime::setStringDynamicVariable(VirtualMachine* vm, const DynamicVariableId id, const NomadString& value) {
     RuntimeValue stringValue;
     stringValue.setStringValue(value);
 
-    setDynamicVariable(interpreter, id, stringValue);
+    setDynamicVariable(vm, id, stringValue);
 
     stringValue.freeObjectValue();
 }
@@ -2951,74 +2950,6 @@ void Runtime::executeFunction(const CallableId functionId, const std::vector<Run
         returnType->copyValue(&m_virtualMachine->getResult(), &returnValue);
         returnType->freeValue(&m_virtualMachine->getResult());
     }  // Else keep existing value
-}
-
-void Runtime::executeNativeFunction(
-    const CallableId nativeFunctionId,
-    const std::vector<RuntimeValue>& args,
-    InterpreterContext& context
-) {
-    if (context.hasError()) {
-        return;
-    }
-
-    const auto* definition = getNativeFunction(nativeFunctionId);
-    if (definition == nullptr) {
-        context.clearResult();
-        context.setError("Unknown native function id");
-        return;
-    }
-    if (!definition->isSignatureResolved()) {
-        context.clearResult();
-        context.setError("Native function '" + definition->getName() + "' has an unresolved signature");
-        return;
-    }
-    if (args.size() != definition->getParameterCount()) {
-        context.clearResult();
-        context.setError("Incorrect argument count when calling native function '" + definition->getName() + "'");
-        return;
-    }
-    if (definition->getReturnType() == nullptr) {
-        context.clearResult();
-        context.setError("NativeFunction '" + definition->getName() + "' has no return type");
-        return;
-    }
-    if (std::ranges::any_of(definition->getParameters(), [](const auto& parameter) {
-        return parameter.type == nullptr;
-    })) {
-        context.clearResult();
-        context.setError("NativeFunction '" + definition->getName() + "' has an invalid parameter type");
-        return;
-    }
-
-    if (definition->getReturnType()->isStruct()) {
-        context.setError("Struct-returning function calls require typed interpreter arguments");
-        return;
-    }
-    try {
-        if (std::ranges::any_of(definition->getParameters(), [](const auto& parameter) {
-            return parameter.type->isStruct() || parameter.getStackValueCount() != 1;
-        })) {
-            context.clearResult();
-            context.setError("Raw interpreter calls require scalar argument storage");
-            return;
-        }
-        std::vector<InterpreterValue> arguments;
-        arguments.reserve(args.size());
-        for (auto index = NomadIndex{0}; index < args.size(); ++index) {
-            arguments.emplace_back(definition->getParameters()[index].type, args[index]);
-        }
-        const auto result = context.getInterpreter().callFunction(
-            nativeFunctionId,
-            arguments
-        );
-        if (!context.hasError()) {
-            context.setResult(result);
-        }
-    } catch (const NomadException& exception) {
-        context.clearResult();
-        context.setError(exception.what());
-    }
 }
 
 void Runtime::dumpDocumentation(std::ostream &out) const {

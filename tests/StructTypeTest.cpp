@@ -2400,12 +2400,25 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     const auto* identity = runtime.getScriptFunction(runtime.getFunctionId("identity"));
     BOOST_CHECK_THROW(machine.run(identity, {RuntimeValue{}}), VirtualMachineException);
     BOOST_CHECK_THROW(machine.runNativeFunction(factoryId, {RuntimeValue(NomadInteger{1})}), VirtualMachineException);
-    const Interpreter interpreterEvaluator(machine);
-    InterpreterContext interpreter(interpreterEvaluator);
-    runtime.executeNativeFunction(factoryId, {RuntimeValue(NomadInteger{1})}, interpreter);
-    BOOST_REQUIRE(interpreter.hasError());
-    BOOST_TEST(interpreter.getResult() == nullptr);
     BOOST_TEST(calls == 9);
+    const Interpreter interpreter(machine);
+    const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
+    {
+        const auto result = interpreter.callFunction(factoryId, {&number, 1});
+        BOOST_TEST(result.getType() == type);
+        BOOST_REQUIRE_EQUAL(result.getStorage().size(), 2U);
+        BOOST_TEST(result.getStorage()[0].getIntegerValue() == 1);
+        BOOST_TEST(result.getStorage()[1].getStringValue() == "returned");
+        const auto copy = interpreter.callFunction(identity->getId(), {&result, 1});
+        BOOST_TEST(copy.getType() == type);
+        BOOST_REQUIRE_EQUAL(copy.getStorage().size(), 2U);
+        BOOST_TEST(copy.getStorage().data() != result.getStorage().data());
+        BOOST_TEST(copy.getStorage()[0].getIntegerValue() == 1);
+        BOOST_TEST(copy.getStorage()[1].getStringValue() == "returned");
+        BOOST_TEST(result.getStorage()[0].getIntegerValue() == 1);
+    }
+    BOOST_TEST(calls == 10);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
 BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_order_and_assignment_staging) {

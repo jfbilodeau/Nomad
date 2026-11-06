@@ -3060,6 +3060,36 @@ Implementation and validation:
 - Stop for review without committing. The legacy runtime adapter remains;
   migrating or removing it is a separate slice.
 
+### Step 5D1 follow-up: Removing the legacy runtime call adapter
+
+Approved scope:
+
+- Remove `Runtime::executeNativeFunction` and its interpreter-context dependency.
+  Do not add another raw scalar adapter or duplicate signature validation.
+- Migrate all in-repository callers to typed `Interpreter::callFunction` calls.
+  Publish returned values in context explicitly where required.
+- Preserve the interpreter's exception contracts and the VM's existing raw
+  scalar API restrictions. Native and compiled script aggregate calls use
+  complete typed argument/result storage.
+- Document the public API removal and migration. Keep method calls and remaining
+  property/struct parity for separate slices.
+
+Implementation and validation:
+
+- The runtime declaration, implementation, and interpreter-context dependency
+  are removed. No in-repository adapter callers remain.
+- Deferred native signatures fail through the interpreter's exception contract
+  without executing callbacks. Scalar host calls leave context results alone
+  until explicit publication.
+- Aggregate native results and compiled script argument/return copies are
+  verified through the typed API, including complete storage and string
+  cleanup. Raw VM aggregate-rejection checks remain unchanged.
+- CTest's integrated build and the language, remaining, and compiler-export
+  targets passed, along with four documentation preparation tests and whitespace
+  checks. Gameplay and performance were not validated.
+- Stop for review without committing. Next are general method-call APIs,
+  including agreeing how struct receiver updates fit immutable values.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

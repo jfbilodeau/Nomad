@@ -2414,7 +2414,20 @@ returns remain synchronous and cannot yield. Closure/capture arguments are not
 supported by these entry points. Fatal VM fault recovery remains unsupported.
 Call `context.setResult(result)` explicitly to publish a returned value in a
 context. The context no longer exposes function-execution or construction APIs.
-The raw `Runtime::executeNativeFunction` context adapter remains scalar-only.
+The legacy `Runtime::executeNativeFunction` context adapter has been removed.
+Use typed interpreter arguments for both scalar and struct calls. For example:
+
+```cpp
+const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{25}});
+const auto result = interpreter.callFunction(functionId, {&argument, 1});
+context.setResult(result);
+```
+
+Host call failures propagate as exceptions instead of being converted into
+context diagnostics by an adapter. The call APIs do not publish or clear
+context results. Callers decide how to store returned values and report
+caught exceptions.
+The VM's raw scalar call APIs retain their existing aggregate-storage restrictions.
 
 `listVariables()` displays struct type names rather than formatting their
 fields. Stored fields can be read through struct variables, ordinary parameters,
