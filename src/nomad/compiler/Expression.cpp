@@ -1108,10 +1108,31 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     m_receiver->evaluate(context);
+    if (context.hasError()) {
+        return;
+    }
     const auto* evaluatedReceiver = context.getResult();
     if (evaluatedReceiver == nullptr) {
         if (!context.hasError()) {
             context.setError("Native member receiver did not produce a value");
+        }
+        return;
+    }
+
+    if (m_memberType == MemberType::Method) {
+        const InterpreterValue receiver(*evaluatedReceiver);
+        std::vector<InterpreterValue> evaluatedArguments;
+        m_arguments.evaluate(context, evaluatedArguments);
+        if (context.hasError()) {
+            return;
+        }
+        const auto result = context.getInterpreter().callMethod(
+            receiver,
+            m_method->getId(),
+            evaluatedArguments
+        );
+        if (!context.hasError()) {
+            context.setResult(result);
         }
         return;
     }
@@ -1143,41 +1164,8 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    const auto* method = m_method;
-    const auto* returnType = method->getReturnType();
-
-    std::vector<InterpreterValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    m_arguments.evaluate(context, evaluatedArguments, values);
-    if (context.hasError()) {
-        receiverType->freeValue(&receiver);
-        return;
-    }
-
-    auto* virtualMachine = context.getVirtualMachine();
-    try {
-        if (method->asScriptMethod() != nullptr) {
-            virtualMachine->runScriptMethod(std::get<CallableId>(m_memberId), values, receiver);
-        } else {
-            virtualMachine->runNativeMethod(std::get<CallableId>(m_memberId), values, receiver);
-        }
-
-
-        if (returnType->isVoid()) {
-            context.setVoidResult();
-        } else {
-            context.setResult(returnType, virtualMachine->getResult());
-            returnType->freeValue(&virtualMachine->getResult());
-        }
-    } catch (...) {
-        if (!returnType->isVoid()) {
-            returnType->freeValue(&virtualMachine->getResult());
-        }
-        receiverType->freeValue(&receiver);
-        throw;
-    }
-
     receiverType->freeValue(&receiver);
+    raiseException("Unsupported interpreter member: " + m_qualifiedName);
 }
 
 void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) {

@@ -2429,6 +2429,30 @@ context results. Callers decide how to store returned values and report
 caught exceptions.
 The VM's raw scalar call APIs retain their existing aggregate-storage restrictions.
 
+`Interpreter::callMethod(receiver, methodId, arguments)` invokes a registered
+native or compiled script method and returns an owned `InterpreterValue`.
+Supply a typed receiver and arguments in logical parameter order; no context
+is required, and results are published only when the caller stores them.
+Receiver and argument types must match the method's signature and belong to
+the interpreter's runtime. Invalid IDs/kinds, receiver types, argument counts
+or types, null object receivers, and uncompiled methods throw
+`std::invalid_argument` before execution.
+
+This method API currently supports class/reference receivers with scalar or
+reference arguments and scalar, reference, or void results. Struct receivers,
+arguments, and results remain unsupported and throw `std::invalid_argument`.
+Source evaluation still evaluates the receiver first and arguments right-to-left.
+Arguments are copied; mutations of referenced class objects remain shared,
+including changes made before a method throws. Method results retain returned
+objects and strings independently of the receiver, arguments, interpreter,
+and VM, provided their runtime/type descriptors remain alive.
+
+Completed method calls restore the enclosing VM frame and result/intermediate
+registers. Script methods retain their existing restriction against yielding.
+Execution and value-copy failures propagate to host callers; fatal VM fault
+recovery remains unsupported. Property/accessor execution is separate from
+this method API.
+
 `listVariables()` displays struct type names rather than formatting their
 fields. Stored fields can be read through struct variables, ordinary parameters,
 borrowed struct `this`, class-owned structs, and temporary construction/call

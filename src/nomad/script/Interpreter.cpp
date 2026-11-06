@@ -202,6 +202,64 @@ InterpreterValue Interpreter::callFunction(
     return InterpreterValue(type, frame.getResultStorage());
 }
 
+InterpreterValue Interpreter::callMethod(
+    const InterpreterValue& receiver,
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) const {
+    auto& machine = m_virtualMachine;
+    const auto* runtime = machine.getRuntime();
+    const auto* method = runtime->getMethod(methodId);
+    if (method == nullptr) {
+        throw std::invalid_argument("Unknown method id");
+    }
+    validateCallArguments(*runtime, *method, arguments);
+    const auto* receiverType = receiver.getType();
+    const auto* ownerType = method->getClassType();
+    if (receiverType == nullptr || ownerType == nullptr || receiverType->getRuntime() != runtime ||
+        ownerType->getRuntime() != runtime || !ownerType->acceptsArgument(receiverType)) {
+        throw std::invalid_argument("Method receiver type does not match its owner");
+    }
+    const auto* type = method->getReturnType();
+    if (receiverType->isStruct() || type->isStruct() ||
+        std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
+        throw std::invalid_argument("Interpreter method calls do not yet support struct storage");
+    }
+    if (receiverType->asClassType() != nullptr && receiver.getValue().getObjectValue() == nullptr) {
+        throw std::invalid_argument("Method receiver cannot be null");
+    }
+    const auto* script = method->asScriptMethod();
+    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        script->getFunctionStart() >= script->getFunctionEnd())) {
+        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
+    }
+    if (script == nullptr && method->asNativeMethod() == nullptr) {
+        throw std::invalid_argument("Unsupported method implementation");
+    }
+    std::vector<RuntimeValue> values;
+    values.reserve(arguments.size());
+    for (const auto& argument : arguments) {
+        values.push_back(argument.getValue());
+    }
+    auto receiverValue = receiver.getValue();
+    const RegisterRestoration registers(machine);
+    machine.setResult(RuntimeValue{});
+    machine.setIntermediate(RuntimeValue{});
+    try {
+        if (script != nullptr) {
+            machine.runScriptMethod(methodId, values, receiverValue);
+        } else {
+            machine.runNativeMethod(methodId, values, receiverValue);
+        }
+        InterpreterValue result(type, machine.getResult());
+        type->freeValue(&machine.getResult());
+        return result;
+    } catch (...) {
+        type->freeValue(&machine.getResult());
+        throw;
+    }
+}
+
 InterpreterValue Interpreter::construct(
     const CallableId constructorId,
     const std::span<const InterpreterValue> arguments

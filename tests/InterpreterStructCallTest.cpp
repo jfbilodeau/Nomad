@@ -793,4 +793,67 @@ BOOST_AUTO_TEST_CASE(host_calls_preserve_scalar_suspension_and_reject_suspended_
     }
 }
 
+BOOST_AUTO_TEST_CASE(host_method_copy_failures_release_arguments_results_and_receiver_stack_references) {
+    Runtime runtime;
+    FailingCallCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>("FailingMethodField", ClassMode::Closed, field);
+    const auto ownerId = runtime.registerClass<ClassType>("FailingMethodOwner", ClassMode::Closed);
+    BOOST_REQUIRE(fieldId.isValid() && ownerId.isValid());
+    const auto* owner = runtime.getType(ownerId).value()->asClassType();
+    const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
+        .parameters = {},
+        .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
+    });
+    auto calls = 0;
+    const auto consumeId = runtime.addMethod(ownerId, {
+        .name = "consume", .parameters = {{fieldId, "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine*) { ++calls; }
+    });
+    const auto makeId = runtime.addMethod(ownerId, {
+        .name = "make", .parameters = {}, .returnTypeId = fieldId,
+        .function = [](VirtualMachine* active) { active->setStringResult("method result"); }
+    });
+    BOOST_REQUIRE(constructorId.isValid() && consumeId.isValid() && makeId.isValid());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        const auto receiver = interpreter.construct(constructorId, {});
+        RuntimeValue source{NomadString{"method argument"}};
+        const InterpreterValue argument(field, source);
+        source.freeObjectValue();
+        machine->pushInteger(1234);
+        machine->setIntegerResult(41);
+        machine->setIntegerIntermediate(43);
+        const auto live = RuntimeValue::getLiveStringCount();
+        field->copyCount = 0;
+        field->failCopyAt = 1;
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, consumeId, {&argument, 1})), NomadException);
+        BOOST_TEST(calls == 0);
+        BOOST_TEST(argument.getValue().getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+        field->copyCount = 0;
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, makeId, {})), NomadException);
+        BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+        field->failCopyAt = 0;
+        const auto consumed = interpreter.callMethod(receiver, consumeId, {&argument, 1});
+        BOOST_TEST(consumed.getType()->isVoid());
+        BOOST_TEST(calls == 1);
+        const auto result = interpreter.callMethod(receiver, makeId, {});
+        BOOST_TEST(result.getValue().getStringValue() == "method result");
+        BOOST_TEST(argument.getValue().getStringValue() == "method argument");
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        machine->pop1();
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

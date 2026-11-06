@@ -3090,6 +3090,41 @@ Implementation and validation:
 - Stop for review without committing. Next are general method-call APIs,
   including agreeing how struct receiver updates fit immutable values.
 
+### Step 5D1 follow-up: General scalar/reference method-call APIs
+
+Approved scope:
+
+- Add `Interpreter::callMethod(receiver, methodId, arguments)` returning an
+  owned value, with ordinary native/script dispatch and host validation.
+- Move existing method execution out of AST evaluation. Retain value-only
+  expression evaluation and unchanged `onEvaluate` signatures.
+- Preserve receiver-first and right-to-left argument evaluation, copied
+  arguments, shared class-object mutation, owned results, and enclosing VM
+  frame/register restoration.
+- Keep current VM restrictions on struct receivers, arguments, and returns,
+  and on yielding script methods. Do not add opcodes or a second call ABI.
+- Keep property/accessor execution and struct-receiver updates separate.
+
+Implementation and validation:
+
+- The interpreter owns method dispatch, validation, argument adaptation, result
+  copying/cleanup, and register preservation. AST method evaluation retains the
+  receiver value, evaluates arguments, and publishes the returned value.
+- Native and script host tests cover scalar/reference/void results, copied
+  arguments, shared receiver mutations, results surviving receiver/VM lifetime,
+  and enclosing receiver/stack/register preservation, including retained strings
+  in saved registers.
+- Invalid IDs/kinds, receivers, arguments, uncompiled methods, and unsupported
+  struct storage are rejected before execution. Tests also cover receiver-first/
+  right-to-left evaluation, native reentry, partial argument/result-copy failures,
+  native callback failure cleanup, and the existing script-method yield rejection.
+- CTest's integrated build and the language, remaining, and compiler-export
+  targets passed, along with four documentation preparation tests and whitespace
+  checks. Gameplay and performance were not validated.
+- Stop for review without committing. Next is agreeing and implementing immutable
+  struct-method receiver updates plus method results, followed by remaining
+  property/struct parity.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

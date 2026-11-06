@@ -9,6 +9,10 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
+#include <optional>
+#include <vector>
+
 using namespace nomad;
 using namespace nomad::test;
 
@@ -335,6 +339,141 @@ BOOST_AUTO_TEST_CASE(invalid_method_calls_report_source_diagnostics) {
             BOOST_TEST(errors.find("Internal error") == NomadString::npos);
         }
     }
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_host_script_methods_return_owned_values_and_preserve_argument_copies) {
+    LanguageTestFixture fixture;
+    fixture.addFunction("hostMethodTypes",
+        "class HostMethodCounter\nvalue = 0\nlabel = \"initial\"\n"
+        "fun add amount:int\namount = amount + 1\nthis.value = this.value + amount\nreturn this.value\nend\n"
+        "fun clear\nthis.value = 0\nreturn\nend\n"
+        "fun echo text:string\ntext = text.toUpper\nthis.label = text\nreturn this\nend\n"
+        "fun readLabel\nreturn this.label\nend\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto* type = runtime.getTypeByName("HostMethodCounter")->asClassType();
+    const auto add = runtime.resolveMethod(type, "add", {runtime.getIntegerType()});
+    const auto clear = runtime.resolveMethod(type, "clear", {});
+    const auto echo = runtime.resolveMethod(type, "echo", {runtime.getStringType()});
+    const auto readLabel = runtime.resolveMethod(type, "readLabel", {});
+    BOOST_REQUIRE(add.isResolved() && clear.isResolved() && echo.isResolved() && readLabel.isResolved());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        std::optional<InterpreterValue> retainedReceiver;
+        std::optional<InterpreterValue> retainedText;
+        {
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            const auto receiver = interpreter.construct(type->getConstructors().front()->getId(), {});
+            const InterpreterValue amount(runtime.getIntegerType(), RuntimeValue{NomadInteger{4}});
+            RuntimeValue savedResult{NomadString{"saved script result"}};
+            RuntimeValue savedIntermediate{NomadString{"saved script intermediate"}};
+            machine->pushInteger(1234);
+            machine->setResult(savedResult);
+            machine->setIntermediate(savedIntermediate);
+            const auto added = interpreter.callMethod(receiver, add.id, {&amount, 1});
+            BOOST_TEST(added.getValue().getIntegerValue() == 5);
+            BOOST_TEST(amount.getValue().getIntegerValue() == 4);
+            RuntimeValue source{NomadString{"borrowed"}};
+            const InterpreterValue text(runtime.getStringType(), source);
+            source.freeObjectValue();
+            retainedReceiver = interpreter.callMethod(receiver, echo.id, {&text, 1});
+            BOOST_TEST(retainedReceiver->getType() == type);
+            BOOST_TEST(retainedReceiver->getValue().getObjectValue() == receiver.getValue().getObjectValue());
+            BOOST_TEST(text.getValue().getStringValue() == "borrowed");
+            retainedText = interpreter.callMethod(receiver, readLabel.id, {});
+            BOOST_TEST(retainedText->getValue().getStringValue() == "BORROWED");
+            const auto cleared = interpreter.callMethod(receiver, clear.id, {});
+            BOOST_TEST(cleared.getType()->isVoid());
+            BOOST_TEST(cleared.getStorage().data() == nullptr);
+            const auto addedAfterClear = interpreter.callMethod(receiver, add.id, {&amount, 1});
+            BOOST_TEST(addedAfterClear.getValue().getIntegerValue() == 5);
+            BOOST_TEST(machine->getResult().getObjectValue() == savedResult.getObjectValue());
+            BOOST_TEST(machine->getIntermediate().getObjectValue() == savedIntermediate.getObjectValue());
+            BOOST_TEST(savedResult.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(savedIntermediate.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            machine->pop1();
+            machine->setResult(RuntimeValue{});
+            machine->setIntermediate(RuntimeValue{});
+            savedResult.freeObjectValue();
+            savedIntermediate.freeObjectValue();
+        }
+        BOOST_TEST(retainedReceiver->getValue().getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(retainedText->getValue().getStringValue() == "BORROWED");
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_methods_evaluate_the_receiver_before_right_to_left_arguments) {
+    LanguageTestFixture fixture;
+    fixture.addFunction("methodOrderTypes",
+        "class MethodOrderOwner\nfun combine left:int right:int\nreturn left * 10 + right\nend\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto* type = runtime.getTypeByName("MethodOrderOwner")->asClassType();
+    const auto constructorId = type->getConstructors().front()->getId();
+    std::vector<NomadInteger> evaluations;
+    BOOST_REQUIRE(runtime.registerNativeFunction("pickMethodReceiver", [&](VirtualMachine* active) {
+        evaluations.push_back(1);
+        active->getResult().setObjectValue(active->createScriptObject(constructorId));
+    }, {}, type, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("leftMethodArgument", [&](VirtualMachine* active) {
+        evaluations.push_back(2);
+        active->setIntegerResult(2);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("rightMethodArgument", [&](VirtualMachine* active) {
+        evaluations.push_back(3);
+        active->setIntegerResult(3);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        InterpreterContext context(interpreter);
+        const auto evaluated = interpreter.evaluateExpression(
+            "(pickMethodReceiver).combine (leftMethodArgument) (rightMethodArgument)", context);
+        BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : ""));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
+        const std::array<NomadInteger, 3> expected{1, 3, 2};
+        BOOST_CHECK_EQUAL_COLLECTIONS(evaluations.begin(), evaluations.end(), expected.begin(), expected.end());
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_host_script_methods_keep_the_existing_yield_restriction) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.registerNativeFunction("pauseHostMethod", [](VirtualMachine* active) {
+        active->yield(RuntimeValue{NomadInteger{37}});
+    }, {}, runtime.getVoidType(), "").isValid());
+    fixture.addFunction("hostYieldTypes",
+        "class HostYieldOwner\nfun pause\npauseHostMethod\nreturn 99\nend\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* type = runtime.getTypeByName("HostYieldOwner")->asClassType();
+    const auto pause = runtime.resolveMethod(type, "pause", {});
+    BOOST_REQUIRE(pause.isResolved());
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        const auto receiver = interpreter.construct(type->getConstructors().front()->getId(), {});
+        machine->pushInteger(1234);
+        machine->setIntegerResult(41);
+        machine->setIntegerIntermediate(43);
+        BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callMethod(receiver, pause.id, {})), VirtualMachineException,
+            [](const auto& error) { return NomadString{error.what()} == "Script methods cannot yield"; });
+        BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        machine->pop1();
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -24,6 +24,11 @@ public:
         CallableId functionId,
         std::span<const InterpreterValue> arguments
     ) const;
+    [[nodiscard]] InterpreterValue callMethod(
+        const InterpreterValue& receiver,
+        CallableId methodId,
+        std::span<const InterpreterValue> arguments
+    ) const;
     [[nodiscard]] InterpreterValue construct(
         CallableId constructorId,
         std::span<const InterpreterValue> arguments
