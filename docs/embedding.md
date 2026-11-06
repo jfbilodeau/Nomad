@@ -1194,28 +1194,31 @@ run constructors.
 
 Compiled source and the interpreter support struct construction and free-function
 arguments/results. Aggregate yield/resume support remains unsupported.
-The scalar host free-function entry points, including `VirtualMachine::run` and
-`runNativeFunction`, reject struct arguments and returns instead of using
-single-slot values for aggregate storage. Scalar host method entry points
-likewise reject struct receivers and struct returns.
+`VirtualMachine::run` remains the scalar script scheduler/suspension entry point;
+it rejects struct arguments and returns instead of treating them as single slots.
+Use the typed Interpreter invocation APIs for host function and method calls.
+The former VM `runScript`, `runNative`, `runNativeFunction`, `runNativeMethod`,
+and `runScriptMethod` wrappers have been removed.
 
-`VirtualMachine::runScript(address, receiver)` executes compiled code at a
-validated callable entry address.
-`VirtualMachine::runNative(callback, receiver)` executes a native callback.
-Both require arguments and hidden storage pointers already on the stack.
-The optional receiver supplies the object receiver register; it defaults to
-an empty value for free functions and struct methods. Struct receiver pointers
-follow `Callable::getCallStorageLayout()` instead.
+Low-level VM execution uses `captureExecutionState()` and
+`restoreExecutionState(state)` for instruction, stack, parameter, local,
+receiver, running, and yield state. Snapshots borrow receiver/storage references;
+they do not retain values or preserve result/intermediate registers.
+Restoration does not release values in discarded stack slots.
 
-The caller owns and releases argument values, pops their slots and hidden
-pointers, and owns any receiver/result storage. Both entry points restore the
-enclosing execution state, including its receiver and yield state, but leave
-result/intermediate registers available to the caller. They return `true` on
-completion and `false` on yield; they do not retain resumable call storage.
-The interpreter selects the execution path and rejects yielding where its
-value-returning API cannot support suspension. Scalar script calls retain their
-separate suspension-capable execution path. VM faults remain fatal; these are
-not fault-recovery or frame-unwinding APIs.
+`enterScriptFrame(address, receiver)` requires a validated compiled entry address
+and arguments/hidden pointers already on the stack. It starts script execution,
+clears the yield flag, and enters a frame. `executeScript()` executes bytecode
+until stopping or yielding. `enterNativeFrame(receiver)` binds the current stack
+arguments and receiver without executing a callback or changing running/yield
+flags. The optional receiver defaults to an empty value for free functions and
+struct methods; struct receiver pointers follow `Callable::getCallStorageLayout()`.
+
+The caller owns argument, receiver, and result storage, invokes native callbacks,
+and restores the enclosing execution state before releasing and popping arguments.
+The typed Interpreter APIs perform these steps and enforce existing yield rules.
+Scalar script calls retain their suspension-capable scheduler path. VM faults
+remain fatal; these primitives are not fault-recovery or value-unwinding APIs.
 
 `pushStorage(storage)` copies contiguous raw slots onto the VM stack without
 retaining references. The caller supplies ownership for those slots and must
@@ -2418,7 +2421,7 @@ a non-frame context or a class/free-function frame throws `NomadBug`.
 The interpreter can read `this` and its stored fields in such struct frames;
 the resulting values are owned copies, not mutable receiver aliases.
 
-For already resolved calls, `Interpreter::callFunction(functionId, arguments)`
+For already resolved calls, `Interpreter::runFunction(functionId, arguments)`
 and `Interpreter::construct(constructorId, arguments)` use the interpreter's
 borrowed VM and take `std::span<const InterpreterValue>` in logical parameter order.
 They dispatch native and compiled script callables and return an owned
@@ -2451,7 +2454,7 @@ Use typed interpreter arguments for both scalar and struct calls. For example:
 
 ```cpp
 const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{25}});
-const auto result = interpreter.callFunction(functionId, {&argument, 1});
+const auto result = interpreter.runFunction(functionId, {&argument, 1});
 context.setResult(result);
 ```
 
@@ -2459,9 +2462,9 @@ Host call failures propagate as exceptions instead of being converted into
 context diagnostics by an adapter. The call APIs do not publish or clear
 context results. Callers decide how to store returned values and report
 caught exceptions.
-The VM's raw scalar call APIs retain their existing aggregate-storage restrictions.
+The VM's scalar script scheduler retains its existing aggregate-storage restrictions.
 
-`Interpreter::callMethod(receiver, methodId, arguments)` invokes a registered
+`Interpreter::runObjectMethod(receiver, methodId, arguments)` invokes a registered
 native or compiled script method and returns an owned `InterpreterValue`.
 Supply a typed receiver and arguments in logical parameter order; no context
 is required, and results are published only when the caller stores them.
@@ -2486,7 +2489,7 @@ recovery remains unsupported. Property/accessor execution is separate from
 this method API.
 
 For struct receivers, use
-`Interpreter::callStructMethod(receiver, methodId, arguments)`. It accepts
+`Interpreter::runStructMethod(receiver, methodId, arguments)`. It accepts
 complete typed arguments, including structs and empty structs, and invokes
 native or compiled script methods. It returns a `StructMethodResult`, declared
 in `<nomad/script/Interpreter.hpp>`, containing:
@@ -2504,7 +2507,7 @@ their runtime/type descriptors remain alive.
 This API does not publish results or replace context bindings. For example:
 
 ```cpp
-const auto invocation = interpreter.callStructMethod(receiver, methodId, arguments);
+const auto invocation = interpreter.runStructMethod(receiver, methodId, arguments);
 context.setVariable("value", invocation.receiver.getType(), invocation.receiver.getStorage());
 context.setResult(invocation.result);
 ```
@@ -2979,12 +2982,13 @@ instance must outlive the call.
 Object methods may mutate the instance through parameter and temporary references.
 They do not replace the receiver binding or roll back changes to object contents.
 Script-defined methods use the same receiver and argument ownership contracts.
-To invoke an already compiled script method from the host, use
-`VirtualMachine::runScriptMethod(methodId, arguments, receiver)`. Arguments and
-the receiver are borrowed; the method's return value is available through
-`getResult()`. Release an owned object result after use. The prior active receiver
-is restored after the call. Invalid IDs, uncompiled methods, and incorrect
-argument counts raise `VirtualMachineException`.
+To invoke a native or already compiled script method from the host, use
+`Interpreter::runObjectMethod(receiver, methodId, arguments)` with owned typed
+values. It returns an owned value instead of leaving a result in VM registers.
+The prior active receiver and registers are restored after the call. Invalid
+IDs, uncompiled methods, and incorrect argument counts raise
+`std::invalid_argument` before execution. Use `runStructMethod` for struct
+receivers and its independent receiver/result snapshots.
 
 ## Native indexers
 
@@ -3312,7 +3316,7 @@ Syntax and resolution errors are recorded in the context and return `false`.
 Assignment validation happens before evaluating its right-hand side.
 `execute` also reports execution exceptions through the context, clears any
 partial result, and returns `false`. Direct typed host calls such as
-`callFunction` and `callMethod` retain their exception contracts.
+`runFunction` and `runObjectMethod` retain their exception contracts.
 
 An execution fault is fatal even when `execute` reports it through the context
 rather than throwing. Do not continue evaluating code on the faulted VM.

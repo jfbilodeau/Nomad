@@ -165,7 +165,7 @@ VirtualMachine& Interpreter::getVirtualMachine() const {
     return m_virtualMachine;
 }
 
-InterpreterValue Interpreter::callFunction(
+InterpreterValue Interpreter::runFunction(
     const CallableId functionId,
     const std::span<const InterpreterValue> arguments
 ) const {
@@ -182,7 +182,7 @@ InterpreterValue Interpreter::callFunction(
     const auto* type = function->getReturnType();
     if (native != nullptr) {
         InterpreterCallFrame frame(machine, *function, arguments, type);
-        runFunction(*function);
+        runNativeCallable(native->getFn());
         return frame.getResult();
     }
 
@@ -215,29 +215,68 @@ InterpreterValue Interpreter::callFunction(
         }
     }
     InterpreterCallFrame frame(machine, *function, arguments, type);
-    runFunction(*function);
+    if (!runScriptCallable(*script)) {
+        machine.fault("Aggregate script calls cannot yield");
+    }
     return frame.getResult();
 }
 
-void Interpreter::runFunction(const Function& function) const {
-    if (function.asNativeFunction() != nullptr) {
-        m_virtualMachine.callNativeFunction(function.getId());
-    } else if (!m_virtualMachine.runScript(function.asScriptFunction()->getFunctionStart())) {
-        m_virtualMachine.fault("Aggregate script calls cannot yield");
+bool Interpreter::runScriptCallable(
+    const ScriptCallableBase& callable,
+    const RuntimeValue& receiver
+) const {
+    const auto state = m_virtualMachine.captureExecutionState();
+    try {
+        m_virtualMachine.enterScriptFrame(callable.getFunctionStart(), receiver);
+        m_virtualMachine.executeScript();
+    } catch (...) {
+        m_virtualMachine.restoreExecutionState(state);
+        throw;
     }
+    const auto completed = !m_virtualMachine.hasYielded();
+    m_virtualMachine.restoreExecutionState(state);
+    return completed;
 }
 
-void Interpreter::runMethod(const Method& method) const {
-    if (const auto* script = method.asScriptMethod()) {
-        if (!m_virtualMachine.runScript(script->getFunctionStart())) {
+void Interpreter::runNativeCallable(
+    const NativeFunctionFn& callback,
+    const RuntimeValue& receiver
+) const {
+    auto state = m_virtualMachine.captureExecutionState();
+    const auto restore = [&]() {
+        // Scalar native calls retain their existing yield/stop behavior.
+        state.running = m_virtualMachine.isRunning();
+        state.yielded = m_virtualMachine.hasYielded();
+        m_virtualMachine.restoreExecutionState(state);
+    };
+    m_virtualMachine.enterNativeFrame(receiver);
+    try {
+        callback(&m_virtualMachine);
+    } catch (...) {
+        restore();
+        throw;
+    }
+    restore();
+}
+
+void Interpreter::runNativeStructMethod(const NativeMethod& method) const {
+    const auto state = m_virtualMachine.captureExecutionState();
+    auto invocation = state;
+    invocation.yielded = false;
+    m_virtualMachine.restoreExecutionState(invocation);
+    try {
+        runNativeCallable(method.getFn());
+        if (m_virtualMachine.hasYielded()) {
             m_virtualMachine.fault("Struct method calls cannot yield");
         }
-    } else if (!m_virtualMachine.runNative(method.asNativeMethod()->getFn())) {
-        m_virtualMachine.fault("Struct method calls cannot yield");
+    } catch (...) {
+        m_virtualMachine.restoreExecutionState(state);
+        throw;
     }
+    m_virtualMachine.restoreExecutionState(state);
 }
 
-InterpreterValue Interpreter::callMethod(
+InterpreterValue Interpreter::runObjectMethod(
     const InterpreterValue& receiver,
     const CallableId methodId,
     const std::span<const InterpreterValue> arguments
@@ -266,31 +305,18 @@ InterpreterValue Interpreter::callMethod(
     if (script == nullptr && method->asNativeMethod() == nullptr) {
         throw std::invalid_argument("Unsupported method implementation");
     }
-    std::vector<RuntimeValue> values;
-    values.reserve(arguments.size());
-    for (const auto& argument : arguments) {
-        values.push_back(argument.getValue());
-    }
-    auto receiverValue = receiver.getValue();
-    const RegisterRestoration registers(machine);
-    machine.setResult(RuntimeValue{});
-    machine.setIntermediate(RuntimeValue{});
-    try {
-        if (script != nullptr) {
-            machine.runScriptMethod(methodId, values, receiverValue);
-        } else {
-            machine.runNativeMethod(methodId, values, receiverValue);
+    InterpreterCallFrame frame(machine, *method, arguments, type, &receiver);
+    if (script != nullptr) {
+        if (!runScriptCallable(*script, receiver.getValue())) {
+            machine.fault("Script methods cannot yield");
         }
-        InterpreterValue result(type, machine.getResult());
-        type->freeValue(&machine.getResult());
-        return result;
-    } catch (...) {
-        type->freeValue(&machine.getResult());
-        throw;
+    } else {
+        runNativeCallable(method->asNativeMethod()->getFn(), receiver.getValue());
     }
+    return frame.getResult();
 }
 
-StructMethodResult Interpreter::callStructMethod(
+StructMethodResult Interpreter::runStructMethod(
     const InterpreterValue& receiver,
     const CallableId methodId,
     const std::span<const InterpreterValue> arguments
@@ -315,7 +341,13 @@ StructMethodResult Interpreter::callStructMethod(
         throw std::invalid_argument("Unsupported method implementation");
     }
     InterpreterCallFrame frame(machine, *method, arguments, method->getReturnType(), &receiver);
-    runMethod(*method);
+    if (script != nullptr) {
+        if (!runScriptCallable(*script)) {
+            machine.fault("Struct method calls cannot yield");
+        }
+    } else {
+        runNativeStructMethod(*method->asNativeMethod());
+    }
     return {frame.getReceiver(), frame.getResult()};
 }
 

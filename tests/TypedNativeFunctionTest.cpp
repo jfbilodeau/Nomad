@@ -154,8 +154,9 @@ BOOST_AUTO_TEST_CASE(scalar_const_references_preserve_values_without_numeric_nar
 
     auto machine = runtime.createVirtualMachine();
     for (const auto value : {std::numeric_limits<NomadInteger>::min(), std::numeric_limits<NomadInteger>::max()}) {
-        machine->runNativeFunction(identityId, {RuntimeValue(value)});
-        BOOST_TEST(machine->getResult().getIntegerValue() == value);
+        const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{value});
+        const auto result = Interpreter{*machine}.runFunction(identityId, {&argument, 1});
+        BOOST_TEST(result.getValue().getIntegerValue() == value);
     }
 }
 
@@ -292,13 +293,15 @@ BOOST_AUTO_TEST_CASE(host_calls_copy_string_values_and_own_results_independently
     const auto before = RuntimeValue::getLiveStringCount();
     RuntimeValue argument(NomadString("a\0b", 3));
     for (auto index = 0; index < 20; ++index) {
-        machine->runNativeFunction(id, {argument});
+        {
+            const InterpreterValue value(runtime.getStringType(), argument);
+            const auto result = Interpreter{*machine}.runFunction(id, {&value, 1});
+            BOOST_TEST(result.getValue().getStringObject()->getString() == NomadString("a\0b!", 4));
+            BOOST_TEST(result.getValue().getObjectValue() != argument.getObjectValue());
+            BOOST_TEST(result.getValue().getObjectValue()->getReferenceCount() == 1U);
+        }
         BOOST_TEST(argument.getStringObject()->getString() == NomadString("a\0b", 3));
         BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
-        BOOST_TEST(machine->getResult().getStringObject()->getString() == NomadString("a\0b!", 4));
-        BOOST_TEST(machine->getResult().getObjectValue() != argument.getObjectValue());
-        BOOST_TEST(machine->getResult().getObjectValue()->getReferenceCount() == 1U);
-        machine->getResult().freeObjectValue();
 #ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 1);
 #endif
@@ -348,7 +351,11 @@ BOOST_AUTO_TEST_CASE(host_calls_release_string_arguments_when_typed_callbacks_th
     auto machine = runtime.createVirtualMachine();
     const auto before = RuntimeValue::getLiveStringCount();
     RuntimeValue argument(NomadString("temporary argument"));
-    BOOST_CHECK_THROW(machine->runNativeFunction(id, {argument}), VirtualMachineException);
+    {
+        const InterpreterValue value(runtime.getStringType(), argument);
+        BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.runFunction(id, {&value, 1})),
+            VirtualMachineException);
+    }
     BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
     argument.freeObjectValue();
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);

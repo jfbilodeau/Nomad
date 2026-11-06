@@ -503,7 +503,8 @@ BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_re
         "save", [&](VirtualMachine* machine) {
             RuntimeValue callback;
             callback.setIdValue(machine->getCallableIdParameter(0).id);
-            machine->runNativeFunction(relayId, {callback});
+            const InterpreterValue argument(callbackType, callback);
+            static_cast<void>(Interpreter{*machine}.runFunction(relayId, {&argument, 1}));
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
         }, {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
     ).isValid());

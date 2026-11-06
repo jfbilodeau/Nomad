@@ -640,7 +640,7 @@ InterpreterValue FunctionCallExpression::onEvaluate(InterpreterContext& context)
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
     const auto evaluatedArguments = m_arguments.evaluate(context);
-    return context.getInterpreter().callFunction(
+    return context.getInterpreter().runFunction(
         m_function->getId(),
         evaluatedArguments
     );
@@ -1056,7 +1056,7 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
     const auto receiver = m_receiver->evaluate(context);
     if (m_memberType == MemberType::Method) {
         const auto evaluatedArguments = m_arguments.evaluate(context);
-        return context.getInterpreter().callMethod(
+        return context.getInterpreter().runObjectMethod(
             receiver,
             m_method->getId(),
             evaluatedArguments

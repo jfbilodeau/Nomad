@@ -122,46 +122,34 @@ void VirtualMachine::pushStorage(const std::span<const RuntimeValue> storage) {
     }
 }
 
-bool VirtualMachine::runScript(const NomadIndex address, const RuntimeValue& receiver) {
-    const auto yielded = m_yielded;
-    const auto state = beginScriptRun();
-    m_this = receiver;
-    try {
-        callScriptMethod(address);
-        executeScript();
-    } catch (...) {
-        m_yielded = yielded;
-        restoreScriptRun(state);
-        throw;
-    }
-    const auto completed = !m_yielded;
-    m_yielded = yielded;
-    restoreScriptRun(state);
-    return completed;
+VirtualMachine::ExecutionState VirtualMachine::captureExecutionState() const {
+    return {
+        m_instructionIndex,
+        m_stackIndex, 
+        m_parameterIndex, 
+        m_variableIndex,
+        m_running, 
+        m_yielded, 
+        m_this
+    };
 }
 
-bool VirtualMachine::runNative(
-    const NativeFunctionFn& callback,
-    const RuntimeValue& receiver
-) {
-    const auto frame = beginNativeCall();
-    const auto running = m_running;
-    const auto yielded = m_yielded;
-    m_this = receiver;
+void VirtualMachine::restoreExecutionState(const ExecutionState& state) {
+    restoreScriptRun(state);
+    m_yielded = state.yielded;
+}
+
+void VirtualMachine::enterScriptFrame(const NomadIndex address, const RuntimeValue& receiver) {
+    m_running = true;
     m_yielded = false;
-    try {
-        callback(this);
-    } catch (...) {
-        endNativeCall(frame);
-        m_running = running;
-        m_yielded = yielded;
-        throw;
-    }
-    const auto completed = !m_yielded;
-    endNativeCall(frame);
-    m_running = running;
-    m_yielded = yielded;
-    return completed;
+    m_instructionIndex = 0;
+    m_this = receiver;
+    callScriptMethod(address);
+}
+
+void VirtualMachine::enterNativeFrame(const RuntimeValue& receiver) {
+    m_parameterIndex = m_stackIndex;
+    m_this = receiver;
 }
 
 void VirtualMachine::run(
@@ -222,10 +210,8 @@ void VirtualMachine::run(
     }
 }
 
-VirtualMachine::ScriptRunState VirtualMachine::beginScriptRun() {
-    const ScriptRunState state{
-        m_instructionIndex, m_stackIndex, m_parameterIndex, m_variableIndex, m_running, m_this
-    };
+VirtualMachine::ExecutionState VirtualMachine::beginScriptRun() {
+    const auto state = captureExecutionState();
     m_running = true;
     m_yielded = false;
     // Returning to instruction zero executes op_stop.
@@ -233,7 +219,7 @@ VirtualMachine::ScriptRunState VirtualMachine::beginScriptRun() {
     return state;
 }
 
-void VirtualMachine::restoreScriptRun(const ScriptRunState& state) {
+void VirtualMachine::restoreScriptRun(const ExecutionState& state) {
     m_instructionIndex = state.instructionIndex;
     m_stackIndex = state.stackIndex;
     m_parameterIndex = state.parameterIndex;
@@ -668,171 +654,6 @@ void VirtualMachine::runNativeIndexer(
         releaseArguments();
         throw;
     }
-    releaseArguments();
-}
-
-void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const std::vector<RuntimeValue>& args) {
-    const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
-    if (function == nullptr) {
-        fault("Invalid native function id: " + toString(nativeFunctionId.id));
-    }
-    if (!function->isSignatureResolved()) {
-        fault("Native function '" + function->getName() + "' has an unresolved signature");
-    }
-    if (function->getReturnType() == nullptr) {
-        fault("NativeFunction '" + function->getName() + "' has no return type");
-    }
-    if (function->getReturnType()->isStruct()) {
-        fault("Host native calls do not support struct return storage");
-    }
-    if (!function->getReturnType()->isVoid()) {
-        m_result = RuntimeValue{};
-    }
-    if (args.size() != function->getParameterCount()) {
-        fault("Incorrect argument count when calling native function '" + function->getName() + "'");
-    }
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 2 ||
-        args.size() > m_stack.size() - m_stackIndex - 2) {
-        fault("Stack overflow");
-    }
-
-    const auto initialStackIndex = m_stackIndex;
-    const auto savedThis = m_this;
-    std::vector<const Type*> argumentTypes;
-    argumentTypes.reserve(args.size());
-
-    const auto releaseArguments = [&]() {
-        freeHostArguments(initialStackIndex + 2, argumentTypes);
-        m_stackIndex = initialStackIndex;
-        m_this = savedThis;
-    };
-
-    try {
-        pushThis();
-        for (NomadIndex index = args.size(); index > 0; --index) {
-            const auto argumentIndex = index - 1;
-            const auto* type = function->getParameters()[argumentIndex].type;
-            pushHostArgument(type, args[argumentIndex], argumentTypes);
-        }
-
-        callNativeFunction(nativeFunctionId);
-    } catch (...) {
-        releaseArguments();
-        throw;
-    }
-
-    releaseArguments();
-}
-
-void VirtualMachine::runScriptMethod(
-    const CallableId memberId,
-    const std::vector<RuntimeValue>& args,
-    const RuntimeValue& receiver
-) {
-    const auto* method = m_runtime->getMethod(memberId);
-    const auto* script = method != nullptr ? method->asScriptMethod() : nullptr;
-    if (script == nullptr || method->getReturnType() == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd()) {
-        fault("Cannot call script method: invalid or uncompiled method");
-    }
-    if (method->getClassType()->isStruct() || method->getReturnType()->isStruct()) {
-        fault("Host method calls do not support struct receiver or return storage");
-    }
-    if (args.size() != method->getParameterCount()) {
-        fault("Incorrect argument count when calling script method '" + method->getName() + "'");
-    }
-    if (!method->getReturnType()->isVoid()) {
-        m_result = RuntimeValue{};
-    }
-    const auto state = beginScriptRun();
-    std::vector<const Type*> argumentTypes;
-    const auto releaseArguments = [&]() {
-        freeHostArguments(state.stackIndex + 3, argumentTypes);
-        if (m_stackIndex > state.stackIndex + 1) {
-            method->getClassType()->freeValue(&m_stack[state.stackIndex + 2]);
-        }
-    };
-    try {
-        if (m_stackIndex >= m_stack.size() ||
-            m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 3 ||
-            args.size() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 3) {
-            fault("Stack overflow");
-        }
-        argumentTypes.reserve(args.size());
-        pushThis();
-        pushObjectValue(receiver);
-        for (auto index = args.size(); index > 0; --index) {
-            pushHostArgument(method->getParameters()[index - 1].type, args[index - 1], argumentTypes);
-        }
-        bindThisFromStack(args.size());
-        callScriptMethod(script->getFunctionStart());
-        executeScript();
-        if (m_yielded) {
-            fault("Script methods cannot yield");
-        }
-    } catch (...) {
-        releaseArguments();
-        m_yielded = false;
-        restoreScriptRun(state);
-        throw;
-    }
-    releaseArguments();
-    restoreScriptRun(state);
-}
-
-void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vector<RuntimeValue>& args,
-                                        RuntimeValue& receiver) {
-    const auto* method = m_runtime->getNativeMemberMethod(memberId);
-    if (method == nullptr) {
-        fault("Invalid native method id: " + toString(memberId.id));
-    }
-    if (method->getReturnType() == nullptr) {
-        fault("Native method '" + method->getName() + "' has no return type");
-    }
-    if (method->getClassType()->isStruct() || method->getReturnType()->isStruct()) {
-        fault("Host method calls do not support struct receiver or return storage");
-    }
-    if (!method->getReturnType()->isVoid()) {
-        m_result = RuntimeValue{};
-    }
-    if (args.size() != method->getParameterCount()) {
-        fault("Incorrect argument count when calling native method '" + method->getName() + "'");
-    }
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 3 ||
-        args.size() > m_stack.size() - m_stackIndex - 3) {
-        fault("Stack overflow");
-    }
-
-    const auto initialStackIndex = m_stackIndex;
-    const auto savedThis = m_this;
-    std::vector<const Type*> argumentTypes;
-    argumentTypes.reserve(args.size());
-
-    const auto releaseArguments = [&]() {
-        freeHostArguments(initialStackIndex + 3, argumentTypes);
-        if (m_stackIndex > initialStackIndex + 1) {
-            method->getClassType()->freeValue(&m_stack[initialStackIndex + 2]);
-        }
-        m_stackIndex = initialStackIndex;
-        m_this = savedThis;
-    };
-
-    try {
-        pushThis();
-        pushObjectValue(receiver);
-        for (NomadIndex index = args.size(); index > 0; --index) {
-            const auto argumentIndex = index - 1;
-            const auto* type = method->getParameters()[argumentIndex].type;
-            pushHostArgument(type, args[argumentIndex], argumentTypes);
-        }
-
-        bindThisFromStack(args.size());
-        callNativeMethod(memberId);
-    } catch (...) {
-        releaseArguments();
-        throw;
-    }
-
     releaseArguments();
 }
 

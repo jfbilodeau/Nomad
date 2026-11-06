@@ -188,10 +188,11 @@ BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
     auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     receiver.setObjectValue(new TestObject);
-    virtualMachine->runNativeMethod(memberId, {}, receiver);
-    BOOST_TEST(virtualMachine->getResult().getIntegerValue() == 42);
-    BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1);
+    const InterpreterValue ownedReceiver(type, receiver);
     receiver.freeObjectValue();
+    const auto result = Interpreter{*virtualMachine}.runObjectMethod(ownedReceiver, memberId, {});
+    BOOST_TEST(result.getValue().getIntegerValue() == 42);
+    BOOST_TEST(ownedReceiver.getValue().getObjectValue()->getReferenceCount() == 1);
 }
 
 BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
@@ -226,10 +227,15 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
     auto machine = runtime.createVirtualMachine();
     RuntimeValue receiver;
     receiver.setObjectValue(instance);
-    machine->runNativeMethod(memberId, {}, receiver);
-    BOOST_TEST(machine->getResult().getIntegerValue() == 42);
+    {
+        const InterpreterValue ownedReceiver(type, receiver);
+        const auto result = Interpreter{*machine}.runObjectMethod(ownedReceiver, memberId, {});
+        BOOST_TEST(result.getValue().getIntegerValue() == 42);
+    }
     receiver.freeObjectValue();
-    BOOST_CHECK_THROW(machine->runNativeMethod(memberId, {}, receiver), VirtualMachineException);
+    const InterpreterValue nullReceiver(type, receiver);
+    BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.runObjectMethod(nullReceiver, memberId, {})),
+        std::invalid_argument);
 }
 
 BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
@@ -773,7 +779,9 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
             .getter = [count, increment, &nestedReceiver](VirtualMachine* machine) {
                 const auto* receiver = machine->getThisAs<TestObject>();
                 const auto first = machine->getParameter(0);
-                machine->runNativeMethod(increment, {RuntimeValue(NomadInteger{1})}, nestedReceiver);
+                const InterpreterValue nested(machine->getRuntime()->getMethod(increment)->getClassType(), nestedReceiver);
+                const InterpreterValue amount(machine->getRuntime()->getIntegerType(), RuntimeValue{NomadInteger{1}});
+                static_cast<void>(Interpreter{*machine}.runObjectMethod(nested, increment, {&amount, 1}));
                 BOOST_TEST(machine->getThisAs<TestObject>() == receiver);
                 if (count > 1) {
                     BOOST_TEST(machine->getIntegerParameter(0) == first.getIntegerValue());
@@ -884,13 +892,13 @@ BOOST_AUTO_TEST_CASE(host_method_calls_preserve_reference_semantics_and_return_o
             const InterpreterValue amount(runtime.getIntegerType(), RuntimeValue{NomadInteger{3}});
             InterpreterContext context(interpreter);
             context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{99}});
-            const auto result = interpreter.callMethod(receiver, increment.id, {&amount, 1});
+            const auto result = interpreter.runObjectMethod(receiver, increment.id, {&amount, 1});
             BOOST_TEST(result.getValue().getIntegerValue() == 7);
             BOOST_TEST(amount.getValue().getIntegerValue() == 3);
             BOOST_TEST(receiver.getValue().asObject<TestObject>()->value == 7);
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 99);
             {
-                const auto returned = interpreter.callMethod(receiver, selfId, {});
+                const auto returned = interpreter.runObjectMethod(receiver, selfId, {});
                 BOOST_TEST(returned.getType() == type);
                 BOOST_TEST(returned.getValue().getObjectValue() == receiver.getValue().getObjectValue());
                 BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 2U);
@@ -899,10 +907,10 @@ BOOST_AUTO_TEST_CASE(host_method_calls_preserve_reference_semantics_and_return_o
             RuntimeValue source{NomadString{"original argument"}};
             const InterpreterValue text(runtime.getStringType(), source);
             source.freeObjectValue();
-            retainedText = interpreter.callMethod(receiver, echoId, {&text, 1});
+            retainedText = interpreter.runObjectMethod(receiver, echoId, {&text, 1});
             BOOST_TEST(text.getValue().getStringValue() == "original argument");
             BOOST_TEST(retainedText->getValue().getStringValue() == "original argument");
-            const auto reset = interpreter.callMethod(receiver, resetId, {});
+            const auto reset = interpreter.runObjectMethod(receiver, resetId, {});
             BOOST_TEST(reset.getType()->isVoid());
             BOOST_TEST(reset.getStorage().data() == nullptr);
             BOOST_TEST(receiver.getValue().asObject<TestObject>()->value == 4);
@@ -961,28 +969,28 @@ BOOST_AUTO_TEST_CASE(host_method_validation_precedes_stack_changes_and_execution
     machine->pushInteger(1234);
     machine->setIntegerResult(41);
     machine->setIntegerIntermediate(43);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, CallableId{}, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, functionId, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, CallableId{}, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, functionId, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(
         receiver, type->getConstructors().front()->getId(), {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, increment.id, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, increment.id, {})), std::invalid_argument);
     const std::array extraArguments{amount, amount};
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, increment.id, extraArguments)),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, increment.id, extraArguments)),
         std::invalid_argument);
     for (const auto* argument : std::array{&boolean, &foreign}) {
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, increment.id, {argument, 1})),
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, increment.id, {argument, 1})),
             std::invalid_argument);
     }
     const std::array<const InterpreterValue*, 3> invalidReceivers{&amount, &nullReceiver, &moved};
     for (const auto* invalid : invalidReceivers) {
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(*invalid, increment.id, {&amount, 1})),
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(*invalid, increment.id, {&amount, 1})),
             std::invalid_argument);
     }
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(empty, structMethodId, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, structArgumentId, {&empty, 1})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(empty, structMethodId, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, structArgumentId, {&empty, 1})),
         std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, structReturnId, {})), std::invalid_argument);
-    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callMethod(receiver, uncompiledId, {})), std::invalid_argument,
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, structReturnId, {})), std::invalid_argument);
+    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runObjectMethod(receiver, uncompiledId, {})), std::invalid_argument,
         [](const auto& error) { return NomadString{error.what()}.find("not compiled") != NomadString::npos; });
     BOOST_TEST(unsupportedCalls == 0);
     BOOST_TEST(receiver.getValue().asObject<TestObject>()->value == 4);
@@ -990,7 +998,7 @@ BOOST_AUTO_TEST_CASE(host_method_validation_precedes_stack_changes_and_execution
     BOOST_TEST(machine->getIntegerResult() == 41);
     BOOST_TEST(machine->getIntegerIntermediate() == 43);
     BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
-    const auto result = interpreter.callMethod(receiver, increment.id, {&amount, 1});
+    const auto result = interpreter.runObjectMethod(receiver, increment.id, {&amount, 1});
     BOOST_TEST(result.getValue().getIntegerValue() == 7);
     machine->pop1();
 }
@@ -1010,7 +1018,7 @@ BOOST_AUTO_TEST_CASE(host_method_reentry_and_failure_restore_receivers_arguments
             const InterpreterValue receiver(type, borrowedReceiver);
             const InterpreterValue amount(runtime.getIntegerType(), active->getParameter(0));
             const Interpreter nested(*active);
-            const auto result = nested.callMethod(receiver, increment.id, {&amount, 1});
+            const auto result = nested.runObjectMethod(receiver, increment.id, {&amount, 1});
             BOOST_TEST(active->getThis() == object);
             BOOST_TEST(active->getIntegerParameter(0) == 3);
             active->setIntegerResult(result.getValue().getIntegerValue());
@@ -1041,10 +1049,10 @@ BOOST_AUTO_TEST_CASE(host_method_reentry_and_failure_restore_receivers_arguments
         machine->setResult(savedResult);
         machine->setIntermediate(savedIntermediate);
         machine->pushInteger(1234);
-        const auto result = interpreter.callMethod(receiver, nestedId, {&amount, 1});
+        const auto result = interpreter.runObjectMethod(receiver, nestedId, {&amount, 1});
         BOOST_TEST(result.getValue().getIntegerValue() == 7);
         const auto live = RuntimeValue::getLiveStringCount();
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, failingId, {&text, 1})), NomadException);
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, failingId, {&text, 1})), NomadException);
         BOOST_TEST(receiver.getValue().asObject<TestObject>()->value == 99);
         BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
         BOOST_TEST(text.getValue().getObjectValue()->getReferenceCount() == 1U);
@@ -1061,6 +1069,67 @@ BOOST_AUTO_TEST_CASE(host_method_reentry_and_failure_restore_receivers_arguments
     }
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_frame_indices) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    auto action = 1;
+    const auto callback = [&](VirtualMachine* active) {
+        active->setIntegerResult(17);
+        if (action == 2) {
+            active->yield(RuntimeValue{NomadInteger{17}});
+        } else if (action == 3) {
+            active->stop(RuntimeValue{NomadInteger{17}});
+        } else if (action == 4) {
+            throw NomadException("Expected native control failure");
+        }
+    };
+    const auto functionId = runtime.registerNativeFunction("nativeControl", callback, {}, runtime.getIntegerType(), "");
+    const auto methodId = runtime.addMethod(type->getId(), {
+        .name = "nativeControl", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = callback
+    });
+    BOOST_REQUIRE(functionId.isValid() && methodId.isValid());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto receiver = interpreter.construct(type->getConstructors().front()->getId(), {});
+    machine->pushInteger(1234);
+    for (const auto isMethod : {false, true}) {
+        for (const auto previouslyYielded : {false, true}) {
+            for (action = 1; action <= 4; ++action) {
+                machine->setIntegerResult(41);
+                machine->setIntegerIntermediate(43);
+                auto before = machine->captureExecutionState();
+                before.running = true;
+                before.yielded = previouslyYielded;
+                machine->restoreExecutionState(before);
+                const auto invoke = [&]() {
+                    return isMethod ? interpreter.runObjectMethod(receiver, methodId, {}) :
+                        interpreter.runFunction(functionId, {});
+                };
+                if (action == 4) {
+                    BOOST_CHECK_THROW(static_cast<void>(invoke()), NomadException);
+                } else {
+                    BOOST_TEST(invoke().getValue().getIntegerValue() == 17);
+                }
+                const auto after = machine->captureExecutionState();
+                BOOST_TEST(after.instructionIndex == before.instructionIndex);
+                BOOST_TEST(after.stackIndex == before.stackIndex);
+                BOOST_TEST(after.parameterIndex == before.parameterIndex);
+                BOOST_TEST(after.variableIndex == before.variableIndex);
+                BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+                BOOST_TEST(after.running == (action != 2 && action != 3));
+                BOOST_TEST(after.yielded == (action == 2 || (action != 3 && previouslyYielded)));
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
+            }
+        }
+    }
+    machine->stop(RuntimeValue{NomadInteger{41}});
+    machine->pop1();
 }
 
 BOOST_AUTO_TEST_SUITE_END()

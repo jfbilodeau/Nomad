@@ -3286,6 +3286,45 @@ the necessary low-level VM operations, and consistently name public invocation
 APIs `runFunction`, `runObjectMethod`, and `runStructMethod`. Source-level
 struct-method writeback remains a separate follow-up.
 
+### Step 5D1 follow-up: Interpreter-owned invocation orchestration
+
+Approved scope:
+
+- Rename public host invocation APIs to `runFunction`, `runObjectMethod`, and
+  `runStructMethod`, retaining their typed arguments and return contracts.
+- Move typed invocation orchestration, script/native dispatch, state restoration,
+  and existing yield restrictions into Interpreter. Keep VM opcode operations
+  and expose narrow execution-state capture/restoration, frame entry, and bytecode
+  execution primitives without adding friendship.
+- Preserve scalar script suspension through `VirtualMachine::run` as the existing
+  scheduler entry point.
+- Migrate raw VM invocation callers to typed Interpreter APIs and remove
+  `runNativeFunction`, `runNativeMethod`, and `runScriptMethod`, along with
+  the transitional VM `runScript`/`runNative` wrappers.
+- Preserve scalar native yield/stop behavior, argument/receiver/result ownership,
+  reentry, and existing class/aggregate restrictions. Source-level struct-method
+  receiver writeback remains a separate next design step.
+- Update documentation, validate, and stop for review without committing.
+
+Completed:
+
+- Renamed all Interpreter invocation callers and migrated raw VM wrapper tests to
+  owned typed arguments/results. Removed the five VM invocation wrappers.
+- Interpreter now dispatches native callbacks and compiled script bodies using
+  VM execution snapshots and frame/bytecode primitives. Object calls share the
+  existing owning call frame; struct calls still return independent snapshots.
+- Preserved scalar script suspension and scalar native yield/stop behavior.
+  Added regressions checking suspended stack retention, all frame indices,
+  receiver/register restoration, and native completion/failure/control effects.
+- Validation passed: the `nomad_test` build, all six unit groups, compiler-export
+  and LSP-process checks, four documentation-preparation tests, strict
+  documentation generation/site building, and whitespace checks.
+- No gameplay or consuming-project execution was performed. No commit was made.
+
+Next, after review: design source-level struct-method receiver writeback,
+including receiver evaluation, named/nested destinations, temporary receivers,
+and failure behavior, before changing AST or language semantics.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

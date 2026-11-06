@@ -8,6 +8,7 @@
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/InterpreterValue.hpp>
+#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Property.hpp>
 
 #include <optional>
@@ -28,16 +29,16 @@ public:
 
     [[nodiscard]] VirtualMachine& getVirtualMachine() const;
 
-    [[nodiscard]] InterpreterValue callFunction(
+    [[nodiscard]] InterpreterValue runFunction(
         CallableId functionId,
         std::span<const InterpreterValue> arguments
     ) const;
-    [[nodiscard]] InterpreterValue callMethod(
+    [[nodiscard]] InterpreterValue runObjectMethod(
         const InterpreterValue& receiver,
         CallableId methodId,
         std::span<const InterpreterValue> arguments
     ) const;
-    [[nodiscard]] StructMethodResult callStructMethod(
+    [[nodiscard]] StructMethodResult runStructMethod(
         const InterpreterValue& receiver,
         CallableId methodId,
         std::span<const InterpreterValue> arguments
@@ -82,8 +83,15 @@ public:
 private:
     VirtualMachine& m_virtualMachine;
 
-    void runFunction(const Function& function) const;
-    void runMethod(const Method& method) const;
+    [[nodiscard]] bool runScriptCallable(
+        const ScriptCallableBase& callable,
+        const RuntimeValue& receiver = RuntimeValue{}
+    ) const;
+    void runNativeCallable(
+        const NativeFunctionFn& callback,
+        const RuntimeValue& receiver = RuntimeValue{}
+    ) const;
+    void runNativeStructMethod(const NativeMethod& method) const;
 
     [[nodiscard]] std::optional<InterpreterValue> evaluateFormatExpression(
         const SourceText& source,

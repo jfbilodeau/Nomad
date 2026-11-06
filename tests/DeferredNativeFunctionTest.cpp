@@ -230,8 +230,12 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
     BOOST_CHECK_THROW(function->resolveParameterType(0, runtime.getIntegerType()), NomadException);
     BOOST_CHECK_THROW(function->resolveReturnType(runtime.getIntegerType()), NomadException);
     VirtualMachine machine(&runtime);
-    machine.runNativeFunction(id, {RuntimeValue(NomadInteger{42}), RuntimeValue(true)});
-    BOOST_TEST(machine.getResult().getIntegerValue() == 42);
+    const InterpreterValue arguments[]{
+        {runtime.getIntegerType(), RuntimeValue{NomadInteger{42}}},
+        {runtime.getBooleanType(), RuntimeValue{true}}
+    };
+    const auto result = Interpreter{machine}.runFunction(id, arguments);
+    BOOST_TEST(result.getValue().getIntegerValue() == 42);
 }
 
 BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_script_native_cycle) {
@@ -269,9 +273,8 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_CHECK(unresolved.status == ResolveStatus::UnresolvedSignature);
     BOOST_TEST(runtime.describeResolveFailure("updateConfiguration", unresolved).find("unresolved") != NomadString::npos);
     VirtualMachine machine(&runtime);
-    BOOST_CHECK_THROW(machine.runNativeFunction(id, {RuntimeValue{}, RuntimeValue{}, RuntimeValue{}}), NomadException);
     const Interpreter interpreter(machine);
-    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callFunction(id, {})), std::invalid_argument,
+    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runFunction(id, {})), std::invalid_argument,
         [](const auto& error) { return NomadString{error.what()}.find("unresolved signature") != NomadString::npos; });
     BOOST_TEST(calls == 0);
     std::ostringstream documentation;

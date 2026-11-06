@@ -324,7 +324,7 @@ InterpreterValue FunctionCallStatementNode::onEvaluate(InterpreterContext& conte
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
     const auto evaluatedArguments = getArguments()->evaluate(context);
-    static_cast<void>(context.getInterpreter().callFunction(
+    static_cast<void>(context.getInterpreter().runFunction(
         m_function->getId(),
         evaluatedArguments
     ));

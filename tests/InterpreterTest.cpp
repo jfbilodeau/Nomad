@@ -181,9 +181,9 @@ BOOST_AUTO_TEST_CASE(interpreters_and_contexts_use_their_bound_virtual_machine) 
         calledMachine = active;
     }, {}, runtime.getVoidType(), "");
     BOOST_REQUIRE(functionId.isValid());
-    static_cast<void>(firstInterpreter.callFunction(functionId, {}));
+    static_cast<void>(firstInterpreter.runFunction(functionId, {}));
     BOOST_TEST(calledMachine == firstMachine.get());
-    static_cast<void>(secondInterpreter.callFunction(functionId, {}));
+    static_cast<void>(secondInterpreter.runFunction(functionId, {}));
     BOOST_TEST(calledMachine == secondMachine.get());
     BOOST_REQUIRE(firstInterpreter.execute("recordBoundVm", firstContext));
     BOOST_TEST(calledMachine == firstMachine.get());
@@ -590,7 +590,7 @@ BOOST_AUTO_TEST_CASE(interpreter_reports_source_execution_failures_as_diagnostic
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 18);
         }
     }
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(failingFunction, {})), std::runtime_error);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runFunction(failingFunction, {})), std::runtime_error);
     machine->pop1();
 }
 

@@ -88,18 +88,18 @@ BOOST_AUTO_TEST_CASE(compiled_interpreter_and_host_methods_preserve_parameter_co
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
-        RuntimeValue receiver;
-        receiver.setObjectValue(machine->createScriptObject(type->getConstructors()[0]->getId()));
-        const RuntimeValue argument{NomadInteger{4}};
-        machine->runScriptMethod(resolution.id, {argument}, receiver);
-        BOOST_TEST(argument.getIntegerValue() == 4);
-        BOOST_TEST(machine->getIntegerResult() == 5);
-        BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1u);
+        const Interpreter interpreter(*machine);
+        const auto receiver = interpreter.construct(type->getConstructors()[0]->getId(), {});
+        const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{4}});
+        const auto result = interpreter.runObjectMethod(receiver, resolution.id, {&argument, 1});
+        BOOST_TEST(argument.getValue().getIntegerValue() == 4);
+        BOOST_TEST(result.getValue().getIntegerValue() == 5);
+        BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1u);
         BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
-        BOOST_CHECK_THROW(machine->runScriptMethod(resolution.id, {}, receiver), VirtualMachineException);
-        BOOST_CHECK_THROW(machine->runScriptMethod(CallableId::INVALID, {}, receiver), VirtualMachineException);
-        receiver.freeObjectValue();
-        Interpreter interpreter(*machine);
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, resolution.id, {})),
+            std::invalid_argument);
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, CallableId::INVALID, {})),
+            std::invalid_argument);
         InterpreterContext context(interpreter);
         BOOST_REQUIRE(interpreter.execute("counter = new Counter", context));
         BOOST_REQUIRE(interpreter.execute("counter.add 4", context));
@@ -138,19 +138,18 @@ BOOST_AUTO_TEST_CASE(returning_a_temporary_receiver_retains_it_and_releases_fina
         const auto method = runtime.resolveMethod(type, "echo", {runtime.getStringType()});
         BOOST_REQUIRE(method.isResolved());
         auto machine = runtime.createVirtualMachine();
-        RuntimeValue receiver;
-        receiver.setObjectValue(machine->createScriptObject(type->getConstructors()[0]->getId()));
-        RuntimeValue text;
-        text.setStringValue("borrowed");
-        machine->runScriptMethod(method.id, {text}, receiver);
-        BOOST_TEST(machine->getResult().getObjectValue() == receiver.getObjectValue());
-        BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 2u);
-        BOOST_TEST(text.getStringObject()->getString() == "borrowed");
-        BOOST_TEST(text.getObjectValue()->getReferenceCount() == 1u);
-        machine->getResult().freeObjectValue();
-        receiver.freeObjectValue();
-        text.freeObjectValue();
         Interpreter interpreter(*machine);
+        {
+            const auto receiver = interpreter.construct(type->getConstructors()[0]->getId(), {});
+            RuntimeValue source{NomadString{"borrowed"}};
+            const InterpreterValue text(runtime.getStringType(), source);
+            source.freeObjectValue();
+            const auto result = interpreter.runObjectMethod(receiver, method.id, {&text, 1});
+            BOOST_TEST(result.getValue().getObjectValue() == receiver.getValue().getObjectValue());
+            BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 2u);
+            BOOST_TEST(text.getValue().getStringValue() == "borrowed");
+            BOOST_TEST(text.getValue().getObjectValue()->getReferenceCount() == 1u);
+        }
         InterpreterContext context(interpreter);
         BOOST_REQUIRE(interpreter.execute("box = new Box", context));
         BOOST_REQUIRE(interpreter.execute("text = \"borrowed\"", context));
@@ -175,12 +174,15 @@ BOOST_AUTO_TEST_CASE(native_method_reentry_restores_receiver_and_parameter_bindi
             .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
             .returnTypeId = runtime.getIntegerType()->getId(),
             .function = [&](VirtualMachine* machine) {
-                RuntimeValue receiver;
-                receiver.setObjectValue(machine->getThis());
-                machine->runScriptMethod(scriptMethodId, {machine->getParameter(0)}, receiver);
-                BOOST_TEST(machine->getThis() == receiver.getObjectValue());
+                RuntimeValue borrowedReceiver;
+                borrowedReceiver.setObjectValue(machine->getThis());
+                const InterpreterValue receiver(
+                    machine->getRuntime()->getMethod(scriptMethodId)->getClassType(), borrowedReceiver);
+                const InterpreterValue argument(machine->getRuntime()->getIntegerType(), machine->getParameter(0));
+                const auto result = Interpreter{*machine}.runObjectMethod(receiver, scriptMethodId, {&argument, 1});
+                BOOST_TEST(machine->getThis() == receiver.getValue().getObjectValue());
                 BOOST_TEST(machine->getIntegerParameter(0) == 4);
-                machine->setIntegerResult(machine->getIntegerResult() + machine->getIntegerParameter(0));
+                machine->setIntegerResult(result.getValue().getIntegerValue() + machine->getIntegerParameter(0));
             }
         }).isValid());
     });
@@ -372,22 +374,22 @@ BOOST_AUTO_TEST_CASE(interpreter_host_script_methods_return_owned_values_and_pre
             machine->pushInteger(1234);
             machine->setResult(savedResult);
             machine->setIntermediate(savedIntermediate);
-            const auto added = interpreter.callMethod(receiver, add.id, {&amount, 1});
+            const auto added = interpreter.runObjectMethod(receiver, add.id, {&amount, 1});
             BOOST_TEST(added.getValue().getIntegerValue() == 5);
             BOOST_TEST(amount.getValue().getIntegerValue() == 4);
             RuntimeValue source{NomadString{"borrowed"}};
             const InterpreterValue text(runtime.getStringType(), source);
             source.freeObjectValue();
-            retainedReceiver = interpreter.callMethod(receiver, echo.id, {&text, 1});
+            retainedReceiver = interpreter.runObjectMethod(receiver, echo.id, {&text, 1});
             BOOST_TEST(retainedReceiver->getType() == type);
             BOOST_TEST(retainedReceiver->getValue().getObjectValue() == receiver.getValue().getObjectValue());
             BOOST_TEST(text.getValue().getStringValue() == "borrowed");
-            retainedText = interpreter.callMethod(receiver, readLabel.id, {});
+            retainedText = interpreter.runObjectMethod(receiver, readLabel.id, {});
             BOOST_TEST(retainedText->getValue().getStringValue() == "BORROWED");
-            const auto cleared = interpreter.callMethod(receiver, clear.id, {});
+            const auto cleared = interpreter.runObjectMethod(receiver, clear.id, {});
             BOOST_TEST(cleared.getType()->isVoid());
             BOOST_TEST(cleared.getStorage().data() == nullptr);
-            const auto addedAfterClear = interpreter.callMethod(receiver, add.id, {&amount, 1});
+            const auto addedAfterClear = interpreter.runObjectMethod(receiver, add.id, {&amount, 1});
             BOOST_TEST(addedAfterClear.getValue().getIntegerValue() == 5);
             BOOST_TEST(machine->getResult().getObjectValue() == savedResult.getObjectValue());
             BOOST_TEST(machine->getIntermediate().getObjectValue() == savedIntermediate.getObjectValue());
@@ -464,8 +466,17 @@ BOOST_AUTO_TEST_CASE(interpreter_host_script_methods_keep_the_existing_yield_res
         machine->pushInteger(1234);
         machine->setIntegerResult(41);
         machine->setIntegerIntermediate(43);
-        BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callMethod(receiver, pause.id, {})), VirtualMachineException,
+        const auto before = machine->captureExecutionState();
+        BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runObjectMethod(receiver, pause.id, {})), VirtualMachineException,
             [](const auto& error) { return NomadString{error.what()} == "Script methods cannot yield"; });
+        const auto after = machine->captureExecutionState();
+        BOOST_TEST(after.instructionIndex == before.instructionIndex);
+        BOOST_TEST(after.stackIndex == before.stackIndex);
+        BOOST_TEST(after.parameterIndex == before.parameterIndex);
+        BOOST_TEST(after.variableIndex == before.variableIndex);
+        BOOST_TEST(after.running == before.running);
+        BOOST_TEST(after.yielded == before.yielded);
+        BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
         BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
         BOOST_TEST(machine->getIntegerResult() == 41);
         BOOST_TEST(machine->getIntegerIntermediate() == 43);

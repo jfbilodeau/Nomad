@@ -8,6 +8,7 @@
 #include <nomad/log/LoggerObject.hpp>
 #include <nomad/log/LogSinkObject.hpp>
 
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -485,10 +486,15 @@ BOOST_AUTO_TEST_CASE(signed_rotation_limit_updates_fail_without_changing_the_liv
         std::pair{std::numeric_limits<NomadInteger>::min(), NomadInteger{7}},
         std::pair{NomadInteger{128}, std::numeric_limits<NomadInteger>::min()}
     }) {
-        BOOST_CHECK_THROW(machine->runNativeFunction(
+        const InterpreterValue arguments[]{
+            {runtime.getTypeByName(savedSinkType), savedSink},
+            {runtime.getIntegerType(), RuntimeValue{size}},
+            {runtime.getIntegerType(), RuntimeValue{files}}
+        };
+        BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.runFunction(
             runtime.getNativeFunctionId("log.setFileRotationLimits"),
-            {savedSink, RuntimeValue(size), RuntimeValue(files)}
-        ), NomadException);
+            arguments
+        )), NomadException);
         BOOST_TEST(file->getMaxSizeBytes() == 64);
         BOOST_TEST(file->getMaxFiles() == 3);
     }

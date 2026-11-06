@@ -84,7 +84,7 @@ BOOST_AUTO_TEST_CASE(script_methods_return_independent_receiver_and_result_value
             machine->setResult(savedResult);
             machine->setIntermediate(savedIntermediate);
             machine->pushInteger(1234);
-            retained = interpreter.callStructMethod(receiver, mutate.id, arguments);
+            retained = interpreter.runStructMethod(receiver, mutate.id, arguments);
             BOOST_TEST(retained->receiver.getType() == type);
             BOOST_TEST(retained->result.getType() == type);
             BOOST_REQUIRE_EQUAL(retained->receiver.getStorage().size(), 3U);
@@ -102,17 +102,17 @@ BOOST_AUTO_TEST_CASE(script_methods_return_independent_receiver_and_result_value
             BOOST_TEST(retained->receiver.getStorage()[2].getObjectValue() == receiver.getStorage()[2].getObjectValue());
             BOOST_TEST(receiver.getStorage()[2].asObject<ScriptObject>()->getField(0).getIntegerValue() == 28);
             const InterpreterValue replacement(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}});
-            const auto changed = interpreter.callStructMethod(retained->receiver, set.id, {&replacement, 1});
+            const auto changed = interpreter.runStructMethod(retained->receiver, set.id, {&replacement, 1});
             BOOST_TEST(changed.receiver.getStorage()[0].getIntegerValue() == 41);
             BOOST_TEST(changed.result.getType()->isVoid());
             BOOST_TEST(changed.result.getStorage().data() == nullptr);
             BOOST_TEST(retained->receiver.getStorage()[0].getIntegerValue() == 28);
-            const auto emptyResult = interpreter.callStructMethod(changed.receiver, emptyReturn.id, {});
+            const auto emptyResult = interpreter.runStructMethod(changed.receiver, emptyReturn.id, {});
             BOOST_TEST(emptyResult.receiver.getStorage()[0].getIntegerValue() == 42);
             BOOST_TEST(emptyResult.result.getType() == emptyType);
             BOOST_TEST(emptyResult.result.getStorage().data() == nullptr);
-            retainedText = interpreter.callStructMethod(receiver, readText.id, {});
-            retainedOwner = interpreter.callStructMethod(receiver, readOwner.id, {});
+            retainedText = interpreter.runStructMethod(receiver, readText.id, {});
+            retainedOwner = interpreter.runStructMethod(receiver, readOwner.id, {});
             BOOST_TEST(retainedText->result.getValue().getStringValue() == "source");
             BOOST_TEST(retainedOwner->result.getValue().getObjectValue() == receiver.getStorage()[2].getObjectValue());
             context.setVariable("value", retained->receiver.getType(), retained->receiver.getStorage());
@@ -164,7 +164,7 @@ BOOST_AUTO_TEST_CASE(nested_script_receivers_and_empty_receiver_result_combinati
         const Interpreter interpreter(*machine);
         const auto outer = interpreter.construct(outerType->asStructType()->getConstructors().front()->getId(), {});
         const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}});
-        const auto updated = interpreter.callStructMethod(outer, update.id, {&number, 1});
+        const auto updated = interpreter.runStructMethod(outer, update.id, {&number, 1});
         BOOST_TEST(updated.receiver.getType() == outerType);
         BOOST_REQUIRE_EQUAL(updated.receiver.getStorage().size(), 4U);
         BOOST_TEST(updated.result.getType() == valueType);
@@ -176,22 +176,22 @@ BOOST_AUTO_TEST_CASE(nested_script_receivers_and_empty_receiver_result_combinati
         BOOST_TEST(outer.getStorage()[0].getIntegerValue() == 9);
         BOOST_TEST(outer.getStorage()[1].getStringValue() == "nested");
         const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
-        const auto emptyResult = interpreter.callStructMethod(empty, emptyReturn.id, {});
+        const auto emptyResult = interpreter.runStructMethod(empty, emptyReturn.id, {});
         BOOST_TEST(emptyResult.receiver.getType() == emptyType);
         BOOST_TEST(emptyResult.result.getType() == emptyType);
         BOOST_TEST(emptyResult.receiver.getStorage().data() == nullptr);
         BOOST_TEST(emptyResult.result.getStorage().data() == nullptr);
-        const auto created = interpreter.callStructMethod(empty, make.id, {&number, 1});
+        const auto created = interpreter.runStructMethod(empty, make.id, {&number, 1});
         BOOST_TEST(created.receiver.getType() == emptyType);
         BOOST_TEST(created.receiver.getStorage().data() == nullptr);
         BOOST_TEST(created.result.getType() == valueType);
         BOOST_REQUIRE_EQUAL(created.result.getStorage().size(), 3U);
         BOOST_TEST(created.result.getStorage()[0].getIntegerValue() == 41);
         BOOST_TEST(created.result.getStorage()[1].getStringValue() == "made");
-        const auto scalarResult = interpreter.callStructMethod(empty, scalar.id, {});
+        const auto scalarResult = interpreter.runStructMethod(empty, scalar.id, {});
         BOOST_TEST(scalarResult.receiver.getStorage().data() == nullptr);
         BOOST_TEST(scalarResult.result.getValue().getIntegerValue() == 7);
-        const auto cleared = interpreter.callStructMethod(empty, clear.id, {});
+        const auto cleared = interpreter.runStructMethod(empty, clear.id, {});
         BOOST_TEST(cleared.receiver.getType() == emptyType);
         BOOST_TEST(cleared.result.getType()->isVoid());
         BOOST_TEST(cleared.receiver.getStorage().data() == nullptr);
@@ -234,7 +234,7 @@ BOOST_AUTO_TEST_CASE(native_methods_use_distinct_receiver_argument_and_result_st
             argument[1].setStringValue("argument copy");
             const InterpreterValue snapshot(type, std::span<const RuntimeValue>{receiver, 2});
             const Interpreter nested(*active);
-            const auto read = nested.callStructMethod(snapshot, readId, {});
+            const auto read = nested.runStructMethod(snapshot, readId, {});
             BOOST_TEST(read.result.getValue().getIntegerValue() == 28);
             BOOST_TEST(active->getIntegerParameter(2) == 11);
             BOOST_TEST(&active->getStorageParameter(3, 0) == receiver);
@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(native_methods_use_distinct_receiver_argument_and_result_st
             machine->pushInteger(1234);
             machine->setIntegerResult(41);
             machine->setIntegerIntermediate(43);
-            retained = interpreter.callStructMethod(receiver, mutateId, arguments);
+            retained = interpreter.runStructMethod(receiver, mutateId, arguments);
             BOOST_TEST(retained->receiver.getStorage()[0].getIntegerValue() == 28);
             BOOST_TEST(retained->result.getStorage()[0].getIntegerValue() == 1028);
             BOOST_TEST(retained->receiver.getStorage()[1].getStringValue() == "native update");
@@ -308,18 +308,18 @@ BOOST_AUTO_TEST_CASE(native_empty_and_one_slot_receivers_keep_hidden_pointer_lay
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
-    const auto same = interpreter.callStructMethod(empty, emptyMethodId, {&empty, 1});
+    const auto same = interpreter.runStructMethod(empty, emptyMethodId, {&empty, 1});
     BOOST_TEST(emptyCalls == 1);
     BOOST_TEST(same.receiver.getType() == emptyType);
     BOOST_TEST(same.result.getType() == emptyType);
     BOOST_TEST(same.receiver.getStorage().data() == nullptr);
     BOOST_TEST(same.result.getStorage().data() == nullptr);
-    const auto made = interpreter.callStructMethod(empty, makeId, {});
+    const auto made = interpreter.runStructMethod(empty, makeId, {});
     BOOST_TEST(made.receiver.getStorage().data() == nullptr);
     BOOST_TEST(made.result.getType() == oneType);
     BOOST_REQUIRE_EQUAL(made.result.getStorage().size(), 1U);
     BOOST_TEST(made.result.getStorage()[0].getIntegerValue() == 9);
-    const auto cleared = interpreter.callStructMethod(made.result, clearId, {});
+    const auto cleared = interpreter.runStructMethod(made.result, clearId, {});
     BOOST_TEST(cleared.receiver.getType() == oneType);
     BOOST_TEST(cleared.receiver.getStorage()[0].getIntegerValue() == 0);
     BOOST_TEST(cleared.result.getType()->isVoid());
@@ -372,30 +372,30 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
     machine->pushInteger(1234);
     machine->setIntegerResult(41);
     machine->setIntegerIntermediate(43);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(receiver, CallableId{}, {})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, CallableId{}, {})),
         std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(receiver, functionId, {})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, functionId, {})),
         std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(receiver, methodId, {})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, methodId, {})),
         std::invalid_argument);
     const std::array extraArguments{number, number};
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(receiver, methodId, extraArguments)),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, methodId, extraArguments)),
         std::invalid_argument);
     for (const auto* argument : std::array{&boolean, &foreignArgument}) {
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(receiver, methodId, {argument, 1})),
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, methodId, {argument, 1})),
             std::invalid_argument);
     }
     const std::array<const InterpreterValue*, 4> invalidReceivers{&number, &other, &foreignReceiver, &moved};
     for (const auto* invalid : invalidReceivers) {
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(*invalid, methodId, {&number, 1})),
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(*invalid, methodId, {&number, 1})),
             std::invalid_argument);
     }
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(classReceiver, classMethodId, {})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(classReceiver, classMethodId, {})),
         std::invalid_argument);
-    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callStructMethod(receiver, uncompiledId, {})),
+    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runStructMethod(receiver, uncompiledId, {})),
         std::invalid_argument,
         [](const auto& error) { return NomadString{error.what()}.find("not compiled") != NomadString::npos; });
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callMethod(receiver, methodId, {&number, 1})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, methodId, {&number, 1})),
         std::invalid_argument);
     BOOST_TEST(calls == 0);
     BOOST_TEST(receiver.getStorage()[0].getIntegerValue() == 17);
@@ -410,7 +410,7 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
     BOOST_TEST(context.getError()->find("Struct method calls are not supported by the interpreter") != NomadString::npos);
     BOOST_TEST(calls == 0);
     BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 17);
-    const auto result = interpreter.callStructMethod(receiver, methodId, {&number, 1});
+    const auto result = interpreter.runStructMethod(receiver, methodId, {&number, 1});
     BOOST_TEST(result.result.getValue().getIntegerValue() == 3);
     BOOST_TEST(result.receiver.getStorage()[0].getIntegerValue() == 17);
     BOOST_TEST(calls == 1);
@@ -463,7 +463,7 @@ BOOST_AUTO_TEST_CASE(native_failures_discard_struct_replacements_but_keep_shared
         machine->setIntegerIntermediate(43);
         const auto live = RuntimeValue::getLiveStringCount();
         const auto objects = NomadObject::getLiveObjectCount();
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(receiver, methodId, {})), NomadException);
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, methodId, {})), NomadException);
         BOOST_TEST(receiver.getStorage()[0].getIntegerValue() == 17);
         BOOST_TEST(receiver.getStorage()[1].getStringValue() == "source");
         BOOST_TEST(receiver.getStorage()[2].asObject<ScriptObject>()->getField(0).getIntegerValue() == 99);
@@ -520,7 +520,7 @@ BOOST_AUTO_TEST_CASE(struct_method_yield_rejection_preserves_native_and_script_c
             }
             machine->setIntegerIntermediate(43);
             const auto instruction = machine->getInstructionIndex();
-            BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callStructMethod(receiver, methodId, {})),
+            BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runStructMethod(receiver, methodId, {})),
                 VirtualMachineException,
                 [](const auto& error) { return NomadString{error.what()} == "Struct method calls cannot yield"; });
             BOOST_TEST(receiver.getStorage()[0].getIntegerValue() == 17);
@@ -532,7 +532,7 @@ BOOST_AUTO_TEST_CASE(struct_method_yield_rejection_preserves_native_and_script_c
             BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
         }
     }
-    const auto read = interpreter.callStructMethod(receiver, readId, {});
+    const auto read = interpreter.runStructMethod(receiver, readId, {});
     BOOST_TEST(read.result.getValue().getIntegerValue() == 17);
     BOOST_TEST(machine->hasYielded());
     machine->stop(RuntimeValue{NomadInteger{41}});
@@ -578,7 +578,7 @@ BOOST_AUTO_TEST_CASE(native_struct_reentry_preserves_enclosing_class_receiver_an
                 const auto* callable = active->getCurrentCallable();
                 auto* receiver = active->getThis();
                 const Interpreter interpreter(*active);
-                const auto result = interpreter.callStructMethod(probe, methodId, {});
+                const auto result = interpreter.runStructMethod(probe, methodId, {});
                 BOOST_TEST(result.result.getValue().getIntegerValue() == 9);
                 BOOST_TEST(result.receiver.getStorage()[0].getIntegerValue() == 7);
                 BOOST_TEST(active->getThis() == receiver);
@@ -602,7 +602,7 @@ BOOST_AUTO_TEST_CASE(native_struct_reentry_preserves_enclosing_class_receiver_an
         machine->pushInteger(1234);
         machine->setIntegerResult(41);
         machine->setIntegerIntermediate(43);
-        const auto result = interpreter.callMethod(receiver, inspect.id, {&counter, 1});
+        const auto result = interpreter.runObjectMethod(receiver, inspect.id, {&counter, 1});
         BOOST_TEST(result.getValue().getIntegerValue() == 26);
         BOOST_TEST(probes == 1);
         BOOST_TEST(probe.getStorage()[0].getIntegerValue() == 7);

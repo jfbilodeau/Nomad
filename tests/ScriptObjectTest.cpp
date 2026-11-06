@@ -756,7 +756,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
                 machine->getRuntime()->getFunctionId("failingHelper")), {}), NomadException);
             BOOST_TEST(machine->getThis() == receiver);
             BOOST_CHECK_THROW(
-                machine->runNativeFunction(CallableId::INVALID, {}), VirtualMachineException
+                static_cast<void>(Interpreter{*machine}.runFunction(CallableId::INVALID, {})), std::invalid_argument
             );
             BOOST_TEST(machine->getThis() == receiver);
             result.setIntegerValue(42);

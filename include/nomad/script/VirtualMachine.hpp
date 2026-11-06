@@ -38,6 +38,24 @@ public:
     VirtualMachine(const VirtualMachine& other) = delete;
     ~VirtualMachine();
 
+    struct ExecutionState {
+        NomadIndex instructionIndex;
+        NomadIndex stackIndex;
+        NomadIndex parameterIndex;
+        NomadIndex variableIndex;
+        bool running;
+        bool yielded;
+        RuntimeValue receiver;
+    };
+
+    // Raw execution state borrows storage and receiver references; it does not own call values.
+    [[nodiscard]] ExecutionState captureExecutionState() const;
+    void restoreExecutionState(const ExecutionState& state);
+    // Arguments are already on the stack; their owner releases them after restoring execution state.
+    void enterScriptFrame(NomadIndex address, const RuntimeValue& receiver = RuntimeValue{});
+    void enterNativeFrame(const RuntimeValue& receiver = RuntimeValue{});
+    void executeScript();
+
     [[nodiscard]] Runtime* getRuntime() const { return m_runtime; }
 
     void setFunctionVariableValue(VariableId variableId, const RuntimeValue& value);
@@ -73,13 +91,6 @@ public:
     }
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
-    // Arguments and hidden pointers are already on the stack; the caller owns/frees them.
-    // Restore enclosing execution state and report completion (false on yield); registers retain call results.
-    [[nodiscard]] bool runScript(NomadIndex address, const RuntimeValue& receiver = RuntimeValue{});
-    [[nodiscard]] bool runNative(
-        const std::function<void(VirtualMachine*)>& callback,
-        const RuntimeValue& receiver = RuntimeValue{}
-    );
     // Compiler-verified constructor and body; arguments are owned stack copies the caller frees/pops.
     [[nodiscard]] NomadObject* createNativeObject(CallableId constructorId);
     [[nodiscard]] NomadObject* createScriptObject(CallableId constructorId);
@@ -100,13 +111,6 @@ public:
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId);
     void returnFunction(NomadIndex variableCount);
-    void runScriptMethod(
-        CallableId memberId,
-        const std::vector<RuntimeValue>& args,
-        const RuntimeValue& receiver
-    );
-    void runNativeMethod(CallableId memberId, const std::vector<RuntimeValue>& args, RuntimeValue& receiver);
-    void runNativeFunction(CallableId nativeFunctionId, const std::vector<RuntimeValue>& args);
 
     void getNativeProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
     void setNativeProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
@@ -320,18 +324,8 @@ private:
 
     [[nodiscard]] NativeCallFrame beginNativeCall();
     void endNativeCall(const NativeCallFrame& frame);
-    struct ScriptRunState {
-        NomadIndex instructionIndex;
-        NomadIndex stackIndex;
-        NomadIndex parameterIndex;
-        NomadIndex variableIndex;
-        bool running;
-        RuntimeValue receiver;
-    };
-
-    [[nodiscard]] ScriptRunState beginScriptRun();
-    void restoreScriptRun(const ScriptRunState& state);
-    void executeScript();
+    [[nodiscard]] ExecutionState beginScriptRun();
+    void restoreScriptRun(const ExecutionState& state);
     void pushHostArgument(
         const Type* type,
         const RuntimeValue& value,

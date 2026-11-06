@@ -2399,17 +2399,16 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     VirtualMachine machine(&runtime);
     const auto* identity = runtime.getScriptFunction(runtime.getFunctionId("identity"));
     BOOST_CHECK_THROW(machine.run(identity, {RuntimeValue{}}), VirtualMachineException);
-    BOOST_CHECK_THROW(machine.runNativeFunction(factoryId, {RuntimeValue(NomadInteger{1})}), VirtualMachineException);
     BOOST_TEST(calls == 9);
     const Interpreter interpreter(machine);
     const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
     {
-        const auto result = interpreter.callFunction(factoryId, {&number, 1});
+        const auto result = interpreter.runFunction(factoryId, {&number, 1});
         BOOST_TEST(result.getType() == type);
         BOOST_REQUIRE_EQUAL(result.getStorage().size(), 2U);
         BOOST_TEST(result.getStorage()[0].getIntegerValue() == 1);
         BOOST_TEST(result.getStorage()[1].getStringValue() == "returned");
-        const auto copy = interpreter.callFunction(identity->getId(), {&result, 1});
+        const auto copy = interpreter.runFunction(identity->getId(), {&result, 1});
         BOOST_TEST(copy.getType() == type);
         BOOST_REQUIRE_EQUAL(copy.getStorage().size(), 2U);
         BOOST_TEST(copy.getStorage().data() != result.getStorage().data());
@@ -2884,11 +2883,13 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
         BOOST_TEST(!forward->getVariableName(variableId).starts_with("$argument"));
     }
     VirtualMachine machine(&runtime);
-    RuntimeValue receiver;
-    BOOST_CHECK_THROW(machine.runNativeMethod(shiftId, {RuntimeValue(NomadInteger{1})}, receiver),
-        VirtualMachineException);
-    BOOST_CHECK_THROW(machine.runScriptMethod(forwardId, {RuntimeValue(NomadInteger{1})}, receiver),
-        VirtualMachineException);
+    const std::vector<RuntimeValue> storage(type->getSize());
+    const InterpreterValue receiver(type, storage);
+    const InterpreterValue amount(runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
+    BOOST_CHECK_THROW(static_cast<void>(Interpreter{machine}.runObjectMethod(receiver, shiftId, {&amount, 1})),
+        std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(Interpreter{machine}.runObjectMethod(receiver, forwardId, {&amount, 1})),
+        std::invalid_argument);
     BOOST_TEST(shiftCalls == 18);
 }
 
