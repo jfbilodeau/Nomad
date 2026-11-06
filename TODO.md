@@ -8,6 +8,7 @@ Things the author wants to do.
 ## Open
 [ ] Code: distinguish between property and variable
 [ ] Line continuation. Use operator? (`myMethod.nextMethod` -> `myMethod\n.nextMethod`)
+[ ] Use `Task<T>` for captures?
 [ ] `struct` (Embedded types, pass by copy)
 [ ] Support for Nomad unit testing
 [ ] Improve animations declaration (avoid duplicate files...)

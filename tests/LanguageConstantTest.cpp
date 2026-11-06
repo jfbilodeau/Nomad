@@ -128,9 +128,9 @@ BOOST_AUTO_TEST_CASE(constants_remain_readable_in_scripts_interpreter_and_format
     auto machine = runtime.createVirtualMachine();
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator);
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("answer", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("answer", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("$(\"{answer}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$(\"{answer}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "42");
 }
 

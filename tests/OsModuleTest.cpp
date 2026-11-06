@@ -296,11 +296,11 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
         auto machine = runtime.createVirtualMachine();
         const Interpreter contextEvaluator(*machine);
         InterpreterContext context(contextEvaluator);
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("os.argv[0]", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("os.argv[0]", context));
         BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "original");
         BOOST_TEST(!context.getInterpreter().execute("os.argv[0] = \"updated\"", context));
         BOOST_TEST(!context.getInterpreter().execute("os.env[\"interpreter\"] = \"updated\"", context));
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("os.env[\"interpreter\"]", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("os.env[\"interpreter\"]", context));
         BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "original");
     }
     BOOST_TEST(arguments->getReferenceCount() == references);

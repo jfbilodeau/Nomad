@@ -2228,7 +2228,7 @@ void interpretInput() {
     nomad::InterpreterContext context(interpreter);
 
     if (!interpreter.execute("score = 10", context) ||
-        !interpreter.evaluateExpression("score + 5", context)) {
+        !interpreter.execute("score + 5", context)) {
         std::cerr << *context.getError() << '\n';
         return;
     }
@@ -2239,18 +2239,21 @@ void interpretInput() {
 
 `execute(source, context)` accepts assignments, supported function calls, and
 multiline `if`, `while`, `until`, `do`, and `for` statements. It also accepts a
-single expression. `evaluateExpression(source, context)`
-requires exactly one non-void expression; assignments and statements are rejected.
-Each entry point clears the context's previous result and error.
+single expression, empty input, and void calls. This is the single general
+source-execution API; the former public `evaluateExpression` API has been removed.
+Use `context.getResult()` for the owned typed result, including a void value when
+the input produces no value. Each call clears the context's previous result and
+diagnostics. Syntax, type-resolution, and execution failures return `false` with
+diagnostics and no result.
 
-Both entry points also accept `SourceText`, using its name for input diagnostics:
+The `SourceText` overload uses its name for input diagnostics:
 
 ```cpp
 const nomad::SourceText input{"console:input", "score + 5"};
-const auto succeeded = interpreter.evaluateExpression(input, context);
+const auto succeeded = interpreter.execute(input, context);
 ```
 
-The string overloads preserve the existing context source name. Interpretation
+The string overload preserves the existing context source name. Interpretation
 continues to share the compiler's tokenizer, parser, and type resolver; it does
 not register input as a compiled function. Declarations, `return`, assertions,
 and inline callbacks remain unsupported by the interpreter. Loops execute
@@ -2265,10 +2268,6 @@ Loop bindings are ordinary mutable locals or compatible parameters and remain
 available after the loop. Frame-backed interpretation can reassign script
 parameters without replacing the caller's arguments; their declared types remain
 fixed. Callback captures retain the values present when the callback was created.
-
-The `SourceText` expression overload optionally accepts a one-based source line,
-so expressions embedded in a larger input retain their scope and diagnostic
-location.
 
 Use `hasError()` to check for errors and `hasWarning()` to check for warnings.
 Warnings alone do not indicate failure. To display all diagnostics from the latest
@@ -3268,7 +3267,7 @@ if (callable == nullptr) {
 }
 const nomad::Interpreter interpreter(machine);
 nomad::InterpreterContext context(interpreter, *callable);
-const auto succeeded = interpreter.evaluateExpression("value + local", context);
+const auto succeeded = interpreter.execute("value + local", context);
 ```
 
 The context borrows live local and parameter values, not copies. Writes to frame
@@ -3292,9 +3291,9 @@ compiled function. Interpretation does not introduce new compiled captures.
 
 Syntax and resolution errors are recorded in the context and return `false`.
 Assignment validation happens before evaluating its right-hand side.
-`execute` also reports execution exceptions through the context.
-`evaluateExpression` propagates execution faults from called code; it does not
-turn arbitrary function failures into malformed-template diagnostics.
+`execute` also reports execution exceptions through the context, clears any
+partial result, and returns `false`. Direct typed host calls such as
+`callFunction` and `callMethod` retain their exception contracts.
 
 An execution fault is fatal even when `execute` reports it through the context
 rather than throwing. Do not continue evaluating code on the faulted VM.
@@ -3316,12 +3315,19 @@ Console and frame evaluation do not require separate compiler modes.
 ## Dynamic format strings
 
 The script format string operator `$expression` and interpreted format literals use the same
-runtime template evaluator. C++ hosts can call `formatDynamicString` (declared in
-`nomad/script/FormatString.hpp`) with a template, context, source name, line, and column.
+runtime template evaluator. C++ hosts can call `Interpreter::formatString` with a template, context, source
+name, line, and column. The existing free `formatDynamicString` function
+(declared in `nomad/script/FormatString.hpp`) delegates to the context's interpreter
+and accepts the same arguments.
 Its `DynamicFormatResult` contains partial text plus structured diagnostics for
 that template. Each diagnostic includes a message, source location, and zero-based
 byte offset and length in the template. Diagnostics are also logged; nested
 templates emit their own diagnostics.
+
+Placeholders require exactly one non-void expression. Assignments, statements,
+and multiline input are rejected before execution. Placeholder evaluation retains
+the supplied source line for resolution and diagnostics; these restrictions do
+not apply to general source input passed to `execute`.
 
 Syntax and resolution errors become inline markers and processing continues after
 a closed bad placeholder. Execution exceptions from called code propagate,

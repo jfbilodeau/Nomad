@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
             BOOST_TEST(copy[0].getIntegerValue() == 41);
             BOOST_TEST(source[0].getIntegerValue() == 17);
             BOOST_TEST(copy[2].getObjectValue() == source[2].getObjectValue());
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("readAggregateText copy", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("readAggregateText copy", context));
             const InterpreterValue text(*context.getResult());
             BOOST_TEST(text.getValue().getStringValue() == "source");
             BOOST_REQUIRE(context.getInterpreter().execute("holder = new CallHolder source", context));
@@ -141,13 +141,13 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
             BOOST_REQUIRE(holder != nullptr);
             BOOST_TEST(holder->getFieldStorage(0)[0].getIntegerValue() == 17);
             BOOST_TEST(source[0].getIntegerValue() == 17);
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("makeAggregate 23", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("makeAggregate 23", context));
             BOOST_TEST(context.getResult()->getType() == outer);
             BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 23);
             BOOST_TEST(context.getResult()->getStorage()[1].getStringValue() == "created");
             const InterpreterValue snapshot(*context.getResult());
             const auto emptyBefore = emptyCalls;
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("copyCallEmpty (new CallEmpty)", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("copyCallEmpty (new CallEmpty)", context));
             BOOST_TEST(emptyCalls == emptyBefore + 1);
             BOOST_TEST(context.getResult()->getType() == empty);
             BOOST_TEST(context.getResult()->getStorage().empty());
@@ -221,7 +221,7 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
         const Interpreter nestedEvaluator(*active);
         InterpreterContext nested(nestedEvaluator);
         nested.setVariable("value", valueType, source);
-        const auto evaluated = nested.getInterpreter().evaluateExpression("nativeCallScore value", nested);
+        const auto evaluated = nested.getInterpreter().execute("nativeCallScore value", nested);
         BOOST_REQUIRE_MESSAGE(evaluated, (nested.getError() ? *nested.getError() : ""));
         BOOST_TEST(nested.getResult()->getValue().getIntegerValue() == source[0].getIntegerValue());
         BOOST_TEST(active->getIntegerParameter(2) == tail);
@@ -262,12 +262,12 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
             BOOST_TEST(source[0].getIntegerValue() == 17);
             BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 41);
             BOOST_TEST(context.getVariableStorage("copy")[1].getStringValue() == "native");
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression(
+            BOOST_REQUIRE(context.getInterpreter().execute(
                 "forwardNativeAggregate source (new NativeCallEmpty) 51", context));
             BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 51);
             BOOST_TEST(source[0].getIntegerValue() == 17);
             const auto callsBefore = emptyReturns;
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("nativeCallEmpty 7", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("nativeCallEmpty 7", context));
             BOOST_TEST(emptyReturns == callsBefore + 1);
             BOOST_TEST(context.getResult()->getType() == emptyType);
             BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
@@ -345,7 +345,7 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
         "new OrderedCallValue (callNote 1) (callNote 2)"
     }) {
         order.clear();
-        const auto evaluated = context.getInterpreter().evaluateExpression(source, context);
+        const auto evaluated = context.getInterpreter().execute(source, context);
         BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : ""));
         BOOST_REQUIRE_EQUAL(order.size(), 3U);
         BOOST_TEST(order[0] == 2);
@@ -353,7 +353,7 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
         BOOST_TEST(order[2] == 3);
     }
     order.clear();
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression(
+    BOOST_REQUIRE(context.getInterpreter().execute(
         "(makeCallOrderBox).combine (callNote 1) (callNote 2)", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 12);
     BOOST_REQUIRE_EQUAL(order.size(), 4U);
@@ -404,7 +404,7 @@ BOOST_AUTO_TEST_CASE(aggregate_calls_preserve_active_method_frames_during_native
         BOOST_REQUIRE_MESSAGE(copied, (context.getError() ? *context.getError() : ""));
         BOOST_TEST(context.getVariableStorage("local")[0].getIntegerValue() == 71);
         BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 17);
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("readAggregateText local", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("readAggregateText local", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "frame");
         BOOST_REQUIRE(context.getInterpreter().execute("created = makeAggregate tail", context));
         BOOST_TEST(context.getVariableStorage("created")[0].getIntegerValue() == 23);

@@ -575,7 +575,7 @@ BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_inte
         InterpreterContext context(contextEvaluator);
         const auto succeeded = context.getInterpreter().execute(source, context);
         BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("total", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 40);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -615,13 +615,16 @@ BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runti
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute(source, context));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("count", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("count", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 4);
     BOOST_REQUIRE(context.getInterpreter().execute("zero = 0", context));
-    BOOST_CHECK_THROW((void)context.getInterpreter().evaluateExpression("range 0 5 zero", context), NomadException);
-    BOOST_TEST(!context.getInterpreter().evaluateExpression("range \"invalid\"", context));
-    BOOST_TEST(!context.getInterpreter().evaluateExpression("range", context));
-    BOOST_TEST(!context.getInterpreter().evaluateExpression("range 1 2 3 4", context));
+    BOOST_TEST(!context.getInterpreter().execute("range 0 5 zero", context));
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(context.getError()->find("Range step must not be zero") != NomadString::npos);
+    BOOST_TEST(context.getResult() == nullptr);
+    BOOST_TEST(!context.getInterpreter().execute("range \"invalid\"", context));
+    BOOST_TEST(!context.getInterpreter().execute("range", context));
+    BOOST_TEST(!context.getInterpreter().execute("range 1 2 3 4", context));
 }
 
 BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_normal_iteration) {
@@ -658,7 +661,7 @@ BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_no
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute(source, context));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("total", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
     BOOST_TEST(calls == 3);
 }
@@ -713,11 +716,11 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
         InterpreterContext context(contextEvaluator);
         const auto succeeded = context.getInterpreter().execute(source, context);
         BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("total", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 349);
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("value", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 2);
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("text", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("text", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "2 3");
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -737,16 +740,20 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
         InterpreterContext context(contextEvaluator);
         BOOST_REQUIRE(context.getInterpreter().execute("items = new List<string>\nitems.append \"first\"", context));
         BOOST_REQUIRE(context.getInterpreter().execute("cursor = items.iterator", context));
-        BOOST_CHECK_THROW((void)context.getInterpreter().evaluateExpression("cursor.current", context), NomadException);
+        BOOST_TEST(!context.getInterpreter().execute("cursor.current", context));
+        BOOST_TEST(context.hasError());
+        BOOST_TEST(context.getResult() == nullptr);
         BOOST_REQUIRE(context.getInterpreter().execute("items = new List<string>", context));
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.moveNext", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("cursor.moveNext", context));
         BOOST_TEST(context.getResult()->getValue().getBooleanValue());
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.current", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("cursor.current", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "first");
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.moveNext", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("cursor.moveNext", context));
         BOOST_TEST(!context.getResult()->getValue().getBooleanValue());
-        BOOST_CHECK_THROW((void)context.getInterpreter().evaluateExpression("cursor.current", context), NomadException);
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.moveNext", context));
+        BOOST_TEST(!context.getInterpreter().execute("cursor.current", context));
+        BOOST_TEST(context.hasError());
+        BOOST_TEST(context.getResult() == nullptr);
+        BOOST_REQUIRE(context.getInterpreter().execute("cursor.moveNext", context));
         BOOST_TEST(!context.getResult()->getValue().getBooleanValue());
     }
     auto compiler = runtime.createCompiler();
@@ -801,7 +808,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutat
     InterpreterContext context(contextEvaluator);
     const auto succeeded = context.getInterpreter().execute(source, context);
     BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("total", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 11);
 }
 
@@ -894,10 +901,10 @@ BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassign
         InterpreterContext context(contextEvaluator);
         const auto succeeded = context.getInterpreter().execute(source, context);
         BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("text", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("text", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "LASTbreak20 0 6 100");
         BOOST_REQUIRE(context.getInterpreter().execute("value = \"still here\"", context));
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("value", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "still here");
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -2326,7 +2333,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
         for (const auto* source : {"items.insert (-1) 1", "items.insert 1 1"}) {
             BOOST_TEST(!context.getInterpreter().execute(source, context));
             BOOST_REQUIRE(context.hasError());
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("items.count", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("items.count", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 0);
         }
     }
@@ -2597,7 +2604,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
                 BOOST_REQUIRE(compilation.getFirstError() != nullptr);
             }
         }
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("grid[0 1] + grid[1 2]", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("grid[0 1] + grid[1 2]", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 246);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -2689,7 +2696,7 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
                     NomadString("volume = new Array<int> 2 3 4\n") + source
                 }}}, {}});
                 BOOST_TEST(!rejectedCompiler->compileScripts(&rejected, CompilationTarget::Executable));
-                BOOST_REQUIRE(context.getInterpreter().evaluateExpression("volume[1 2 3] == 46", context));
+                BOOST_REQUIRE(context.getInterpreter().execute("volume[1 2 3] == 46", context));
                 BOOST_TEST(context.getResult()->getValue().getBooleanValue());
             }
         }
@@ -2722,7 +2729,7 @@ BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_error
             BOOST_TEST(!context.hasError());
         }
     }
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("values[-1] + values[2]", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("values[-1] + values[2]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 0);
     for (const auto* source : {"values[\"key\"]", "values[0] = \"wrong\"", "values[0 1]"}) {
         BOOST_TEST_CONTEXT(source) {
@@ -2730,9 +2737,9 @@ BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_error
             BOOST_TEST(context.hasError());
         }
     }
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("values.count", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("values.count", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 2);
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("values[0] + values[1]", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("values[0] + values[1]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 246);
 }
 
@@ -2760,7 +2767,7 @@ BOOST_AUTO_TEST_CASE(collections_indexers_work_in_interpreter_and_fault_without_
             BOOST_REQUIRE(context.getError() != nullptr);
             BOOST_TEST(context.getError()->find("out of bounds for size 1") != NomadString::npos);
         }
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("words.count", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("words.count", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
         BOOST_REQUIRE(context.getInterpreter().execute("empty = new List<int>", context));
         BOOST_TEST(!context.getInterpreter().execute("empty[0]", context));
@@ -2839,7 +2846,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
         VirtualMachine machine(&runtime);
         const Interpreter interpreterContextEvaluator(machine);
         InterpreterContext interpreterContext(interpreterContextEvaluator);
-        BOOST_REQUIRE(interpreterContext.getInterpreter().evaluateExpression("new List<int>.testPresent", interpreterContext));
+        BOOST_REQUIRE(interpreterContext.getInterpreter().execute("new List<int>.testPresent", interpreterContext));
         BOOST_TEST(interpreterContext.getResult()->getValue().getBooleanValue());
         BOOST_REQUIRE(interpreterContext.getInterpreter().execute("value = new List<int>", interpreterContext));
         const auto* original = interpreterContext.getVariableValue("value")->getObjectValue();
@@ -2899,11 +2906,6 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     VirtualMachine machine(&runtime);
     const Interpreter interpreterContextEvaluator(machine);
     InterpreterContext interpreterContext(interpreterContextEvaluator);
-    BOOST_CHECK_THROW(
-        static_cast<void>(interpreterContext.getInterpreter().evaluateExpression("new Broken", interpreterContext)),
-        NomadException
-    );
-    BOOST_TEST(interpreterContext.getResult() == nullptr);
     BOOST_TEST(!interpreterContext.getInterpreter().execute("new Broken", interpreterContext));
     BOOST_REQUIRE(interpreterContext.getError() != nullptr);
     BOOST_TEST(interpreterContext.getError()->find("returned null") != NomadString::npos);

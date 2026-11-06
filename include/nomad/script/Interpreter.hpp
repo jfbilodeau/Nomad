@@ -5,6 +5,7 @@
 #include <nomad/compiler/Source.hpp>
 
 #include <nomad/script/Callable.hpp>
+#include <nomad/script/FormatString.hpp>
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/Property.hpp>
@@ -64,14 +65,16 @@ public:
         const InterpreterValue& value
     ) const;
 
+    // Source failures are retained as diagnostics; unsuccessful calls have no result.
     [[nodiscard]] NomadBoolean execute(const NomadString& source, InterpreterContext& context) const;
     [[nodiscard]] NomadBoolean execute(const SourceText& source, InterpreterContext& context) const;
-    // Requires one non-void expression. Syntax/type errors are retained; execution faults propagate.
-    [[nodiscard]] bool evaluateExpression(const NomadString& source, InterpreterContext& context) const;
-    [[nodiscard]] bool evaluateExpression(
-        const SourceText& source,
+    // Placeholder syntax/type errors produce diagnostics; execution exceptions propagate.
+    [[nodiscard]] DynamicFormatResult formatString(
+        NomadStringView format,
         InterpreterContext& context,
-        NomadIndex sourceLine = 1
+        NomadStringView sourceName,
+        NomadIndex line,
+        NomadIndex column
     ) const;
 
 private:
@@ -79,6 +82,12 @@ private:
 
     void runFunction(const Function& function) const;
     void runMethod(const Method& method) const;
+
+    [[nodiscard]] bool evaluateFormatExpression(
+        const SourceText& source,
+        InterpreterContext& context,
+        NomadIndex sourceLine
+    ) const;
 
     [[nodiscard]] InterpreterValue getStoredProperty(
         const InterpreterValue& receiver,

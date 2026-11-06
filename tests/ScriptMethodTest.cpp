@@ -295,7 +295,7 @@ BOOST_AUTO_TEST_CASE(frame_interpretation_reads_and_writes_constructor_and_metho
             BOOST_TEST(context.getFunction() == nullptr);
             const auto variablesBefore = callable->getVariableCount();
             const auto parametersBefore = callable->getParameterCount();
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("this.value + amount + local", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("this.value + amount + local", context));
             const auto total = context.getResult()->getValue().getIntegerValue();
             BOOST_REQUIRE(context.getInterpreter().execute("local = local + 1", context));
             BOOST_REQUIRE(context.getInterpreter().execute("amount = amount + 2", context));
@@ -434,7 +434,7 @@ BOOST_AUTO_TEST_CASE(interpreter_methods_evaluate_the_receiver_before_right_to_l
         auto machine = runtime.createVirtualMachine();
         const Interpreter interpreter(*machine);
         InterpreterContext context(interpreter);
-        const auto evaluated = interpreter.evaluateExpression(
+        const auto evaluated = interpreter.execute(
             "(pickMethodReceiver).combine (leftMethodArgument) (rightMethodArgument)", context);
         BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : ""));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);

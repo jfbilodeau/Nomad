@@ -150,7 +150,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues
     BOOST_TEST(result.diagnostics[1].length == 1);
     BOOST_TEST(!context.hasError());
     BOOST_TEST(runtime.getInstructions().size() == before);
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("$(\"{score}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$(\"{score}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "10");
 }
 
@@ -162,6 +162,35 @@ BOOST_AUTO_TEST_CASE(dynamic_format_operator_validates_string_type_and_retains_s
     }
     BOOST_TEST(!runSource("return $\"{missing}\"").compiled);
     BOOST_TEST(!runSource("return $\"{value\"").compiled);
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_format_entry_point_preserves_strict_placeholders_and_free_function_contract)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    BOOST_REQUIRE(interpreter.execute("score = 10", context));
+    const auto instructionsBefore = runtime.getInstructions().size();
+    const NomadString format{"value {score + 1} invalid {score = 99} tail {score}"};
+    const auto result = interpreter.formatString(format, context, "bridge.nomad", 4, 7);
+    const auto compatibility = formatDynamicString(format, context, "bridge.nomad", 4, 7);
+    BOOST_TEST(result.text == compatibility.text);
+    BOOST_TEST(result.text.starts_with("value 11 invalid {"));
+    BOOST_TEST(result.text.ends_with("} tail 10"));
+    BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1U);
+    BOOST_REQUIRE_EQUAL(compatibility.diagnostics.size(), 1U);
+    const auto& diagnostic = result.diagnostics[0];
+    BOOST_TEST(diagnostic.message == compatibility.diagnostics[0].message);
+    BOOST_TEST(diagnostic.sourceName == "bridge.nomad");
+    BOOST_TEST(diagnostic.line == 4U);
+    BOOST_TEST(diagnostic.column == 7U);
+    BOOST_TEST(diagnostic.offset == compatibility.diagnostics[0].offset);
+    BOOST_TEST(diagnostic.length == compatibility.diagnostics[0].length);
+    BOOST_TEST(context.getVariableValue("score")->getIntegerValue() == 10);
+    BOOST_TEST(context.getResult() == nullptr);
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(runtime.getInstructions().size() == instructionsBefore);
 }
 
 BOOST_AUTO_TEST_CASE(dynamic_format_supports_nested_templates_and_quoted_braces)
@@ -240,7 +269,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preser
         InterpreterContext context(contextEvaluator);
         BOOST_CHECK_THROW(static_cast<void>(formatDynamicString(format, context, "fault.nomad", 1, 1)),
             VirtualMachineException);
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("2 + 3", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("2 + 3", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
     }
 }

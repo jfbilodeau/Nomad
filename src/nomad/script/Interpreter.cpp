@@ -5,9 +5,12 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/FormatStringCompiler.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
+
+#include <nomad/log/Logger.hpp>
 
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/InterpreterCallFrame.hpp>
@@ -422,11 +425,7 @@ InterpreterValue Interpreter::setStoredProperty(
     }
 }
 
-bool Interpreter::evaluateExpression(const NomadString& source, InterpreterContext& evaluation) const {
-    return evaluateExpression(SourceText{evaluation.m_function->getPath(), source}, evaluation);
-}
-
-bool Interpreter::evaluateExpression(
+bool Interpreter::evaluateFormatExpression(
     const SourceText& source,
     InterpreterContext& evaluation,
     NomadIndex sourceLine
@@ -475,17 +474,65 @@ bool Interpreter::evaluateExpression(
     return !evaluation.hasError();
 }
 
+DynamicFormatResult Interpreter::formatString(
+    const NomadStringView format,
+    InterpreterContext& context,
+    const NomadStringView sourceName,
+    const NomadIndex line,
+    const NomadIndex column
+) const {
+    DynamicFormatResult result;
+    const auto parsed = parseFormatTemplate(format);
+    const auto appendError = [&](const FormatTemplateSegment& segment, const NomadString& message) {
+        result.text += "{" + message + "}";
+        result.diagnostics.push_back({message, NomadString{sourceName}, line, column,
+            segment.offset, segment.length});
+        log::error("Dynamic format error: source=" + NomadString{sourceName} +
+            ", line=" + std::to_string(line) + ", column=" + std::to_string(column) +
+            ", offset=" + std::to_string(segment.offset) + ", length=" + std::to_string(segment.length) +
+            ", message=" + message);
+    };
+    for (const auto& segment : parsed.segments) {
+        if (segment.type == FormatTemplateSegmentType::Literal) {
+            result.text += segment.text;
+        } else if (segment.type == FormatTemplateSegmentType::Error) {
+            const auto& diagnostic = parsed.diagnostics.at(*segment.diagnosticIndex);
+            appendError(segment, diagnostic.message == "Missing '}' in format string"
+                ? "missing `}`" : "empty expression");
+        } else if (evaluateFormatExpression(
+            SourceText{NomadString{sourceName}, segment.text}, context, line
+        )) {
+            const auto* value = context.getResult();
+            result.text += value->getType()->toString(value->getValue());
+        } else {
+            const auto diagnostics = context.getDiagnostics();
+            const auto error = std::ranges::find_if(diagnostics, [](const Diagnostic& diagnostic) {
+                return diagnostic.severity == DiagnosticSeverity::Error;
+            });
+            auto message = error != diagnostics.end() ? error->message : *context.getError();
+            constexpr NomadStringView unknownIdentifier = "Unknown identifier: ";
+            if (message.starts_with(unknownIdentifier)) {
+                message = "invalid identifier: '" + message.substr(unknownIdentifier.size()) + "'";
+            }
+            appendError(segment, message);
+        }
+        context.clearError();
+        context.clearResult();
+    }
+    return result;
+}
+
 NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext& evaluation) const {
     return execute(SourceText{evaluation.m_function->getPath(), source}, evaluation);
 }
 
 NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& evaluation) const {
-    evaluation.validateFrame();
     evaluation.clearError();
     evaluation.clearResult();
     evaluation.setLoopControl(LoopControl::None);
     const RegisterRestoration registers(*evaluation.getVirtualMachine());
     try {
+        evaluation.validateFrame();
         auto compiler = evaluation.m_runtime->createCompiler();
         CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter, &evaluation);
         Tokenizer tokenizer(&compilerContext, source.sourceName, source.text);

@@ -3208,6 +3208,43 @@ Implementation and validation:
 - Stop for review without committing. Source-level receiver writeback remains
   a separately approved slice.
 
+### Step 5D1 follow-up: Unified source execution and diagnostics
+
+Approved scope:
+
+- Keep `execute` as the single public general source-entry API for expressions
+  and statements. Remove public `evaluateExpression` overloads and migrate callers.
+- Source execution reports syntax, resolution, and execution failures through
+  context diagnostics and returns false without a result. Direct typed host-call
+  exception contracts remain unchanged.
+- Keep strict expression-only validation internal to formatting. Add
+  `Interpreter::formatString` and retain free `formatDynamicString` as a
+  compatibility wrapper, preserving formatting diagnostics, source locations,
+  side-effect prevention, and execution-exception propagation.
+- Do not modify AST interfaces. Typed-value AST signatures and invocation/VM
+  boundary changes require separate discussion and approval.
+- Preserve unrelated worktree changes. Validate this slice and stop for review
+  without committing.
+
+Implementation and validation:
+
+- Public source callers now use `execute` for both expressions and statements.
+  Failures from native/script calls, assignments, statements, and dynamic-format
+  expressions are retained as source-named diagnostics with no partial result.
+- `Interpreter::formatString` owns strict placeholder evaluation; the existing
+  free formatter delegates to it. Formatting retains its diagnostics, source
+  locations, side-effect prevention, and exception-propagation contracts.
+- Regression tests cover register/stack preservation, retained bindings,
+  diagnostic clearing on subsequent input, and direct typed-call exceptions.
+  The formatting entry point and compatibility wrapper produce matching results
+  and diagnostics without adding compiled instructions.
+- The workspace CMake test target built successfully. All six unit-test groups,
+  compiler-export and LSP-process checks, four documentation-preparation tests,
+  and strict documentation generation/site building passed. Gameplay and
+  consuming-project execution were not validated.
+- No AST interface or implementation files were changed. Stop for review without
+  committing; discuss AST signatures before any later AST-interface change.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

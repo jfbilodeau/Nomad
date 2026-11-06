@@ -421,7 +421,7 @@ BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
     BOOST_TEST(!context.getInterpreter().execute("(invalidText)[0]", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->find("UTF-8") != NomadString::npos);
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("\"hello\"[1].length", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("\"hello\"[1].length", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
 }
 
@@ -463,7 +463,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after
     InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("value = new TestObject", context));
     BOOST_REQUIRE(context.getInterpreter().execute("value[5] = 7", context));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value[6]", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("value[6]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 18);
 }
 
@@ -488,9 +488,9 @@ BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("value = new TestObject", context));
     BOOST_REQUIRE(context.getInterpreter().execute("value[3] = 8", context));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value.value", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("value.value", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 11);
-    BOOST_TEST(!context.getInterpreter().evaluateExpression("value[0]", context));
+    BOOST_TEST(!context.getInterpreter().execute("value[0]", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->find("write-only") != NomadString::npos);
 }
@@ -611,7 +611,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator);
     calls.clear();
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("(receiver)[(first) (second)]", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("(receiver)[(first) (second)]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
     BOOST_TEST(calls == "receiversecondfirstget");
     calls.clear();
@@ -750,7 +750,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
             BOOST_REQUIRE(context.getError() != nullptr);
             BOOST_TEST(context.getError()->find("failed") != NomadString::npos);
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("1 + 2", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("1 + 2", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
         }
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -824,10 +824,10 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
                 InterpreterContext context(contextEvaluator);
                 BOOST_REQUIRE(context.getInterpreter().execute("object = new TestObject", context));
                 BOOST_REQUIRE(context.getInterpreter().execute("object[" + indexes + "] = 7", context));
-                BOOST_REQUIRE(context.getInterpreter().evaluateExpression("object[" + indexes + "]", context));
+                BOOST_REQUIRE(context.getInterpreter().execute("object[" + indexes + "]", context));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == expected);
-                BOOST_TEST(!context.getInterpreter().evaluateExpression("object[" + indexes + " 0]", context));
-                BOOST_REQUIRE(context.getInterpreter().evaluateExpression("object[" + indexes + "]", context));
+                BOOST_TEST(!context.getInterpreter().execute("object[" + indexes + " 0]", context));
+                BOOST_REQUIRE(context.getInterpreter().execute("object[" + indexes + "]", context));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == expected);
                 BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
             }

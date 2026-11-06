@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(dynamic_ids_remain_live_in_scripts_interpreter_and_format_s
     InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("answer = 7", context));
     BOOST_TEST(answer == 7);
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("$(\"value={answer}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$(\"value={answer}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "value=7");
 }
 

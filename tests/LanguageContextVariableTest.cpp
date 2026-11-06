@@ -201,16 +201,16 @@ BOOST_AUTO_TEST_CASE(interpreter_and_formatting_resolve_global_handles_in_multip
     InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("first.value = 17", context));
     BOOST_REQUIRE(context.getInterpreter().execute("second.value = 29", context));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("second.value", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.value", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
     BOOST_REQUIRE(context.getInterpreter().execute("second.value = first.value + second.value", context));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("$(\"{first.value}:{second.value}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$(\"{first.value}:{second.value}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "17:46");
     BOOST_REQUIRE(context.getInterpreter().execute("first.name = \"first\"", context));
     BOOST_REQUIRE(context.getInterpreter().execute("second.name = \"second\"", context));
     BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute("second.name = $\"{second.name}!\"", context),
         (context.getError() != nullptr ? *context.getError() : "Interpreter assignment failed"));
-    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("second.name", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.name", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "second!");
 
     auto compiler = runtime.createCompiler();

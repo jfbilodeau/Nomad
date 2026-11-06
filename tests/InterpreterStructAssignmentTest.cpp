@@ -89,7 +89,7 @@ BOOST_AUTO_TEST_CASE(named_roots_copy_nested_fields_and_preserve_shared_referenc
                 BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : source));
             };
             const auto integerResult = [&](const NomadString& source, NomadInteger expected) {
-                const auto success = context.getInterpreter().evaluateExpression(source, context);
+                const auto success = context.getInterpreter().execute(source, context);
                 BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : source));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == expected);
             };
@@ -98,7 +98,7 @@ BOOST_AUTO_TEST_CASE(named_roots_copy_nested_fields_and_preserve_shared_referenc
             execute("root.leaf = source\nroot.leaf.number = 41\nroot.leaf.text = \"changed\"");
             integerResult("source.number", 17);
             integerResult("root.leaf.number", 41);
-            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("source.text", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("source.text", context));
             BOOST_TEST(context.getResult()->getValue().getStringValue() == "owned assignment");
             execute("root.leaf = root.leaf");
             BOOST_TEST(context.getResult()->getType() == runtime.getTypeByName("AssignmentLeaf"));
@@ -176,7 +176,7 @@ BOOST_AUTO_TEST_CASE(frame_updates_preserve_rhs_sibling_changes_and_original_cal
         BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : source));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
         const auto* sibling = callable->getClassType() == nullptr ? "local.sibling" : "this.sibling";
-        BOOST_REQUIRE(context.getInterpreter().evaluateExpression(sibling, context));
+        BOOST_REQUIRE(context.getInterpreter().execute(sibling, context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 71);
         BOOST_TEST(machine->getCurrentCallable() == callable);
         BOOST_TEST(machine->getInstructionIndex() == instructionIndex);
