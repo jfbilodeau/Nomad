@@ -279,10 +279,17 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
                 RuntimeValue{NomadString{"new first"}}, RuntimeValue{NomadString{"new second"}}};
             context.setVariable("root", root, oldValues);
             context.setVariable("source", pair, newValues);
-            root->freeValue(oldValues.data());
             pair->freeValue(newValues.data());
+            field->copyCount = 0;
+            field->failCopyAt = 0;
+            BOOST_REQUIRE(context.getInterpreter().execute("root.pair = source", context));
+            const auto copyStages = field->copyCount;
+            BOOST_REQUIRE(copyStages > 0);
+            context.clearResult();
+            context.setVariable("root", root, oldValues);
+            root->freeValue(oldValues.data());
             const auto live = RuntimeValue::getLiveStringCount();
-            for (const auto failAt : {2, 6, 8, 10, 12, 14}) {
+            for (NomadIndex failAt = 1; failAt <= copyStages; ++failAt) {
                 field->copyCount = 0;
                 field->failCopyAt = failAt;
                 BOOST_TEST(!context.getInterpreter().execute("root.pair = source", context));

@@ -235,19 +235,7 @@ void ExpressionArgument::onCompile(Compiler* compiler, ScriptCallableBase* funct
 }
 
 InterpreterValue ExpressionArgument::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
-    const auto* value = context.getResult();
-
-    if (value == nullptr) {
-        if (context.hasError()) {
-            // The caller stops on the reported error; the returned value is never used.
-            return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
-        }
-
-        throw AstException("Argument expression did not produce a value", getLine(), getColumn());
-    }
-
-    return *value;
+    return m_expression->evaluate(context);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -80,6 +80,7 @@ public:
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const Type* type, std::span<const RuntimeValue> storage);
     void setResult(const InterpreterValue& value);
+    void setResult(InterpreterValue&& value);
     void setVoidResult();
     void clearResult();
     [[nodiscard]] const InterpreterValue* getResult() const;

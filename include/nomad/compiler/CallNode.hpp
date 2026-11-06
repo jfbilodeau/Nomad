@@ -32,14 +32,8 @@ public:
 
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
     void compile(Compiler* compiler, ScriptCallableBase* function) const;
-    // Evaluates right-to-left, retaining values in logical parameter order. Stops at the first reported error.
-    void evaluate(InterpreterContext& context, std::vector<InterpreterValue>& evaluatedArguments) const;
-    // Scalar adapter; entries of values borrow ownership from evaluatedArguments.
-    void evaluate(
-        InterpreterContext& context,
-        std::vector<InterpreterValue>& evaluatedArguments,
-        std::vector<RuntimeValue>& values
-    ) const;
+    // Evaluates right-to-left, retaining values in logical parameter order.
+    [[nodiscard]] std::vector<InterpreterValue> evaluate(InterpreterContext& context) const;
 
     [[nodiscard]]
     NomadIndex getArgumentCount() const;
@@ -107,7 +101,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_name;

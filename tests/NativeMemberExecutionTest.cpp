@@ -119,10 +119,10 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
         auto machine = runtime.createVirtualMachine();
         const Interpreter evaluationEvaluator(*machine);
         InterpreterContext evaluation(evaluationEvaluator);
-        expression.evaluate(evaluation);
+        const auto result = expression.evaluate(evaluation);
         BOOST_REQUIRE(!evaluation.hasError());
-        BOOST_REQUIRE(evaluation.getResult() != nullptr);
-        BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 7);
+        BOOST_TEST(result.getValue().getIntegerValue() == 7);
+        BOOST_TEST(evaluation.getResult() == nullptr);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == liveObjects);
 

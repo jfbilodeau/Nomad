@@ -137,43 +137,31 @@ void Expression::compileAssignment(Compiler* compiler, ScriptCallableBase*, Expr
     compiler->reportInternalError("Invalid assignment target");
 }
 
-void Expression::evaluateAssignment(InterpreterContext&, const Expression*) const {
+InterpreterValue Expression::evaluateAssignment(InterpreterContext&, const Expression*) const {
     raiseException("Invalid assignment target");
 }
 
-void Expression::evaluate(InterpreterContext& context) const {
-    context.clearResult();
+InterpreterValue Expression::evaluate(InterpreterContext& context) const {
     if (context.hasError()) {
-        return;
+        raiseException(*context.getError());
     }
-
-    try {
-        if (isParsed()) {
-            context.setResult(m_type, m_value);
-            return;
-        }
-
-        if (m_type == nullptr) {
-            raiseException("Expression has not been resolved");
-        }
-
-        onEvaluate(context);
-        if (context.hasError()) {
-            context.clearResult();
-            return;
-        }
-        const auto* value = context.getResult();
-
-        if (value == nullptr || !value->getType()->sameType(m_type)) {
-            raiseException("VirtualMachine expression produced a value with an unexpected type");
-        }
-    } catch (...) {
-        context.clearResult();
-        throw;
+    if (isParsed()) {
+        return InterpreterValue(m_type, m_value);
     }
+    if (m_type == nullptr) {
+        raiseException("Expression has not been resolved");
+    }
+    auto value = onEvaluate(context);
+    if (context.hasError()) {
+        raiseException(*context.getError());
+    }
+    if (!value.getType()->sameType(m_type)) {
+        raiseException("Interpreter expression produced a value with an unexpected type");
+    }
+    return value;
 }
 
-void Expression::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue Expression::onEvaluate(InterpreterContext& /*context*/) const {
     raiseException("Expression is not supported by the interpreter");
 }
 
@@ -309,20 +297,14 @@ std::unique_ptr<InterpreterValue> UnaryExpression::getInitialValue(Compiler* com
     return result;
 }
 
-void UnaryExpression::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
-    const auto* evaluatedOperand = context.getResult();
-    if (evaluatedOperand == nullptr) {
-        return;
-    }
-
-    const InterpreterValue operand(*evaluatedOperand);
+InterpreterValue UnaryExpression::onEvaluate(InterpreterContext& context) const {
+    const auto operand = m_expression->evaluate(context);
     RuntimeValue result;
     if (!context.getRuntime()->foldUnary(m_unaryOperator, operand.getType(), operand.getValue(), result)) {
         raiseException("Cannot evaluate unary operator '" + toString(m_unaryOperator) + "'");
     }
 
-    context.setResult(getType(), result);
+    return InterpreterValue(getType(), result);
 }
 
 DynamicFormatExpression::DynamicFormatExpression(const Expression* parent, const NomadIndex line,
@@ -352,23 +334,20 @@ void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptCallableBase* 
     compiler->addMoveResult(getType(), target);
 }
 
-void DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
-    const auto* value = context.getResult();
-    if (value == nullptr) {
-        return;
-    }
-    const auto format = value->getType()->toString(value->getValue());
+InterpreterValue DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
+    const auto value = m_expression->evaluate(context);
+    const auto format = value.getType()->toString(value.getValue());
     const auto result = formatDynamicString(format, context, context.getCallable()->getPath(), getLine(), getColumn());
     RuntimeValue formatted;
     formatted.setStringValue(result.text);
     try {
-        context.setResult(getType(), formatted);
+        InterpreterValue formattedValue(getType(), formatted);
+        getType()->freeValue(&formatted);
+        return formattedValue;
     } catch (...) {
         getType()->freeValue(&formatted);
         throw;
     }
-    getType()->freeValue(&formatted);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -503,32 +482,19 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptCallableBase* functio
     compiler->addMoveResult(getType(), target);
 }
 
-void BinaryExpression::onEvaluate(InterpreterContext& context) const {
-    m_left->evaluate(context);
-    const auto* evaluatedLhs = context.getResult();
-    if (evaluatedLhs == nullptr) {
-        return;
-    }
-
-    const InterpreterValue lhs(*evaluatedLhs);
+InterpreterValue BinaryExpression::onEvaluate(InterpreterContext& context) const {
+    const auto lhs = m_left->evaluate(context);
 
     // Resolution guarantees logical operators have boolean operands.
     if (m_binaryOperator == BinaryOperator::AndAnd || m_binaryOperator == BinaryOperator::PipePipe) {
         const auto lhsValue = lhs.getValue().getBooleanValue();
         if ((m_binaryOperator == BinaryOperator::AndAnd && !lhsValue) ||
             (m_binaryOperator == BinaryOperator::PipePipe && lhsValue)) {
-            context.setResult(getType(), RuntimeValue{lhsValue});
-            return;
+            return InterpreterValue(getType(), RuntimeValue{lhsValue});
         }
     }
 
-    m_right->evaluate(context);
-    const auto* evaluatedRhs = context.getResult();
-    if (evaluatedRhs == nullptr) {
-        return;
-    }
-
-    const InterpreterValue rhs(*evaluatedRhs);
+    const auto rhs = m_right->evaluate(context);
     RuntimeValue result;
     if (!context.getRuntime()->foldBinary(
         m_binaryOperator,
@@ -541,7 +507,7 @@ void BinaryExpression::onEvaluate(InterpreterContext& context) const {
         raiseException("Cannot evaluate binary operator '" + toString(m_binaryOperator) + "'");
     }
 
-    context.setResult(getType(), result);
+    return InterpreterValue(getType(), result);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -669,23 +635,15 @@ NomadIndex FunctionCallExpression::getArgumentCount() const {
     return m_arguments.getArgumentCount();
 }
 
-void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    std::vector<InterpreterValue> evaluatedArguments;
-    m_arguments.evaluate(context, evaluatedArguments);
-    if (context.hasError()) {
-        return;
-    }
-
-    const auto result = context.getInterpreter().callFunction(
+    const auto evaluatedArguments = m_arguments.evaluate(context);
+    return context.getInterpreter().callFunction(
         m_function->getId(),
         evaluatedArguments
     );
-    if (!context.hasError()) {
-        context.setResult(result);
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1069,7 +1027,7 @@ void NativeMemberExpression::onCompileIntoReturn(Compiler* compiler, ScriptCalla
     }
 }
 
-void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     if (m_memberType == MemberType::Unknown) {
         raiseException("Native member has not been resolved: " + m_qualifiedName);
     }
@@ -1080,91 +1038,51 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
         if (property->asNativeProperty() == nullptr) {
-            m_receiver->evaluate(context);
-            if (context.hasError()) {
-                return;
-            }
-            const auto* evaluatedReceiver = context.getResult();
-            if (evaluatedReceiver == nullptr) {
-                context.setError("Stored property receiver did not produce a value");
-                return;
-            }
-            const InterpreterValue receiver(*evaluatedReceiver);
+            const auto receiver = m_receiver->evaluate(context);
             if (receiver.getType()->isStruct()) {
-                context.setResult(context.getInterpreter().getProperty(receiver, property->getId()));
-            } else {
-                const auto* object = dynamic_cast<const ScriptObject*>(receiver.getValue().getObjectValue());
-                if (object == nullptr || object->getClassType() != property->getOwnerType()) {
-                    context.getVirtualMachine()->fault("Stored property receiver has no matching field storage");
-                }
-                context.setResult(getType(), object->getFieldStorage(
-                    property->getOwnerType()->getFieldIndex(property->getId())));
+                return context.getInterpreter().getProperty(receiver, property->getId());
             }
-            return;
+            const auto* object = dynamic_cast<const ScriptObject*>(receiver.getValue().getObjectValue());
+            if (object == nullptr || object->getClassType() != property->getOwnerType()) {
+                context.getVirtualMachine()->fault("Stored property receiver has no matching field storage");
+            }
+            return InterpreterValue(getType(), object->getFieldStorage(
+                property->getOwnerType()->getFieldIndex(property->getId())));
         }
     }
     if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
-        context.setError("Struct member values are not supported by the interpreter");
-        return;
+        raiseException("Struct member values are not supported by the interpreter");
     }
-    m_receiver->evaluate(context);
-    if (context.hasError()) {
-        return;
-    }
-    const auto* evaluatedReceiver = context.getResult();
-    if (evaluatedReceiver == nullptr) {
-        if (!context.hasError()) {
-            context.setError("Native member receiver did not produce a value");
-        }
-        return;
-    }
-
+    const auto receiver = m_receiver->evaluate(context);
     if (m_memberType == MemberType::Method) {
-        const InterpreterValue receiver(*evaluatedReceiver);
-        std::vector<InterpreterValue> evaluatedArguments;
-        m_arguments.evaluate(context, evaluatedArguments);
-        if (context.hasError()) {
-            return;
-        }
-        const auto result = context.getInterpreter().callMethod(
+        const auto evaluatedArguments = m_arguments.evaluate(context);
+        return context.getInterpreter().callMethod(
             receiver,
             m_method->getId(),
             evaluatedArguments
         );
-        if (!context.hasError()) {
-            context.setResult(result);
-        }
-        return;
     }
-
-    const auto* receiverType = m_receiver->getType();
-    RuntimeValue receiver;
-    receiverType->copyValue(&evaluatedReceiver->getValue(), &receiver);
 
     auto* runtime = context.getRuntime();
     if (m_memberType == MemberType::Property) {
         const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
         if (property == nullptr) {
-            receiverType->freeValue(&receiver);
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
         const auto* valueType = property->getValueType();
         RuntimeValue result;
 
         try {
-            context.getVirtualMachine()->getProperty(std::get<PropertyId>(m_memberId), receiver, result);
-            context.setResult(valueType, result);
+            context.getVirtualMachine()->getProperty(std::get<PropertyId>(m_memberId), receiver.getValue(), result);
+            InterpreterValue value(valueType, result);
+            valueType->freeValue(&result);
+            return value;
         } catch (...) {
             valueType->freeValue(&result);
-            receiverType->freeValue(&receiver);
             throw;
         }
-        valueType->freeValue(&result);
-        receiverType->freeValue(&receiver);
-        return;
     }
 
-    receiverType->freeValue(&receiver);
     raiseException("Unsupported interpreter member: " + m_qualifiedName);
 }
 
@@ -1184,49 +1102,23 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallabl
     receiverType->emitFreeIntermediate(*compiler);
 }
 
-void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
+InterpreterValue NativeMemberExpression::evaluateAssignment(
+    InterpreterContext& context,
+    const Expression* expression
+) const {
     if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
-        context.setError("Struct member values are not supported by the interpreter");
-        return;
+        raiseException("Struct member values are not supported by the interpreter");
     }
-    m_receiver->evaluate(context);
-    const auto* evaluatedReceiver = context.getResult();
-    if (evaluatedReceiver == nullptr) {
-        if (!context.hasError()) {
-            context.setError("Native property receiver did not produce a value");
-        }
-        return;
-    }
-
-    const auto* receiverType = m_receiver->getType();
-    RuntimeValue receiver;
-    receiverType->copyValue(&evaluatedReceiver->getValue(), &receiver);
-
-    expression->evaluate(context);
-    const auto* assignedValue = context.getResult();
-    if (assignedValue == nullptr) {
-        receiverType->freeValue(&receiver);
-        if (!context.hasError()) {
-            context.setError("Native property assignment did not produce a value");
-        }
-        return;
-    }
+    const auto receiver = m_receiver->evaluate(context);
+    auto assignedValue = expression->evaluate(context);
 
     const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
     if (property == nullptr) {
-        receiverType->freeValue(&receiver);
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
-
-    try {
-        context.getVirtualMachine()->setProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
-        context.setResult(property->getValueType(), assignedValue->getValue());
-    } catch (...) {
-        receiverType->freeValue(&receiver);
-        throw;
-    }
-
-    receiverType->freeValue(&receiver);
+    context.getVirtualMachine()->setProperty(std::get<PropertyId>(m_memberId), receiver.getValue(),
+        assignedValue.getValue());
+    return InterpreterValue(property->getValueType(), assignedValue.getValue());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1322,35 +1214,23 @@ void IndexerExpression::compileAssignment(Compiler* compiler, ScriptCallableBase
     compiler->addId(m_indexerId.id);
 }
 
-void IndexerExpression::onEvaluate(InterpreterContext& context) const {
-    evaluateIndexer(context);
+InterpreterValue IndexerExpression::onEvaluate(InterpreterContext& context) const {
+    return evaluateIndexer(context);
 }
 
-void IndexerExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
-    evaluateIndexer(context, expression);
+InterpreterValue IndexerExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
+    return evaluateIndexer(context, expression);
 }
 
-void IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expression* assigned) const {
-    m_receiver->evaluate(context);
-    if (context.hasError()) {
-        return;
-    }
-    const InterpreterValue receiver(*context.getResult());
+InterpreterValue IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expression* assigned) const {
+    const auto receiver = m_receiver->evaluate(context);
     std::vector<InterpreterValue> arguments;
     arguments.reserve(m_indexes.size() + (assigned != nullptr ? 1 : 0));
     if (assigned != nullptr) {
-        assigned->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        arguments.emplace_back(*context.getResult());
+        arguments.push_back(assigned->evaluate(context));
     }
     for (const auto& index : std::ranges::reverse_view(m_indexes)) {
-        index->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        arguments.emplace_back(*context.getResult());
+        arguments.push_back(index->evaluate(context));
     }
     std::vector<RuntimeValue> values;
     values.reserve(arguments.size());
@@ -1361,18 +1241,16 @@ void IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expre
     try {
         machine->runNativeIndexer(m_indexerId, values, receiver.getValue(), assigned != nullptr);
         if (assigned != nullptr) {
-            context.setResult(arguments.front());
-        } else {
-            context.setResult(getType(), machine->getResult());
+            return arguments.front();
         }
+        InterpreterValue result(getType(), machine->getResult());
+        getType()->freeValue(&machine->getResult());
+        return result;
     } catch (...) {
         if (assigned == nullptr) {
             getType()->freeValue(&machine->getResult());
         }
         throw;
-    }
-    if (assigned == nullptr) {
-        getType()->freeValue(&machine->getResult());
     }
 }
 
@@ -1559,22 +1437,15 @@ void ConstructorExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallab
     compiler->addStructCreationIntoReturn(m_constructor->getId(), function, &m_arguments);
 }
 
-void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    std::vector<InterpreterValue> evaluatedArguments;
-    m_arguments.evaluate(context, evaluatedArguments);
-    if (context.hasError()) {
-        return;
-    }
-    const auto result = context.getInterpreter().construct(
+    const auto evaluatedArguments = m_arguments.evaluate(context);
+    return context.getInterpreter().construct(
         m_constructor->getId(),
         evaluatedArguments
     );
-    if (!context.hasError()) {
-        context.setResult(result);
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1647,10 +1518,10 @@ void ConstantValueExpression::onCompile(Compiler* compiler, ScriptCallableBase* 
     compiler->addLoadConstant(m_constantId, target);
 }
 
-void ConstantValueExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue ConstantValueExpression::onEvaluate(InterpreterContext& context) const {
     RuntimeValue value;
     context.getRuntime()->getConstantValue(m_constantId, value);
-    context.setResult(getType(), value);
+    return InterpreterValue(getType(), value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1835,18 +1706,19 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* func
     compiler->addMoveResult(getType(), target);
 }
 
-void FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
+InterpreterValue FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
     const auto result = formatDynamicString(m_formatString, context, context.getCallable()->getPath(),
         getLine(), getColumn());
     RuntimeValue value;
     value.setStringValue(result.text);
     try {
-        context.setResult(getType(), value);
+        InterpreterValue formattedValue(getType(), value);
+        getType()->freeValue(&value);
+        return formattedValue;
     } catch (...) {
         getType()->freeValue(&value);
         throw;
     }
-    getType()->freeValue(&value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2149,27 +2021,23 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
     }
 }
 
-void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Receiver: {
         if (getType()->isStruct()) {
-            context.setResult(getType(), context.getReceiverStorage());
-            break;
+            return InterpreterValue(getType(), context.getReceiverStorage());
         }
         RuntimeValue receiver;
         receiver.setObjectValue(context.getVirtualMachine()->getThis());
-        context.setResult(getType(), receiver);
-        break;
+        return InterpreterValue(getType(), receiver);
     }
     case IdentifierType::Constant: {
         RuntimeValue value;
         context.getRuntime()->getConstantValue(m_identifierDefinition.constantId, value);
-        context.setResult(getType(), value);
-        break;
+        return InterpreterValue(getType(), value);
     }
     case IdentifierType::Parameter:
-        context.setParameterResult(m_identifierDefinition.parameterId);
-        break;
+        return InterpreterValue(getType(), context.getParameterStorage(m_identifierDefinition.parameterId));
     case IdentifierType::FunctionVariable: {
         const auto* actualType = context.getVariableTypeById(m_identifierDefinition.variableId);
         if (actualType == nullptr) {
@@ -2178,8 +2046,7 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         if (actualType != getType()) {
             raiseException("Variable '" + m_identifier + "' changed type after this expression was resolved");
         }
-        context.setResult(actualType, context.getVariableStorageById(m_identifierDefinition.variableId));
-        break;
+        return InterpreterValue(actualType, context.getVariableStorageById(m_identifierDefinition.variableId));
     }
 
     case IdentifierType::DynamicVariable: {
@@ -2190,21 +2057,23 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         }
 
         RuntimeValue value;
-        runtime->getDynamicVariableValue(
-            context.getVirtualMachine(),
-            m_identifierDefinition.dynamicVariableId,
-            value
-        );
-
-        // Getters may leave a string untouched when the value is unavailable.
-        if (type->isString() && value.getObjectValue() == nullptr) {
-            value.initStringValue();
+        try {
+            runtime->getDynamicVariableValue(
+                context.getVirtualMachine(),
+                m_identifierDefinition.dynamicVariableId,
+                value
+            );
+            // Getters may leave a string untouched when the value is unavailable.
+            if (type->isString() && value.getObjectValue() == nullptr) {
+                value.initStringValue();
+            }
+            InterpreterValue result(type, value);
+            type->freeValue(&value);
+            return result;
+        } catch (...) {
+            type->freeValue(&value);
+            throw;
         }
-
-        // `setResult` copies the value, so the temporary is released here.
-        context.setResult(type, value);
-        type->freeValue(&value);
-        break;
     }
 
     case IdentifierType::ContextVariable: {
@@ -2226,13 +2095,17 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         if (type->isString() && value.getObjectValue() == nullptr) {
             RuntimeValue emptyValue;
             emptyValue.initStringValue();
-            context.setResult(type, emptyValue);
-            emptyValue.freeObjectValue();
-            break;
+            try {
+                InterpreterValue result(type, emptyValue);
+                emptyValue.freeObjectValue();
+                return result;
+            } catch (...) {
+                emptyValue.freeObjectValue();
+                throw;
+            }
         }
 
-        context.setResult(type, value);
-        break;
+        return InterpreterValue(type, value);
     }
 
     default:

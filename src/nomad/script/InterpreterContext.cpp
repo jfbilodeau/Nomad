@@ -328,6 +328,10 @@ void InterpreterContext::setResult(const InterpreterValue& value) {
     m_result = std::move(replacement);
 }
 
+void InterpreterContext::setResult(InterpreterValue&& value) {
+    m_result = std::move(value);
+}
+
 void InterpreterContext::clearResult() {
     m_result.reset();
 }

@@ -24,8 +24,8 @@ public:
     }
 
 protected:
-    void onEvaluate(InterpreterContext& context) const override {
-        context.setVoidResult();
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override {
+        return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
 };
 
@@ -61,6 +61,7 @@ BOOST_AUTO_TEST_CASE(statement_execution_assigns_interpreter_local_variables)
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator);
     StatementList statements;
+    context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{99}});
 
     statements.addStatement(std::make_unique<AssignmentStatement>(
         0,
@@ -77,15 +78,16 @@ BOOST_AUTO_TEST_CASE(statement_execution_assigns_interpreter_local_variables)
     ));
 
     BOOST_REQUIRE(statements.resolve(&compilerContextForStatements, nullptr));
-    statements.evaluate(context);
+    const auto result = statements.evaluate(context);
 
     const auto* score = context.getVariableValue("score");
     BOOST_REQUIRE(score != nullptr);
     BOOST_TEST(context.getVariableType("score") == runtime.getIntegerType());
     BOOST_TEST(score->getIntegerValue() == 17);
+    BOOST_TEST(result.getType() == runtime.getIntegerType());
+    BOOST_TEST(result.getValue().getIntegerValue() == 17);
     BOOST_REQUIRE(context.getResult() != nullptr);
-    BOOST_TEST(context.getResult()->getType() == runtime.getIntegerType());
-    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 99);
 }
 
 BOOST_AUTO_TEST_CASE(statement_execution_allows_assignment_type_changes)
@@ -105,7 +107,8 @@ BOOST_AUTO_TEST_CASE(statement_execution_allows_assignment_type_changes)
     );
 
     resolveForInterpreter(compiler.get(), assignment);
-    assignment.evaluate(context);
+    const auto result = assignment.evaluate(context);
+    BOOST_TEST(result.getValue().getBooleanValue());
 
     const auto* score = context.getVariableValue("score");
     BOOST_REQUIRE(score != nullptr);
@@ -283,9 +286,9 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpret
     auto statement = parser::parseLine(&tokenizerContext, nullptr, &tokenizer);
     BOOST_REQUIRE(statement != nullptr);
     resolveForInterpreter(compiler.get(), *statement);
-    statement->evaluate(context);
-    BOOST_REQUIRE(context.getResult() != nullptr);
-    BOOST_TEST(context.getResult()->getType()->isVoid());
+    const auto result = statement->evaluate(context);
+    BOOST_TEST(result.getType()->isVoid());
+    BOOST_TEST(context.getResult() == nullptr);
 
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{17}});
     BOOST_REQUIRE(context.getInterpreter().execute("incrementScore score", context));
@@ -308,9 +311,8 @@ BOOST_AUTO_TEST_CASE(expression_statement_evaluates_and_compiles)
     );
 
     resolveForInterpreter(compiler.get(), *statement);
-    statement->evaluate(context);
-    BOOST_REQUIRE(context.getResult() != nullptr);
-    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 10);
+    const auto result = statement->evaluate(context);
+    BOOST_TEST(result.getValue().getIntegerValue() == 10);
     BOOST_CHECK_NO_THROW(statement->compile(compiler.get(), nullptr));
 }
 
@@ -337,11 +339,10 @@ BOOST_AUTO_TEST_CASE(expression_execution_calls_registered_nativeFunctions_witho
     Tokenizer tokenizer(&tokenizerContext, "test.nomad", "identity \"console\"");
     auto expression = parser::parseExpression(&tokenizerContext, nullptr, &tokenizer);
     resolveForInterpreter(compiler.get(), *expression);
-    expression->evaluate(context);
-
-    BOOST_REQUIRE(context.getResult() != nullptr);
-    BOOST_TEST(context.getResult()->getType() == runtime.getStringType());
-    BOOST_TEST(context.getResult()->getValue().getStringValue() == "console");
+    const auto result = expression->evaluate(context);
+    BOOST_TEST(result.getType() == runtime.getStringType());
+    BOOST_TEST(result.getValue().getStringValue() == "console");
+    BOOST_TEST(context.getResult() == nullptr);
     BOOST_TEST(!context.hasError());
 }
 
@@ -370,11 +371,10 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_registered_void_nativeFunctions)
     auto statement = parser::parseLine(&tokenizerContext, nullptr, &tokenizer);
     BOOST_REQUIRE(statement != nullptr);
     resolveForInterpreter(compiler.get(), *statement);
-    statement->evaluate(context);
+    const auto result = statement->evaluate(context);
 
     BOOST_TEST(calledValue == 42);
-    BOOST_REQUIRE(context.getResult() != nullptr);
-    BOOST_TEST(context.getResult()->getType()->isVoid());
+    BOOST_TEST(result.getType()->isVoid());
     BOOST_TEST(!context.hasError());
 }
 

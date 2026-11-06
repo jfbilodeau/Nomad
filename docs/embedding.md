@@ -2259,6 +2259,25 @@ not register input as a compiled function. Declarations, `return`, assertions,
 and inline callbacks remain unsupported by the interpreter. Loops execute
 synchronously on the caller's thread.
 
+Resolved AST nodes can also be evaluated directly. `Expression::evaluate`,
+`Statement::evaluate`, and `StatementList::evaluate` return owned
+`InterpreterValue` values rather than publishing intermediate values through
+the context. Expressions return their value, assignments return the assigned
+snapshot, and statements without a value return typed `void`. Statement lists
+return the last executed statement's value. `ArgumentList::evaluate` returns
+owned arguments in logical parameter order after evaluating them right-to-left.
+
+Direct AST evaluation throws on execution failure. `execute` converts those
+failures to diagnostics and publishes the final successful result in the
+context; explicit host callers can publish a returned value with
+`context.setResult(value)`. Struct values retain independent storage, without
+interpreter return-destination forwarding or RVO. Bindings, diagnostics, and loop
+control remain in the context. Property/indexer assignments preserve their
+receiver and right-hand-side evaluation order.
+
+Publishing an lvalue with `setResult(value)` copies it; publishing an owned
+temporary or `std::move(value)` transfers its ownership into the context.
+
 Call and constructor arguments evaluate right-to-left, matching compiled code;
 method receivers still evaluate before their arguments. This also applies to
 existing scalar interpreter calls, which previously evaluated arguments

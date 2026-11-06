@@ -33,7 +33,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
     UnaryOperator m_unaryOperator;
     std::unique_ptr<Expression> m_expression;
@@ -49,7 +49,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     std::unique_ptr<Expression> m_expression;
@@ -69,7 +69,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
     BinaryOperator m_binaryOperator;
     std::unique_ptr<Expression> m_left;
@@ -102,7 +102,7 @@ protected:
         VariableId destination
     ) override;
     void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_name;
@@ -135,7 +135,7 @@ public:
     ) override;
     void setAllowVoid(bool allowVoid);
     void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) override;
-    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
+    [[nodiscard]] InterpreterValue evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -146,7 +146,7 @@ protected:
         VariableId destination
     ) override;
     void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     [[nodiscard]] bool resolveMember(
@@ -182,17 +182,17 @@ public:
         CompilerContext* context, ScriptCallableBase* function, const Type* valueType = nullptr
     ) override;
     void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) override;
-    void evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
+    [[nodiscard]] InterpreterValue evaluateAssignment(InterpreterContext& context, const Expression* expression) const override;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     [[nodiscard]] bool resolveIndexer(CompilerContext* context, ScriptCallableBase* function);
     void compileOperands(Compiler* compiler, ScriptCallableBase* function, Expression* assigned = nullptr);
-    void evaluateIndexer(InterpreterContext& context, const Expression* assigned = nullptr) const;
+    [[nodiscard]] InterpreterValue evaluateIndexer(InterpreterContext& context, const Expression* assigned = nullptr) const;
 
     std::unique_ptr<Expression> m_receiver;
     std::vector<std::unique_ptr<Expression>> m_indexes;
@@ -273,7 +273,7 @@ protected:
         VariableId destination
     ) override;
     void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_constructorName;
@@ -304,7 +304,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     struct ExpressionPlaceholder {
@@ -326,7 +326,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_constantName;
@@ -357,7 +357,7 @@ protected:
         ScriptCallableBase* function,
         VariableId destination
     ) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     bool parseCapture(const Compiler* compiler, ScriptCallableBase* function);

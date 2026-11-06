@@ -37,7 +37,14 @@ const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptCa
 }
 
 InterpreterValue Argument::evaluate(InterpreterContext& context) const {
-    return onEvaluate(context);
+    if (context.hasError()) {
+        raiseException(*context.getError());
+    }
+    auto value = onEvaluate(context);
+    if (context.hasError()) {
+        raiseException(*context.getError());
+    }
+    return value;
 }
 
 InterpreterValue Argument::onEvaluate(InterpreterContext& /*context*/) const {
@@ -153,34 +160,14 @@ void ArgumentList::compile(Compiler* compiler, ScriptCallableBase* function) con
     }
 }
 
-void ArgumentList::evaluate(
-    InterpreterContext& context,
-    std::vector<InterpreterValue>& evaluatedArguments
-) const {
+std::vector<InterpreterValue> ArgumentList::evaluate(InterpreterContext& context) const {
+    std::vector<InterpreterValue> evaluatedArguments;
     evaluatedArguments.reserve(m_arguments.size());
     for (auto argument = m_arguments.rbegin(); argument != m_arguments.rend(); ++argument) {
-        auto value = (*argument)->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        evaluatedArguments.push_back(std::move(value));
+        evaluatedArguments.push_back((*argument)->evaluate(context));
     }
     std::reverse(evaluatedArguments.begin(), evaluatedArguments.end());
-}
-
-void ArgumentList::evaluate(
-    InterpreterContext& context,
-    std::vector<InterpreterValue>& evaluatedArguments,
-    std::vector<RuntimeValue>& values
-) const {
-    evaluate(context, evaluatedArguments);
-    if (context.hasError()) {
-        return;
-    }
-    values.reserve(evaluatedArguments.size());
-    for (const auto& value : evaluatedArguments) {
-        values.push_back(value.getValue());
-    }
+    return evaluatedArguments;
 }
 
 NomadIndex ArgumentList::getArgumentCount() const {
@@ -332,23 +319,16 @@ void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase
     }
 }
 
-void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
+InterpreterValue FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    std::vector<InterpreterValue> evaluatedArguments;
-    getArguments()->evaluate(context, evaluatedArguments);
-    if (context.hasError()) {
-        return;
-    }
-
+    const auto evaluatedArguments = getArguments()->evaluate(context);
     static_cast<void>(context.getInterpreter().callFunction(
         m_function->getId(),
         evaluatedArguments
     ));
-    if (!context.hasError()) {
-        context.setVoidResult();
-    }
+    return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
 }
 
 } // namespace nomad

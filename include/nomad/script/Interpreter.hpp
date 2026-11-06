@@ -10,6 +10,8 @@
 #include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/Property.hpp>
 
+#include <optional>
+
 namespace nomad {
 
 struct StructMethodResult {
@@ -83,7 +85,7 @@ private:
     void runFunction(const Function& function) const;
     void runMethod(const Method& method) const;
 
-    [[nodiscard]] bool evaluateFormatExpression(
+    [[nodiscard]] std::optional<InterpreterValue> evaluateFormatExpression(
         const SourceText& source,
         InterpreterContext& context,
         NomadIndex sourceLine

@@ -3025,8 +3025,8 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_receivers_but_reject
     VirtualMachine machine(&runtime);
     const Interpreter interpreterEvaluator(machine);
     InterpreterContext interpreter(interpreterEvaluator);
-    expression.evaluate(interpreter);
-    BOOST_REQUIRE(interpreter.hasError());
+    BOOST_CHECK_THROW(static_cast<void>(expression.evaluate(interpreter)), AstException);
+    BOOST_TEST(!interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);
     BOOST_TEST(calls == 1);
     const auto scriptId = runtime.registerScriptMethod(typeId, "checkProperties", {}, "properties.nomad", "");

@@ -117,18 +117,18 @@ NomadBoolean Statement::isDeclaration() const {
 void Statement::checkReachability(CompilerContext* /*context*/, const ScriptCallableBase* /*function*/) const {
 }
 
-void Statement::evaluate(InterpreterContext& context) const {
-    context.clearResult();
-    if (context.hasError() || context.getLoopControl() != LoopControl::None) {
-        return;
+InterpreterValue Statement::evaluate(InterpreterContext& context) const {
+    if (context.hasError()) {
+        raiseException(*context.getError());
     }
-
-    try {
-        onEvaluate(context);
-    } catch (...) {
-        context.clearResult();
-        throw;
+    if (context.getLoopControl() != LoopControl::None) {
+        return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
+    auto value = onEvaluate(context);
+    if (context.hasError()) {
+        raiseException(*context.getError());
+    }
+    return value;
 }
 
 void Statement::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
@@ -139,7 +139,7 @@ void Statement::onCompile(Compiler* /*compiler*/, ScriptCallableBase* /*function
     // Default implementation does nothing
 }
 
-void Statement::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue Statement::onEvaluate(InterpreterContext& /*context*/) const {
     raiseException("Statement evaluation is not supported by the interpreter");
 }
 
@@ -154,8 +154,8 @@ void NullStatement::onCompile(nomad::Compiler* /*compiler*/, ScriptCallableBase*
     // Nothing to do...
 }
 
-void NullStatement::onEvaluate(InterpreterContext& context) const {
-    context.setVoidResult();
+InterpreterValue NullStatement::onEvaluate(InterpreterContext& context) const {
+    return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -530,18 +530,8 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     }
 }
 
-void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
-    const auto* value = context.getResult();
-    if (value == nullptr) {
-        if (context.hasError()) {
-            return;
-        }
-
-        raiseException("Assignment expression did not produce a value");
-    }
-
-    const InterpreterValue assignedValue(*value);
+InterpreterValue AssignmentStatement::onEvaluate(InterpreterContext& context) const {
+    auto assignedValue = m_expression->evaluate(context);
     const auto* type = assignedValue.getType();
 
     switch (m_identifierDefinition.identifierType) {
@@ -572,7 +562,7 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
         break;
     }
 
-    context.setResult(assignedValue);
+    return assignedValue;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -683,10 +673,9 @@ void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase
     m_target->compileAssignment(compiler, function, m_expression.get());
 }
 
-void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
+InterpreterValue MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
     if (m_propertyPath.empty()) {
-        m_target->evaluateAssignment(context, m_expression.get());
-        return;
+        return m_target->evaluateAssignment(context, m_expression.get());
     }
     const auto isReceiver = m_rootDefinition.identifierType == IdentifierType::Receiver;
     const auto* rootType = isReceiver ? context.getCallable()->getClassType() :
@@ -694,21 +683,13 @@ void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
     if (rootType != m_rootDefinition.valueType) {
         raiseException("Assignment root is unassigned or changed type");
     }
-    m_expression->evaluate(context);
-    if (context.hasError()) {
-        return;
-    }
-    const auto* result = context.getResult();
-    if (result == nullptr) {
-        raiseException("Assignment expression did not produce a value");
-    }
-    const InterpreterValue assigned(*result);
+    auto assigned = m_expression->evaluate(context);
     if (isReceiver) {
         context.setReceiverProperty(m_propertyPath, assigned);
     } else {
         context.setVariableProperty(m_rootName, m_propertyPath, assigned);
     }
-    context.setResult(assigned);
+    return assigned;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -741,8 +722,8 @@ void ExpressionStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     }
 }
 
-void ExpressionStatement::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
+InterpreterValue ExpressionStatement::onEvaluate(InterpreterContext& context) const {
+    return m_expression->evaluate(context);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -765,20 +746,20 @@ void StatementList::compile(Compiler* compiler, ScriptCallableBase* function) co
     }
 }
 
-void StatementList::evaluate(InterpreterContext& context) const {
+InterpreterValue StatementList::evaluate(InterpreterContext& context) const {
     if (context.hasError()) {
-        context.clearResult();
-        return;
+        throw AstException(*context.getError(), 0, 0);
     }
 
-    context.setVoidResult();
+    auto result = InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     for (const auto& statement: m_statements) {
-        if (context.hasError() || context.getLoopControl() != LoopControl::None) {
-            context.clearResult();
-            return;
+        if (context.getLoopControl() != LoopControl::None) {
+            break;
         }
-        statement->evaluate(context);
+        result = InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
+        result = statement->evaluate(context);
     }
+    return result;
 }
 
 void StatementList::addStatement(std::unique_ptr<Statement> statement) {

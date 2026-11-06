@@ -1251,26 +1251,16 @@ protected:
         }
     }
 
-    void onEvaluate(InterpreterContext& context) const override {
-        m_expression->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        if (context.getResult()->getValue().getBooleanValue()) {
-            m_body.evaluate(context);
-            return;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override {
+        if (m_expression->evaluate(context).getValue().getBooleanValue()) {
+            return m_body.evaluate(context);
         }
         for (const auto& branch : m_branches) {
-            branch.expression->evaluate(context);
-            if (context.hasError()) {
-                return;
-            }
-            if (context.getResult()->getValue().getBooleanValue()) {
-                branch.statements.evaluate(context);
-                return;
+            if (branch.expression->evaluate(context).getValue().getBooleanValue()) {
+                return branch.statements.evaluate(context);
             }
         }
-        m_elseStatements.evaluate(context);
+        return m_elseStatements.evaluate(context);
     }
 
 private:

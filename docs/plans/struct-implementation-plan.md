@@ -3245,6 +3245,47 @@ Implementation and validation:
 - No AST interface or implementation files were changed. Stop for review without
   committing; discuss AST signatures before any later AST-interface change.
 
+### Step 5D1 follow-up: Typed-value AST evaluation
+
+Approved scope:
+
+- Return owned `InterpreterValue` values from expression, statement, statement-list,
+  and assignment evaluation, including virtual `onEvaluate` methods.
+- Return owned argument values in logical parameter order without context-result
+  intermediates. Preserve receiver-first/right-to-left call evaluation, binary
+  operand order, short-circuiting, and property/indexer assignment order.
+- Keep the assignment RHS as an expression parameter to preserve sequencing.
+  Assignments return their assigned snapshot; statements without values return
+  typed void; statement lists preserve their existing observable result behavior.
+- Keep bindings, diagnostics, and loop control in the context. Internal AST failures
+  throw, `execute` reports diagnostics, and formatting retains its agreed contract.
+  No dummy value represents a failed AST evaluation.
+- Do not add interpreter RVO, source-level struct-method writeback, or compiler
+  lowering changes. Invocation orchestration and naming remain the next slice.
+- Validate, then stop for review without committing.
+
+Completed:
+
+- Migrated AST evaluators and direct callers to owned typed return values.
+  Source execution publishes only its final result; formatting consumes returned
+  placeholder values directly.
+- Added ownership-transfer publication for owned temporary values. This avoids
+  a fallible copy after an assignment has already committed, without interpreter
+  return-destination forwarding.
+- Added regressions for unchanged published context results during AST evaluation,
+  evaluation order, direct exceptions versus source diagnostics, and aggregate
+  result ownership beyond AST/VM lifetimes.
+- Expanded assignment failure injection to every measured copy stage, checking
+  unchanged destinations and released references on failure.
+- Validation passed: the `nomad_test` build, all six unit groups, compiler exports,
+  LSP process checks, four documentation-preparation tests, strict documentation
+  generation/build, and whitespace checks. No gameplay session was run.
+
+Next, after review: move invocation orchestration into `Interpreter`, expose only
+the necessary low-level VM operations, and consistently name public invocation
+APIs `runFunction`, `runObjectMethod`, and `runStructMethod`. Source-level
+struct-method writeback remains a separate follow-up.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

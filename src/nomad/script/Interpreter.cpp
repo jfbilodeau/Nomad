@@ -425,7 +425,7 @@ InterpreterValue Interpreter::setStoredProperty(
     }
 }
 
-bool Interpreter::evaluateFormatExpression(
+std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     const SourceText& source,
     InterpreterContext& evaluation,
     NomadIndex sourceLine
@@ -443,11 +443,11 @@ bool Interpreter::evaluateFormatExpression(
     Tokenizer tokens(&context, source.sourceName, NomadString(sourceLine - 1, '\n') + source.text);
     retainDiagnostics(evaluation, context.getDiagnostics(), source.sourceName);
     if (context.hasError()) {
-        return false;
+        return std::nullopt;
     }
     if (tokens.getLineCount() != sourceLine || !tokens.nextLine()) {
         reportInputError(evaluation, source, "Interpreter requires one non-empty expression");
-        return false;
+        return std::nullopt;
     }
     auto expression = parser::parseExpression(&context, function, &tokens);
     if (expression != nullptr && parser::expectEndOfLine(&context, function, &tokens)) {
@@ -457,21 +457,20 @@ bool Interpreter::evaluateFormatExpression(
     const auto retainedDiagnostics = evaluation.getDiagnostics().size();
     retainDiagnostics(evaluation, context.getDiagnostics().subspan(retainedDiagnostics), source.sourceName);
     if (context.hasError()) {
-        return false;
+        return std::nullopt;
     }
     if (expression == nullptr || expression->getType() == nullptr || expression->getType()->isVoid()) {
         reportInputError(evaluation, source, "Interpreter expression must return a value");
-        return false;
+        return std::nullopt;
     }
     auto* machine = evaluation.getVirtualMachine();
     const RegisterRestoration registers(*machine);
     try {
-        expression->evaluate(evaluation);
+        return expression->evaluate(evaluation);
     } catch (...) {
         evaluation.clearResult();
         throw;
     }
-    return !evaluation.hasError();
 }
 
 DynamicFormatResult Interpreter::formatString(
@@ -499,10 +498,9 @@ DynamicFormatResult Interpreter::formatString(
             const auto& diagnostic = parsed.diagnostics.at(*segment.diagnosticIndex);
             appendError(segment, diagnostic.message == "Missing '}' in format string"
                 ? "missing `}`" : "empty expression");
-        } else if (evaluateFormatExpression(
+        } else if (const auto value = evaluateFormatExpression(
             SourceText{NomadString{sourceName}, segment.text}, context, line
         )) {
-            const auto* value = context.getResult();
             result.text += value->getType()->toString(value->getValue());
         } else {
             const auto diagnostics = context.getDiagnostics();
@@ -601,15 +599,19 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         }
 
         retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
-        statements.evaluate(evaluation);
+        evaluation.setResult(statements.evaluate(evaluation));
         return !evaluation.hasError();
     } catch (const NomadException& exception) {
         evaluation.clearResult();
-        reportInputError(evaluation, source, exception.what());
+        if (!evaluation.hasError()) {
+            reportInputError(evaluation, source, exception.what());
+        }
         return false;
     } catch (const std::exception& exception) {
         evaluation.clearResult();
-        reportInputError(evaluation, source, exception.what());
+        if (!evaluation.hasError()) {
+            reportInputError(evaluation, source, exception.what());
+        }
         return false;
     }
 }

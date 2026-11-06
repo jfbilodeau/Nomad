@@ -7,6 +7,7 @@
 #include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/StorageLocation.hpp>
 
+#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/OpCode.hpp>
 
 #include <memory>
@@ -22,7 +23,6 @@ class Compiler;
 class CompilerContext;
 class FunStatementNode;  // Defined in StatementParsers.hpp
 class InterpreterContext;
-class InterpreterValue;
 class Runtime;
 class ScriptCallableBase;
 class FunctionBuilder;
@@ -114,9 +114,9 @@ public:
         const Type* valueType = nullptr
     );
     virtual void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression);
-    virtual void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
+    [[nodiscard]] virtual InterpreterValue evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
     // The expression must have been resolved first.
-    void evaluate(InterpreterContext& context) const;
+    [[nodiscard]] InterpreterValue evaluate(InterpreterContext& context) const;
 
     [[nodiscard]] const Type* getType() const;
     [[nodiscard]] const RuntimeValue& getValue() const;
@@ -146,7 +146,7 @@ protected:
         VariableId destination
     );
     virtual void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function);
-    virtual void onEvaluate(InterpreterContext& context) const;
+    [[nodiscard]] virtual InterpreterValue onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;
 
@@ -169,7 +169,7 @@ public:
     // Resolves identifiers and expression types. Returns false if errors were reported.
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function);
     void compile(Compiler* compiler, ScriptCallableBase* function);
-    void evaluate(InterpreterContext& context) const;
+    [[nodiscard]] InterpreterValue evaluate(InterpreterContext& context) const;
 
     // True when every execution path through this statement ends with a `return`.
     [[nodiscard]] virtual NomadBoolean alwaysReturns() const;
@@ -181,7 +181,7 @@ public:
 protected:
     virtual void onResolve(CompilerContext* context, ScriptCallableBase* function);
     virtual void onCompile(Compiler* compiler, ScriptCallableBase* function);
-    virtual void onEvaluate(InterpreterContext& context) const;
+    [[nodiscard]] virtual InterpreterValue onEvaluate(InterpreterContext& context) const;
 };
 
 class NullStatement : public Statement {
@@ -190,7 +190,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 };
 
 class AssignmentStatement : public Statement {
@@ -202,7 +202,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_identifier;
@@ -249,7 +249,7 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     [[nodiscard]] bool resolveStructTarget(CompilerContext* context, ScriptCallableBase* function);
@@ -269,7 +269,7 @@ public:
   protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     std::unique_ptr<Expression> m_expression;
@@ -288,7 +288,7 @@ public:
 
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
     void compile(Compiler* compiler, ScriptCallableBase* function) const;
-    void evaluate(InterpreterContext& context) const;
+    [[nodiscard]] InterpreterValue evaluate(InterpreterContext& context) const;
 
     void addStatement(std::unique_ptr<Statement> statement);
 

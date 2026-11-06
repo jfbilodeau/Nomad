@@ -36,8 +36,9 @@ protected:
     void onCompile(Compiler* compiler, ScriptCallableBase*) override {
         m_loop->compileControl(compiler, m_isBreak);
     }
-    void onEvaluate(InterpreterContext& context) const override {
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override {
         context.setLoopControl(m_isBreak ? LoopControl::Break : LoopControl::Continue);
+        return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
 
 private:
@@ -130,12 +131,9 @@ protected:
         m_iteratorType->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_iteratorId));
     }
 
-    void onEvaluate(InterpreterContext& context) const override {
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override {
         const InterpreterLoopVariable iterator(context, m_iterator);
-        m_factory->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
+        const auto iteratorValue = m_factory->evaluate(context);
         if (context.getVariableValue(m_binding) == nullptr) {
             RuntimeValue initial;
             if (m_valueType->isString()) {
@@ -149,25 +147,21 @@ protected:
             }
             m_valueType->freeValue(&initial);
         }
-        context.setVariable(m_iterator, m_iteratorType, context.getResult()->getValue());
-        while (!context.hasError()) {
-            m_advance->evaluate(context);
-            if (context.hasError() || !context.getResult()->getValue().getBooleanValue()) {
+        context.setVariable(m_iterator, m_iteratorType, iteratorValue.getValue());
+        while (true) {
+            if (!m_advance->evaluate(context).getValue().getBooleanValue()) {
                 break;
             }
-            m_current->evaluate(context);
-            if (context.hasError()) {
-                break;
-            }
-            context.setVariable(m_binding, m_valueType, context.getResult()->getValue());
-            m_body.evaluate(context);
+            const auto current = m_current->evaluate(context);
+            context.setVariable(m_binding, m_valueType, current.getValue());
+            static_cast<void>(m_body.evaluate(context));
             const auto control = context.getLoopControl();
             context.setLoopControl(LoopControl::None);
             if (control == LoopControl::Break) {
                 break;
             }
         }
-        context.setVoidResult();
+        return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
 
 private:
@@ -365,24 +359,23 @@ std::unique_ptr<Statement> parseForStatement(
     return loop;
 }
 
-void LoopStatement::onEvaluate(InterpreterContext& context) const {
+InterpreterValue LoopStatement::onEvaluate(InterpreterContext& context) const {
     auto first = true;
-    while (!context.hasError()) {
+    while (true) {
         if (!m_postTest || !first) {
-            m_condition->evaluate(context);
-            if (context.hasError() || context.getResult()->getValue().getBooleanValue() == m_until) {
+            if (m_condition->evaluate(context).getValue().getBooleanValue() == m_until) {
                 break;
             }
         }
         first = false;
-        m_body.evaluate(context);
+        static_cast<void>(m_body.evaluate(context));
         const auto control = context.getLoopControl();
         context.setLoopControl(LoopControl::None);
         if (control == LoopControl::Break) {
             break;
         }
     }
-    context.setVoidResult();
+    return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
 }
 
 std::unique_ptr<Statement> parseWhileStatement(

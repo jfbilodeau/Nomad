@@ -47,11 +47,12 @@ BOOST_AUTO_TEST_CASE(function_call_nodes_retain_the_resolved_target_across_catal
     auto machine = runtime.createVirtualMachine();
     const Interpreter evaluationEvaluator(*machine);
     InterpreterContext evaluation(evaluationEvaluator);
-    expression.evaluate(evaluation);
+    const auto result = expression.evaluate(evaluation);
     BOOST_REQUIRE(!evaluation.hasError());
-    BOOST_REQUIRE(evaluation.getResult() != nullptr);
-    BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 11);
-    statement.evaluate(evaluation);
+    BOOST_TEST(result.getValue().getIntegerValue() == 11);
+    const auto statementResult = statement.evaluate(evaluation);
+    BOOST_TEST(statementResult.getType()->isVoid());
+    BOOST_TEST(evaluation.getResult() == nullptr);
     BOOST_TEST(!evaluation.hasError());
     BOOST_TEST(selectedCalls == 2);
 }
