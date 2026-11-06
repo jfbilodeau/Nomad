@@ -190,10 +190,11 @@ BOOST_AUTO_TEST_CASE(debug_console_interprets_format_literal_arithmetic)
     options.debug = true;
     auto game = Game::createForRuntime(&runtime, options, false);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     for (const auto* source : {R"($"{1+2}")", R"(text = $"{1+2}")", "text"}) {
-        BOOST_REQUIRE(Interpreter{}.execute(source, context));
+        BOOST_REQUIRE(context.getInterpreter().execute(source, context));
         BOOST_REQUIRE(context.getResult() != nullptr);
         if (!context.getResult()->getType()->isVoid()) {
             BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == "3");

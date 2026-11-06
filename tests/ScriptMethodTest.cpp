@@ -95,8 +95,8 @@ BOOST_AUTO_TEST_CASE(compiled_interpreter_and_host_methods_preserve_parameter_co
         BOOST_CHECK_THROW(machine->runScriptMethod(resolution.id, {}, receiver), VirtualMachineException);
         BOOST_CHECK_THROW(machine->runScriptMethod(CallableId::INVALID, {}, receiver), VirtualMachineException);
         receiver.freeObjectValue();
-        InterpreterContext context(*machine);
         Interpreter interpreter;
+        InterpreterContext context(interpreter, *machine);
         BOOST_REQUIRE(interpreter.execute("counter = new Counter", context));
         BOOST_REQUIRE(interpreter.execute("counter.add 4", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
@@ -146,8 +146,8 @@ BOOST_AUTO_TEST_CASE(returning_a_temporary_receiver_retains_it_and_releases_fina
         machine->getResult().freeObjectValue();
         receiver.freeObjectValue();
         text.freeObjectValue();
-        InterpreterContext context(*machine);
         Interpreter interpreter;
+        InterpreterContext context(interpreter, *machine);
         BOOST_REQUIRE(interpreter.execute("box = new Box", context));
         BOOST_REQUIRE(interpreter.execute("text = \"borrowed\"", context));
         BOOST_REQUIRE(interpreter.execute("box.echo text", context));
@@ -195,8 +195,8 @@ BOOST_AUTO_TEST_CASE(native_method_reentry_restores_receiver_and_parameter_bindi
     BOOST_TEST(outcome.integerValue == 9);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
         Interpreter interpreter;
+        InterpreterContext context(interpreter, *machine);
         BOOST_REQUIRE(interpreter.execute("counter = new Counter", context));
         BOOST_REQUIRE(interpreter.execute("counter.invokeHost 4", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
@@ -284,17 +284,18 @@ BOOST_AUTO_TEST_CASE(frame_interpretation_reads_and_writes_constructor_and_metho
                 BOOST_REQUIRE(runtime.getMethod(callable->getId()) != nullptr);
                 ++methodsSeen;
             }
-            InterpreterContext context(*machine, *callable);
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine, *callable);
             BOOST_TEST(context.getCallable()->getClassType() == callable->getClassType());
             BOOST_TEST(context.getCallable() != callable);
             BOOST_TEST(context.getFunction() == nullptr);
             const auto variablesBefore = callable->getVariableCount();
             const auto parametersBefore = callable->getParameterCount();
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("this.value + amount + local", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("this.value + amount + local", context));
             const auto total = context.getResult()->getValue().getIntegerValue();
-            BOOST_REQUIRE(Interpreter{}.execute("local = local + 1", context));
-            BOOST_REQUIRE(Interpreter{}.execute("amount = amount + 2", context));
-            const auto assigned = Interpreter{}.execute("this.value = this.value + 3", context);
+            BOOST_REQUIRE(context.getInterpreter().execute("local = local + 1", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("amount = amount + 2", context));
+            const auto assigned = context.getInterpreter().execute("this.value = this.value + 3", context);
             BOOST_REQUIRE_MESSAGE(assigned, (context.getError() ? *context.getError() : "Field assignment failed"));
             BOOST_TEST(callable->getVariableCount() == variablesBefore);
             BOOST_TEST(callable->getParameterCount() == parametersBefore);

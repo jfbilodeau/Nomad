@@ -201,8 +201,9 @@ BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_exec
             auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
             BOOST_TEST(!compile(*host->getRuntime(), assignment));
             auto machine = host->getRuntime()->createVirtualMachine();
-            InterpreterContext context(*machine);
-            BOOST_TEST(!Interpreter{}.execute(assignment, context));
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine);
+            BOOST_TEST(!context.getInterpreter().execute(assignment, context));
             BOOST_TEST(context.hasError());
         }
     }
@@ -293,12 +294,13 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
     BOOST_TEST(arguments->getReferenceCount() == references);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("os.argv[0]", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("os.argv[0]", context));
         BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "original");
-        BOOST_TEST(!Interpreter{}.execute("os.argv[0] = \"updated\"", context));
-        BOOST_TEST(!Interpreter{}.execute("os.env[\"interpreter\"] = \"updated\"", context));
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("os.env[\"interpreter\"]", context));
+        BOOST_TEST(!context.getInterpreter().execute("os.argv[0] = \"updated\"", context));
+        BOOST_TEST(!context.getInterpreter().execute("os.env[\"interpreter\"] = \"updated\"", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("os.env[\"interpreter\"]", context));
         BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "original");
     }
     BOOST_TEST(arguments->getReferenceCount() == references);

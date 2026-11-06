@@ -1507,7 +1507,7 @@ bool parseCallableArguments(
             auto argument = createLineNumberArgument(
                 tokens->getLineIndex(),
                 tokens->getColumnIndex(),
-                context->getRuntime()->getIntegerType()
+                parameter.type
             );
             arguments->add(std::move(argument));
         } else if (parameter.type == context->getRuntime()->getEventDispatchType()) {

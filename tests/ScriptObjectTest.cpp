@@ -456,27 +456,28 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
                 "first.text = \"replaced\"\n";
             if (interpreted) {
                 auto machine = runtime.createVirtualMachine();
-                InterpreterContext context(*machine);
+                const Interpreter contextEvaluator;
+                InterpreterContext context(contextEvaluator, *machine);
                 for (auto start = NomadString::size_type{0}; start < source.size();) {
                     const auto end = source.find('\n', start);
                     const auto line = source.substr(start, end - start);
-                    const auto executed = Interpreter{}.execute(line, context);
+                    const auto executed = context.getInterpreter().execute(line, context);
                     BOOST_REQUIRE_MESSAGE(executed,
                         line + ": " + (context.getError() != nullptr ? *context.getError() : "No error reported"));
                     start = end + 1;
                 }
-                BOOST_REQUIRE(Interpreter{}.execute("first.next.text", context));
+                BOOST_REQUIRE(context.getInterpreter().execute("first.next.text", context));
                 BOOST_REQUIRE(context.getResult() != nullptr);
                 BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "hello");
-                BOOST_REQUIRE(Interpreter{}.execute("second.nativeLength", context));
+                BOOST_REQUIRE(context.getInterpreter().execute("second.nativeLength", context));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
-                BOOST_TEST(!Interpreter{}.execute("second.nativeLength = 2", context));
-                BOOST_TEST(!Interpreter{}.execute("second.missing = 2", context));
+                BOOST_TEST(!context.getInterpreter().execute("second.nativeLength = 2", context));
+                BOOST_TEST(!context.getInterpreter().execute("second.missing = 2", context));
                 BOOST_TEST(type->getProperty("missing") == nullptr);
-                BOOST_TEST(!Interpreter{}.execute("second.text = 2", context));
-                BOOST_TEST(!Interpreter{}.execute("second.next.text", context));
+                BOOST_TEST(!context.getInterpreter().execute("second.text = 2", context));
+                BOOST_TEST(!context.getInterpreter().execute("second.next.text", context));
                 BOOST_REQUIRE(context.getError() != nullptr);
-                BOOST_REQUIRE(Interpreter{}.execute("alias.text", context));
+                BOOST_REQUIRE(context.getInterpreter().execute("alias.text", context));
                 BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "replaced");
             } else {
                 auto compiler = runtime.createCompiler();

@@ -18,16 +18,28 @@
 
 #include <array>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 using namespace nomad;
+
+static_assert(std::is_same_v<decltype(std::declval<const InterpreterContext&>().getInterpreter()), const Interpreter&>);
+static_assert(!std::is_constructible_v<InterpreterContext, VirtualMachine&>);
+static_assert(!std::is_constructible_v<InterpreterContext, Interpreter&&, VirtualMachine&>);
+static_assert(!std::is_constructible_v<InterpreterContext, const Interpreter&&, VirtualMachine&>);
+static_assert(!std::is_constructible_v<
+    InterpreterContext, Interpreter&&, VirtualMachine&, const ScriptCallableBase&>);
+static_assert(!std::is_constructible_v<
+    InterpreterContext, const Interpreter&&, VirtualMachine&, const ScriptCallableBase&>);
 
 namespace {
 
 void evaluateFrameExpressions(VirtualMachine* machine) {
     auto* function = machine->getCurrentFunction();
     BOOST_REQUIRE(function != nullptr);
-    InterpreterContext context(*machine, *function);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine, *function);
+    BOOST_TEST(&context.getInterpreter() == &contextEvaluator);
     BOOST_TEST(context.getVirtualMachine() == machine);
     BOOST_TEST(context.getFunction() != function);
     BOOST_TEST(context.getFunction()->getParameterCount() == function->getParameterCount());
@@ -56,44 +68,44 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
         {"$(\"value {value} local {local} captured {captured}\")", "value 40 local 2 captured 6"},
     };
     for (const auto& [source, expected] : cases) {
-        const auto succeeded = Interpreter{}.evaluateExpression(source, context);
+        const auto succeeded = context.getInterpreter().evaluateExpression(source, context);
         const auto diagnostic = context.getError() ? *context.getError() : source;
         BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
         BOOST_REQUIRE(context.getResult() != nullptr);
         BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
     }
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("$\"{value}\"", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("$\"{value}\"", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "40");
-    BOOST_REQUIRE(Interpreter{}.execute("$\"{value + local}\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$\"{value + local}\"", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "42");
     for (const auto* source : {"", "value = 1", "missing + 1", "1 +", "1\n2", "test.void", "uncaptured"}) {
         BOOST_TEST_CONTEXT(source) {
-            BOOST_TEST(!Interpreter{}.evaluateExpression(source, context));
+            BOOST_TEST(!context.getInterpreter().evaluateExpression(source, context));
             BOOST_TEST(context.hasError());
             BOOST_TEST(context.getResult() == nullptr);
         }
     }
-    BOOST_CHECK_THROW(static_cast<void>(Interpreter{}.evaluateExpression("test.fail", context)), VirtualMachineException);
-    BOOST_REQUIRE(Interpreter{}.execute("local = 7", context));
+    BOOST_CHECK_THROW(static_cast<void>(context.getInterpreter().evaluateExpression("test.fail", context)), VirtualMachineException);
+    BOOST_REQUIRE(context.getInterpreter().execute("local = 7", context));
     BOOST_TEST(context.getVariableValue("local")->getIntegerValue() == 7);
-    BOOST_TEST(!Interpreter{}.execute("local = true", context));
+    BOOST_TEST(!context.getInterpreter().execute("local = true", context));
     BOOST_TEST(context.getVariableValue("local")->getIntegerValue() == 7);
-    BOOST_REQUIRE(Interpreter{}.execute("value = 1", context));
-    BOOST_REQUIRE(Interpreter{}.execute("text = \"changed\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("value = 1", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("text = \"changed\"", context));
     BOOST_TEST(context.getVariableValue("value")->getIntegerValue() == 1);
     BOOST_TEST(machine->getParameter(0).getIntegerValue() == 1);
-    BOOST_REQUIRE(Interpreter{}.execute("created = local + value", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("created", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("created = local + value", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("created", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 8);
-    BOOST_REQUIRE(Interpreter{}.execute("created = \"forty-seven\"", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("created", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("created = \"forty-seven\"", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("created", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "forty-seven");
-    BOOST_TEST(!Interpreter{}.execute("unknown.name = 1", context));
+    BOOST_TEST(!context.getInterpreter().execute("unknown.name = 1", context));
     BOOST_TEST(context.getVariableValue("unknown.name") == nullptr);
-    BOOST_REQUIRE(Interpreter{}.execute("localText = \"first\"", context));
-    BOOST_REQUIRE(Interpreter{}.execute("localText = localText.toUpper", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("localText = \"first\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("localText = localText.toUpper", context));
     BOOST_TEST(context.getVariableValue("localText")->getStringValue() == "FIRST");
-    BOOST_TEST(!Interpreter{}.execute("localText = 1", context));
+    BOOST_TEST(!context.getInterpreter().execute("localText = 1", context));
     context.setVariable("value", machine->getRuntime()->getIntegerType(), RuntimeValue{NomadInteger{1}});
     BOOST_CHECK_THROW(context.setVariable("local", machine->getRuntime()->getBooleanType(),
         RuntimeValue{true}), std::invalid_argument);
@@ -106,10 +118,34 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     std::vector<ScriptFunction*> functions;
     machine->getRuntime()->getFunctions(functions);
     BOOST_TEST(functions.size() == functionsBefore);
-    BOOST_TEST(Interpreter{}.evaluateExpression("value + 2", context));
+    BOOST_TEST(context.getInterpreter().evaluateExpression("value + 2", context));
 }
 
 } // namespace
+
+BOOST_AUTO_TEST_CASE(interpreter_contexts_borrow_the_supplied_instance_and_keep_independent_state) {
+    Runtime runtime;
+    const Interpreter interpreter;
+    auto machine = runtime.createVirtualMachine();
+    {
+        InterpreterContext first(interpreter, *machine);
+        InterpreterContext second(interpreter, *machine);
+        BOOST_TEST(&first.getInterpreter() == &interpreter);
+        BOOST_TEST(&second.getInterpreter() == &interpreter);
+        BOOST_REQUIRE(first.getInterpreter().execute("value = 17", first));
+        BOOST_REQUIRE(second.getInterpreter().execute("value = 31", second));
+        BOOST_REQUIRE(first.getInterpreter().evaluateExpression("value + 1", first));
+        BOOST_TEST(first.getResult()->getValue().getIntegerValue() == 18);
+        BOOST_TEST(second.getResult()->getValue().getIntegerValue() == 31);
+        BOOST_TEST(first.getVariableValue("value")->getIntegerValue() == 17);
+        BOOST_TEST(second.getVariableValue("value")->getIntegerValue() == 31);
+    }
+    InterpreterContext subsequent(interpreter, *machine);
+    BOOST_TEST(&subsequent.getInterpreter() == &interpreter);
+    BOOST_TEST(subsequent.getVariableType("value") == nullptr);
+    BOOST_REQUIRE(interpreter.execute("value = 47", subsequent));
+    BOOST_TEST(subsequent.getResult()->getValue().getIntegerValue() == 47);
+}
 
 BOOST_AUTO_TEST_CASE(interpreter_typed_values_own_complete_nested_storage_and_keep_moves_stable) {
     Runtime runtime;
@@ -211,8 +247,10 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
         {
-            InterpreterContext context(*machine);
-            InterpreterContext independent(*machine);
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter independentEvaluator;
+            InterpreterContext independent(independentEvaluator, *machine);
             std::array<RuntimeValue, 2> source{};
             source[0].setIntegerValue(17);
             source[1].setStringValue("host value");
@@ -220,7 +258,7 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
             pair->freeValue(source.data());
             const auto* root = context.getVariableStorage("source").data();
             context.setVariable("empty", empty, std::span<const RuntimeValue>{});
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("source", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("source", context));
             BOOST_REQUIRE(context.getResult() != nullptr);
             BOOST_TEST(context.getResult()->getType() == pair);
             BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 17);
@@ -228,11 +266,11 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
             context.setResult(*context.getResult());
             context.setResult(pair, context.getResult()->getStorage());
             const InterpreterValue snapshot(*context.getResult());
-            BOOST_REQUIRE(Interpreter{}.execute("copy = source\nsource = source\nemptyCopy = empty", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("copy = source\nsource = source\nemptyCopy = empty", context));
             BOOST_TEST(context.getVariableStorage("copy").data() != root);
             BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 17);
             BOOST_TEST(context.getVariableType("emptyCopy") == empty);
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("emptyCopy", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("emptyCopy", context));
             BOOST_TEST(context.getResult()->getType() == empty);
             BOOST_TEST(context.getResult()->getStorage().empty());
             BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
@@ -246,7 +284,7 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
                 context.getCallable()->getVariableId("copy"))),
                 std::invalid_argument);
             context.setVariable("copy", pair, context.getVariableStorage("copy"));
-            BOOST_REQUIRE(Interpreter{}.execute("source = 31", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("source = 31", context));
             BOOST_TEST(context.getVariableValue("source")->getIntegerValue() == 31);
             BOOST_TEST(snapshot.getStorage()[1].getStringValue() == "host value");
             BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 17);
@@ -260,7 +298,7 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
             context.clearVariableValue("copy");
             BOOST_TEST(context.getVariableType("copy") == nullptr);
             BOOST_TEST(context.getVariableStorage("copy").empty());
-            BOOST_TEST(!Interpreter{}.execute("copy", context));
+            BOOST_TEST(!context.getInterpreter().execute("copy", context));
             BOOST_TEST(context.hasError());
             BOOST_TEST(context.getResult() == nullptr);
             context.setResult(pair, snapshot.getStorage());
@@ -289,7 +327,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_
             const auto instructionsBefore = runtime.getInstructions().size();
             const auto savedResult = machine->getResult();
             const auto savedIntermediate = machine->getIntermediate();
-            InterpreterContext context(*machine, *callable);
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine, *callable);
             const auto* outer = runtime.getTypeByName("FrameOuter");
             const auto* empty = runtime.getTypeByName("FrameEmpty");
             const auto parameterId = callable->getParameterId("value");
@@ -307,14 +346,14 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_
             BOOST_TEST(context.getVariableType("empty") == empty);
             BOOST_TEST(context.getVariableStorage("empty").empty());
             BOOST_TEST(context.getVariableStorage("emptyLocal").empty());
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("value", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value", context));
             const InterpreterValue snapshot(*context.getResult());
             BOOST_TEST(snapshot.getStorage().data() != input.data());
-            BOOST_REQUIRE(Interpreter{}.execute("saved = value\nlocal = value\nvalue = local\nvalue = value\n"
+            BOOST_REQUIRE(context.getInterpreter().execute("saved = value\nlocal = value\nvalue = local\nvalue = value\n"
                 "tail = tail + 1\nemptyLocal = empty\nempty = emptyLocal", context));
             BOOST_TEST(context.getVariableStorage("saved").data() != input.data());
             BOOST_TEST(context.getVariableStorage("local")[1].getStringValue() == "nested");
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("empty", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("empty", context));
             BOOST_TEST(context.getResult()->getType() == empty);
             BOOST_TEST(context.getResult()->getStorage().empty());
             std::array<RuntimeValue, 5> replacement{};
@@ -332,11 +371,11 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_
             BOOST_CHECK_THROW(context.setParameter(parameterId, std::span<const RuntimeValue>{}),
                 std::invalid_argument);
             BOOST_CHECK_THROW(context.setParameter(parameterId, RuntimeValue{}), std::invalid_argument);
-            BOOST_TEST(!Interpreter{}.execute("value = 1", context));
-            BOOST_TEST(!Interpreter{}.execute("local = 1", context));
+            BOOST_TEST(!context.getInterpreter().execute("value = 1", context));
+            BOOST_TEST(!context.getInterpreter().execute("local = 1", context));
             BOOST_TEST(context.getVariableStorage("local")[0].getIntegerValue() == 41);
             context.setVariable("tail", runtime.getIntegerType(), RuntimeValue{NomadInteger{29}});
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("tail", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("tail", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
             BOOST_TEST(machine->getResult().getIntegerValue() == savedResult.getIntegerValue());
             BOOST_TEST(machine->getIntermediate().getIntegerValue() == savedIntermediate.getIntegerValue());
@@ -382,8 +421,9 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_conditional_loops)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    const auto succeeded = Interpreter{}.execute(
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    const auto succeeded = context.getInterpreter().execute(
         "value = 0\n"
         "total = 0\n"
         "while value < 6\n"
@@ -398,25 +438,26 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_conditional_loops)
         "end until true", context);
     const auto diagnostic = context.getError() ? *context.getError() : "Loop execution failed";
     BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
-    BOOST_TEST(!Interpreter{}.execute("break", context));
+    BOOST_TEST(!context.getInterpreter().execute("break", context));
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_detects_type_changes_across_loop_iterations)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_TEST(!Interpreter{}.execute(
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_TEST(!context.getInterpreter().execute(
         "value = 1\n"
         "while value > 0\n"
         "    value = \"changed\"\n"
         "end", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->find("changed type") != NomadString::npos);
-    BOOST_REQUIRE(Interpreter{}.execute("value = 2", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("value + 1", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("value = 2", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value + 1", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
 }
 
@@ -425,7 +466,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_requires_an_active_script_function)
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
     ScriptFunction function(CallableId::INVALID, "inactive", "inactive.nomad", "");
-    BOOST_CHECK_THROW((InterpreterContext{*machine, function}), NomadBug);
+    const Interpreter interpreter;
+    BOOST_CHECK_THROW((InterpreterContext{interpreter, *machine, function}), NomadBug);
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_uses_named_source_text_and_compiled_source_batches)
@@ -438,8 +480,8 @@ BOOST_AUTO_TEST_CASE(interpreter_uses_named_source_text_and_compiled_source_batc
     BOOST_REQUIRE(compiler->compileFunctions(&compilation));
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
     const Interpreter interpreter;
+    InterpreterContext context(interpreter, *machine);
     BOOST_REQUIRE(interpreter.execute(SourceText{"console:input", "value = answer"}, context));
     BOOST_REQUIRE(interpreter.evaluateExpression(SourceText{"console:input", "value + 1"}, context));
     BOOST_REQUIRE(context.getResult() != nullptr);
@@ -527,7 +569,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_persistent_typed_variables)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     const RuntimeValue integerValue{NomadInteger{42}};
     context.setVariable("score", runtime.getIntegerType(), integerValue);
@@ -548,8 +591,8 @@ BOOST_AUTO_TEST_CASE(interpreter_contexts_are_independent_and_borrow_the_callers
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter;
     {
-        InterpreterContext first(*machine);
-        InterpreterContext second(*machine);
+        InterpreterContext first(interpreter, *machine);
+        InterpreterContext second(interpreter, *machine);
         BOOST_TEST(first.getVirtualMachine() == machine.get());
         runtime.registerNativeFunction("test.sameVm", [&](VirtualMachine* calledMachine) {
             calledMachine->setBooleanResult(calledMachine == machine.get());
@@ -569,7 +612,7 @@ BOOST_AUTO_TEST_CASE(interpreter_contexts_are_independent_and_borrow_the_callers
         BOOST_TEST(!interpreter.execute("unknown.name = 1", first));
         BOOST_TEST(first.getVariableValue("unknown.name") == nullptr);
     }
-    InterpreterContext next(*machine);
+    InterpreterContext next(interpreter, *machine);
     BOOST_REQUIRE(interpreter.evaluateExpression("2 + 3", next));
     BOOST_TEST(next.getResult()->getValue().getIntegerValue() == 5);
 }
@@ -578,7 +621,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_expression_and_void_results)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     BOOST_TEST(context.getResult() == nullptr);
 
@@ -599,7 +643,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     BOOST_TEST(!context.hasError());
     BOOST_TEST(context.getError() == nullptr);
@@ -629,7 +674,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
     context.addDiagnostic({DiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
     BOOST_TEST(!context.hasError());
     BOOST_TEST(context.hasWarning());
@@ -650,13 +696,13 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     BOOST_TEST(!context.hasWarning());
     for (const auto expressionOnly : {false, true}) {
         const auto succeeded = expressionOnly
-            ? Interpreter{}.evaluateExpression("missingLeft + missingRight", context)
-            : Interpreter{}.execute("missingLeft + missingRight", context);
+            ? context.getInterpreter().evaluateExpression("missingLeft + missingRight", context)
+            : context.getInterpreter().execute("missingLeft + missingRight", context);
         BOOST_TEST(!succeeded);
         BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
         BOOST_TEST(context.getDiagnostics()[0].message == "Unknown identifier: missingLeft");
         BOOST_TEST(context.getDiagnostics()[1].message == "Unknown identifier: missingRight");
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("1 + 2", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("1 + 2", context));
         BOOST_TEST(context.getDiagnostics().empty());
         BOOST_TEST(!context.hasError());
     }
@@ -667,22 +713,23 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_ex
     Runtime runtime;
     registerSystemFunctions(&runtime);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(Interpreter{}.execute("score = 10", context));
+    BOOST_TEST(context.getInterpreter().execute("score = 10", context));
     BOOST_TEST(!context.hasError());
     BOOST_REQUIRE(context.getVariableValue("score") != nullptr);
     BOOST_TEST(context.getVariableValue("score")->getIntegerValue() == 10);
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 10);
 
-    BOOST_TEST(Interpreter{}.execute("score = score + 5", context));
-    BOOST_TEST(Interpreter{}.execute("score", context));
+    BOOST_TEST(context.getInterpreter().execute("score = score + 5", context));
+    BOOST_TEST(context.getInterpreter().execute("score", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getIntegerType());
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 15);
 
-    BOOST_TEST(Interpreter{}.execute("math.floor 4.8", context));
+    BOOST_TEST(context.getInterpreter().execute("math.floor 4.8", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getFloatType());
     BOOST_TEST(context.getResult()->getValue().getFloatValue() == 4.0f);
@@ -692,9 +739,10 @@ BOOST_AUTO_TEST_CASE(interpreter_evaluates_format_literal_arithmetic)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_REQUIRE(Interpreter{}.execute("number = 4", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("number = 4", context));
     const std::vector<std::pair<NomadString, NomadString>> cases{
         {R"($"{1+2}")", "3"},
         {R"(    $"{1+2}")", "3"},
@@ -708,8 +756,8 @@ BOOST_AUTO_TEST_CASE(interpreter_evaluates_format_literal_arithmetic)
         BOOST_TEST_CONTEXT(source) {
             for (const auto expressionOnly : {false, true}) {
                 const auto succeeded = expressionOnly
-                    ? Interpreter{}.evaluateExpression(source, context)
-                    : Interpreter{}.execute(source, context);
+                    ? context.getInterpreter().evaluateExpression(source, context)
+                    : context.getInterpreter().execute(source, context);
                 BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : source));
                 BOOST_REQUIRE(context.getResult() != nullptr);
                 BOOST_TEST(context.getResult()->getType() == runtime.getStringType());
@@ -717,12 +765,12 @@ BOOST_AUTO_TEST_CASE(interpreter_evaluates_format_literal_arithmetic)
             }
         }
     }
-    BOOST_REQUIRE(Interpreter{}.execute(R"(text = $"{1+2}")", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("text", context));
+    BOOST_REQUIRE(context.getInterpreter().execute(R"(text = $"{1+2}")", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("text", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "3");
 
     for (const auto* source : {"", "   ", "# comment"}) {
-        BOOST_REQUIRE(Interpreter{}.execute(source, context));
+        BOOST_REQUIRE(context.getInterpreter().execute(source, context));
         BOOST_REQUIRE(context.getResult() != nullptr);
         BOOST_TEST(context.getResult()->getType()->isVoid());
     }
@@ -733,25 +781,26 @@ BOOST_AUTO_TEST_CASE(interpreter_reports_unknown_function_calls)
     Runtime runtime;
     registerSystemFunctions(&runtime);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(!Interpreter{}.execute("toInteger 1.2", context));
+    BOOST_TEST(!context.getInterpreter().execute("toInteger 1.2", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Unknown function 'toInteger'");
 
-    BOOST_TEST(!Interpreter{}.execute("toInteger \"12\"", context));
+    BOOST_TEST(!context.getInterpreter().execute("toInteger \"12\"", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Unknown function 'toInteger'");
 
-    BOOST_TEST(!Interpreter{}.execute("result = toInteger 1.2", context));
+    BOOST_TEST(!context.getInterpreter().execute("result = toInteger 1.2", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Unknown function 'toInteger'");
 
-    BOOST_TEST(!Interpreter{}.execute("missing + 1", context));
+    BOOST_TEST(!context.getInterpreter().execute("missing + 1", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Unknown identifier: missing");
 
-    BOOST_TEST(Interpreter{}.execute("toInt \"12\"", context));
+    BOOST_TEST(context.getInterpreter().execute("toInt \"12\"", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 12);
 }
@@ -760,9 +809,10 @@ BOOST_AUTO_TEST_CASE(interpreter_reads_and_writes_context_variables)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(Interpreter{}.execute("global.score = 10", context));
+    BOOST_TEST(context.getInterpreter().execute("global.score = 10", context));
     BOOST_TEST(!context.hasError());
 
     // The value must land in the runtime's global context, not in a console variable.
@@ -777,13 +827,13 @@ BOOST_AUTO_TEST_CASE(interpreter_reads_and_writes_context_variables)
     variableContext->getValue(variableId, stored);
     BOOST_TEST(stored.getIntegerValue() == 10);
 
-    BOOST_TEST(Interpreter{}.execute("global.score", context));
+    BOOST_TEST(context.getInterpreter().execute("global.score", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getIntegerType());
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 10);
 
-    BOOST_TEST(Interpreter{}.execute("global.score = global.score + 5", context));
-    BOOST_TEST(Interpreter{}.execute("global.score", context));
+    BOOST_TEST(context.getInterpreter().execute("global.score = global.score + 5", context));
+    BOOST_TEST(context.getInterpreter().execute("global.score", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 15);
 }
@@ -792,13 +842,14 @@ BOOST_AUTO_TEST_CASE(interpreter_reassigns_string_context_variables)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     // Reassignment must release the replaced buffer and keep the new one alive.
-    BOOST_TEST(Interpreter{}.execute("global.name = \"first\"", context));
-    BOOST_TEST(Interpreter{}.execute("global.name = \"second\"", context));
+    BOOST_TEST(context.getInterpreter().execute("global.name = \"first\"", context));
+    BOOST_TEST(context.getInterpreter().execute("global.name = \"second\"", context));
 
-    BOOST_TEST(Interpreter{}.execute("global.name", context));
+    BOOST_TEST(context.getInterpreter().execute("global.name", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getStringType());
     BOOST_REQUIRE(context.getResult()->getValue().getStringValue() != nullptr);
@@ -823,18 +874,19 @@ BOOST_AUTO_TEST_CASE(interpreter_reads_and_writes_dynamic_variables)
     );
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(Interpreter{}.execute("test.value", context));
+    BOOST_TEST(context.getInterpreter().execute("test.value", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getIntegerType());
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 7);
 
-    BOOST_TEST(Interpreter{}.execute("test.value = 42", context));
+    BOOST_TEST(context.getInterpreter().execute("test.value = 42", context));
     BOOST_TEST(!context.hasError());
     BOOST_TEST(backingValue == 42);
 
-    BOOST_TEST(Interpreter{}.execute("test.value + 1", context));
+    BOOST_TEST(context.getInterpreter().execute("test.value + 1", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
 }
@@ -857,14 +909,15 @@ BOOST_AUTO_TEST_CASE(interpreter_reads_and_writes_string_dynamic_variables)
     );
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(Interpreter{}.execute("test.title", context));
+    BOOST_TEST(context.getInterpreter().execute("test.title", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_REQUIRE(context.getResult()->getValue().getStringValue() != nullptr);
     BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "initial");
 
-    BOOST_TEST(Interpreter{}.execute("test.title = \"updated\"", context));
+    BOOST_TEST(context.getInterpreter().execute("test.title = \"updated\"", context));
     BOOST_TEST(!context.hasError());
     BOOST_TEST(backingValue == "updated");
 }
@@ -884,13 +937,14 @@ BOOST_AUTO_TEST_CASE(interpreter_rejects_writing_read_only_dynamic_variables)
     );
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(Interpreter{}.execute("test.readOnly", context));
+    BOOST_TEST(context.getInterpreter().execute("test.readOnly", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
 
-    BOOST_TEST(!Interpreter{}.execute("test.readOnly = 9", context));
+    BOOST_TEST(!context.getInterpreter().execute("test.readOnly = 9", context));
     BOOST_TEST(context.hasError());
 }
 
@@ -912,9 +966,10 @@ BOOST_AUTO_TEST_CASE(interpreter_rejects_type_mismatched_dynamic_assignment)
     );
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(!Interpreter{}.execute("test.count = \"text\"", context));
+    BOOST_TEST(!context.getInterpreter().execute("test.count = \"text\"", context));
     BOOST_TEST(context.hasError());
     BOOST_TEST(backingValue == 1);
 }
@@ -931,8 +986,9 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_compiled_value_returning_funct
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_TEST(Interpreter{}.execute("increment 41", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_TEST(context.getInterpreter().execute("increment 41", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getIntegerType());
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
@@ -943,7 +999,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_nativeFunctions_with_hidden_so
     Runtime runtime;
     registerSystemFunctions(&runtime);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
     NomadString fileName;
     NomadString functionName;
     NomadInteger lineNumber = 0;
@@ -967,17 +1024,17 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_nativeFunctions_with_hidden_so
         ""
     );
 
-    BOOST_TEST(Interpreter{}.execute("test.hiddenSource(\"test\")", context));
+    BOOST_TEST(context.getInterpreter().execute("test.hiddenSource(\"test\")", context));
     BOOST_TEST(!context.hasError());
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType()->isVoid());
 
-    BOOST_TEST(Interpreter{}.execute("test.hiddenSource(\"payload\")", context));
+    BOOST_TEST(context.getInterpreter().execute("test.hiddenSource(\"payload\")", context));
     BOOST_TEST(fileName == "<console>");
     BOOST_TEST(functionName == "<console>");
     BOOST_TEST(lineNumber == 1);
     BOOST_TEST(message == "payload");
-    BOOST_REQUIRE(Interpreter{}.execute(R"(test.hiddenSource $"{1+2}")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute(R"(test.hiddenSource $"{1+2}")", context));
     BOOST_TEST(lineNumber == 1);
     BOOST_TEST(message == "3");
 }
@@ -986,15 +1043,16 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_line_errors_and_clears_them_on_
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(!Interpreter{}.execute("if", context));
+    BOOST_TEST(!context.getInterpreter().execute("if", context));
     BOOST_TEST(context.hasError());
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(!context.getError()->empty());
     BOOST_TEST(context.getResult() == nullptr);
 
-    BOOST_TEST(Interpreter{}.execute("40 + 2", context));
+    BOOST_TEST(context.getInterpreter().execute("40 + 2", context));
     BOOST_TEST(!context.hasError());
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
@@ -1004,9 +1062,10 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_multiline_assignments)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_REQUIRE(Interpreter{}.execute("score = 10\nscore = score + 1", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("score = 10\nscore = score + 1", context));
     BOOST_REQUIRE(context.getVariableValue("score") != nullptr);
     BOOST_TEST(context.getVariableValue("score")->getIntegerValue() == 11);
 }
@@ -1015,7 +1074,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_lists_variables_in_name_order)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     context.setVariable("zeta", runtime.getBooleanType(), RuntimeValue{true});
     RuntimeValue stringValue{NomadString{"ready"}};
@@ -1035,7 +1095,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_rejects_invalid_types)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     BOOST_CHECK_THROW(context.setVariable("", runtime.getIntegerType(), RuntimeValue{NomadInteger{1}}),
                       std::invalid_argument);
@@ -1053,7 +1114,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_variables_may_change_type)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     context.setVariable("value", runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
     context.setVariable("value", runtime.getFloatType(), RuntimeValue{NomadFloat{2.5f}});
@@ -1074,10 +1136,11 @@ BOOST_AUTO_TEST_CASE(interpreter_context_changes_variable_type_through_execute)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_REQUIRE(Interpreter{}.execute("score = 10", context));
-    BOOST_REQUIRE(Interpreter{}.execute("score = \"ten\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("score = 10", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("score = \"ten\"", context));
 
     const auto* score = context.getVariableValue("score");
     BOOST_REQUIRE(score != nullptr);
@@ -1089,10 +1152,11 @@ BOOST_AUTO_TEST_CASE(interpreter_context_defines_variables_in_console_function)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_REQUIRE(Interpreter{}.execute("first = 1", context));
-    BOOST_REQUIRE(Interpreter{}.execute("second = true", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("first = 1", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second = true", context));
 
     const auto* function = context.getFunction();
     BOOST_REQUIRE(function != nullptr);
@@ -1108,10 +1172,11 @@ BOOST_AUTO_TEST_CASE(interpreter_context_failed_line_does_not_assign_variables)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_REQUIRE(Interpreter{}.execute("kept = 1", context));
-    BOOST_TEST(!Interpreter{}.execute("broken = missing + 1", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("kept = 1", context));
+    BOOST_TEST(!context.getInterpreter().execute("broken = missing + 1", context));
 
     BOOST_TEST(context.getVariableValue("broken") == nullptr);
     BOOST_TEST(context.getVariableValue("kept")->getIntegerValue() == 1);
@@ -1137,26 +1202,27 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_resolve_errors_before_evaluatio
         NomadDoc("Remember an integer")
     );
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(!Interpreter{}.execute("missing + 1", context));
+    BOOST_TEST(!context.getInterpreter().execute("missing + 1", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Unknown identifier: missing");
 
-    BOOST_TEST(!Interpreter{}.execute("1 + true", context));
+    BOOST_TEST(!context.getInterpreter().execute("1 + true", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->starts_with("Invalid binary operator '+'"));
 
-    BOOST_TEST(!Interpreter{}.execute("pi = 3.0", context));
+    BOOST_TEST(!context.getInterpreter().execute("pi = 3.0", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Cannot assign value to 'pi' in the interpreter");
 
-    BOOST_TEST(!Interpreter{}.execute("remember true", context));
+    BOOST_TEST(!context.getInterpreter().execute("remember true", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->starts_with("Argument type mismatch."));
     BOOST_TEST(calledValue == 0);
 
-    BOOST_TEST(!Interpreter{}.execute("value = remember 1", context));
+    BOOST_TEST(!context.getInterpreter().execute("value = remember 1", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->find("does not return a value") != NomadString::npos);
     BOOST_TEST(calledValue == 0);

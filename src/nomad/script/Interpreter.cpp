@@ -10,18 +10,48 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/CompositeType.hpp>
+#include <nomad/script/InterpreterCallFrame.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <algorithm>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
 namespace nomad {
 
 namespace {
+
+void validateCallArguments(
+    const Runtime& runtime,
+    const Callable& callable,
+    const std::span<const InterpreterValue> arguments
+) {
+    if (callable.getReturnType() == nullptr) {
+        throw std::invalid_argument("Callable '" + callable.getName() + "' has an unresolved return type");
+    }
+    if (arguments.size() != callable.getParameterCount()) {
+        throw std::invalid_argument("Incorrect argument count for callable '" + callable.getName() + "'");
+    }
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        const auto& parameter = callable.getParameters()[index];
+        const auto* argumentType = arguments[index].getType();
+        if (parameter.type == nullptr) {
+            throw std::invalid_argument("Callable '" + callable.getName() + "' has an unresolved parameter type");
+        }
+        if (argumentType == nullptr || argumentType->getRuntime() != &runtime ||
+            parameter.type->getRuntime() != &runtime || !parameter.type->acceptsArgument(argumentType)) {
+            throw std::invalid_argument("Argument type mismatch for parameter '" + parameter.name + "'");
+        }
+        if (arguments[index].getStorage().size() != parameter.getStackValueCount()) {
+            throw std::invalid_argument("Argument storage mismatch for parameter '" + parameter.name + "'");
+        }
+    }
+}
 
 struct StoredPropertySelection {
     const Type* type;
@@ -108,6 +138,99 @@ private:
 };
 
 } // namespace
+
+InterpreterValue Interpreter::callFunction(
+    VirtualMachine& machine,
+    const CallableId functionId,
+    const std::span<const InterpreterValue> arguments
+) const {
+    const auto* function = machine.getRuntime()->getFunction(functionId);
+    if (function == nullptr) {
+        throw std::invalid_argument("Unknown function id");
+    }
+    const auto* native = function->asNativeFunction();
+    if (native != nullptr && !native->isSignatureResolved()) {
+        throw std::invalid_argument("Function '" + function->getName() + "' has an unresolved signature");
+    }
+    validateCallArguments(*machine.getRuntime(), *function, arguments);
+    const auto* type = function->getReturnType();
+    if (native != nullptr) {
+        InterpreterCallFrame frame(machine, *function, arguments, type);
+        machine.callNativeFunction(functionId);
+        return InterpreterValue(type, frame.getResultStorage());
+    }
+
+    const auto* script = function->asScriptFunction();
+    if (script == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        script->getFunctionStart() >= script->getFunctionEnd()) {
+        throw std::invalid_argument("Function '" + function->getName() + "' is not compiled");
+    }
+    if (script->getCaptureCount() != 0) {
+        throw std::invalid_argument("Captured functions require closure arguments");
+    }
+    if (!type->isStruct() &&
+        std::ranges::none_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
+        std::vector<RuntimeValue> values;
+        values.reserve(arguments.size());
+        for (const auto& argument : arguments) {
+            values.push_back(argument.getValue());
+        }
+        // Keep the scalar execution path's existing suspension behavior.
+        const RegisterRestoration registers(machine);
+        machine.setResult(RuntimeValue{});
+        machine.run(script, values);
+        try {
+            InterpreterValue result(type, machine.getResult());
+            type->freeValue(&machine.getResult());
+            return result;
+        } catch (...) {
+            type->freeValue(&machine.getResult());
+            throw;
+        }
+    }
+    InterpreterCallFrame frame(machine, *function, arguments, type);
+    machine.runPreparedFunction(script);
+    return InterpreterValue(type, frame.getResultStorage());
+}
+
+InterpreterValue Interpreter::construct(
+    VirtualMachine& machine,
+    const CallableId constructorId,
+    const std::span<const InterpreterValue> arguments
+) const {
+    const auto* constructor = machine.getRuntime()->getConstructor(constructorId);
+    if (constructor == nullptr) {
+        throw std::invalid_argument("Unknown constructor id");
+    }
+    validateCallArguments(*machine.getRuntime(), *constructor, arguments);
+    const auto* type = constructor->getConstructedType();
+    if (type == nullptr) {
+        throw std::invalid_argument("Constructor has an unresolved constructed type");
+    }
+    if (const auto* script = constructor->asScriptConstructor()) {
+        if (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+            script->getFunctionStart() >= script->getFunctionEnd()) {
+            throw std::invalid_argument("Constructor '" + constructor->getName() + "' is not compiled");
+        }
+    }
+    InterpreterCallFrame frame(machine, *constructor, arguments, type);
+    if (type->isStruct()) {
+        if (constructor->asNativeConstructor() != nullptr) {
+            machine.createNativeStruct(frame.getDestination(), constructorId);
+        } else {
+            machine.createScriptStruct(frame.getDestination(), constructorId);
+        }
+        return InterpreterValue(type, frame.getResultStorage());
+    }
+    auto* created = constructor->asNativeConstructor() != nullptr
+        ? machine.createNativeObject(constructorId)
+        : machine.createScriptObject(constructorId);
+    const auto release = [](NomadObject* object) { object->releaseRef(); };
+    const std::unique_ptr<NomadObject, decltype(release)> object(created, release);
+    RuntimeValue value;
+    value.setObjectValue(object.get());
+    return InterpreterValue(type, value);
+}
 
 InterpreterValue Interpreter::getProperty(
     const InterpreterValue& receiver,

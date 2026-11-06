@@ -33,14 +33,15 @@ BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
 BOOST_AUTO_TEST_CASE(interpreter_rejects_creating_unknown_qualified_identifier) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator;
+    InterpreterContext interpreter(interpreterEvaluator, *machine);
 
-    BOOST_TEST(!Interpreter{}.execute("name.length = 10", interpreter));
+    BOOST_TEST(!interpreter.getInterpreter().execute("name.length = 10", interpreter));
     BOOST_REQUIRE(interpreter.getError() != nullptr);
     BOOST_CHECK_MESSAGE(interpreter.getError()->find("name.length") != NomadString::npos, *interpreter.getError());
     BOOST_CHECK_MESSAGE(interpreter.getError()->find("Cannot assign") != NomadString::npos, *interpreter.getError());
     BOOST_TEST(interpreter.getVariableValue("name.length") == nullptr);
-    const auto succeeded = Interpreter{}.execute("name = \"J-F\"", interpreter);
+    const auto succeeded = interpreter.getInterpreter().execute("name = \"J-F\"", interpreter);
     const auto diagnostic = interpreter.getError() ? *interpreter.getError() : NomadString{};
     BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
 }

@@ -571,10 +571,11 @@ BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_inte
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        const auto succeeded = Interpreter{}.execute(source, context);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        const auto succeeded = context.getInterpreter().execute(source, context);
         BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 40);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -611,15 +612,16 @@ BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runti
             return NomadString(error.what()).find("Range step must not be zero") != NomadString::npos;
         });
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute(source, context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("count", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_REQUIRE(context.getInterpreter().execute(source, context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("count", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 4);
-    BOOST_REQUIRE(Interpreter{}.execute("zero = 0", context));
-    BOOST_CHECK_THROW((void)Interpreter{}.evaluateExpression("range 0 5 zero", context), NomadException);
-    BOOST_TEST(!Interpreter{}.evaluateExpression("range \"invalid\"", context));
-    BOOST_TEST(!Interpreter{}.evaluateExpression("range", context));
-    BOOST_TEST(!Interpreter{}.evaluateExpression("range 1 2 3 4", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("zero = 0", context));
+    BOOST_CHECK_THROW((void)context.getInterpreter().evaluateExpression("range 0 5 zero", context), NomadException);
+    BOOST_TEST(!context.getInterpreter().evaluateExpression("range \"invalid\"", context));
+    BOOST_TEST(!context.getInterpreter().evaluateExpression("range", context));
+    BOOST_TEST(!context.getInterpreter().evaluateExpression("range 1 2 3 4", context));
 }
 
 BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_normal_iteration) {
@@ -653,9 +655,10 @@ BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_no
     BOOST_TEST(calls == 3);
     calls = 0;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute(source, context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_REQUIRE(context.getInterpreter().execute(source, context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
     BOOST_TEST(calls == 3);
 }
@@ -706,14 +709,15 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        const auto succeeded = Interpreter{}.execute(source, context);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        const auto succeeded = context.getInterpreter().execute(source, context);
         BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 349);
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("value", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 2);
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("text", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("text", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "2 3");
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -729,19 +733,20 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
     runtime.getStringType()->freeValue(&empty);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("items = new List<string>\nitems.append \"first\"", context));
-        BOOST_REQUIRE(Interpreter{}.execute("cursor = items.iterator", context));
-        BOOST_CHECK_THROW((void)Interpreter{}.evaluateExpression("cursor.current", context), NomadException);
-        BOOST_REQUIRE(Interpreter{}.execute("items = new List<string>", context));
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.moveNext", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("items = new List<string>\nitems.append \"first\"", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("cursor = items.iterator", context));
+        BOOST_CHECK_THROW((void)context.getInterpreter().evaluateExpression("cursor.current", context), NomadException);
+        BOOST_REQUIRE(context.getInterpreter().execute("items = new List<string>", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.moveNext", context));
         BOOST_TEST(context.getResult()->getValue().getBooleanValue());
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.current", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.current", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "first");
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.moveNext", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.moveNext", context));
         BOOST_TEST(!context.getResult()->getValue().getBooleanValue());
-        BOOST_CHECK_THROW((void)Interpreter{}.evaluateExpression("cursor.current", context), NomadException);
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("cursor.moveNext", context));
+        BOOST_CHECK_THROW((void)context.getInterpreter().evaluateExpression("cursor.current", context), NomadException);
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("cursor.moveNext", context));
         BOOST_TEST(!context.getResult()->getValue().getBooleanValue());
     }
     auto compiler = runtime.createCompiler();
@@ -792,10 +797,11 @@ BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutat
     runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 11);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    const auto succeeded = Interpreter{}.execute(source, context);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    const auto succeeded = context.getInterpreter().execute(source, context);
     BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("total", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 11);
 }
 
@@ -807,13 +813,14 @@ BOOST_AUTO_TEST_CASE(collection_iterators_detect_structural_mutation_on_next_adv
     for (const auto* mutation : {"items.append 3", "items.prepend 3", "items.insert 0 3",
         "items.remove 0", "items.removeFirst", "items.removeLast", "items.clear"}) {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
         const auto source = NomadString{
             "items = new List<int>\nitems.append 1\nitems.append 2\n"
             "for value in items\n"
         } + mutation + "\nend";
         BOOST_TEST_CONTEXT(mutation) {
-            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_TEST(!context.getInterpreter().execute(source, context));
             BOOST_REQUIRE(context.getError() != nullptr);
             BOOST_TEST(context.getError()->find("structurally modified") != NomadString::npos, *context.getError());
         }
@@ -883,13 +890,14 @@ BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassign
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        const auto succeeded = Interpreter{}.execute(source, context);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        const auto succeeded = context.getInterpreter().execute(source, context);
         BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : "Interpreter failed"));
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("text", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("text", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "LASTbreak20 0 6 100");
-        BOOST_REQUIRE(Interpreter{}.execute("value = \"still here\"", context));
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("value", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("value = \"still here\"", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value", context));
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "still here");
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -990,11 +998,12 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(isAssertion ? source.substr(7) : source, context),
                     (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -1071,20 +1080,21 @@ BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext evaluation(machine);
+        const Interpreter evaluationEvaluator;
+        InterpreterContext evaluation(evaluationEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, evaluation),
+                BOOST_REQUIRE_MESSAGE(evaluation.getInterpreter().execute(isAssertion ? source.substr(7) : source, evaluation),
                     (evaluation.getError() ? *evaluation.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(evaluation.getResult()->getValue().getBooleanValue());
                 }
             }
         }
-        BOOST_REQUIRE(Interpreter{}.execute("entry", evaluation));
+        BOOST_REQUIRE(evaluation.getInterpreter().execute("entry", evaluation));
         BOOST_TEST(evaluation.getResult()->getType() == entryType);
-        BOOST_REQUIRE(Interpreter{}.execute("flags", evaluation));
+        BOOST_REQUIRE(evaluation.getInterpreter().execute("flags", evaluation));
         BOOST_TEST(evaluation.getResult()->getType() == flagsType);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -1096,7 +1106,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_reject_invalid_construction_and_prop
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
     VirtualMachine machine(&runtime);
-    InterpreterContext evaluation(machine);
+    const Interpreter evaluationEvaluator;
+    InterpreterContext evaluation(evaluationEvaluator, machine);
     for (const auto* source : {
         "entry = new KeyValue<string int>",
         "entry = new KeyValue<string int> \"key\"",
@@ -1127,9 +1138,9 @@ BOOST_AUTO_TEST_CASE(collections_key_values_reject_invalid_construction_and_prop
             const NomadString input(source);
             const auto lineBreak = input.find('\n');
             if (lineBreak != NomadString::npos) {
-                BOOST_REQUIRE(Interpreter{}.execute(input.substr(0, lineBreak), evaluation));
+                BOOST_REQUIRE(evaluation.getInterpreter().execute(input.substr(0, lineBreak), evaluation));
             }
-            BOOST_TEST(!Interpreter{}.execute(
+            BOOST_TEST(!evaluation.getInterpreter().execute(
                 lineBreak == NomadString::npos ? input : input.substr(lineBreak + 1), evaluation
             ));
             BOOST_TEST(evaluation.hasError());
@@ -1208,12 +1219,13 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     calls.clear();
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext evaluation(machine);
+        const Interpreter evaluationEvaluator;
+        InterpreterContext evaluation(evaluationEvaluator, machine);
         for (const auto* source : {
             "line = new Array1<int> 10", "grid = new Array2<string> (size 2) (size 3)",
             "volume = new Array3<float> 2 3 4", "grid.count"
         }) {
-            const auto executed = Interpreter{}.execute(source, evaluation);
+            const auto executed = evaluation.getInterpreter().execute(source, evaluation);
             BOOST_REQUIRE_MESSAGE(executed, (evaluation.getError() ? *evaluation.getError() : source));
         }
         BOOST_TEST(calls == "32");
@@ -1254,8 +1266,9 @@ BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
             auto machine = runtime.createVirtualMachine();
             BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {}), NomadException);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
-            InterpreterContext evaluation(*machine);
-            BOOST_TEST(!Interpreter{}.execute(NomadString(source).substr(7), evaluation));
+            const Interpreter evaluationEvaluator;
+            InterpreterContext evaluation(evaluationEvaluator, *machine);
+            BOOST_TEST(!evaluation.getInterpreter().execute(NomadString(source).substr(7), evaluation));
             BOOST_REQUIRE(evaluation.getError() != nullptr);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
@@ -1308,11 +1321,12 @@ BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
     BOOST_TEST(runtime.getConstructors().size() == constructorCount);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext evaluation(machine);
+        const Interpreter evaluationEvaluator;
+        InterpreterContext evaluation(evaluationEvaluator, machine);
         for (const auto& [source, rank] : std::vector<std::pair<NomadString, NomadIndex>>{
             {"new Array<int> 2", 1}, {"new Array<int> 3 4", 2}, {"new Array<int> 5 6 7", 3}
         }) {
-            BOOST_REQUIRE(Interpreter{}.execute(source, evaluation));
+            BOOST_REQUIRE(evaluation.getInterpreter().execute(source, evaluation));
             const auto* type = dynamic_cast<const ArrayType*>(evaluation.getResult()->getType());
             BOOST_REQUIRE(type != nullptr);
             BOOST_TEST(type->getDimensionCount() == rank);
@@ -1324,7 +1338,7 @@ BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
             "new Array<> 1", "new Array<int string> 1", "new Array<void> 1"
         }) {
             BOOST_TEST_CONTEXT(source) {
-                BOOST_TEST(!Interpreter{}.execute(source, evaluation));
+                BOOST_TEST(!evaluation.getInterpreter().execute(source, evaluation));
                 BOOST_REQUIRE(evaluation.getError() != nullptr);
             }
         }
@@ -1412,11 +1426,12 @@ BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaul
     BOOST_TEST(NomadObject::getLiveObjectCount() == compiledObjects);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(isAssertion ? source.substr(7) : source, context),
                     (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -1505,11 +1520,12 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(isAssertion ? source.substr(7) : source, context),
                     (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -1693,11 +1709,12 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(isAssertion ? source.substr(7) : source, context),
                     (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -1827,11 +1844,12 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(isAssertion ? source.substr(7) : source, context),
                     (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -2028,7 +2046,8 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
     BOOST_CHECK_THROW(MapType(&runtime, TypeId::INVALID, "Invalid", ClassMode::Closed, runtime.getIntegerType(), runtime.getIntegerType()), NomadException);
     BOOST_CHECK_THROW(MapType(&runtime, TypeId::INVALID, "Invalid", ClassMode::Closed, runtime.getStringType(), runtime.getFileNameType()), NomadException);
     VirtualMachine machine(&runtime);
-    InterpreterContext context(machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, machine);
     for (const auto* source : {
         "values = new Map<int string>",
         "values = new Map<string>",
@@ -2068,13 +2087,13 @@ BOOST_AUTO_TEST_CASE(collections_maps_reject_unsupported_operations_and_types) {
             const NomadString input(source);
             const auto lineBreak = input.find('\n');
             if (lineBreak != NomadString::npos) {
-                BOOST_REQUIRE(Interpreter{}.execute(input.substr(0, lineBreak), context));
+                BOOST_REQUIRE(context.getInterpreter().execute(input.substr(0, lineBreak), context));
             }
-            BOOST_TEST(!Interpreter{}.execute(
+            BOOST_TEST(!context.getInterpreter().execute(
                 lineBreak == NomadString::npos ? input : input.substr(lineBreak + 1), context
             ));
             BOOST_TEST(context.hasError());
-            BOOST_REQUIRE(Interpreter{}.execute("recovery = new Map<string int>", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("recovery = new Map<string int>", context));
         }
     }
 }
@@ -2118,12 +2137,13 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
 
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext interpreterContext(machine);
+        const Interpreter interpreterContextEvaluator;
+        InterpreterContext interpreterContext(interpreterContextEvaluator, machine);
         for (const auto* source : {
             "values = new List<string>", "values.append \"hello\"", "alias = values",
             "alias.append \"world\".toUpper", "values.count"
         }) {
-            BOOST_REQUIRE(Interpreter{}.execute(source, interpreterContext));
+            BOOST_REQUIRE(interpreterContext.getInterpreter().execute(source, interpreterContext));
         }
         BOOST_TEST(interpreterContext.getResult()->getValue().getIntegerValue() == 2);
     }
@@ -2168,10 +2188,11 @@ BOOST_AUTO_TEST_CASE(collections_lists_reject_invalid_member_operations) {
             const NomadString input(source);
             if (!input.starts_with("params ")) {
                 VirtualMachine machine(host->getRuntime());
-                InterpreterContext evaluation(machine);
+                const Interpreter evaluationEvaluator;
+                InterpreterContext evaluation(evaluationEvaluator, machine);
                 const auto lineBreak = input.find('\n');
-                BOOST_REQUIRE(Interpreter{}.execute(input.substr(0, lineBreak), evaluation));
-                BOOST_TEST(!Interpreter{}.execute(input.substr(lineBreak + 1), evaluation));
+                BOOST_REQUIRE(evaluation.getInterpreter().execute(input.substr(0, lineBreak), evaluation));
+                BOOST_TEST(!evaluation.getInterpreter().execute(input.substr(lineBreak + 1), evaluation));
                 BOOST_TEST(evaluation.hasError());
             }
         }
@@ -2288,11 +2309,12 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(isAssertion ? source.substr(7) : source, context),
                     (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -2302,9 +2324,9 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
         log::flush();
         BOOST_TEST(capture.sink.getEntries().empty());
         for (const auto* source : {"items.insert (-1) 1", "items.insert 1 1"}) {
-            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_TEST(!context.getInterpreter().execute(source, context));
             BOOST_REQUIRE(context.hasError());
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("items.count", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("items.count", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 0);
         }
     }
@@ -2535,7 +2557,8 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
     const auto before = NomadObject::getLiveObjectCount();
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto* source : {
             "grid = new Array<int> 2 3", "grid[1 2] = 123", "alias = grid", "alias[0 1] = grid[1 2]",
             "assert grid[0 1] == 123", "assert grid[1 2] == 123",
@@ -2550,7 +2573,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
         }) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = NomadStringView(source).starts_with("assert ");
-                const auto executed = Interpreter{}.execute(isAssertion ? source + 7 : source, context);
+                const auto executed = context.getInterpreter().execute(isAssertion ? source + 7 : source, context);
                 BOOST_REQUIRE_MESSAGE(executed, (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -2563,7 +2586,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
             "grid[0 1] = \"wrong\"", "grid[0 1] = false"
         }) {
             BOOST_TEST_CONTEXT(source) {
-                BOOST_TEST(!Interpreter{}.execute(source, context));
+                BOOST_TEST(!context.getInterpreter().execute(source, context));
                 BOOST_TEST(context.hasError());
                 auto compiler = runtime.createCompiler();
                 CompilerContext compilation(compiler.get());
@@ -2574,7 +2597,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_work_in_interpreter_and_reject_invalid_synt
                 BOOST_REQUIRE(compilation.getFirstError() != nullptr);
             }
         }
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("grid[0 1] + grid[1 2]", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("grid[0 1] + grid[1 2]", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 246);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -2641,11 +2664,12 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto& source : sources) {
             BOOST_TEST_CONTEXT(source) {
                 const auto isAssertion = source.starts_with("assert ");
-                BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(isAssertion ? source.substr(7) : source, context),
+                BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(isAssertion ? source.substr(7) : source, context),
                     (context.getError() ? *context.getError() : source));
                 if (isAssertion) {
                     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
@@ -2657,7 +2681,7 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
             "volume[0 \"key\" 0]", "volume[0 0 \"key\"]", "volume[0 0 0] = \"wrong\""
         }) {
             BOOST_TEST_CONTEXT(source) {
-                BOOST_TEST(!Interpreter{}.execute(source, context));
+                BOOST_TEST(!context.getInterpreter().execute(source, context));
                 BOOST_TEST(context.hasError());
                 auto rejectedCompiler = runtime.createCompiler();
                 CompilerContext rejected(rejectedCompiler.get());
@@ -2665,7 +2689,7 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
                     NomadString("volume = new Array<int> 2 3 4\n") + source
                 }}}, {}});
                 BOOST_TEST(!rejectedCompiler->compileScripts(&rejected, CompilationTarget::Executable));
-                BOOST_REQUIRE(Interpreter{}.evaluateExpression("volume[1 2 3] == 46", context));
+                BOOST_REQUIRE(context.getInterpreter().evaluateExpression("volume[1 2 3] == 46", context));
                 BOOST_TEST(context.getResult()->getValue().getBooleanValue());
             }
         }
@@ -2682,32 +2706,33 @@ BOOST_AUTO_TEST_CASE(array1_indexers_work_in_interpreter_and_report_bounds_error
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
     VirtualMachine machine(&runtime);
-    InterpreterContext context(machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, machine);
     for (const auto* source : {
         "values = new Array<int> 2", "values[0] = 123", "alias = values",
         "alias[1] = values[0]", "values[1]"
     }) {
-        BOOST_REQUIRE_MESSAGE(Interpreter{}.execute(source, context),
+        BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute(source, context),
             (context.getError() ? *context.getError() : source));
     }
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 123);
     for (const auto* source : {"values[-1]", "values[2]", "values[-1] = 9", "values[2] = 9"}) {
         BOOST_TEST_CONTEXT(source) {
-            BOOST_REQUIRE(Interpreter{}.execute(source, context));
+            BOOST_REQUIRE(context.getInterpreter().execute(source, context));
             BOOST_TEST(!context.hasError());
         }
     }
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("values[-1] + values[2]", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("values[-1] + values[2]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 0);
     for (const auto* source : {"values[\"key\"]", "values[0] = \"wrong\"", "values[0 1]"}) {
         BOOST_TEST_CONTEXT(source) {
-            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_TEST(!context.getInterpreter().execute(source, context));
             BOOST_TEST(context.hasError());
         }
     }
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("values.count", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("values.count", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 2);
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("values[0] + values[1]", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("values[0] + values[1]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 246);
 }
 
@@ -2719,25 +2744,26 @@ BOOST_AUTO_TEST_CASE(collections_indexers_work_in_interpreter_and_fault_without_
     const auto before = NomadObject::getLiveObjectCount();
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext context(machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, machine);
         for (const auto* source : {
             "words = new List<string>", "words.append \"first\"", "alias = words",
             "alias[0] = \"second\"", "words[0] = words[0]", "words[0][0]"
         }) {
-            const auto executed = Interpreter{}.execute(source, context);
+            const auto executed = context.getInterpreter().execute(source, context);
             BOOST_REQUIRE_MESSAGE(executed,
                 (context.getError() ? *context.getError() : "Interpreter failed"));
         }
         BOOST_TEST(context.getResult()->getValue().getStringObject()->getString() == "s");
         for (const auto* source : {"words[-1]", "words[1]", "words[1] = \"third\""}) {
-            BOOST_TEST(!Interpreter{}.execute(source, context));
+            BOOST_TEST(!context.getInterpreter().execute(source, context));
             BOOST_REQUIRE(context.getError() != nullptr);
             BOOST_TEST(context.getError()->find("out of bounds for size 1") != NomadString::npos);
         }
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("words.count", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("words.count", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
-        BOOST_REQUIRE(Interpreter{}.execute("empty = new List<int>", context));
-        BOOST_TEST(!Interpreter{}.execute("empty[0]", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("empty = new List<int>", context));
+        BOOST_TEST(!context.getInterpreter().execute("empty[0]", context));
         BOOST_REQUIRE(context.getError() != nullptr);
         BOOST_TEST(context.getError()->find("size 0") != NomadString::npos);
     }
@@ -2811,13 +2837,14 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
 
     {
         VirtualMachine machine(&runtime);
-        InterpreterContext interpreterContext(machine);
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("new List<int>.testPresent", interpreterContext));
+        const Interpreter interpreterContextEvaluator;
+        InterpreterContext interpreterContext(interpreterContextEvaluator, machine);
+        BOOST_REQUIRE(interpreterContext.getInterpreter().evaluateExpression("new List<int>.testPresent", interpreterContext));
         BOOST_TEST(interpreterContext.getResult()->getValue().getBooleanValue());
-        BOOST_REQUIRE(Interpreter{}.execute("value = new List<int>", interpreterContext));
+        BOOST_REQUIRE(interpreterContext.getInterpreter().execute("value = new List<int>", interpreterContext));
         const auto* original = interpreterContext.getVariableValue("value")->getObjectValue();
-        BOOST_REQUIRE(Interpreter{}.execute("alias = value", interpreterContext));
-        BOOST_REQUIRE(Interpreter{}.execute("value = new List<int>", interpreterContext));
+        BOOST_REQUIRE(interpreterContext.getInterpreter().execute("alias = value", interpreterContext));
+        BOOST_REQUIRE(interpreterContext.getInterpreter().execute("value = new List<int>", interpreterContext));
         BOOST_TEST(original == interpreterContext.getVariableValue("alias")->getObjectValue());
         BOOST_TEST(original != interpreterContext.getVariableValue("value")->getObjectValue());
         BOOST_TEST(NomadObject::getLiveObjectCount() == before + 2);
@@ -2870,13 +2897,14 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
         }
     );
     VirtualMachine machine(&runtime);
-    InterpreterContext interpreterContext(machine);
+    const Interpreter interpreterContextEvaluator;
+    InterpreterContext interpreterContext(interpreterContextEvaluator, machine);
     BOOST_CHECK_THROW(
-        static_cast<void>(Interpreter{}.evaluateExpression("new Broken", interpreterContext)),
+        static_cast<void>(interpreterContext.getInterpreter().evaluateExpression("new Broken", interpreterContext)),
         NomadException
     );
     BOOST_TEST(interpreterContext.getResult() == nullptr);
-    BOOST_TEST(!Interpreter{}.execute("new Broken", interpreterContext));
+    BOOST_TEST(!interpreterContext.getInterpreter().execute("new Broken", interpreterContext));
     BOOST_REQUIRE(interpreterContext.getError() != nullptr);
     BOOST_TEST(interpreterContext.getError()->find("returned null") != NomadString::npos);
     BOOST_TEST(interpreterContext.getResult() == nullptr);
@@ -3062,11 +3090,12 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("list = makeList", context));
-        BOOST_REQUIRE(Interpreter{}.execute("alias = list.copyReference", context));
-        BOOST_REQUIRE(Interpreter{}.execute("alias.append 42", context));
-        BOOST_REQUIRE(Interpreter{}.execute("list[0]", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("list = makeList", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("alias = list.copyReference", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("alias.append 42", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("list[0]", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);

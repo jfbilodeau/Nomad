@@ -522,19 +522,20 @@ BOOST_AUTO_TEST_CASE(interpreter_locals_can_change_type)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator;
+    InterpreterContext interpreter(interpreterEvaluator, *machine);
 
-    BOOST_REQUIRE(Interpreter{}.execute("value = 10", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("value = 10", interpreter));
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getIntegerType());
 
     BOOST_REQUIRE_MESSAGE(
-        Interpreter{}.execute("value = \"text\"", interpreter),
+        interpreter.getInterpreter().execute("value = \"text\"", interpreter),
         (interpreter.getError() ? *interpreter.getError() : NomadString{})
     );
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getStringType());
     BOOST_TEST(NomadString(interpreter.getVariableValue("value")->getStringValue()) == "text");
 
-    BOOST_REQUIRE(Interpreter{}.execute("value = 1.5", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("value = 1.5", interpreter));
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getFloatType());
 }
 
@@ -542,10 +543,11 @@ BOOST_AUTO_TEST_CASE(interpreter_context_variables_keep_their_type)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator;
+    InterpreterContext interpreter(interpreterEvaluator, *machine);
 
-    BOOST_REQUIRE(Interpreter{}.execute("global.interpreterTyped = 10", interpreter));
-    BOOST_TEST(!Interpreter{}.execute("global.interpreterTyped = \"text\"", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("global.interpreterTyped = 10", interpreter));
+    BOOST_TEST(!interpreter.getInterpreter().execute("global.interpreterTyped = \"text\"", interpreter));
     BOOST_TEST(interpreter.hasError());
 }
 

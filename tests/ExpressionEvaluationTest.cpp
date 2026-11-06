@@ -15,10 +15,11 @@ BOOST_AUTO_TEST_CASE(expression_evaluation_reads_persistent_interpreter_variable
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{12}});
 
-    BOOST_REQUIRE(Interpreter{}.execute("score + 5", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("score + 5", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getIntegerType());
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
@@ -30,7 +31,8 @@ BOOST_AUTO_TEST_CASE(expression_evaluation_reuses_compile_time_folded_values)
     auto compiler = runtime.createCompiler();
     CompilerContext compilerContext(compiler.get());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     BinaryExpression expression(
         nullptr,
@@ -53,17 +55,18 @@ BOOST_AUTO_TEST_CASE(expression_evaluation_short_circuits_boolean_operators)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     // Division by a variable is not folded at resolve time, so it would fail if evaluated.
-    BOOST_REQUIRE(Interpreter{}.execute("zero = 0", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("zero = 0", context));
 
-    BOOST_REQUIRE(Interpreter{}.execute("false && 1 / zero > 0", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("false && 1 / zero > 0", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getType() == runtime.getBooleanType());
     BOOST_TEST(!context.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(Interpreter{}.execute("true || 1 / zero > 0", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("true || 1 / zero > 0", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getBooleanValue());
 }
@@ -74,7 +77,8 @@ BOOST_AUTO_TEST_CASE(expression_resolution_rejects_invalid_operator_types)
     auto compiler = runtime.createCompiler();
     CompilerContext compilerContext(compiler.get());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     BinaryExpression expression(
         nullptr,
@@ -97,7 +101,8 @@ BOOST_AUTO_TEST_CASE(expression_evaluation_requires_resolution)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     IntegerLiteral expression(nullptr, 0, 0, 42);
 
@@ -111,7 +116,8 @@ BOOST_AUTO_TEST_CASE(expression_evaluation_copies_string_values_safely)
     auto compiler = runtime.createCompiler();
     CompilerContext compilerContext(compiler.get());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     StringLiteral expression(nullptr, 0, 0, "nomad");
     BOOST_REQUIRE(expression.resolve(&compilerContext, nullptr));
@@ -130,7 +136,8 @@ BOOST_AUTO_TEST_CASE(expression_evaluation_reads_runtime_constants)
     auto compiler = runtime.createCompiler();
     CompilerContext compilerContext(compiler.get());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     IdentifierExpression expression(nullptr, 0, 0, "pi");
     BOOST_REQUIRE(expression.resolve(&compilerContext, nullptr));
@@ -147,7 +154,8 @@ BOOST_AUTO_TEST_CASE(expression_constant_folding_handles_boolean_equality)
     auto compiler = runtime.createCompiler();
     CompilerContext compilerContext(compiler.get());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     BinaryExpression equalExpression(
         nullptr,
@@ -208,7 +216,8 @@ BOOST_AUTO_TEST_CASE(expression_constant_folding_handles_float_comparisons)
     auto compiler = runtime.createCompiler();
     CompilerContext compilerContext(compiler.get());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
     const auto checkComparison = [&](const BinaryOperator op, const NomadFloat lhs, const NomadFloat rhs, const bool expected) {
         BinaryExpression expression(

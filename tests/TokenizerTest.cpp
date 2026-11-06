@@ -276,9 +276,10 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_tokenizer_errors)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(!Interpreter{}.execute("score = \"unterminated", context));
+    BOOST_TEST(!context.getInterpreter().execute("score = \"unterminated", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(context.getError()->find("Unrecognized token `\"unterminated`") != NomadString::npos);
     BOOST_TEST(context.getVariableValue("score") == nullptr);

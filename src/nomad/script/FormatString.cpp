@@ -21,7 +21,7 @@ DynamicFormatResult formatDynamicString(const NomadStringView format, Interprete
     const NomadStringView sourceName, const NomadIndex line, const NomadIndex column) {
     DynamicFormatResult result;
     const auto parsed = parseFormatTemplate(format);
-    const Interpreter interpreter;
+    const auto& interpreter = context.getInterpreter();
     const auto appendError = [&](const FormatTemplateSegment& segment, const NomadString& message) {
         result.text += "{" + message + "}";
         result.diagnostics.push_back({message, NomadString{sourceName}, line, column,

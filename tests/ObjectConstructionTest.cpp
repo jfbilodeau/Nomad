@@ -556,8 +556,8 @@ BOOST_AUTO_TEST_CASE(interpreter_constructs_compiled_classes_and_uses_shared_ove
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
         Interpreter interpreter;
+        InterpreterContext context(interpreter, *machine);
         BOOST_REQUIRE(interpreter.execute("point = new Point 7", context));
         BOOST_REQUIRE(interpreter.execute("point.value", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 7);
@@ -633,9 +633,10 @@ BOOST_AUTO_TEST_CASE(constructor_arguments_use_the_outer_receiver_before_allocat
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("owner = new Owner", context));
-        BOOST_REQUIRE(Interpreter{}.execute("owner.value + owner.child.value", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("owner = new Owner", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("owner.value + owner.child.value", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 126);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -684,8 +685,9 @@ BOOST_AUTO_TEST_CASE(script_constructor_fault_terminates_compiled_host_and_inter
                         });
                     name.freeObjectValue();
                 } else {
-                    InterpreterContext context(*machine);
-                    BOOST_TEST(!Interpreter{}.execute("new Owner \"failed\" true", context));
+                    const Interpreter contextEvaluator;
+                    InterpreterContext context(contextEvaluator, *machine);
+                    BOOST_TEST(!context.getInterpreter().execute("new Owner \"failed\" true", context));
                     BOOST_REQUIRE(context.getError() != nullptr);
                     BOOST_TEST(*context.getError() == "Constructor failed");
                     BOOST_TEST(context.getResult() == nullptr);
@@ -784,8 +786,9 @@ BOOST_AUTO_TEST_CASE(add_constructor_resolves_ids_and_owns_metadata_and_callback
     BOOST_TEST(callbackCalls == 0);
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("new DefinitionObject 23", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_REQUIRE(context.getInterpreter().execute("new DefinitionObject 23", context));
     BOOST_TEST(callbackCalls == 1);
     BOOST_TEST(argument == 23);
     BOOST_REQUIRE(context.getResult() != nullptr);
@@ -845,8 +848,9 @@ BOOST_AUTO_TEST_CASE(add_constructor_preserves_distinct_created_types_and_shared
     createdType->freeValue(&result);
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("new DefinitionFactory", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_REQUIRE(context.getInterpreter().execute("new DefinitionFactory", context));
     BOOST_TEST(context.getResult()->getType() == createdType);
 }
 
@@ -949,8 +953,9 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
             expectedType->freeValue(&result);
             {
                 auto machine = runtime.createVirtualMachine();
-                InterpreterContext context(*machine);
-                BOOST_REQUIRE(Interpreter{}.execute(source, context));
+                const Interpreter contextEvaluator;
+                InterpreterContext context(contextEvaluator, *machine);
+                BOOST_REQUIRE(context.getInterpreter().execute(source, context));
                 BOOST_TEST(context.getResult()->getType() == expectedType);
             }
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -966,9 +971,10 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
     BOOST_TEST(runtime.getScriptFunction(id)->getReturnType() == runtime.getTypeByName("Box<int>"));
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("number = 42", context));
-        BOOST_REQUIRE(Interpreter{}.execute("new Box number", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("number = 42", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("new Box number", context));
         BOOST_TEST(context.getResult()->getType() == runtime.getTypeByName("Box<int>"));
     }
     BOOST_TEST(specializations == 4u);
@@ -1013,8 +1019,9 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
             BOOST_TEST(!compiler->compileFunctions(&context));
             BOOST_REQUIRE(context.getFirstError() != nullptr);
             auto machine = runtime.createVirtualMachine();
-            InterpreterContext evaluation(*machine);
-            BOOST_TEST(!Interpreter{}.execute(source, evaluation));
+            const Interpreter evaluationEvaluator;
+            InterpreterContext evaluation(evaluationEvaluator, *machine);
+            BOOST_TEST(!evaluation.getInterpreter().execute(source, evaluation));
             BOOST_TEST(evaluation.hasError());
         }
     }
@@ -1068,8 +1075,9 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_match_compiled_evaluation_or
     BOOST_TEST(markers[1] == 1);
     markers.clear();
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("new Pair (mark 1) (mark 2)", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_REQUIRE(context.getInterpreter().execute("new Pair (mark 1) (mark 2)", context));
     BOOST_REQUIRE(markers.size() == 2u);
     BOOST_TEST(markers[0] == 2);
     BOOST_TEST(markers[1] == 1);
@@ -1103,8 +1111,9 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constr
         BOOST_TEST(!compiler->compileFunctions(&context));
         BOOST_REQUIRE(context.getFirstError() != nullptr);
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext evaluation(*machine);
-        BOOST_TEST(!Interpreter{}.execute("new Box 42", evaluation));
+        const Interpreter evaluationEvaluator;
+        InterpreterContext evaluation(evaluationEvaluator, *machine);
+        BOOST_TEST(!evaluation.getInterpreter().execute("new Box 42", evaluation));
         BOOST_TEST(evaluation.hasError());
     }
 }
@@ -1240,8 +1249,9 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_par
     result.freeObjectValue();
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext evaluation(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("new Located \"value\" true", evaluation));
+        const Interpreter evaluationEvaluator;
+        InterpreterContext evaluation(evaluationEvaluator, *machine);
+        BOOST_REQUIRE(evaluation.getInterpreter().execute("new Located \"value\" true", evaluation));
         BOOST_TEST(evaluation.getResult()->getType() == runtime.getTypeByName("Located<string>"));
     }
     BOOST_TEST(calls == 2u);
@@ -1375,8 +1385,9 @@ BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_constr
     result.freeObjectValue();
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("new Box<int> 42", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("new Box<int> 42", context));
     }
     BOOST_TEST(calls == 2u);
 }
@@ -1554,8 +1565,9 @@ BOOST_AUTO_TEST_CASE(constructors_accept_heterogeneous_arguments_and_type_specif
     BOOST_TEST(calls == 1u);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("new Example 0 \"hello\" true", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("new Example 0 \"hello\" true", context));
         BOOST_TEST(calls == 2u);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -1587,8 +1599,9 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_results_release_object_argument
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
         {
-            InterpreterContext context(*machine);
-            BOOST_TEST(!Interpreter{}.execute("new Example (\"hello\".toUpper)", context));
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine);
+            BOOST_TEST(!context.getInterpreter().execute("new Example (\"hello\".toUpper)", context));
             BOOST_REQUIRE(context.getError() != nullptr);
         }
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -1718,9 +1731,10 @@ BOOST_AUTO_TEST_CASE(host_script_construction_preserves_native_method_context_an
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("receiver = new HostReceiver", context));
-        BOOST_REQUIRE(Interpreter{}.execute("receiver.construct \"borrowed\"", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("receiver = new HostReceiver", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("receiver.construct \"borrowed\"", context));
         BOOST_TEST(calls == 2);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -1754,10 +1768,11 @@ BOOST_AUTO_TEST_CASE(native_constructor_failure_releases_published_result_and_re
     BOOST_TEST(machine->getIntegerIntermediate() == 42);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
-        InterpreterContext context(*machine);
-        BOOST_TEST(!Interpreter{}.execute("new Fallible true", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_TEST(!context.getInterpreter().execute("new Fallible true", context));
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
-        BOOST_REQUIRE(Interpreter{}.execute("new Fallible false", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("new Fallible false", context));
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -1794,8 +1809,9 @@ BOOST_AUTO_TEST_CASE(native_constructor_reentry_restores_the_stack_parameter_fra
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_REQUIRE(Interpreter{}.execute("new OuterNative (\"outer\".toLower)", context));
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
+        BOOST_REQUIRE(context.getInterpreter().execute("new OuterNative (\"outer\".toLower)", context));
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -1835,8 +1851,9 @@ BOOST_AUTO_TEST_CASE(source_parameters_are_supplied_by_the_compiler) {
     BOOST_TEST(line == 2);
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_TEST(Interpreter{}.execute("new Located 7", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_TEST(context.getInterpreter().execute("new Located 7", context));
     BOOST_TEST(number == 7);
 
     auto compiler = runtime.createCompiler();
@@ -1965,19 +1982,20 @@ BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_
     BOOST_TEST(calls == "EIPSI");
     {
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
         for (const auto* source : {"new Example", "(new Example 1)", "new Example 1 2", "new Example \"hello\""}) {
-            BOOST_REQUIRE(Interpreter{}.execute(source, context));
+            BOOST_REQUIRE(context.getInterpreter().execute(source, context));
         }
         BOOST_TEST(context.getResult()->getType() == textType);
-        BOOST_REQUIRE(Interpreter{}.execute("new Example 1 2", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("new Example 1 2", context));
         BOOST_TEST(context.getResult()->getType() == pairType);
-        BOOST_REQUIRE(Interpreter{}.execute("(new Example 1)", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("(new Example 1)", context));
         BOOST_TEST(context.getResult()->getType() == singleType);
-        BOOST_REQUIRE(Interpreter{}.execute("consume (new Example 1) 2", context));
+        BOOST_REQUIRE(context.getInterpreter().execute("consume (new Example 1) 2", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 2);
-        BOOST_TEST(!Interpreter{}.execute("new Example true", context));
-        BOOST_TEST(!Interpreter{}.execute("new Example 1 true", context));
+        BOOST_TEST(!context.getInterpreter().execute("new Example true", context));
+        BOOST_TEST(!context.getInterpreter().execute("new Example 1 true", context));
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }

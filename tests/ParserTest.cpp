@@ -160,18 +160,19 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_parse_errors)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(!Interpreter{}.execute("score = (1 + 2", context));
+    BOOST_TEST(!context.getInterpreter().execute("score = (1 + 2", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Expected ')'");
     BOOST_TEST(context.getVariableValue("score") == nullptr);
 
-    BOOST_TEST(!Interpreter{}.execute("1 +", context));
+    BOOST_TEST(!context.getInterpreter().execute("1 +", context));
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "Unexpected end of line");
 
-    BOOST_TEST(Interpreter{}.execute("score = 3", context));
+    BOOST_TEST(context.getInterpreter().execute("score = 3", context));
     BOOST_TEST(!context.hasError());
 }
 

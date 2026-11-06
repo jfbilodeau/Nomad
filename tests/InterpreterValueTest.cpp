@@ -385,7 +385,8 @@ BOOST_AUTO_TEST_CASE(context_property_selectors_update_bindings_without_overwrit
     BOOST_REQUIRE(leafPropertyId.isValid());
     runtime.finalizeCompositeFieldLayout(rootId);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
     const std::array<RuntimeValue, 1> source{RuntimeValue{NomadInteger{17}}};
     context.setVariable("root", root, source);
     context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{99}});

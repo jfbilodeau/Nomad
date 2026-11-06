@@ -8,6 +8,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -44,7 +45,8 @@ BOOST_AUTO_TEST_CASE(function_call_nodes_retain_the_resolved_target_across_catal
     }, {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType(), "").isValid());
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext evaluation(*machine);
+    const Interpreter evaluationEvaluator;
+    InterpreterContext evaluation(evaluationEvaluator, *machine);
     expression.evaluate(evaluation);
     BOOST_REQUIRE(!evaluation.hasError());
     BOOST_REQUIRE(evaluation.getResult() != nullptr);

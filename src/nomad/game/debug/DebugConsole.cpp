@@ -319,7 +319,7 @@ DebugConsole::DebugConsole(Game* game, SDL_Window* window, SDL_Renderer* rendere
     m_window(window),
     m_renderer(renderer),
     m_interpreterVirtualMachine(game->getRuntime()->createVirtualMachine()),
-    m_interpreterContext(*m_interpreterVirtualMachine),
+    m_interpreterContext(m_interpreter, *m_interpreterVirtualMachine),
     m_inspectionVirtualMachine(game->getRuntime()->createVirtualMachine())
 {
     IMGUI_CHECKVERSION();
@@ -1664,7 +1664,7 @@ void DebugConsole::executeNativeFunction() {
     m_consoleEntries.push_back({false, "> " + nativeFunction});
 
     ExecutionContextGuard contextGuard(m_game, getSelectedScene(), getSelectedEntity());
-    if (!Interpreter{}.execute(nativeFunction, m_interpreterContext)) {
+    if (!m_interpreter.execute(nativeFunction, m_interpreterContext)) {
         const auto* error = m_interpreterContext.getError();
         m_consoleEntries.push_back({true, error != nullptr ? *error : "NativeFunction failed"});
     } else if (const auto* result = m_interpreterContext.getResult(); result != nullptr) {

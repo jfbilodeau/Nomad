@@ -2955,6 +2955,76 @@ Implementation and validation:
 - Stop for review without committing. Next are general construction/function
   operations, followed by method calls and remaining property/struct parity.
 
+### Step 5D1 follow-up: General construction and function-call APIs
+
+Approved scope:
+
+- Add `Interpreter::callFunction` and `construct` with an explicit target VM,
+  callable ID, and typed arguments in logical parameter order.
+- Return owned `InterpreterValue` copies without requiring or modifying a
+  context. Keep variables, frame bindings, results, and diagnostics in context.
+- Remove the context's `evaluate...Call` entry points and migrate AST callers
+  and the legacy scalar runtime adapter.
+- Reuse existing native/script dispatch, aggregate call frames, and the scalar
+  script execution path. Preserve argument evaluation order and suspension
+  limitations.
+- Validate host argument count, types, and physical widths against the existing
+  signature rules before execution.
+- Keep method calls, name-based overload selection, class/native property
+  operations, captures, and class-owned/temporary-rooted writes separate.
+
+Implementation and validation:
+
+- Context execution methods are removed. AST expressions publish returned
+  values explicitly; statements discard function results. The legacy raw
+  runtime adapter retains its scalar-only diagnostic contract.
+- Hidden line-number arguments now retain their declared parameter type,
+  matching the existing hidden file/function argument behavior.
+- Host tests cover native/script functions and constructors, scalar/struct/
+  empty/void results, independent argument copies, retained results after VM
+  destruction, native factories with distinct constructed types, nested native
+  reentry, and enclosing register/stack preservation.
+- Invalid IDs/kinds, arguments, unresolved signatures, and uncompiled functions
+  are rejected without execution. Existing copy/initialization failure tests
+  use the returned-value APIs. Scalar suspension and aggregate-yield rejection
+  have direct regression coverage.
+- CTest's integrated build and the language, remaining, bindings, tooling, and
+  compiler-export targets passed, along with four documentation preparation
+  tests and whitespace checks. Gameplay and performance were not validated.
+- Stop for review without committing. Next are method calls, followed by
+  remaining property/struct parity.
+
+### Step 5D1 follow-up: Borrowed interpreter instances
+
+Approved scope:
+
+- Require both ordinary and frame-backed contexts to borrow a caller-supplied
+  interpreter by const reference. The interpreter and VM must outlive the context.
+- Expose the supplied instance through `getInterpreter`; do not own, copy, or
+  implicitly create an interpreter in the context. Reject temporary borrowing.
+- Route AST evaluation, stored-property replacement, runtime context adapters,
+  and dynamic formatting through the context's interpreter.
+- Keep a persistent interpreter for the debug console. Compiled dynamic
+  formatting creates a scoped interpreter that outlives its scoped frame context.
+- Migrate host examples and tests, retaining separate context state when an
+  interpreter is shared. Keep `onEvaluate` signatures unchanged.
+
+Implementation and validation:
+
+- Both context constructors require the borrowed interpreter; `getInterpreter`
+  returns that exact instance. Rvalue overloads are deleted to prevent dangling
+  references to temporary interpreters.
+- Context-based operations use the borrowed instance. The debug console owns
+  its interpreter for the lifetime of its context; frame-formatting contexts
+  borrow a scoped interpreter.
+- Regression coverage verifies shared-instance identity with independent
+  context state, frame-context identity, and compile-time rejection of
+  temporary borrowing. Existing host and evaluation callers are migrated.
+- CTest's integrated build and language, remaining, bindings, tooling, and
+  compiler-export targets passed, along with four documentation preparation
+  tests and whitespace checks. Gameplay and performance were not validated.
+- Stop for review without committing. Method calls remain the next slice.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

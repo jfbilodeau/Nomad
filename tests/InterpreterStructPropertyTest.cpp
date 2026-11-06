@@ -76,9 +76,10 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
     const auto instructionCount = runtime.getInstructions().size();
     for (auto index = 0; index < 3; ++index) {
         {
-            InterpreterContext context(*machine);
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine);
             BOOST_CHECK_THROW((void)context.getReceiverStorage(), NomadBug);
-            BOOST_REQUIRE(Interpreter{}.execute("root = new ReadOuter\nholder = new ReadHolder", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("root = new ReadOuter\nholder = new ReadHolder", context));
             const auto root = context.getVariableStorage("root");
             const auto leafProperty = runtime.getTypeByName("ReadOuter")->asCompositeType()->getProperty("leaf");
             const auto leafOffset = leafProperty->getOwnerType()->getFieldOffset(leafProperty->getId());
@@ -86,46 +87,46 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
             const auto ownerOffset = leafOffset + ownerProperty->getOwnerType()->getFieldOffset(ownerProperty->getId());
             for (const auto* source : {"root.leaf.number", "holder.value.leaf.number", "(makeReadOuter).leaf.number",
                 "(makeReadHolder).value.leaf.number", "readLeafNumber root.leaf"}) {
-                const auto evaluated = Interpreter{}.evaluateExpression(source, context);
+                const auto evaluated = context.getInterpreter().evaluateExpression(source, context);
                 BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
             }
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.owner.number", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("root.leaf.owner.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 11);
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.text.toUpper", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("root.leaf.text.toUpper", context));
             BOOST_TEST(context.getResult()->getValue().getStringValue() == "OWNED PROPERTY");
-            BOOST_REQUIRE(Interpreter{}.execute("copy = root.leaf\nsingle = holder.single", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("copy = root.leaf\nsingle = holder.single", context));
             BOOST_TEST(context.getVariableStorage("copy").data() != root.data() + leafOffset);
             BOOST_TEST(context.getVariableStorage("single").size() == 1U);
             BOOST_TEST(context.getVariableType("single")->isStruct());
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("single.number", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("single.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.owner", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("root.leaf.owner", context));
             const InterpreterValue owner(*context.getResult());
             BOOST_TEST(owner.getValue().getObjectValue() == root[ownerOffset].getObjectValue());
-            BOOST_REQUIRE(Interpreter{}.execute("copy.owner.number = 31", context));
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.owner.number", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("copy.owner.number = 31", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("root.leaf.owner.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 31);
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("holder.value.leaf", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("holder.value.leaf", context));
             const InterpreterValue leaf(*context.getResult());
             BOOST_TEST(leaf.getStorage()[0].getIntegerValue() == 17);
             BOOST_TEST(leaf.getStorage()[1].getStringValue() == "owned property");
             for (const auto* source : {"root.empty", "root.leaf.empty", "holder.empty", "(new ReadEmptyRoot).empty",
                 "(makeReadOuter).empty"}) {
-                const auto evaluated = Interpreter{}.evaluateExpression(source, context);
+                const auto evaluated = context.getInterpreter().evaluateExpression(source, context);
                 BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
                 BOOST_TEST(context.getResult()->getType() == runtime.getTypeByName("ReadEmpty"));
                 BOOST_TEST(context.getResult()->getStorage().empty());
                 BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
             }
-            BOOST_TEST(!Interpreter{}.evaluateExpression("root.missing", context));
+            BOOST_TEST(!context.getInterpreter().evaluateExpression("root.missing", context));
             BOOST_TEST(context.hasError());
             BOOST_TEST(context.getResult() == nullptr);
-            BOOST_REQUIRE(Interpreter{}.execute("root.leaf.number = 99", context));
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.number", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("root.leaf.number = 99", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("root.leaf.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 99);
-            BOOST_REQUIRE(Interpreter{}.execute("root.leaf = new ReadLeaf", context));
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("root.leaf.number", context));
+            BOOST_REQUIRE(context.getInterpreter().execute("root.leaf = new ReadLeaf", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("root.leaf.number", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
             context.clearVariableValue("root");
             context.clearVariableValue("holder");
@@ -138,10 +139,11 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
         {
-            InterpreterContext context(*machine);
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine);
             for (const auto* source : {"(makeReadOuter).leaf.text", "(makeReadHolder).value.leaf.text"}) {
                 const auto rootsBefore = roots;
-                BOOST_REQUIRE(Interpreter{}.evaluateExpression(source, context));
+                BOOST_REQUIRE(context.getInterpreter().evaluateExpression(source, context));
                 BOOST_TEST(roots == rootsBefore + 1);
                 BOOST_TEST(context.getResult()->getValue().getStringValue() == "owned property");
                 BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 1);
@@ -150,7 +152,7 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
                 BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
             }
             const auto effectsBefore = emptyEffects;
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("(new ReadEmptyRoot).empty", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("(new ReadEmptyRoot).empty", context));
             BOOST_TEST(emptyEffects == effectsBefore + 1);
             BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
         }
@@ -183,24 +185,25 @@ BOOST_AUTO_TEST_CASE(reads_support_live_parameters_locals_and_borrowed_struct_re
         const auto variables = callable->getVariableCount();
         const auto savedResult = machine->getResult();
         const auto savedIntermediate = machine->getIntermediate();
-        InterpreterContext context(*machine, *callable);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine, *callable);
         const auto isReceiver = callable->getClassType() != nullptr;
         for (const auto* source : isReceiver
             ? std::array<const char*, 3>{"this.leaf.number", "this.leaf.owner.number", "this.leaf.text"}
             : std::array<const char*, 3>{"value.leaf.number", "local.leaf.owner.number", "value.leaf.text"}) {
-            const auto evaluated = Interpreter{}.evaluateExpression(source, context);
+            const auto evaluated = context.getInterpreter().evaluateExpression(source, context);
             BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
         }
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "frame property");
-        const auto copied = Interpreter{}.execute(isReceiver ? "copy = this.leaf" : "copy = local.leaf", context);
+        const auto copied = context.getInterpreter().execute(isReceiver ? "copy = this.leaf" : "copy = local.leaf", context);
         BOOST_REQUIRE_MESSAGE(copied, (context.getError() ? *context.getError() : ""));
         BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 17);
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression(isReceiver ? "this.empty" : "value.empty", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression(isReceiver ? "this.empty" : "value.empty", context));
         BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
         if (isReceiver) {
             const auto receiver = context.getReceiverStorage();
             BOOST_TEST(receiver.size() == callable->getClassType()->getSize());
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression("this", context));
+            BOOST_REQUIRE(context.getInterpreter().evaluateExpression("this", context));
             BOOST_TEST(context.getResult()->getStorage().data() != receiver.data());
         }
         BOOST_TEST(machine->getCurrentCallable() == callable);
@@ -240,11 +243,12 @@ BOOST_AUTO_TEST_CASE(empty_struct_receiver_reads_omit_storage_pointers_but_prese
         const auto* callable = machine->getCurrentCallable();
         BOOST_REQUIRE(callable != nullptr);
         BOOST_TEST(!callable->getCallStorageLayout().receiverOffset.has_value());
-        InterpreterContext context(*machine, *callable);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine, *callable);
         BOOST_TEST(context.getReceiverStorage().empty());
         BOOST_TEST(context.getReceiverStorage().data() == nullptr);
         for (const auto* source : {"this", "this.empty"}) {
-            const auto evaluated = Interpreter{}.evaluateExpression(source, context);
+            const auto evaluated = context.getInterpreter().evaluateExpression(source, context);
             BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
             BOOST_TEST(context.getResult()->getStorage().empty());
             BOOST_TEST(context.getResult()->getStorage().data() == nullptr);

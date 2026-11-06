@@ -342,13 +342,11 @@ void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    if (const auto* native = m_function->asNativeFunction()) {
-        context.evaluateNativeFunctionCallWithStorage(native->getId(), evaluatedArguments);
-    } else if (const auto* script = m_function->asScriptFunction()) {
-        context.evaluateFunctionCallWithStorage(script->getId(), evaluatedArguments);
-    } else {
-        raiseException("Unsupported implementation of function '" + m_name + "'");
-    }
+    static_cast<void>(context.getInterpreter().callFunction(
+        *context.getVirtualMachine(),
+        m_function->getId(),
+        evaluatedArguments
+    ));
     if (!context.hasError()) {
         context.setVoidResult();
     }

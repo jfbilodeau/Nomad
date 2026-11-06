@@ -19,6 +19,7 @@
 
 namespace nomad {
 
+class Interpreter;
 class Type;
 class Runtime;
 class ScriptCallableBase;
@@ -41,14 +42,25 @@ class InterpreterContext {
 public:
     [[nodiscard]] LoopControl getLoopControl() const { return m_loopControl; }
     void setLoopControl(LoopControl control) { m_loopControl = control; }
-    // The caller owns the VM. Interpreter variables persist for this context's lifetime.
-    explicit InterpreterContext(VirtualMachine& virtualMachine);
+    // The caller owns the interpreter and VM; both must outlive this context.
+    InterpreterContext(const Interpreter& interpreter, VirtualMachine& virtualMachine);
+    InterpreterContext(const Interpreter&& interpreter, VirtualMachine& virtualMachine) = delete;
     // Additionally borrows the active script frame, which must outlive this context.
-    InterpreterContext(VirtualMachine& virtualMachine, const ScriptCallableBase& callable);
+    InterpreterContext(
+        const Interpreter& interpreter,
+        VirtualMachine& virtualMachine,
+        const ScriptCallableBase& callable
+    );
+    InterpreterContext(
+        const Interpreter&& interpreter,
+        VirtualMachine& virtualMachine,
+        const ScriptCallableBase& callable
+    ) = delete;
     InterpreterContext(const InterpreterContext&) = delete;
     InterpreterContext& operator=(const InterpreterContext&) = delete;
     ~InterpreterContext();
 
+    [[nodiscard]] const Interpreter& getInterpreter() const;
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] VirtualMachine* getVirtualMachine() const;
     // Function-only access to context-owned metadata; nullptr for method or constructor frames.
@@ -57,12 +69,6 @@ public:
     [[nodiscard]] const ScriptCallableBase* getCallable() const;
     [[nodiscard]] bool isFrameBacked() const;
     [[nodiscard]] bool isFrameVariable(VariableId variableId) const;
-    void evaluateFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
-    void evaluateNativeFunctionCall(CallableId functionId, const std::vector<RuntimeValue>& arguments);
-    // Resolved interpreter calls use complete typed arguments, including zero-slot values.
-    void evaluateFunctionCallWithStorage(CallableId functionId, std::span<const InterpreterValue> arguments);
-    void evaluateNativeFunctionCallWithStorage(CallableId functionId, std::span<const InterpreterValue> arguments);
-    void evaluateConstructorCall(CallableId constructorId, std::span<const InterpreterValue> arguments);
     void setParameterResult(NomadId parameterId);
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
@@ -119,6 +125,7 @@ private:
     void validateFrame() const;
     void replaceReceiver(const InterpreterValue& replacement);
 
+    const Interpreter& m_interpreter;
     Runtime* m_runtime;
     std::unique_ptr<ScriptCallableBase> m_function;
     VirtualMachine& m_virtualMachine;

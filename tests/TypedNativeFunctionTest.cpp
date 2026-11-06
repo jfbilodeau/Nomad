@@ -359,8 +359,9 @@ BOOST_AUTO_TEST_CASE(typed_functions_are_available_to_the_interpreter) {
     BOOST_REQUIRE(runtime.registerNativeFunction("measure", measureText,
         {{"text", ""}, {"scale", ""}}, NomadDoc("")).isValid());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("measure \"abc\" 2.0", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_REQUIRE(context.getInterpreter().execute("measure \"abc\" 2.0", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 6);
 }
@@ -376,8 +377,9 @@ BOOST_AUTO_TEST_CASE(typed_hub_functions_preserve_strings_in_the_interpreter) {
         auto machine = runtime.createVirtualMachine();
         const auto before = RuntimeValue::getLiveStringCount();
         {
-            InterpreterContext context(*machine);
-            BOOST_REQUIRE(Interpreter{}.execute("example.describe \"value:\" 7 2.5 true", context));
+            const Interpreter contextEvaluator;
+            InterpreterContext context(contextEvaluator, *machine);
+            BOOST_REQUIRE(context.getInterpreter().execute("example.describe \"value:\" 7 2.5 true", context));
             BOOST_REQUIRE(context.getResult() != nullptr);
             BOOST_TEST(context.getResult()->getValue().getStringObject()->getString() == "value:7:ok");
         }

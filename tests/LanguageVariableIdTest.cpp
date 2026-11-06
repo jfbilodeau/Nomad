@@ -296,14 +296,15 @@ BOOST_AUTO_TEST_CASE(interpreter_console_ids_preserve_lookup_and_reassignment)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("value = 7", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_REQUIRE(context.getInterpreter().execute("value = 7", context));
     const auto id = context.getFunction()->getVariableId("value");
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(context.getVariableTypeById(id) == runtime.getIntegerType());
     BOOST_REQUIRE(context.getVariableValueById(id) != nullptr);
     BOOST_TEST(context.getVariableValueById(id)->getIntegerValue() == 7);
-    BOOST_REQUIRE(Interpreter{}.execute("value = \"changed\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("value = \"changed\"", context));
     BOOST_TEST(context.getFunction()->getVariableId("value") == id);
     BOOST_TEST(context.getVariableTypeById(id) == runtime.getStringType());
     BOOST_TEST(context.getVariableValueById(id)->getStringValue() == "changed");

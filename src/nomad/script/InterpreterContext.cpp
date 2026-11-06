@@ -3,9 +3,6 @@
 #include <nomad/script/InterpreterContext.hpp>
 
 #include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterCallFrame.hpp>
-#include <nomad/script/NativeCallable.hpp>
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Type.hpp>
@@ -116,7 +113,7 @@ void InterpreterContext::setVariableProperty(
         throw std::invalid_argument("Stored property assignment requires an assigned variable");
     }
     const InterpreterValue current(type, getVariableStorage(name));
-    const auto replacement = Interpreter{}.setProperty(current, propertyId, value);
+    const auto replacement = m_interpreter.setProperty(current, propertyId, value);
     setVariable(name, type, replacement.getStorage());
 }
 
@@ -130,7 +127,7 @@ void InterpreterContext::setVariableProperty(
         throw std::invalid_argument("Stored property assignment requires an assigned variable");
     }
     const InterpreterValue current(type, getVariableStorage(name));
-    const auto replacement = Interpreter{}.setProperty(current, propertyPath, value);
+    const auto replacement = m_interpreter.setProperty(current, propertyPath, value);
     setVariable(name, type, replacement.getStorage());
 }
 
@@ -226,7 +223,11 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
     return variables;
 }
 
-InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine):
+InterpreterContext::InterpreterContext(
+    const Interpreter& interpreter,
+    VirtualMachine& virtualMachine
+):
+    m_interpreter(interpreter),
     m_runtime(virtualMachine.getRuntime()),
     m_function(std::make_unique<ScriptFunction>(
         CallableId{}, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""
@@ -237,8 +238,12 @@ InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine):
 
 InterpreterContext::~InterpreterContext() = default;
 
-InterpreterContext::InterpreterContext(VirtualMachine& virtualMachine, const ScriptCallableBase& function):
-    InterpreterContext(virtualMachine)
+InterpreterContext::InterpreterContext(
+    const Interpreter& interpreter,
+    VirtualMachine& virtualMachine,
+    const ScriptCallableBase& function
+):
+    InterpreterContext(interpreter, virtualMachine)
 {
     if (virtualMachine.getCurrentCallable() != &function || function.getFunctionStart() == NOMAD_INVALID_INDEX) {
         throw NomadBug("Frame interpretation requires an active compiled script callable");
@@ -303,6 +308,10 @@ const ScriptCallableBase* InterpreterContext::getCallable() const {
 
 Runtime* InterpreterContext::getRuntime() const {
     return m_runtime;
+}
+
+const Interpreter& InterpreterContext::getInterpreter() const {
+    return m_interpreter;
 }
 
 VirtualMachine* InterpreterContext::getVirtualMachine() const {
@@ -419,7 +428,7 @@ void InterpreterContext::setReceiverProperty(
 ) {
     const auto storage = getReceiverStorage();
     const InterpreterValue current(m_frameCallable->getClassType(), storage);
-    replaceReceiver(Interpreter{}.setProperty(current, propertyId, value));
+    replaceReceiver(m_interpreter.setProperty(current, propertyId, value));
 }
 
 void InterpreterContext::setReceiverProperty(
@@ -428,7 +437,7 @@ void InterpreterContext::setReceiverProperty(
 ) {
     const auto storage = getReceiverStorage();
     const InterpreterValue current(m_frameCallable->getClassType(), storage);
-    replaceReceiver(Interpreter{}.setProperty(current, propertyPath, value));
+    replaceReceiver(m_interpreter.setProperty(current, propertyPath, value));
 }
 
 void InterpreterContext::replaceReceiver(const InterpreterValue& replacement) {
@@ -458,134 +467,6 @@ void InterpreterContext::setParameter(
     const auto destination = m_virtualMachine.getEnclosingParameterStorage(
         m_frameCallable->getParameterOffset(parameterId), type->getSize());
     type->assignValue(storage.data(), destination.data(), scratch.get());
-}
-
-void InterpreterContext::evaluateFunctionCall(const CallableId functionId, const std::vector<RuntimeValue>& arguments) {
-    const auto* function = getRuntime()->getScriptFunction(functionId);
-    if (function == nullptr || function->getReturnType() == nullptr) {
-        throw NomadBug("Invalid interpreted function call");
-    }
-    if (function->getReturnType()->isStruct()) {
-        setError("Struct-returning function calls are not supported by the interpreter");
-        return;
-    }
-    const auto* type = function->getReturnType();
-    auto* machine = getVirtualMachine();
-    const auto savedResult = machine->getResult();
-    const auto savedIntermediate = machine->getIntermediate();
-    machine->setResult(RuntimeValue{});
-    try {
-        machine->run(function, arguments);
-        try {
-            setResult(type, machine->getResult());
-        } catch (...) {
-            type->freeValue(&machine->getResult());
-            throw;
-        }
-        type->freeValue(&machine->getResult());
-    } catch (...) {
-        machine->setResult(savedResult);
-        machine->setIntermediate(savedIntermediate);
-        throw;
-    }
-    machine->setResult(savedResult);
-    machine->setIntermediate(savedIntermediate);
-}
-
-void InterpreterContext::evaluateNativeFunctionCall(const CallableId functionId, const std::vector<RuntimeValue>& arguments) {
-    const auto* function = getRuntime()->getNativeFunction(functionId);
-    if (function == nullptr || function->getReturnType() == nullptr) {
-        throw NomadBug("Invalid interpreted native function call");
-    }
-    if (function->getReturnType()->isStruct()) {
-        setError("Struct-returning function calls are not supported by the interpreter");
-        return;
-    }
-    auto* machine = getVirtualMachine();
-    const auto savedResult = machine->getResult();
-    const auto savedIntermediate = machine->getIntermediate();
-    machine->setResult(RuntimeValue{});
-    try {
-        machine->runNativeFunction(functionId, arguments);
-        setResult(function->getReturnType(), machine->getResult());
-        function->getReturnType()->freeValue(&machine->getResult());
-    } catch (...) {
-        function->getReturnType()->freeValue(&machine->getResult());
-        machine->setResult(savedResult);
-        machine->setIntermediate(savedIntermediate);
-        throw;
-    }
-    machine->setResult(savedResult);
-    machine->setIntermediate(savedIntermediate);
-}
-
-void InterpreterContext::evaluateFunctionCallWithStorage(
-    const CallableId functionId,
-    const std::span<const InterpreterValue> arguments
-) {
-    const auto* function = getRuntime()->getScriptFunction(functionId);
-    if (function == nullptr || function->getReturnType() == nullptr) {
-        throw NomadBug("Invalid interpreted function call");
-    }
-    if (!function->getReturnType()->isStruct() &&
-        std::ranges::none_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
-        std::vector<RuntimeValue> values;
-        values.reserve(arguments.size());
-        for (const auto& argument : arguments) {
-            values.push_back(argument.getValue());
-        }
-        evaluateFunctionCall(functionId, values);
-        return;
-    }
-    InterpreterCallFrame frame(m_virtualMachine, *function, arguments, function->getReturnType());
-    m_virtualMachine.runPreparedFunction(function);
-    setResult(function->getReturnType(), frame.getResultStorage());
-}
-
-void InterpreterContext::evaluateNativeFunctionCallWithStorage(
-    const CallableId functionId,
-    const std::span<const InterpreterValue> arguments
-) {
-    const auto* function = getRuntime()->getNativeFunction(functionId);
-    if (function == nullptr || function->getReturnType() == nullptr) {
-        throw NomadBug("Invalid interpreted native function call");
-    }
-    InterpreterCallFrame frame(m_virtualMachine, *function, arguments, function->getReturnType());
-    m_virtualMachine.callNativeFunction(functionId);
-    setResult(function->getReturnType(), frame.getResultStorage());
-}
-
-void InterpreterContext::evaluateConstructorCall(
-    const CallableId constructorId,
-    const std::span<const InterpreterValue> arguments
-) {
-    const auto* constructor = getRuntime()->getConstructor(constructorId);
-    if (constructor == nullptr || constructor->getReturnType() == nullptr) {
-        throw NomadBug("Invalid interpreted constructor call");
-    }
-    const auto* type = constructor->getConstructedType();
-    InterpreterCallFrame frame(m_virtualMachine, *constructor, arguments, type);
-    if (type->isStruct()) {
-        if (constructor->asNativeConstructor() != nullptr) {
-            m_virtualMachine.createNativeStruct(frame.getDestination(), constructorId);
-        } else {
-            m_virtualMachine.createScriptStruct(frame.getDestination(), constructorId);
-        }
-        if (!hasError()) {
-            setResult(type, frame.getResultStorage());
-        }
-        return;
-    }
-    auto* created = constructor->asNativeConstructor() != nullptr
-        ? m_virtualMachine.createNativeObject(constructorId)
-        : m_virtualMachine.createScriptObject(constructorId);
-    const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(created, release);
-    if (!hasError()) {
-        RuntimeValue value;
-        value.setObjectValue(object.get());
-        setResult(type, value);
-    }
 }
 
 } // namespace nomad

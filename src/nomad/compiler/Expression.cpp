@@ -679,12 +679,13 @@ void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
 
-    if (const auto* native = m_function->asNativeFunction()) {
-        context.evaluateNativeFunctionCallWithStorage(native->getId(), evaluatedArguments);
-    } else if (const auto* script = m_function->asScriptFunction()) {
-        context.evaluateFunctionCallWithStorage(script->getId(), evaluatedArguments);
-    } else {
-        raiseException("Unsupported implementation of function '" + m_name + "'");
+    const auto result = context.getInterpreter().callFunction(
+        *context.getVirtualMachine(),
+        m_function->getId(),
+        evaluatedArguments
+    );
+    if (!context.hasError()) {
+        context.setResult(result);
     }
 }
 
@@ -1091,7 +1092,7 @@ void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
             }
             const InterpreterValue receiver(*evaluatedReceiver);
             if (receiver.getType()->isStruct()) {
-                context.setResult(Interpreter{}.getProperty(receiver, property->getId()));
+                context.setResult(context.getInterpreter().getProperty(receiver, property->getId()));
             } else {
                 const auto* object = dynamic_cast<const ScriptObject*>(receiver.getValue().getObjectValue());
                 if (object == nullptr || object->getClassType() != property->getOwnerType()) {
@@ -1580,7 +1581,14 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
     if (context.hasError()) {
         return;
     }
-    context.evaluateConstructorCall(m_constructor->getId(), evaluatedArguments);
+    const auto result = context.getInterpreter().construct(
+        *context.getVirtualMachine(),
+        m_constructor->getId(),
+        evaluatedArguments
+    );
+    if (!context.hasError()) {
+        context.setResult(result);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

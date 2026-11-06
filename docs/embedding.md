@@ -7,17 +7,22 @@ See [building from source](building.md) for toolchain requirements and the
 
 ## Ownership
 
-The host owns the `Runtime`, its virtual machines, and interpreter contexts.
-Destroy contexts before their borrowed VM, and destroy VMs before the runtime.
+The host owns the `Runtime`, interpreters, virtual machines, and interpreter
+contexts. Destroy contexts before their borrowed interpreter and VM, and destroy
+VMs before the runtime.
 Types and callables used by a context must remain valid.
 
 - `Runtime` owns registered APIs, types, callables, and bytecode.
 - `VirtualMachine` executes compiled functions and provides the execution
   environment for native calls, object members, and dynamic variables.
-- `InterpreterContext` borrows a VM and owns interpreter variables, its latest
-  typed result, and its latest error. It can additionally borrow a script frame.
-- `Interpreter` is stateless. Pass a context to each execution; keep that context
-  to retain interpreter variables between executions.
+- `InterpreterContext` borrows an interpreter and a VM and owns interpreter
+  variables, its latest typed result, and its latest error. It can additionally
+  borrow a script frame.
+- `Interpreter` provides execution and value operations. Pass the interpreter
+  when constructing a context, and keep that context to retain interpreter
+  variables between executions. `context.getInterpreter()` returns the supplied
+  instance by const reference; contexts may share an interpreter without sharing
+  their variables or results. Temporary interpreters cannot be borrowed.
 
 Neither the interpreter nor its context creates or owns a VM.
 
@@ -2207,8 +2212,8 @@ and module lifecycle are preserved.
 void interpretInput() {
     nomad::Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    nomad::InterpreterContext context(*machine);
     const nomad::Interpreter interpreter;
+    nomad::InterpreterContext context(interpreter, *machine);
 
     if (!interpreter.execute("score = 10", context) ||
         !interpreter.evaluateExpression("score + 5", context)) {
@@ -2383,13 +2388,31 @@ a non-frame context or a class/free-function frame throws `NomadBug`.
 The interpreter can read `this` and its stored fields in such struct frames;
 the resulting values are owned copies, not mutable receiver aliases.
 
-For already resolved calls, `evaluateFunctionCallWithStorage`,
-`evaluateNativeFunctionCallWithStorage`, and `evaluateConstructorCall` accept
-a callable ID and `std::span<const InterpreterValue>` in logical parameter order.
-The caller supplies arguments matching the resolved signature. These entry
-points copy argument storage, preserve the enclosing VM registers/frame, and
-leave an owned result in the context. The existing scalar-vector call entry
-points remain scalar-only.
+For already resolved calls, `Interpreter::callFunction(machine, functionId, arguments)`
+and `Interpreter::construct(machine, constructorId, arguments)` take an explicit
+`VirtualMachine&` and `std::span<const InterpreterValue>` in logical parameter order.
+They dispatch native and compiled script callables and return an owned
+`InterpreterValue`; no `InterpreterContext` is required or modified.
+Use a registered constructor ID for construction, including struct constructors
+whose callable return type is void. Native class factories return the registered
+constructed type, which can differ from their declaring type.
+
+Arguments must belong to the VM's runtime and match the resolved signature's
+type-acceptance and storage rules. Invalid IDs, wrong callable kinds, unresolved
+signatures, uncompiled script bodies, and mismatched arguments throw
+`std::invalid_argument` before execution. Execution and value-copy failures
+propagate to the caller. Argument structs are independent copies; contained
+class references retain their shared reference semantics. Results remain valid
+after the interpreter, context, arguments, or VM are destroyed, provided the
+runtime/type descriptors still exist.
+
+Completed calls preserve the enclosing VM registers/frame. Scalar script calls
+retain their existing suspension behavior; calls with struct arguments or
+returns remain synchronous and cannot yield. Closure/capture arguments are not
+supported by these entry points. Fatal VM fault recovery remains unsupported.
+Call `context.setResult(result)` explicitly to publish a returned value in a
+context. The context no longer exposes function-execution or construction APIs.
+The raw `Runtime::executeNativeFunction` context adapter remains scalar-only.
 
 `listVariables()` displays struct type names rather than formatting their
 fields. Stored fields can be read through struct variables, ordinary parameters,
@@ -3153,8 +3176,8 @@ const auto* callable = machine.getCurrentCallable();
 if (callable == nullptr) {
     throw nomad::NomadBug("An active script callable is required");
 }
-nomad::InterpreterContext context(machine, *callable);
 const nomad::Interpreter interpreter;
+nomad::InterpreterContext context(interpreter, machine, *callable);
 const auto succeeded = interpreter.evaluateExpression("value + local", context);
 ```
 

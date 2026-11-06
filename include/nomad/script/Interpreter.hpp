@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Source.hpp>
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/Property.hpp>
@@ -12,6 +13,17 @@ namespace nomad {
 
 class Interpreter {
 public:
+    [[nodiscard]] InterpreterValue callFunction(
+        VirtualMachine& machine,
+        CallableId functionId,
+        std::span<const InterpreterValue> arguments
+    ) const;
+    [[nodiscard]] InterpreterValue construct(
+        VirtualMachine& machine,
+        CallableId constructorId,
+        std::span<const InterpreterValue> arguments
+    ) const;
+
     [[nodiscard]] InterpreterValue getProperty(
         const InterpreterValue& receiver,
         PropertyId propertyId

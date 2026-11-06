@@ -29,8 +29,9 @@ BOOST_AUTO_TEST_CASE(script_setter_changes_anchor_without_moving_entity)
     game->getCurrentContext()->reset(nullptr, &entity);
 
     auto machine = game->getRuntime()->createVirtualMachine();
-    InterpreterContext interpreter(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("this.setSpriteAnchor 12.0 8.0", interpreter));
+    const Interpreter interpreterEvaluator;
+    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("this.setSpriteAnchor 12.0 8.0", interpreter));
 
     BOOST_TEST(entity.getX() == 100.0f);
     BOOST_TEST(entity.getY() == 75.0f);
@@ -50,8 +51,9 @@ BOOST_AUTO_TEST_CASE(script_center_sprite_sets_half_width_and_height_offsets)
     game->getCurrentContext()->reset(nullptr, &entity);
 
     auto machine = game->getRuntime()->createVirtualMachine();
-    InterpreterContext interpreter(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("this.centerSprite", interpreter));
+    const Interpreter interpreterEvaluator;
+    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("this.centerSprite", interpreter));
 
     BOOST_TEST(entity.getX() == 100.0f);
     BOOST_TEST(entity.getY() == 75.0f);

@@ -132,7 +132,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
     const auto compiler = runtime.createCompiler();
     const auto before = runtime.getInstructions().size();
@@ -149,7 +150,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues
     BOOST_TEST(result.diagnostics[1].length == 1);
     BOOST_TEST(!context.hasError());
     BOOST_TEST(runtime.getInstructions().size() == before);
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("$(\"{score}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().evaluateExpression("$(\"{score}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "10");
 }
 
@@ -167,7 +168,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_supports_nested_templates_and_quoted_braces)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
     const std::vector<std::pair<NomadString, NomadString>> cases{
         {"nested {$\"inner {score + 1}\"}", "nested inner 11"},
@@ -187,7 +189,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_recovers_from_syntax_type_and_void_errors_be
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
     NomadInteger calls = 0;
     runtime.registerNativeFunction("test.count", [&](VirtualMachine* calledMachine) {
         ++calls;
@@ -233,10 +236,11 @@ BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preser
         BOOST_TEST(RuntimeValue::getLiveStringCount() == liveBefore);
 #endif
         argument.freeObjectValue();
-        InterpreterContext context(*machine);
+        const Interpreter contextEvaluator;
+        InterpreterContext context(contextEvaluator, *machine);
         BOOST_CHECK_THROW(static_cast<void>(formatDynamicString(format, context, "fault.nomad", 1, 1)),
             VirtualMachineException);
-        BOOST_REQUIRE(Interpreter{}.evaluateExpression("2 + 3", context));
+        BOOST_REQUIRE(context.getInterpreter().evaluateExpression("2 + 3", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
     }
 }

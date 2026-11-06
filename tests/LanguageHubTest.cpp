@@ -639,8 +639,9 @@ BOOST_AUTO_TEST_CASE(hub_references_require_qualification_in_every_context)
     BOOST_TEST(outcome.integerValue == 11);
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_TEST(!Interpreter{}.execute("open hub game\nend", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_TEST(!context.getInterpreter().execute("open hub game\nend", context));
     BOOST_TEST(!runtime.isHub("game"));
 }
 
@@ -791,10 +792,11 @@ BOOST_AUTO_TEST_CASE(hub_qualified_dynamic_variables_remain_readable_and_writabl
     BOOST_TEST(volume == 0.75f);
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_TEST(Interpreter{}.execute("game.volume = 0.5", context));
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
+    BOOST_TEST(context.getInterpreter().execute("game.volume = 0.5", context));
     BOOST_TEST(volume == 0.5f);
-    BOOST_TEST(!Interpreter{}.execute("game.volume = \"wrong\"", context));
+    BOOST_TEST(!context.getInterpreter().execute("game.volume = \"wrong\"", context));
     BOOST_TEST(context.hasError());
     BOOST_TEST(volume == 0.5f);
 }
@@ -815,9 +817,10 @@ BOOST_AUTO_TEST_CASE(hub_qualified_read_only_dynamic_variables_remain_unwritable
     ).isValid());
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator;
+    InterpreterContext context(contextEvaluator, *machine);
 
-    BOOST_TEST(Interpreter{}.execute("game.frame = 10", context) == false);
+    BOOST_TEST(context.getInterpreter().execute("game.frame = 10", context) == false);
     BOOST_TEST(context.hasError());
 }
 

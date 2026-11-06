@@ -6,6 +6,7 @@
 #include <nomad/system/Float.hpp>
 #include <nomad/system/Integer.hpp>
 #include <nomad/script/FormatString.hpp>
+#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 
@@ -1250,7 +1251,8 @@ void op_dynamic_format_execute(VirtualMachine* machine) {
 
     auto* formatText = machine->getStringResult();
     machine->setResult(RuntimeValue{});
-    InterpreterContext context(*machine, *function);
+    const Interpreter interpreter;
+    InterpreterContext context(interpreter, *machine, *function);
 
     const auto result = formatDynamicString(formatText->getText(), context, function->getPath(), line, column);
 

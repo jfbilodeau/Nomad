@@ -2991,8 +2991,31 @@ void Runtime::executeNativeFunction(
         return;
     }
 
+    if (definition->getReturnType()->isStruct()) {
+        context.setError("Struct-returning function calls require typed interpreter arguments");
+        return;
+    }
     try {
-        context.evaluateNativeFunctionCall(nativeFunctionId, args);
+        if (std::ranges::any_of(definition->getParameters(), [](const auto& parameter) {
+            return parameter.type->isStruct() || parameter.getStackValueCount() != 1;
+        })) {
+            context.clearResult();
+            context.setError("Raw interpreter calls require scalar argument storage");
+            return;
+        }
+        std::vector<InterpreterValue> arguments;
+        arguments.reserve(args.size());
+        for (auto index = NomadIndex{0}; index < args.size(); ++index) {
+            arguments.emplace_back(definition->getParameters()[index].type, args[index]);
+        }
+        const auto result = context.getInterpreter().callFunction(
+            *context.getVirtualMachine(),
+            nativeFunctionId,
+            arguments
+        );
+        if (!context.hasError()) {
+            context.setResult(result);
+        }
     } catch (const NomadException& exception) {
         context.clearResult();
         context.setError(exception.what());
