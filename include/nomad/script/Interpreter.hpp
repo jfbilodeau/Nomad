@@ -11,6 +11,11 @@
 
 namespace nomad {
 
+struct StructMethodResult {
+    InterpreterValue receiver;
+    InterpreterValue result;
+};
+
 class Interpreter {
 public:
     // The caller owns the VM, which must outlive this interpreter.
@@ -25,6 +30,11 @@ public:
         std::span<const InterpreterValue> arguments
     ) const;
     [[nodiscard]] InterpreterValue callMethod(
+        const InterpreterValue& receiver,
+        CallableId methodId,
+        std::span<const InterpreterValue> arguments
+    ) const;
+    [[nodiscard]] StructMethodResult callStructMethod(
         const InterpreterValue& receiver,
         CallableId methodId,
         std::span<const InterpreterValue> arguments
@@ -66,6 +76,9 @@ public:
 
 private:
     VirtualMachine& m_virtualMachine;
+
+    void runFunction(const Function& function) const;
+    void runMethod(const Method& method) const;
 
     [[nodiscard]] InterpreterValue getStoredProperty(
         const InterpreterValue& receiver,

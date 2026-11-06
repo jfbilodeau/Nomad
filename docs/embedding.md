@@ -478,8 +478,9 @@ retain reference semantics. Methods mutate their stored receiver. Empty structs
 occupy no slots but still run constructor and method side effects. The interpreter
 supports owned struct values, construction, and free-function arguments/results;
 it can also read stored struct properties and assign fields rooted in named
-struct variables or `this`. Class-owned and temporary-rooted struct writes and
-interpreter struct method calls remain unsupported.
+struct variables or `this`. Host struct-method calls return explicit updated
+receiver/result values. Class-owned and temporary-rooted struct writes and
+source-level interpreter struct method calls remain unsupported.
 
 Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
@@ -1198,14 +1199,23 @@ The scalar host free-function entry points, including `VirtualMachine::run` and
 single-slot values for aggregate storage. Scalar host method entry points
 likewise reject struct receivers and struct returns.
 
-`VirtualMachine::runPreparedFunction(function)` executes a compiled free function
-whose arguments and hidden return pointer are already on the stack. Use
-`Callable::getCallStorageLayout()` to prepare the physical layout. The caller
-owns and releases the current argument values, pops their slots and hidden
-pointers, and owns the destination fields. The entry point restores the enclosing
-call frame and receiver but does not preserve result/intermediate registers.
-It is synchronous and does not support yielding. VM faults remain fatal; this is
-not a fault-recovery or frame-unwinding API.
+`VirtualMachine::runScript(address, receiver)` executes compiled code at a
+validated callable entry address.
+`VirtualMachine::runNative(callback, receiver)` executes a native callback.
+Both require arguments and hidden storage pointers already on the stack.
+The optional receiver supplies the object receiver register; it defaults to
+an empty value for free functions and struct methods. Struct receiver pointers
+follow `Callable::getCallStorageLayout()` instead.
+
+The caller owns and releases argument values, pops their slots and hidden
+pointers, and owns any receiver/result storage. Both entry points restore the
+enclosing execution state, including its receiver and yield state, but leave
+result/intermediate registers available to the caller. They return `true` on
+completion and `false` on yield; they do not retain resumable call storage.
+The interpreter selects the execution path and rejects yielding where its
+value-returning API cannot support suspension. Scalar script calls retain their
+separate suspension-capable execution path. VM faults remain fatal; these are
+not fault-recovery or frame-unwinding APIs.
 
 `pushStorage(storage)` copies contiguous raw slots onto the VM stack without
 retaining references. The caller supplies ownership for those slots and must
@@ -2408,6 +2418,10 @@ class references retain their shared reference semantics. Results remain valid
 after the interpreter, context, arguments, or VM are destroyed, provided the
 runtime/type descriptors still exist.
 
+Interpreter struct results are returned as independent values. The interpreter
+does not forward caller destinations or apply return-value optimization to
+struct storage.
+
 Completed calls preserve the enclosing VM registers/frame. Scalar script calls
 retain their existing suspension behavior; calls with struct arguments or
 returns remain synchronous and cannot yield. Closure/capture arguments are not
@@ -2453,6 +2467,42 @@ Execution and value-copy failures propagate to host callers; fatal VM fault
 recovery remains unsupported. Property/accessor execution is separate from
 this method API.
 
+For struct receivers, use
+`Interpreter::callStructMethod(receiver, methodId, arguments)`. It accepts
+complete typed arguments, including structs and empty structs, and invokes
+native or compiled script methods. It returns a `StructMethodResult`, declared
+in `<nomad/script/Interpreter.hpp>`, containing:
+
+- `receiver`: an owned copy of the updated struct receiver.
+- `result`: the method's owned scalar, reference, struct, empty, or void result.
+
+The method operates on a private receiver copy. Input struct fields and argument
+copies are independent; contained class objects keep their shared reference
+semantics. Even when a method returns `this`, the two returned structs have
+independent storage. Empty structs keep their type without a storage pointer.
+Both returned values can outlive their inputs, interpreter, and VM, provided
+their runtime/type descriptors remain alive.
+
+This API does not publish results or replace context bindings. For example:
+
+```cpp
+const auto invocation = interpreter.callStructMethod(receiver, methodId, arguments);
+context.setVariable("value", invocation.receiver.getType(), invocation.receiver.getStorage());
+context.setResult(invocation.result);
+```
+
+Receiver/owner and argument validation follows the typed method-call rules
+above; a class receiver is not accepted by this struct-specific entry point.
+Execution or copying failures throw without returning a replacement/result
+pair. This is not a transaction for shared objects: mutations of contained
+class objects remain visible even if the call fails.
+
+Struct-method calls are synchronous and cannot yield, for either native or
+script methods. They preserve the enclosing execution frame, current object
+receiver, and result/intermediate registers. Fatal VM fault recovery remains
+unsupported. Source-level interpreter struct-method calls are still disabled;
+automatic receiver writeback is not provided.
+
 `listVariables()` displays struct type names rather than formatting their
 fields. Stored fields can be read through struct variables, ordinary parameters,
 borrowed struct `this`, class-owned structs, and temporary construction/call
@@ -2480,7 +2530,8 @@ the RHS are preserved. Failed copying before replacement leaves the destination
 unchanged. These setters do not change the context's result; source assignment
 statements separately publish their owned assignment snapshots.
 
-Class-owned and temporary-rooted struct writes, interpreter struct method calls,
+Class-owned and temporary-rooted struct writes, source-level interpreter struct
+method calls,
 aggregate captures, and field-aware struct formatting remain unsupported.
 
 ## Parameterized types

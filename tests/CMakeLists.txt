@@ -30,6 +30,7 @@ add_executable(
     ./GeometryTest.cpp
     ./InterpreterStructAssignmentTest.cpp
     ./InterpreterStructCallTest.cpp
+    ./InterpreterStructMethodTest.cpp
     ./InterpreterStructPropertyTest.cpp
     ./InterpreterTest.cpp
     ./InterpreterValueTest.cpp

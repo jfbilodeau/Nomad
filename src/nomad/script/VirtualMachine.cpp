@@ -122,24 +122,46 @@ void VirtualMachine::pushStorage(const std::span<const RuntimeValue> storage) {
     }
 }
 
-void VirtualMachine::runPreparedFunction(const ScriptFunction* function) {
-    if (function == nullptr || function->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        function->getFunctionStart() >= function->getFunctionEnd()) {
-        fault("Cannot call prepared script function: invalid or uncompiled function");
-    }
+bool VirtualMachine::runScript(const NomadIndex address, const RuntimeValue& receiver) {
+    const auto yielded = m_yielded;
     const auto state = beginScriptRun();
+    m_this = receiver;
     try {
-        callScriptFunction(function->getFunctionStart());
+        callScriptMethod(address);
         executeScript();
-        if (m_yielded) {
-            fault("Aggregate script calls cannot yield");
-        }
     } catch (...) {
-        m_yielded = false;
+        m_yielded = yielded;
         restoreScriptRun(state);
         throw;
     }
+    const auto completed = !m_yielded;
+    m_yielded = yielded;
     restoreScriptRun(state);
+    return completed;
+}
+
+bool VirtualMachine::runNative(
+    const NativeFunctionFn& callback,
+    const RuntimeValue& receiver
+) {
+    const auto frame = beginNativeCall();
+    const auto running = m_running;
+    const auto yielded = m_yielded;
+    m_this = receiver;
+    m_yielded = false;
+    try {
+        callback(this);
+    } catch (...) {
+        endNativeCall(frame);
+        m_running = running;
+        m_yielded = yielded;
+        throw;
+    }
+    const auto completed = !m_yielded;
+    endNativeCall(frame);
+    m_running = running;
+    m_yielded = yielded;
+    return completed;
 }
 
 void VirtualMachine::run(

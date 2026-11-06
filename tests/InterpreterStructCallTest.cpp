@@ -856,4 +856,141 @@ BOOST_AUTO_TEST_CASE(host_method_copy_failures_release_arguments_results_and_rec
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
+BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_every_owned_snapshot) {
+    Runtime runtime;
+    FailingCallCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>("StructMethodCopyField", ClassMode::Closed, field);
+    const auto valueId = runtime.registerStruct("StructMethodCopyValue");
+    const auto* type = runtime.getTypeByName("StructMethodCopyValue");
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    auto calls = 0;
+    const auto methodId = runtime.addMethod(valueId, {
+        .name = "copy", .parameters = {{valueId, "snapshot", ""}}, .returnTypeId = valueId,
+        .function = [&](VirtualMachine* active) {
+            ++calls;
+            auto* receiver = &active->getStorageParameter(2, 0);
+            auto* destination = &active->getStorageParameter(3, 0);
+            const auto argument = active->getParameterStorage(0, 2);
+            receiver[0].freeObjectValue();
+            receiver[0].setStringValue("changed receiver");
+            argument[1].freeObjectValue();
+            argument[1].setStringValue("changed argument");
+            type->copyValue(receiver, destination);
+        }
+    });
+    BOOST_REQUIRE(methodId.isValid());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        std::array<RuntimeValue, 2> source{
+            RuntimeValue{NomadString{"first source"}}, RuntimeValue{NomadString{"second source"}}
+        };
+        const InterpreterValue receiver(type, source);
+        type->freeValue(source.data());
+        field->failInitialization = true;
+        machine->pushInteger(1234);
+        machine->setIntegerResult(41);
+        machine->setIntegerIntermediate(43);
+        const auto live = RuntimeValue::getLiveStringCount();
+        for (auto failure = NomadIndex{1}; failure <= 10; ++failure) {
+            BOOST_TEST_CONTEXT("Copy failure " << failure) {
+                field->copyCount = 0;
+                field->failCopyAt = failure;
+                BOOST_CHECK_THROW(static_cast<void>(interpreter.callStructMethod(receiver, methodId, {&receiver, 1})),
+                    NomadException);
+                BOOST_TEST(receiver.getStorage()[0].getStringValue() == "first source");
+                BOOST_TEST(receiver.getStorage()[1].getStringValue() == "second source");
+                BOOST_TEST(receiver.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(receiver.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            }
+        }
+        BOOST_TEST(calls == 6);
+        field->failCopyAt = 0;
+        field->copyCount = 0;
+        {
+            const auto result = interpreter.callStructMethod(receiver, methodId, {&receiver, 1});
+            BOOST_TEST(field->copyCount == 10);
+            BOOST_TEST(result.receiver.getStorage()[0].getStringValue() == "changed receiver");
+            BOOST_TEST(result.result.getStorage()[0].getStringValue() == "changed receiver");
+            BOOST_TEST(result.receiver.getStorage()[1].getStringValue() == "second source");
+            BOOST_TEST(receiver.getStorage()[0].getStringValue() == "first source");
+            BOOST_TEST(result.receiver.getStorage().data() != result.result.getStorage().data());
+        }
+        BOOST_TEST(calls == 7);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+        {
+            VirtualMachine smallMachine(&runtime, 4);
+            const Interpreter smallInterpreter(smallMachine);
+            smallMachine.pushInteger(4321);
+            smallMachine.setIntegerResult(73);
+            smallMachine.setIntegerIntermediate(79);
+            BOOST_CHECK_EXCEPTION(static_cast<void>(smallInterpreter.callStructMethod(receiver, methodId, {&receiver, 1})),
+                VirtualMachineException,
+                [](const auto& error) { return NomadString{error.what()} == "Stack overflow"; });
+            BOOST_TEST(calls == 7);
+            BOOST_TEST(receiver.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(receiver.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+            BOOST_TEST(smallMachine.getIntegerResult() == 73);
+            BOOST_TEST(smallMachine.getIntegerIntermediate() == 79);
+            BOOST_TEST(smallMachine.peekStack(0).getIntegerValue() == 4321);
+            smallMachine.pop1();
+        }
+        machine->pop1();
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(synchronous_script_function_calls_restore_prior_yield_state) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.registerNativeFunction("pauseSynchronousCall", [](VirtualMachine* active) {
+        active->yield(RuntimeValue{NomadInteger{37}});
+    }, {}, runtime.getVoidType(), "").isValid());
+    fixture.addFunction("synchronousCallTypes", "struct SynchronousCallEmpty\nend\nreturn 0");
+    fixture.addFunction("completeSynchronousCall", "params value:SynchronousCallEmpty\nreturn value");
+    fixture.addFunction("yieldSynchronousCall",
+        "params value:SynchronousCallEmpty\npauseSynchronousCall\nreturn value");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const InterpreterValue empty(runtime.getTypeByName("SynchronousCallEmpty"), std::span<const RuntimeValue>{});
+    machine->pushInteger(1234);
+    for (const auto previouslyYielded : {false, true}) {
+        if (previouslyYielded) {
+            machine->yield(RuntimeValue{NomadInteger{41}});
+        } else {
+            machine->stop(RuntimeValue{NomadInteger{41}});
+        }
+        machine->setIntegerIntermediate(43);
+        const auto instruction = machine->getInstructionIndex();
+        const auto result = interpreter.callFunction(runtime.getFunctionId("completeSynchronousCall"), {&empty, 1});
+        BOOST_TEST(result.getType() == empty.getType());
+        BOOST_TEST(result.getStorage().data() == nullptr);
+        BOOST_TEST(machine->hasYielded() == previouslyYielded);
+        BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.callFunction(
+            runtime.getFunctionId("yieldSynchronousCall"), {&empty, 1})), VirtualMachineException,
+            [](const auto& error) { return NomadString{error.what()} == "Aggregate script calls cannot yield"; });
+        BOOST_TEST(machine->hasYielded() == previouslyYielded);
+        BOOST_TEST(!machine->isRunning());
+        BOOST_TEST(machine->getInstructionIndex() == instruction);
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+    }
+    machine->stop(RuntimeValue{});
+    machine->pop1();
+}
+
 BOOST_AUTO_TEST_SUITE_END()

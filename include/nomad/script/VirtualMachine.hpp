@@ -21,6 +21,7 @@ namespace nomad {
 class VirtualMachine;
 class Runtime;
 class ScriptFunction;
+class ScriptMethod;
 class ScriptCallableBase;
 class Closure;
 class InterpreterValue;
@@ -72,9 +73,13 @@ public:
     }
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
-    // Compiler-verified arguments and hidden pointers are already on the stack; the caller owns/frees them.
-    // Aggregate calls are synchronous; yielding requires a separate suspended-storage contract.
-    void runPreparedFunction(const ScriptFunction* function);
+    // Arguments and hidden pointers are already on the stack; the caller owns/frees them.
+    // Restore enclosing execution state and report completion (false on yield); registers retain call results.
+    [[nodiscard]] bool runScript(NomadIndex address, const RuntimeValue& receiver = RuntimeValue{});
+    [[nodiscard]] bool runNative(
+        const std::function<void(VirtualMachine*)>& callback,
+        const RuntimeValue& receiver = RuntimeValue{}
+    );
     // Compiler-verified constructor and body; arguments are owned stack copies the caller frees/pops.
     [[nodiscard]] NomadObject* createNativeObject(CallableId constructorId);
     [[nodiscard]] NomadObject* createScriptObject(CallableId constructorId);

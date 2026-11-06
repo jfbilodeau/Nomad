@@ -53,6 +53,20 @@ void validateCallArguments(
     }
 }
 
+const Type* validateMethodReceiver(
+    const Runtime& runtime,
+    const Method& method,
+    const InterpreterValue& receiver
+) {
+    const auto* receiverType = receiver.getType();
+    const auto* ownerType = method.getClassType();
+    if (receiverType == nullptr || ownerType == nullptr || receiverType->getRuntime() != &runtime ||
+        ownerType->getRuntime() != &runtime || !ownerType->acceptsArgument(receiverType)) {
+        throw std::invalid_argument("Method receiver type does not match its owner");
+    }
+    return receiverType;
+}
+
 struct StoredPropertySelection {
     const Type* type;
     NomadIndex offset;
@@ -165,8 +179,8 @@ InterpreterValue Interpreter::callFunction(
     const auto* type = function->getReturnType();
     if (native != nullptr) {
         InterpreterCallFrame frame(machine, *function, arguments, type);
-        machine.callNativeFunction(functionId);
-        return InterpreterValue(type, frame.getResultStorage());
+        runFunction(*function);
+        return frame.getResult();
     }
 
     const auto* script = function->asScriptFunction();
@@ -198,8 +212,26 @@ InterpreterValue Interpreter::callFunction(
         }
     }
     InterpreterCallFrame frame(machine, *function, arguments, type);
-    machine.runPreparedFunction(script);
-    return InterpreterValue(type, frame.getResultStorage());
+    runFunction(*function);
+    return frame.getResult();
+}
+
+void Interpreter::runFunction(const Function& function) const {
+    if (function.asNativeFunction() != nullptr) {
+        m_virtualMachine.callNativeFunction(function.getId());
+    } else if (!m_virtualMachine.runScript(function.asScriptFunction()->getFunctionStart())) {
+        m_virtualMachine.fault("Aggregate script calls cannot yield");
+    }
+}
+
+void Interpreter::runMethod(const Method& method) const {
+    if (const auto* script = method.asScriptMethod()) {
+        if (!m_virtualMachine.runScript(script->getFunctionStart())) {
+            m_virtualMachine.fault("Struct method calls cannot yield");
+        }
+    } else if (!m_virtualMachine.runNative(method.asNativeMethod()->getFn())) {
+        m_virtualMachine.fault("Struct method calls cannot yield");
+    }
 }
 
 InterpreterValue Interpreter::callMethod(
@@ -214,12 +246,7 @@ InterpreterValue Interpreter::callMethod(
         throw std::invalid_argument("Unknown method id");
     }
     validateCallArguments(*runtime, *method, arguments);
-    const auto* receiverType = receiver.getType();
-    const auto* ownerType = method->getClassType();
-    if (receiverType == nullptr || ownerType == nullptr || receiverType->getRuntime() != runtime ||
-        ownerType->getRuntime() != runtime || !ownerType->acceptsArgument(receiverType)) {
-        throw std::invalid_argument("Method receiver type does not match its owner");
-    }
+    const auto* receiverType = validateMethodReceiver(*runtime, *method, receiver);
     const auto* type = method->getReturnType();
     if (receiverType->isStruct() || type->isStruct() ||
         std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
@@ -260,6 +287,35 @@ InterpreterValue Interpreter::callMethod(
     }
 }
 
+StructMethodResult Interpreter::callStructMethod(
+    const InterpreterValue& receiver,
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) const {
+    auto& machine = m_virtualMachine;
+    const auto* runtime = machine.getRuntime();
+    const auto* method = runtime->getMethod(methodId);
+    if (method == nullptr) {
+        throw std::invalid_argument("Unknown method id");
+    }
+    validateCallArguments(*runtime, *method, arguments);
+    const auto* receiverType = validateMethodReceiver(*runtime, *method, receiver);
+    if (!receiverType->isStruct()) {
+        throw std::invalid_argument("Struct method calls require a struct receiver");
+    }
+    const auto* script = method->asScriptMethod();
+    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        script->getFunctionStart() >= script->getFunctionEnd())) {
+        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
+    }
+    if (script == nullptr && method->asNativeMethod() == nullptr) {
+        throw std::invalid_argument("Unsupported method implementation");
+    }
+    InterpreterCallFrame frame(machine, *method, arguments, method->getReturnType(), &receiver);
+    runMethod(*method);
+    return {frame.getReceiver(), frame.getResult()};
+}
+
 InterpreterValue Interpreter::construct(
     const CallableId constructorId,
     const std::span<const InterpreterValue> arguments
@@ -287,7 +343,7 @@ InterpreterValue Interpreter::construct(
         } else {
             machine.createScriptStruct(frame.getDestination(), constructorId);
         }
-        return InterpreterValue(type, frame.getResultStorage());
+        return frame.getResult();
     }
     auto* created = constructor->asNativeConstructor() != nullptr
         ? machine.createNativeObject(constructorId)

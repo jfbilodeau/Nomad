@@ -19,6 +19,8 @@ The immutable `InterpreterValue` rename and interpreter-produced replacement
 operations are implemented and validated, awaiting review.
 Conventional stored-property name/path and direct-ID APIs are implemented and
 validated, awaiting review.
+Host-only struct-method calls with explicit updated receiver/result values are
+implemented and validated; source-level receiver writeback remains a separate slice.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -84,6 +86,9 @@ This draft is not part of the published language guide.
   return-value optimization (NRVO). Keep initial eligibility rules conservative.
 - Never substitute an alias of the caller's original struct for a copied
   parameter, including when that parameter is returned.
+- Interpreter calls return independent struct values, without forwarding caller
+  destinations or applying RVO/NRVO. Internal compiled-call ABI storage does not
+  change that value-returning contract.
 
 ### Initial scope and deferrals
 
@@ -3124,6 +3129,84 @@ Implementation and validation:
 - Stop for review without committing. Next is agreeing and implementing immutable
   struct-method receiver updates plus method results, followed by remaining
   property/struct parity.
+
+### Step 5D1 follow-up: Host struct-method receiver/result values
+
+Approved scope:
+
+- Add a specialized `callStructMethod` returning a plain `StructMethodResult`
+  with owned `receiver` and `result` values. Keep class-method APIs unchanged.
+- Execute native and compiled script methods against a private receiver copy.
+  Support complete typed arguments and scalar/reference/struct/empty/void
+  results. Keep input struct fields and argument copies independent.
+- Preserve ordinary shared class-reference effects, including effects before
+  failure. Do not promise rollback of referenced objects.
+- Reuse the call-storage layout and type-directed copy/free contracts with
+  separate receiver and result storage. Do not add opcodes, ownership tags,
+  writable interpreter values, or AST storage-discovery APIs.
+- Keep calls synchronous and reject native/script yielding. Preserve enclosing
+  execution state, object receiver, registers, arguments, and stack ownership.
+- Do not enable source-level struct-method calls or automatic context writeback.
+
+Implementation and validation:
+
+- The public result is a plain pair of owned interpreter values, declared in
+  `Interpreter.hpp`. `InterpreterCallFrame` owns the mutable receiver copy,
+  arguments, and result storage, and produces independent returned values.
+- Interpreter-private dispatch selects native/script execution and rejects
+  yielding. Generic VM execution primitives preserve enclosing execution state
+  and report completion or yielding, without struct-specific entry points.
+  No opcodes or AST changes are added.
+- Host tests cover scalar/reference/struct/empty/void results, nested receivers,
+  copied arguments, shared objects, independent receiver/result storage, explicit
+  context publication, and results surviving their interpreter and VM.
+- Failure coverage includes all ten copy positions across receiver, arguments,
+  callee result, and returned snapshots; partial native results; stack overflow;
+  and rejection of native/script yielding with prior yield-state preservation.
+  Initialization failure injection confirms method calls copy rather than
+  reconstruct receivers.
+- Native reentry tests verify enclosing class receiver restoration and borrowed
+  script-frame parameters/locals. Source-level interpreter struct-method calls
+  remain rejected, and the existing class-method API retains its restrictions.
+- CTest's integrated build and the language, remaining, and compiler-export
+  targets passed, along with four documentation preparation tests and whitespace
+  checks. Gameplay and performance were not validated.
+- Stop for review without committing. Next is source integration after agreeing
+  how statements commit receiver updates without losing intervening changes or
+  introducing AST storage discovery.
+
+### Step 5D1 follow-up: Simplifying interpreter call ownership and execution
+
+Approved scope:
+
+- Keep `callMethod` and `callStructMethod` and their existing return contracts.
+  Move `StructMethodResult` into `Interpreter.hpp`.
+- Consolidate private receiver-copy ownership into `InterpreterCallFrame`;
+  remove the separate struct-method frame and externally supplied receiver
+  storage. Return independent receiver/result values without interpreter RVO.
+- Keep native/script dispatch and host yield policy in the interpreter.
+  Replace prepared/struct-specific VM entry points, including
+  `runPreparedFunction`, with generic execution mechanics.
+- Preserve existing class-method restrictions, scalar suspension, copy/free
+  contracts, reentry, and enclosing execution state. Keep source-level receiver
+  writeback separate. Validate and stop for review without committing.
+
+Implementation and validation:
+
+- The existing call frame owns and frees its receiver copy and returns owned
+  snapshots. The separate struct-method frame and result header are removed.
+- Interpreter-private `runFunction`/`runMethod` dispatch uses generic VM
+  `runScript`/`runNative` execution where required. VM execution reports yielding;
+  the interpreter enforces the existing synchronous-call restrictions.
+- Regression coverage asserts all ten field copies on a successful struct
+  method call, alongside the existing copy-failure coverage. Synchronous script
+  functions also preserve prior yield state on completion and yield rejection.
+- The workspace CMake test target built successfully. All six unit-test groups,
+  compiler-export and LSP-process checks, four documentation-preparation tests,
+  and strict documentation generation/site building passed. Gameplay,
+  performance, and consuming-project execution were not validated.
+- Stop for review without committing. Source-level receiver writeback remains
+  a separately approved slice.
 
 ### Step 6: Conservative named return-value optimization
 

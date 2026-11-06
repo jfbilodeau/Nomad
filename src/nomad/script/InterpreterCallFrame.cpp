@@ -10,10 +10,12 @@ InterpreterCallFrame::InterpreterCallFrame(
     VirtualMachine& machine,
     const Callable& callable,
     const std::span<const InterpreterValue> arguments,
-    const Type* resultType
+    const Type* resultType,
+    const InterpreterValue* receiver
 ):
     m_machine(machine),
     m_resultType(resultType),
+    m_receiverType(receiver != nullptr ? receiver->getType() : nullptr),
     m_savedResult(machine.getResult()),
     m_savedIntermediate(machine.getIntermediate())
 {
@@ -24,16 +26,23 @@ InterpreterCallFrame::InterpreterCallFrame(
     if (m_resultType->isStruct()) {
         m_resultStorage.resize(m_resultType->getSize());
     }
+    if (m_receiverType != nullptr) {
+        m_receiverStorage.resize(m_receiverType->getSize());
+    }
     m_argumentStorage.resize(layout.stackSlotCount);
     m_arguments.reserve(arguments.size());
     if (layout.returnOffset.has_value()) {
         m_argumentStorage[layout.stackSlotCount - 1 - *layout.returnOffset].setStorageAddress(getDestination());
     }
     if (layout.receiverOffset.has_value()) {
-        m_argumentStorage[layout.stackSlotCount - 1 - *layout.receiverOffset].setStorageAddress(getDestination());
+        m_argumentStorage[layout.stackSlotCount - 1 - *layout.receiverOffset].setStorageAddress(
+            receiver != nullptr ? m_receiverStorage.data() : getDestination());
     }
     auto offset = layout.stackSlotCount - layout.argumentSlotCount;
     try {
+        if (!m_receiverStorage.empty()) {
+            m_receiverType->copyValue(receiver->getStorage().data(), m_receiverStorage.data());
+        }
         for (auto index = arguments.size(); index > 0; --index) {
             const auto& argument = arguments[index - 1];
             const auto storage = argument.getStorage();
@@ -49,6 +58,7 @@ InterpreterCallFrame::InterpreterCallFrame(
         m_onStack = true;
     } catch (...) {
         releaseArguments();
+        releaseReceiver();
         throw;
     }
     m_machine.setResult(RuntimeValue{});
@@ -64,12 +74,25 @@ InterpreterCallFrame::~InterpreterCallFrame() {
         m_resultType->freeValue(&m_machine.getResult());
     }
     releaseArguments();
+    releaseReceiver();
     m_machine.setResult(m_savedResult);
     m_machine.setIntermediate(m_savedIntermediate);
 }
 
 RuntimeValue* InterpreterCallFrame::getDestination() {
     return m_resultStorage.empty() ? nullptr : m_resultStorage.data();
+}
+
+InterpreterValue InterpreterCallFrame::getReceiver() const {
+    if (m_receiverType == nullptr) {
+        throw NomadBug("Interpreter call frame has no receiver");
+    }
+    return InterpreterValue(m_receiverType,
+        m_receiverStorage.empty() ? std::span<const RuntimeValue>{} : m_receiverStorage);
+}
+
+InterpreterValue InterpreterCallFrame::getResult() const {
+    return InterpreterValue(m_resultType, getResultStorage());
 }
 
 std::span<const RuntimeValue> InterpreterCallFrame::getResultStorage() const {
@@ -94,6 +117,12 @@ void InterpreterCallFrame::releaseArguments() noexcept {
     }
     if (m_onStack) {
         m_machine.popN(m_argumentStorage.size());
+    }
+}
+
+void InterpreterCallFrame::releaseReceiver() noexcept {
+    if (!m_receiverStorage.empty()) {
+        m_receiverType->freeValue(m_receiverStorage.data());
     }
 }
 
