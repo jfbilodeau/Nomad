@@ -680,7 +680,6 @@ void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     }
 
     const auto result = context.getInterpreter().callFunction(
-        *context.getVirtualMachine(),
         m_function->getId(),
         evaluatedArguments
     );
@@ -1582,7 +1581,6 @@ void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
         return;
     }
     const auto result = context.getInterpreter().construct(
-        *context.getVirtualMachine(),
         m_constructor->getId(),
         evaluatedArguments
     );

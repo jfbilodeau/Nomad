@@ -2400,8 +2400,8 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     const auto* identity = runtime.getScriptFunction(runtime.getFunctionId("identity"));
     BOOST_CHECK_THROW(machine.run(identity, {RuntimeValue{}}), VirtualMachineException);
     BOOST_CHECK_THROW(machine.runNativeFunction(factoryId, {RuntimeValue(NomadInteger{1})}), VirtualMachineException);
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, machine);
+    const Interpreter interpreterEvaluator(machine);
+    InterpreterContext interpreter(interpreterEvaluator);
     runtime.executeNativeFunction(factoryId, {RuntimeValue(NomadInteger{1})}, interpreter);
     BOOST_REQUIRE(interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);
@@ -3010,8 +3010,8 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_receivers_but_reject
     expression.compile(&fixture.getCompiler(), &caller, ExpressionTarget::Result);
     BOOST_TEST(runtime.getInstructions().size() == before + 2);
     VirtualMachine machine(&runtime);
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, machine);
+    const Interpreter interpreterEvaluator(machine);
+    InterpreterContext interpreter(interpreterEvaluator);
     expression.evaluate(interpreter);
     BOOST_REQUIRE(interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);

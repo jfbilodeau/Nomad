@@ -197,6 +197,7 @@ BOOST_AUTO_TEST_CASE(failed_scalar_and_array_copies_release_partial_ownership) {
 
 BOOST_AUTO_TEST_CASE(stored_property_replacements_preserve_inputs_and_validate_the_complete_path) {
     Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
     const auto emptyId = runtime.registerStruct("PropertyEmpty");
     const auto leafId = runtime.registerStruct("PropertyLeaf");
     const auto rootId = runtime.registerStruct("PropertyRoot");
@@ -217,7 +218,7 @@ BOOST_AUTO_TEST_CASE(stored_property_replacements_preserve_inputs_and_validate_t
         const InterpreterValue value(root, source);
         root->freeValue(source.data());
         const InterpreterValue snapshot(value);
-        const Interpreter interpreter;
+        const Interpreter interpreter(*machine);
         const auto textPath = "leaf.text";
         RuntimeValue text{NomadString{"updated"}};
         const InterpreterValue replacement(runtime.getStringType(), text);
@@ -287,7 +288,8 @@ BOOST_AUTO_TEST_CASE(returned_replacements_outlive_the_interpreter_and_inputs) {
     for (auto index = 0; index < 3; ++index) {
         {
             const auto result = [&] {
-                const Interpreter interpreter;
+                auto machine = runtime.createVirtualMachine();
+                const Interpreter interpreter(*machine);
                 std::array<RuntimeValue, 3> source{
                     RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadString{"retained"}}, RuntimeValue{}};
                 source[2].setObjectValue(new ScriptObject(owner));
@@ -311,6 +313,7 @@ BOOST_AUTO_TEST_CASE(returned_replacements_outlive_the_interpreter_and_inputs) {
 
 BOOST_AUTO_TEST_CASE(property_reads_outlive_their_struct_and_preserve_reference_semantics) {
     Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
     const auto ownerId = runtime.registerClass("ReadValueOwner", ClassMode::Closed);
     runtime.finalizeCompositeFieldLayout(ownerId);
     const auto* owner = runtime.getTypeByName("ReadValueOwner")->asClassType();
@@ -332,15 +335,15 @@ BOOST_AUTO_TEST_CASE(property_reads_outlive_their_struct_and_preserve_reference_
                 source[1].setObjectValue(new ScriptObject(owner));
                 const InterpreterValue value(root, source);
                 root->freeValue(source.data());
-                return Interpreter{}.getProperty(value, "leaf");
+                return Interpreter{*machine}.getProperty(value, "leaf");
             }();
-            const auto text = Interpreter{}.getProperty(leafValue, textId);
-            const auto object = Interpreter{}.getProperty(leafValue, "owner");
+            const auto text = Interpreter{*machine}.getProperty(leafValue, textId);
+            const auto object = Interpreter{*machine}.getProperty(leafValue, "owner");
             BOOST_TEST(text.getValue().getStringValue() == "field snapshot");
             BOOST_TEST(object.getValue().getObjectValue() == leafValue.getStorage()[1].getObjectValue());
             BOOST_TEST(text.getValue().getObjectValue()->getReferenceCount() == 2U);
             BOOST_TEST(object.getValue().getObjectValue()->getReferenceCount() == 2U);
-            BOOST_CHECK_THROW(static_cast<void>(Interpreter{}.getProperty(leafValue, "owner.number")),
+            BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.getProperty(leafValue, "owner.number")),
                 std::invalid_argument);
         }
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
@@ -350,6 +353,7 @@ BOOST_AUTO_TEST_CASE(property_reads_outlive_their_struct_and_preserve_reference_
 
 BOOST_AUTO_TEST_CASE(empty_root_property_operations_preserve_types_without_slot_pointers) {
     Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
     const auto emptyId = runtime.registerStruct("EmptyPropertyValue");
     const auto rootId = runtime.registerStruct("EmptyPropertyRoot");
     const auto* empty = runtime.getTypeByName("EmptyPropertyValue");
@@ -359,7 +363,7 @@ BOOST_AUTO_TEST_CASE(empty_root_property_operations_preserve_types_without_slot_
     runtime.finalizeCompositeFieldLayout(rootId);
     const InterpreterValue value(root, std::span<const RuntimeValue>{});
     const InterpreterValue emptyValue(empty, std::span<const RuntimeValue>{});
-    const Interpreter interpreter;
+    const Interpreter interpreter(*machine);
     const auto byId = interpreter.getProperty(value, propertyId);
     const auto byName = interpreter.getProperty(value, "empty");
     BOOST_TEST(byId.getType() == empty);
@@ -385,8 +389,8 @@ BOOST_AUTO_TEST_CASE(context_property_selectors_update_bindings_without_overwrit
     BOOST_REQUIRE(leafPropertyId.isValid());
     runtime.finalizeCompositeFieldLayout(rootId);
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     const std::array<RuntimeValue, 1> source{RuntimeValue{NomadInteger{17}}};
     context.setVariable("root", root, source);
     context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{99}});

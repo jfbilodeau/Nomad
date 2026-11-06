@@ -47,8 +47,8 @@ void reject(const NomadString& setup, const NomadString& expression) {
         registerCollections(runtime);
         BOOST_TEST(!compile(runtime, setup + "\n" + expression));
         auto machine = runtime.createVirtualMachine();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         if (!setup.empty()) {
             BOOST_REQUIRE(context.getInterpreter().execute(setup, context));
         }

@@ -76,8 +76,8 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
     const auto instructionCount = runtime.getInstructions().size();
     for (auto index = 0; index < 3; ++index) {
         {
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             BOOST_CHECK_THROW((void)context.getReceiverStorage(), NomadBug);
             BOOST_REQUIRE(context.getInterpreter().execute("root = new ReadOuter\nholder = new ReadHolder", context));
             const auto root = context.getVariableStorage("root");
@@ -139,8 +139,8 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
         {
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             for (const auto* source : {"(makeReadOuter).leaf.text", "(makeReadHolder).value.leaf.text"}) {
                 const auto rootsBefore = roots;
                 BOOST_REQUIRE(context.getInterpreter().evaluateExpression(source, context));
@@ -185,8 +185,8 @@ BOOST_AUTO_TEST_CASE(reads_support_live_parameters_locals_and_borrowed_struct_re
         const auto variables = callable->getVariableCount();
         const auto savedResult = machine->getResult();
         const auto savedIntermediate = machine->getIntermediate();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine, *callable);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator, *callable);
         const auto isReceiver = callable->getClassType() != nullptr;
         for (const auto* source : isReceiver
             ? std::array<const char*, 3>{"this.leaf.number", "this.leaf.owner.number", "this.leaf.text"}
@@ -243,8 +243,8 @@ BOOST_AUTO_TEST_CASE(empty_struct_receiver_reads_omit_storage_pointers_but_prese
         const auto* callable = machine->getCurrentCallable();
         BOOST_REQUIRE(callable != nullptr);
         BOOST_TEST(!callable->getCallStorageLayout().receiverOffset.has_value());
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine, *callable);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator, *callable);
         BOOST_TEST(context.getReceiverStorage().empty());
         BOOST_TEST(context.getReceiverStorage().data() == nullptr);
         for (const auto* source : {"this", "this.empty"}) {

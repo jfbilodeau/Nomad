@@ -82,8 +82,8 @@ BOOST_AUTO_TEST_CASE(named_roots_copy_nested_fields_and_preserve_shared_referenc
     auto machine = runtime.createVirtualMachine();
     for (auto index = 0; index < 3; ++index) {
         {
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             const auto execute = [&](const NomadString& source) {
                 const auto success = context.getInterpreter().execute(source, context);
                 BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : source));
@@ -139,8 +139,8 @@ BOOST_AUTO_TEST_CASE(frame_updates_preserve_rhs_sibling_changes_and_original_cal
     auto visits = 0;
     const auto siblingId = runtime.registerNativeFunction("changeAssignmentSibling", [&](VirtualMachine* machine) {
         const auto* callable = machine->getCurrentCallable();
-        const Interpreter nestedEvaluator;
-        InterpreterContext nested(nestedEvaluator, *machine, *callable);
+        const Interpreter nestedEvaluator(*machine);
+        InterpreterContext nested(nestedEvaluator, *callable);
         const auto* source = callable->getClassType() == nullptr ? "local.sibling = 71" : "this.sibling = 71";
         const auto success = nested.getInterpreter().execute(source, nested);
         BOOST_REQUIRE_MESSAGE(success, (nested.getError() ? *nested.getError() : source));
@@ -153,8 +153,8 @@ BOOST_AUTO_TEST_CASE(frame_updates_preserve_rhs_sibling_changes_and_original_cal
         const auto variableCount = callable->getVariableCount();
         const auto savedResult = machine->getResult();
         const auto savedIntermediate = machine->getIntermediate();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine, *callable);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator, *callable);
         const auto* rootType = callable->getClassType() == nullptr ?
             context.getVariableType("local") : callable->getClassType();
         const auto siblingPropertyId = rootType->asCompositeType()->getProperty("sibling")->getId();
@@ -220,8 +220,8 @@ BOOST_AUTO_TEST_CASE(empty_receiver_writes_preserve_effects_without_storage_poin
         const auto* callable = machine->getCurrentCallable();
         BOOST_REQUIRE(callable != nullptr);
         BOOST_TEST(!callable->getCallStorageLayout().receiverOffset.has_value());
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine, *callable);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator, *callable);
         const auto* property = callable->getClassType()->asCompositeType()->getProperty("empty");
         const InterpreterValue emptyValue(property->getValueType(), std::span<const RuntimeValue>{});
         context.setReceiverProperty(property->getId(), emptyValue);
@@ -271,8 +271,8 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
         {
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             std::array<RuntimeValue, 2> oldValues{
                 RuntimeValue{NomadString{"old first"}}, RuntimeValue{NomadString{"old second"}}};
             std::array<RuntimeValue, 2> newValues{

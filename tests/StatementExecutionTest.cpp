@@ -58,8 +58,8 @@ BOOST_AUTO_TEST_CASE(statement_execution_assigns_interpreter_local_variables)
     auto compiler = runtime.createCompiler();
     CompilerContext compilerContextForStatements(compiler.get(), CompilerMode::Interpreter);
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     StatementList statements;
 
     statements.addStatement(std::make_unique<AssignmentStatement>(
@@ -93,8 +93,8 @@ BOOST_AUTO_TEST_CASE(statement_execution_allows_assignment_type_changes)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{12}});
 
     AssignmentStatement assignment(
@@ -124,8 +124,8 @@ BOOST_AUTO_TEST_CASE(statement_evaluation_defaults_to_unsupported)
     );
 
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     CompilerContext supportedTokenizerContext(compiler.get(), CompilerMode::Interpreter);
     Tokenizer supportedTokenizer(&supportedTokenizerContext, "test.nomad", "supported");
     auto supported = parser::parseStatement(&supportedTokenizerContext, nullptr, &supportedTokenizer);
@@ -275,8 +275,8 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_compiled_functions_with_interpret
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
     CompilerContext tokenizerContext(compiler.get(), CompilerMode::Interpreter);
     Tokenizer tokenizer(&tokenizerContext, "test.nomad", "incrementScore 17");
@@ -299,8 +299,8 @@ BOOST_AUTO_TEST_CASE(expression_statement_evaluates_and_compiles)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     auto statement = std::make_unique<ExpressionStatement>(
         0,
         0,
@@ -330,8 +330,8 @@ BOOST_AUTO_TEST_CASE(expression_execution_calls_registered_nativeFunctions_witho
         NomadDoc("Return the provided string")
     );
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
     CompilerContext tokenizerContext(compiler.get(), CompilerMode::Interpreter);
     Tokenizer tokenizer(&tokenizerContext, "test.nomad", "identity \"console\"");
@@ -362,8 +362,8 @@ BOOST_AUTO_TEST_CASE(statement_execution_calls_registered_void_nativeFunctions)
         NomadDoc("Remember an integer")
     );
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
     CompilerContext tokenizerContext(compiler.get(), CompilerMode::Interpreter);
     Tokenizer tokenizer(&tokenizerContext, "test.nomad", "remember 42");
@@ -392,8 +392,8 @@ BOOST_AUTO_TEST_CASE(native_function_expression_faults_propagate_but_execute_rep
         NomadDoc("Fail for testing")
     );
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
     CompilerContext tokenizerContext(compiler.get(), CompilerMode::Interpreter);
     Tokenizer tokenizer(&tokenizerContext, "test.nomad", "fail");
@@ -436,8 +436,8 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
         NomadDoc("Accept a callback")
     );
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
     BOOST_TEST(context.getInterpreter().execute("acceptCallback callbackFunction", context));
     BOOST_TEST((receivedCallbackId == callbackFunctionId));
@@ -470,8 +470,8 @@ BOOST_AUTO_TEST_CASE(callback_argument_rejects_uncompiled_inline_callback_functi
         runtime.getIntegerType()
     );
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     auto argument = createCallbackArgument(0, 0, callbackType, callbackFunctionId);
 
     BOOST_CHECK_THROW(static_cast<void>(argument->evaluate(context)), AstException);

@@ -270,8 +270,8 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(runtime.describeResolveFailure("updateConfiguration", unresolved).find("unresolved") != NomadString::npos);
     VirtualMachine machine(&runtime);
     BOOST_CHECK_THROW(machine.runNativeFunction(id, {RuntimeValue{}, RuntimeValue{}, RuntimeValue{}}), NomadException);
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, machine);
+    const Interpreter interpreterEvaluator(machine);
+    InterpreterContext interpreter(interpreterEvaluator);
     runtime.executeNativeFunction(id, {RuntimeValue{}, RuntimeValue{}, RuntimeValue{}}, interpreter);
     BOOST_TEST(interpreter.hasError());
     BOOST_TEST(calls == 0);

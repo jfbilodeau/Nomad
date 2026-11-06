@@ -112,8 +112,8 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
     const auto liveObjects = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
-        const Interpreter evaluationEvaluator;
-        InterpreterContext evaluation(evaluationEvaluator, *machine);
+        const Interpreter evaluationEvaluator(*machine);
+        InterpreterContext evaluation(evaluationEvaluator);
         expression.evaluate(evaluation);
         BOOST_REQUIRE(!evaluation.hasError());
         BOOST_REQUIRE(evaluation.getResult() != nullptr);
@@ -132,8 +132,8 @@ BOOST_AUTO_TEST_CASE(unresolved_method_and_constructor_evaluation_reports_an_err
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     auto machine = runtime.createVirtualMachine();
-    const Interpreter evaluationEvaluator;
-    InterpreterContext evaluation(evaluationEvaluator, *machine);
+    const Interpreter evaluationEvaluator(*machine);
+    InterpreterContext evaluation(evaluationEvaluator);
     ConstructorExpression constructor(nullptr, 1, 0, "TestObject", type, ArgumentList{});
     BOOST_CHECK_THROW(constructor.evaluate(evaluation), AstException);
     NativeMemberExpression method(nullptr, 1, 0, "text.toUpper", "toUpper",
@@ -331,8 +331,8 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
     registerTestObject(runtime);
 
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
     BOOST_REQUIRE(interpreter.getInterpreter().execute("object = new TestObject", interpreter));
     BOOST_REQUIRE(interpreter.getInterpreter().execute("object.value = \"abc\".length", interpreter));
     const auto methodExecuted = interpreter.getInterpreter().execute("object.increment 3", interpreter);
@@ -361,8 +361,8 @@ BOOST_AUTO_TEST_CASE(failed_method_preserves_object_mutations_and_restores_this)
     }).isValid());
 
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
     BOOST_REQUIRE(interpreter.getInterpreter().execute("object = new TestObject", interpreter));
     BOOST_TEST(!interpreter.getInterpreter().execute("object.fail", interpreter));
     BOOST_REQUIRE(interpreter.getVariableValue("object") != nullptr);
@@ -401,8 +401,8 @@ BOOST_AUTO_TEST_CASE(string_indexing_handles_unicode_chains_and_precedence) {
 BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     const auto before = NomadObject::getLiveObjectCount();
     for (const auto* source : {"\"\"[0]", "\"abc\"[-1]", "\"abc\"[3]"}) {
         BOOST_TEST(!context.getInterpreter().execute(source, context));
@@ -454,8 +454,8 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after
     runtime.executeFunction(functionId, {}, result);
     BOOST_TEST(result.getIntegerValue() == 45);
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("value = new TestObject", context));
     BOOST_REQUIRE(context.getInterpreter().execute("value[5] = 7", context));
     BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value[6]", context));
@@ -479,8 +479,8 @@ BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     runtime.executeFunction(id, {}, result);
     BOOST_TEST(result.getIntegerValue() == 7);
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("value = new TestObject", context));
     BOOST_REQUIRE(context.getInterpreter().execute("value[3] = 8", context));
     BOOST_REQUIRE(context.getInterpreter().evaluateExpression("value.value", context));
@@ -541,8 +541,8 @@ BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters)
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         BOOST_REQUIRE(context.getInterpreter().execute("value = new TestObject", context));
         BOOST_REQUIRE(context.getInterpreter().execute("value[\"]\"] = 10", context));
         BOOST_REQUIRE(context.getInterpreter().execute("value[\"=\"]", context));
@@ -603,8 +603,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     BOOST_TEST(calls == "receiverassignedsecondfirstset");
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     calls.clear();
     BOOST_REQUIRE(context.getInterpreter().evaluateExpression("(receiver)[(first) (second)]", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
@@ -641,8 +641,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_access_permissions_are_checked_in_both_exec
         runtime.executeFunction(id, {}, result);
         BOOST_TEST(result.getIntegerValue() == (readOnly ? 7 : 10));
         auto machine = runtime.createVirtualMachine();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         BOOST_REQUIRE(context.getInterpreter().execute("object = new TestObject", context));
         BOOST_REQUIRE(context.getInterpreter().execute(readOnly ? "object[1 2]" : "object[1 2] = 7", context));
         const auto* rejected = readOnly ? "object[0 0] = 1" : "object[0 0]";
@@ -694,8 +694,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
     const auto before = NomadObject::getLiveObjectCount();
     {
         auto machine = runtime.createVirtualMachine();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         for (const auto* source : {
             "(new TestObject)[(first) (second)]", "(new TestObject)[(first) (second)] = assigned"
         }) {
@@ -738,8 +738,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
         }
         {
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             const auto* expression = NomadString(source).starts_with("return ") ? source + 7 : source;
             BOOST_TEST(!context.getInterpreter().execute(expression, context));
             BOOST_REQUIRE(context.getError() != nullptr);
@@ -815,8 +815,8 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
             {
                 auto machine = runtime.createVirtualMachine();
-                const Interpreter contextEvaluator;
-                InterpreterContext context(contextEvaluator, *machine);
+                const Interpreter contextEvaluator(*machine);
+                InterpreterContext context(contextEvaluator);
                 BOOST_REQUIRE(context.getInterpreter().execute("object = new TestObject", context));
                 BOOST_REQUIRE(context.getInterpreter().execute("object[" + indexes + "] = 7", context));
                 BOOST_REQUIRE(context.getInterpreter().evaluateExpression("object[" + indexes + "]", context));

@@ -197,8 +197,8 @@ BOOST_AUTO_TEST_CASE(interpreter_and_formatting_resolve_global_handles_in_multip
     runtime.registerVariableContext("first", "first.", std::make_unique<SimpleVariableContext>());
     runtime.registerVariableContext("second", "second.", std::make_unique<SimpleVariableContext>());
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("first.value = 17", context));
     BOOST_REQUIRE(context.getInterpreter().execute("second.value = 29", context));
     BOOST_REQUIRE(context.getInterpreter().evaluateExpression("second.value", context));

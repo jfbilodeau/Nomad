@@ -8,23 +8,25 @@ See [building from source](building.md) for toolchain requirements and the
 ## Ownership
 
 The host owns the `Runtime`, interpreters, virtual machines, and interpreter
-contexts. Destroy contexts before their borrowed interpreter and VM, and destroy
-VMs before the runtime.
+contexts. Destroy contexts before their borrowed interpreter, interpreters before
+their borrowed VM, and VMs before the runtime.
 Types and callables used by a context must remain valid.
 
 - `Runtime` owns registered APIs, types, callables, and bytecode.
 - `VirtualMachine` executes compiled functions and provides the execution
   environment for native calls, object members, and dynamic variables.
-- `InterpreterContext` borrows an interpreter and a VM and owns interpreter
+- `InterpreterContext` borrows an interpreter and owns interpreter
   variables, its latest typed result, and its latest error. It can additionally
   borrow a script frame.
-- `Interpreter` provides execution and value operations. Pass the interpreter
-  when constructing a context, and keep that context to retain interpreter
+- `Interpreter` borrows one VM and provides execution and value operations.
+  Pass the interpreter when constructing a context; the context obtains its VM
+  from that interpreter. Keep the context to retain interpreter
   variables between executions. `context.getInterpreter()` returns the supplied
   instance by const reference; contexts may share an interpreter without sharing
   their variables or results. Temporary interpreters cannot be borrowed.
 
-Neither the interpreter nor its context creates or owns a VM.
+Neither the interpreter nor its context creates or owns a VM. Interpreters are
+noncopyable, and `interpreter.getVirtualMachine()` returns the borrowed VM by reference.
 
 ## Experimental generated script bindings
 
@@ -2212,8 +2214,8 @@ and module lifecycle are preserved.
 void interpretInput() {
     nomad::Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const nomad::Interpreter interpreter;
-    nomad::InterpreterContext context(interpreter, *machine);
+    const nomad::Interpreter interpreter(*machine);
+    nomad::InterpreterContext context(interpreter);
 
     if (!interpreter.execute("score = 10", context) ||
         !interpreter.evaluateExpression("score + 5", context)) {
@@ -2343,7 +2345,7 @@ empty storage view without a slot pointer.
 For example:
 
 ```cpp
-const Interpreter interpreter;
+const Interpreter interpreter(*machine);
 const auto leaf = interpreter.getProperty(rootValue, "leaf");
 const auto number = interpreter.getProperty(leaf, numberPropertyId);
 const auto updated = interpreter.setProperty(rootValue, "leaf.number", replacement);
@@ -2388,9 +2390,9 @@ a non-frame context or a class/free-function frame throws `NomadBug`.
 The interpreter can read `this` and its stored fields in such struct frames;
 the resulting values are owned copies, not mutable receiver aliases.
 
-For already resolved calls, `Interpreter::callFunction(machine, functionId, arguments)`
-and `Interpreter::construct(machine, constructorId, arguments)` take an explicit
-`VirtualMachine&` and `std::span<const InterpreterValue>` in logical parameter order.
+For already resolved calls, `Interpreter::callFunction(functionId, arguments)`
+and `Interpreter::construct(constructorId, arguments)` use the interpreter's
+borrowed VM and take `std::span<const InterpreterValue>` in logical parameter order.
 They dispatch native and compiled script callables and return an owned
 `InterpreterValue`; no `InterpreterContext` is required or modified.
 Use a registered constructor ID for construction, including struct constructors
@@ -3176,8 +3178,8 @@ const auto* callable = machine.getCurrentCallable();
 if (callable == nullptr) {
     throw nomad::NomadBug("An active script callable is required");
 }
-const nomad::Interpreter interpreter;
-nomad::InterpreterContext context(interpreter, machine, *callable);
+const nomad::Interpreter interpreter(machine);
+nomad::InterpreterContext context(interpreter, *callable);
 const auto succeeded = interpreter.evaluateExpression("value + local", context);
 ```
 

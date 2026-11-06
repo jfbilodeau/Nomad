@@ -394,8 +394,8 @@ BOOST_AUTO_TEST_CASE(class_declarations_are_not_supported_by_the_interpreter)
     for (const auto* source : {"class Point\nend", "open class Point\nend"}) {
         Runtime runtime;
         auto machine = runtime.createVirtualMachine();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         BOOST_TEST(!context.getInterpreter().execute(source, context));
         BOOST_TEST(context.hasError());
         BOOST_TEST(runtime.getTypeByName("Point") == nullptr);

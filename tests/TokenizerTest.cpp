@@ -276,8 +276,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_tokenizer_errors)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
     BOOST_TEST(!context.getInterpreter().execute("score = \"unterminated", context));
     BOOST_REQUIRE(context.getError() != nullptr);

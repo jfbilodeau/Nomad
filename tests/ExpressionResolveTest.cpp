@@ -45,8 +45,8 @@ BOOST_AUTO_TEST_CASE(function_call_nodes_retain_the_resolved_target_across_catal
     }, {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType(), "").isValid());
 
     auto machine = runtime.createVirtualMachine();
-    const Interpreter evaluationEvaluator;
-    InterpreterContext evaluation(evaluationEvaluator, *machine);
+    const Interpreter evaluationEvaluator(*machine);
+    InterpreterContext evaluation(evaluationEvaluator);
     expression.evaluate(evaluation);
     BOOST_REQUIRE(!evaluation.hasError());
     BOOST_REQUIRE(evaluation.getResult() != nullptr);

@@ -130,8 +130,8 @@ BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wi
             BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 42);
             BOOST_TEST(NomadString(machine->getFunctionStringVariableValue(text)->getString()) == "");
             machine->setIntegerVariableValue(number, 43);
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine, *function);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator, *function);
             BOOST_TEST(context.getVariableValueById(number)->getIntegerValue() == 43);
             context.setVariable("number", runtime.getIntegerType(), RuntimeValue(NomadInteger{44}));
             BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 44);

@@ -291,8 +291,8 @@ BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         auto machine = runtime.createVirtualMachine();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         BOOST_REQUIRE(context.getInterpreter().execute(source.substr(0, source.find("return total")), context));
         BOOST_REQUIRE(context.getInterpreter().evaluateExpression("total", context));
         BOOST_REQUIRE(context.getResult() != nullptr);

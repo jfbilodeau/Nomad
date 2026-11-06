@@ -456,8 +456,8 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
                 "first.text = \"replaced\"\n";
             if (interpreted) {
                 auto machine = runtime.createVirtualMachine();
-                const Interpreter contextEvaluator;
-                InterpreterContext context(contextEvaluator, *machine);
+                const Interpreter contextEvaluator(*machine);
+                InterpreterContext context(contextEvaluator);
                 for (auto start = NomadString::size_type{0}; start < source.size();) {
                     const auto end = source.find('\n', start);
                     const auto line = source.substr(start, end - start);

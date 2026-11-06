@@ -179,8 +179,8 @@ BOOST_AUTO_TEST_CASE(compiled_to_upper_uses_unicode_casing) {
 BOOST_AUTO_TEST_CASE(to_upper_does_not_modify_receiver) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_REQUIRE(interpreter.getInterpreter().execute("name = \"h\xC3\xA9llo\"", interpreter));
     BOOST_REQUIRE(interpreter.getInterpreter().execute("upper = name.toUpper", interpreter));
@@ -194,8 +194,8 @@ BOOST_AUTO_TEST_CASE(to_upper_does_not_modify_receiver) {
 BOOST_AUTO_TEST_CASE(exposes_byte_length_and_empty_properties) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_REQUIRE(interpreter.getInterpreter().execute("\"h\xC3\xA9\".byteLength", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
@@ -224,8 +224,8 @@ BOOST_AUTO_TEST_CASE(to_lower_uses_unicode_casing) {
 BOOST_AUTO_TEST_CASE(trim_methods_remove_locale_whitespace) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_REQUIRE(interpreter.getInterpreter().execute("\" \\tNomad\\n \".trim", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == "Nomad");
@@ -243,8 +243,8 @@ BOOST_AUTO_TEST_CASE(trim_methods_remove_locale_whitespace) {
 BOOST_AUTO_TEST_CASE(search_methods_are_case_sensitive) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_REQUIRE(interpreter.getInterpreter().execute("\"Nomad Engine\".startsWith \"Nomad\"", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
@@ -262,8 +262,8 @@ BOOST_AUTO_TEST_CASE(search_methods_are_case_sensitive) {
 BOOST_AUTO_TEST_CASE(string_members_reject_malformed_utf8) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
     RuntimeValue invalidValue;
     invalidValue.setStringValue(NomadString("\xC3\x28", 2));
     interpreter.setVariable("text", runtime.getStringType(), invalidValue);

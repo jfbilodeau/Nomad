@@ -296,8 +296,8 @@ BOOST_AUTO_TEST_CASE(interpreter_console_ids_preserve_lookup_and_reassignment)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("value = 7", context));
     const auto id = context.getFunction()->getVariableId("value");
     BOOST_REQUIRE(id.isValid());

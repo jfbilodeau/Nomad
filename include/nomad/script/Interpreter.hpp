@@ -13,13 +13,18 @@ namespace nomad {
 
 class Interpreter {
 public:
+    // The caller owns the VM, which must outlive this interpreter.
+    explicit Interpreter(VirtualMachine& machine);
+    Interpreter(const Interpreter&) = delete;
+    Interpreter& operator=(const Interpreter&) = delete;
+
+    [[nodiscard]] VirtualMachine& getVirtualMachine() const;
+
     [[nodiscard]] InterpreterValue callFunction(
-        VirtualMachine& machine,
         CallableId functionId,
         std::span<const InterpreterValue> arguments
     ) const;
     [[nodiscard]] InterpreterValue construct(
-        VirtualMachine& machine,
         CallableId constructorId,
         std::span<const InterpreterValue> arguments
     ) const;
@@ -55,6 +60,8 @@ public:
     ) const;
 
 private:
+    VirtualMachine& m_virtualMachine;
+
     [[nodiscard]] InterpreterValue getStoredProperty(
         const InterpreterValue& receiver,
         std::span<const PropertyId> properties

@@ -117,8 +117,8 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
             machine->setResult(savedResult);
             machine->setIntermediate(savedIntermediate);
             machine->pushInteger(1234);
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             const auto construct = context.getInterpreter().execute("source = new CallOuter (new CallLeaf 17 \"source\")", context);
             BOOST_REQUIRE_MESSAGE(construct, (context.getError() ? *context.getError() : ""));
             const auto source = context.getVariableStorage("source");
@@ -218,8 +218,8 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
         auto* destination = active->getParameter(3).getStorageAddress();
         BOOST_TEST(destination != source.data());
         const auto tail = active->getIntegerParameter(2);
-        const Interpreter nestedEvaluator;
-        InterpreterContext nested(nestedEvaluator, *active);
+        const Interpreter nestedEvaluator(*active);
+        InterpreterContext nested(nestedEvaluator);
         nested.setVariable("value", valueType, source);
         const auto evaluated = nested.getInterpreter().evaluateExpression("nativeCallScore value", nested);
         BOOST_REQUIRE_MESSAGE(evaluated, (nested.getError() ? *nested.getError() : ""));
@@ -253,8 +253,8 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
     auto machine = runtime.createVirtualMachine();
     for (auto index = 0; index < 3; ++index) {
         {
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             BOOST_REQUIRE(context.getInterpreter().execute("source = new NativeCallValue 17 \"native\"", context));
             const auto source = context.getVariableStorage("source");
             BOOST_REQUIRE(context.getInterpreter().execute(
@@ -337,8 +337,8 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     for (const auto* source : {
         "nativeCallPair (callNote 1) (callNote 2)",
         "scriptCallPair (callNote 1) (callNote 2)",
@@ -394,8 +394,8 @@ BOOST_AUTO_TEST_CASE(aggregate_calls_preserve_active_method_frames_during_native
         const auto instructionIndex = active->getInstructionIndex();
         const auto savedResult = active->getResult();
         const auto savedIntermediate = active->getIntermediate();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *active, *callable);
+        const Interpreter contextEvaluator(*active);
+        InterpreterContext context(contextEvaluator, *callable);
         BOOST_TEST(context.getFunction() == nullptr);
         const auto source = context.getVariableStorage("value");
         BOOST_REQUIRE_EQUAL(source.size(), 4U);
@@ -493,8 +493,8 @@ BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_own
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
         {
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             machine->pushInteger(1234);
             machine->setIntegerResult(41);
             machine->setIntegerIntermediate(43);
@@ -506,24 +506,22 @@ BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_own
             const auto live = RuntimeValue::getLiveStringCount();
             field->copyCount = 0;
             field->failCopyAt = 2;
-            BOOST_CHECK_THROW(static_cast<void>(Interpreter{}.callFunction(
-                *machine, consumeId, std::span<const InterpreterValue>{&argument, 1})), NomadException);
+            BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.callFunction(consumeId, std::span<const InterpreterValue>{&argument, 1})), NomadException);
             BOOST_TEST(argument.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
             BOOST_TEST(argument.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
             BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
             BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
             context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{19}});
             field->copyCount = 0;
-            BOOST_CHECK_THROW(static_cast<void>(Interpreter{}.callFunction(*machine, makeId, {})), NomadException);
+            BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.callFunction(makeId, {})), NomadException);
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 19);
             BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
             field->failCopyAt = 0;
             field->failInitialization = true;
-            BOOST_CHECK_THROW(static_cast<void>(Interpreter{}.construct(*machine, constructorId, {})), NomadException);
+            BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.construct(constructorId, {})), NomadException);
             BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
             field->failInitialization = false;
-            const auto result = Interpreter{}.callFunction(
-                *machine, consumeId, std::span<const InterpreterValue>{&argument, 1});
+            const auto result = Interpreter{*machine}.callFunction(consumeId, std::span<const InterpreterValue>{&argument, 1});
             BOOST_TEST(result.getType()->isVoid());
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 19);
             BOOST_TEST(machine->getIntegerResult() == 41);
@@ -572,38 +570,35 @@ BOOST_AUTO_TEST_CASE(host_script_calls_and_construction_return_independent_value
                 InterpreterValue(runtime.getStringType(), text)
             };
             text.freeObjectValue();
-            const auto leaf = Interpreter{}.construct(*machine, leafConstructor, leafArguments);
-            const auto outer = Interpreter{}.construct(*machine, outerConstructor, {&leaf, 1});
-            const auto empty = Interpreter{}.construct(*machine, emptyConstructor, {});
+            const auto leaf = Interpreter{*machine}.construct(leafConstructor, leafArguments);
+            const auto outer = Interpreter{*machine}.construct(outerConstructor, {&leaf, 1});
+            const auto empty = Interpreter{*machine}.construct(emptyConstructor, {});
             BOOST_TEST(leaf.getStorage()[0].getIntegerValue() == 17);
             BOOST_TEST(empty.getType() == emptyType);
             BOOST_TEST(empty.getStorage().data() == nullptr);
             const std::array arguments{
                 outer, empty, InterpreterValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}})
             };
-            auto copy = Interpreter{}.callFunction(*machine, runtime.getFunctionId("copyAggregate"), arguments);
+            auto copy = Interpreter{*machine}.callFunction(runtime.getFunctionId("copyAggregate"), arguments);
             BOOST_TEST(copy.getType() == outerType);
             BOOST_TEST(copy.getStorage().data() != outer.getStorage().data());
             BOOST_TEST(copy.getStorage()[0].getIntegerValue() == 41);
             BOOST_TEST(outer.getStorage()[0].getIntegerValue() == 17);
             BOOST_TEST(arguments[0].getStorage()[0].getIntegerValue() == 17);
             BOOST_TEST(copy.getStorage()[2].getObjectValue() == outer.getStorage()[2].getObjectValue());
-            retainedText = Interpreter{}.callFunction(*machine, runtime.getFunctionId("readAggregateText"), {&copy, 1});
-            retainedObject = Interpreter{}.construct(*machine, holderConstructor, {&outer, 1});
+            retainedText = Interpreter{*machine}.callFunction(runtime.getFunctionId("readAggregateText"), {&copy, 1});
+            retainedObject = Interpreter{*machine}.construct(holderConstructor, {&outer, 1});
             retainedStruct = std::move(copy);
-            const auto emptyCopy = Interpreter{}.callFunction(
-                *machine, runtime.getFunctionId("copyCallEmpty"), {&empty, 1});
+            const auto emptyCopy = Interpreter{*machine}.callFunction(runtime.getFunctionId("copyCallEmpty"), {&empty, 1});
             BOOST_TEST(emptyCopy.getType() == emptyType);
             BOOST_TEST(emptyCopy.getStorage().data() == nullptr);
             const std::array consumeArguments{
                 outer, empty, InterpreterValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}})
             };
-            const auto consumed = Interpreter{}.callFunction(
-                *machine, runtime.getFunctionId("consumeAggregate"), consumeArguments);
+            const auto consumed = Interpreter{*machine}.callFunction(runtime.getFunctionId("consumeAggregate"), consumeArguments);
             BOOST_TEST(consumed.getType()->isVoid());
             BOOST_TEST(consumed.getStorage().data() == nullptr);
-            const auto scalar = Interpreter{}.callFunction(
-                *machine, runtime.getFunctionId("hostScalar"), {&arguments[2], 1});
+            const auto scalar = Interpreter{*machine}.callFunction(runtime.getFunctionId("hostScalar"), {&arguments[2], 1});
             BOOST_TEST(scalar.getValue().getIntegerValue() == 42);
             BOOST_TEST(machine->getIntegerResult() == 41);
             BOOST_TEST(machine->getIntegerIntermediate() == 43);
@@ -642,7 +637,7 @@ BOOST_AUTO_TEST_CASE(host_native_calls_and_factories_preserve_values_frames_and_
     const auto transformId = runtime.registerNativeFunction("hostNativeTransform", [&](VirtualMachine* active) {
         const auto source = active->getParameterStorage(0, 2);
         const InterpreterValue number(runtime.getIntegerType(), source[0]);
-        const auto result = Interpreter{}.callFunction(*active, scalarId, {&number, 1});
+        const auto result = Interpreter{*active}.callFunction(scalarId, {&number, 1});
         BOOST_TEST(source[0].getIntegerValue() == 17);
         auto* destination = active->getParameter(2).getStorageAddress();
         valueType->copyValue(source.data(), destination);
@@ -666,12 +661,12 @@ BOOST_AUTO_TEST_CASE(host_native_calls_and_factories_preserve_values_frames_and_
         machine->setIntegerResult(41);
         machine->setIntegerIntermediate(43);
         const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}});
-        const auto source = Interpreter{}.construct(*machine, constructorId, {&number, 1});
-        const auto copy = Interpreter{}.callFunction(*machine, transformId, {&source, 1});
+        const auto source = Interpreter{*machine}.construct(constructorId, {&number, 1});
+        const auto copy = Interpreter{*machine}.callFunction(transformId, {&source, 1});
         BOOST_TEST(source.getStorage()[0].getIntegerValue() == 17);
         BOOST_TEST(copy.getStorage()[0].getIntegerValue() == 18);
         BOOST_TEST(copy.getStorage()[1].getStringValue() == "host native");
-        const auto object = Interpreter{}.construct(*machine, factoryId, {});
+        const auto object = Interpreter{*machine}.construct(factoryId, {});
         BOOST_TEST(object.getType() == runtime.getType(createdId).value());
         BOOST_TEST(object.getValue().getObjectValue()->getReferenceCount() == 1U);
         BOOST_TEST(machine->getIntegerResult() == 41);
@@ -714,37 +709,37 @@ BOOST_AUTO_TEST_CASE(host_call_validation_rejects_bad_metadata_and_arguments_bef
     const InterpreterValue foreign(otherRuntime.getIntegerType(), RuntimeValue{NomadInteger{17}});
     auto moved = number;
     const auto movedDestination = std::move(moved);
-    const Interpreter interpreter;
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(machine, CallableId{}, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(machine, constructorId, {&number, 1})),
+    const Interpreter interpreter(machine);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(CallableId{}, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(constructorId, {&number, 1})),
         std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(machine, functionId, {&number, 1})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(functionId, {&number, 1})),
         std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(machine, CallableId{}, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(machine, functionId, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(machine, constructorId, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(CallableId{}, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(functionId, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(constructorId, {})), std::invalid_argument);
     const std::array<const InterpreterValue*, 5> invalidArguments{&boolean, &empty, &voidValue, &foreign, &moved};
     for (const auto* argument : invalidArguments) {
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(machine, functionId, {argument, 1})),
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(functionId, {argument, 1})),
             std::invalid_argument);
-        BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(machine, constructorId, {argument, 1})),
+        BOOST_CHECK_THROW(static_cast<void>(interpreter.construct(constructorId, {argument, 1})),
             std::invalid_argument);
     }
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(machine, uncompiledId, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(machine, unresolvedId, {&number, 1})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(uncompiledId, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.callFunction(unresolvedId, {&number, 1})),
         std::invalid_argument);
     BOOST_TEST(calls == 0);
     BOOST_TEST(movedDestination.getValue().getIntegerValue() == 17);
     BOOST_TEST(machine.getIntegerResult() == 41);
     BOOST_TEST(machine.getIntegerIntermediate() == 43);
     BOOST_TEST(machine.peekStack(0).getIntegerValue() == 1234);
-    const auto result = interpreter.callFunction(machine, functionId, {&number, 1});
+    const auto result = interpreter.callFunction(functionId, {&number, 1});
     BOOST_TEST(result.getValue().getIntegerValue() == 17);
-    const auto constructed = interpreter.construct(machine, constructorId, {&number, 1});
+    const auto constructed = interpreter.construct(constructorId, {&number, 1});
     BOOST_TEST(constructed.getType() == empty.getType());
     BOOST_TEST(constructed.getStorage().data() == nullptr);
     BOOST_TEST(calls == 2);
-    InterpreterContext context(interpreter, machine);
+    InterpreterContext context(interpreter);
     runtime.executeNativeFunction(functionId, {RuntimeValue{NomadInteger{25}}}, context);
     BOOST_REQUIRE(!context.hasError());
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 25);
@@ -771,7 +766,7 @@ BOOST_AUTO_TEST_CASE(host_calls_preserve_scalar_suspension_and_reject_suspended_
         auto machine = runtime.createVirtualMachine();
         machine->setIntegerResult(41);
         machine->setIntegerIntermediate(43);
-        const auto result = Interpreter{}.callFunction(*machine, runtime.getFunctionId("hostScalarSuspension"), {});
+        const auto result = Interpreter{*machine}.callFunction(runtime.getFunctionId("hostScalarSuspension"), {});
         BOOST_TEST(result.getValue().getIntegerValue() == 37);
         BOOST_TEST(machine->getIntegerResult() == 41);
         BOOST_TEST(machine->getIntegerIntermediate() == 43);
@@ -782,8 +777,7 @@ BOOST_AUTO_TEST_CASE(host_calls_preserve_scalar_suspension_and_reject_suspended_
         machine->setIntegerResult(41);
         machine->setIntegerIntermediate(43);
         const InterpreterValue empty(runtime.getTypeByName("HostSuspensionEmpty"), std::span<const RuntimeValue>{});
-        BOOST_CHECK_EXCEPTION(static_cast<void>(Interpreter{}.callFunction(
-            *machine, runtime.getFunctionId("hostAggregateSuspension"), {&empty, 1})), VirtualMachineException,
+        BOOST_CHECK_EXCEPTION(static_cast<void>(Interpreter{*machine}.callFunction(runtime.getFunctionId("hostAggregateSuspension"), {&empty, 1})), VirtualMachineException,
             [](const auto& error) { return NomadString{error.what()} == "Aggregate script calls cannot yield"; });
         BOOST_TEST(machine->getIntegerResult() == 41);
         BOOST_TEST(machine->getIntegerIntermediate() == 43);

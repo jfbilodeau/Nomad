@@ -139,11 +139,20 @@ private:
 
 } // namespace
 
+Interpreter::Interpreter(VirtualMachine& machine):
+    m_virtualMachine(machine)
+{
+}
+
+VirtualMachine& Interpreter::getVirtualMachine() const {
+    return m_virtualMachine;
+}
+
 InterpreterValue Interpreter::callFunction(
-    VirtualMachine& machine,
     const CallableId functionId,
     const std::span<const InterpreterValue> arguments
 ) const {
+    auto& machine = m_virtualMachine;
     const auto* function = machine.getRuntime()->getFunction(functionId);
     if (function == nullptr) {
         throw std::invalid_argument("Unknown function id");
@@ -194,10 +203,10 @@ InterpreterValue Interpreter::callFunction(
 }
 
 InterpreterValue Interpreter::construct(
-    VirtualMachine& machine,
     const CallableId constructorId,
     const std::span<const InterpreterValue> arguments
 ) const {
+    auto& machine = m_virtualMachine;
     const auto* constructor = machine.getRuntime()->getConstructor(constructorId);
     if (constructor == nullptr) {
         throw std::invalid_argument("Unknown constructor id");

@@ -3025,6 +3025,41 @@ Implementation and validation:
   tests and whitespace checks. Gameplay and performance were not validated.
 - Stop for review without committing. Method calls remain the next slice.
 
+### Step 5D1 follow-up: VM-bound interpreters
+
+Approved scope:
+
+- Make each interpreter borrow one caller-owned VM. The VM must outlive the
+  interpreter, which must outlive its contexts.
+- Context construction accepts an interpreter and, optionally, an active
+  callable. Contexts obtain their VM from the interpreter rather than retaining
+  a separately supplied VM reference.
+- Function calls and construction use the interpreter's VM without a VM
+  argument. Preserve typed results, call ownership, reentry, and suspension
+  behavior.
+- Migrate host APIs, console ownership order, frame formatting, tests, and
+  embedding examples. Keep the legacy runtime adapter unchanged in scope.
+
+Implementation and validation:
+
+- Interpreters require a borrowed VM and expose it by reference. They are
+  noncopyable. Contexts no longer retain a separate VM reference.
+- Console members are ordered so contexts are destroyed before interpreters,
+  and interpreters before their VMs. Frame formatting uses the same borrowing
+  order for scoped instances.
+- Tests cover two interpreters bound to different VMs in one runtime, direct
+  call routing, context-derived VM identity, and active-frame identity.
+  Compile-time checks cover required VM construction, temporary borrowing,
+  and rejection of separately supplied context VMs.
+- Existing call, construction, reentry, failure cleanup, suspension, and
+  retained-result lifetime coverage remains enabled. Stored-property results
+  also remain valid after their interpreter and VM are destroyed.
+- CTest's integrated build and language, remaining, bindings, tooling, and
+  compiler-export targets passed, along with four documentation preparation
+  tests and whitespace checks. Gameplay and performance were not validated.
+- Stop for review without committing. The legacy runtime adapter remains;
+  migrating or removing it is a separate slice.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

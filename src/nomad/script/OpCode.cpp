@@ -1251,8 +1251,8 @@ void op_dynamic_format_execute(VirtualMachine* machine) {
 
     auto* formatText = machine->getStringResult();
     machine->setResult(RuntimeValue{});
-    const Interpreter interpreter;
-    InterpreterContext context(interpreter, *machine, *function);
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter, *function);
 
     const auto result = formatDynamicString(formatText->getText(), context, function->getPath(), line, column);
 

@@ -132,8 +132,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
     const auto compiler = runtime.createCompiler();
     const auto before = runtime.getInstructions().size();
@@ -168,8 +168,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_supports_nested_templates_and_quoted_braces)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
     const std::vector<std::pair<NomadString, NomadString>> cases{
         {"nested {$\"inner {score + 1}\"}", "nested inner 11"},
@@ -189,8 +189,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_recovers_from_syntax_type_and_void_errors_be
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     NomadInteger calls = 0;
     runtime.registerNativeFunction("test.count", [&](VirtualMachine* calledMachine) {
         ++calls;
@@ -236,8 +236,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preser
         BOOST_TEST(RuntimeValue::getLiveStringCount() == liveBefore);
 #endif
         argument.freeObjectValue();
-        const Interpreter contextEvaluator;
-        InterpreterContext context(contextEvaluator, *machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         BOOST_CHECK_THROW(static_cast<void>(formatDynamicString(format, context, "fault.nomad", 1, 1)),
             VirtualMachineException);
         BOOST_REQUIRE(context.getInterpreter().evaluateExpression("2 + 3", context));

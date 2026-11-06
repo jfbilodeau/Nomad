@@ -319,7 +319,8 @@ DebugConsole::DebugConsole(Game* game, SDL_Window* window, SDL_Renderer* rendere
     m_window(window),
     m_renderer(renderer),
     m_interpreterVirtualMachine(game->getRuntime()->createVirtualMachine()),
-    m_interpreterContext(m_interpreter, *m_interpreterVirtualMachine),
+    m_interpreter(*m_interpreterVirtualMachine),
+    m_interpreterContext(m_interpreter),
     m_inspectionVirtualMachine(game->getRuntime()->createVirtualMachine())
 {
     IMGUI_CHECKVERSION();

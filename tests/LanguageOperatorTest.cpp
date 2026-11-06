@@ -206,8 +206,8 @@ BOOST_AUTO_TEST_CASE(binary_operands_evaluate_left_first_in_compiled_and_interpr
             }
             order.clear();
             auto machine = runtime.createVirtualMachine();
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             BOOST_REQUIRE(context.getInterpreter().evaluateExpression(expression, context));
             BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
             BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
@@ -255,8 +255,8 @@ BOOST_AUTO_TEST_CASE(string_operands_evaluate_left_first_and_snapshot_before_rig
             BOOST_TEST(snapshot.leakedStrings == 0);
             order.clear();
             auto machine = runtime.createVirtualMachine();
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
             BOOST_REQUIRE(context.getInterpreter().evaluateExpression(expression, context));
             BOOST_TEST(context.getResult()->getValue().getBooleanValue() == expected);
             BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());

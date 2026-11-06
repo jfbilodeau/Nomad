@@ -95,8 +95,8 @@ BOOST_AUTO_TEST_CASE(compiled_interpreter_and_host_methods_preserve_parameter_co
         BOOST_CHECK_THROW(machine->runScriptMethod(resolution.id, {}, receiver), VirtualMachineException);
         BOOST_CHECK_THROW(machine->runScriptMethod(CallableId::INVALID, {}, receiver), VirtualMachineException);
         receiver.freeObjectValue();
-        Interpreter interpreter;
-        InterpreterContext context(interpreter, *machine);
+        Interpreter interpreter(*machine);
+        InterpreterContext context(interpreter);
         BOOST_REQUIRE(interpreter.execute("counter = new Counter", context));
         BOOST_REQUIRE(interpreter.execute("counter.add 4", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
@@ -146,8 +146,8 @@ BOOST_AUTO_TEST_CASE(returning_a_temporary_receiver_retains_it_and_releases_fina
         machine->getResult().freeObjectValue();
         receiver.freeObjectValue();
         text.freeObjectValue();
-        Interpreter interpreter;
-        InterpreterContext context(interpreter, *machine);
+        Interpreter interpreter(*machine);
+        InterpreterContext context(interpreter);
         BOOST_REQUIRE(interpreter.execute("box = new Box", context));
         BOOST_REQUIRE(interpreter.execute("text = \"borrowed\"", context));
         BOOST_REQUIRE(interpreter.execute("box.echo text", context));
@@ -195,8 +195,8 @@ BOOST_AUTO_TEST_CASE(native_method_reentry_restores_receiver_and_parameter_bindi
     BOOST_TEST(outcome.integerValue == 9);
     {
         auto machine = runtime.createVirtualMachine();
-        Interpreter interpreter;
-        InterpreterContext context(interpreter, *machine);
+        Interpreter interpreter(*machine);
+        InterpreterContext context(interpreter);
         BOOST_REQUIRE(interpreter.execute("counter = new Counter", context));
         BOOST_REQUIRE(interpreter.execute("counter.invokeHost 4", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
@@ -284,8 +284,8 @@ BOOST_AUTO_TEST_CASE(frame_interpretation_reads_and_writes_constructor_and_metho
                 BOOST_REQUIRE(runtime.getMethod(callable->getId()) != nullptr);
                 ++methodsSeen;
             }
-            const Interpreter contextEvaluator;
-            InterpreterContext context(contextEvaluator, *machine, *callable);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator, *callable);
             BOOST_TEST(context.getCallable()->getClassType() == callable->getClassType());
             BOOST_TEST(context.getCallable() != callable);
             BOOST_TEST(context.getFunction() == nullptr);

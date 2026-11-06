@@ -3009,7 +3009,6 @@ void Runtime::executeNativeFunction(
             arguments.emplace_back(definition->getParameters()[index].type, args[index]);
         }
         const auto result = context.getInterpreter().callFunction(
-            *context.getVirtualMachine(),
             nativeFunctionId,
             arguments
         );

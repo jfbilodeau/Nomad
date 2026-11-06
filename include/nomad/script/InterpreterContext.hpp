@@ -42,18 +42,16 @@ class InterpreterContext {
 public:
     [[nodiscard]] LoopControl getLoopControl() const { return m_loopControl; }
     void setLoopControl(LoopControl control) { m_loopControl = control; }
-    // The caller owns the interpreter and VM; both must outlive this context.
-    InterpreterContext(const Interpreter& interpreter, VirtualMachine& virtualMachine);
-    InterpreterContext(const Interpreter&& interpreter, VirtualMachine& virtualMachine) = delete;
+    // The caller owns the interpreter; it and its VM must outlive this context.
+    explicit InterpreterContext(const Interpreter& interpreter);
+    InterpreterContext(const Interpreter&& interpreter) = delete;
     // Additionally borrows the active script frame, which must outlive this context.
     InterpreterContext(
         const Interpreter& interpreter,
-        VirtualMachine& virtualMachine,
         const ScriptCallableBase& callable
     );
     InterpreterContext(
         const Interpreter&& interpreter,
-        VirtualMachine& virtualMachine,
         const ScriptCallableBase& callable
     ) = delete;
     InterpreterContext(const InterpreterContext&) = delete;
@@ -128,7 +126,6 @@ private:
     const Interpreter& m_interpreter;
     Runtime* m_runtime;
     std::unique_ptr<ScriptCallableBase> m_function;
-    VirtualMachine& m_virtualMachine;
     const ScriptCallableBase* m_frameCallable = nullptr;
     NomadIndex m_parameterIndex = 0;
     NomadIndex m_variableIndex = 0;

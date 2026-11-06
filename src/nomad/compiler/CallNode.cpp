@@ -343,7 +343,6 @@ void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
     }
 
     static_cast<void>(context.getInterpreter().callFunction(
-        *context.getVirtualMachine(),
         m_function->getId(),
         evaluatedArguments
     ));

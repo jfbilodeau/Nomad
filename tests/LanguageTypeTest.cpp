@@ -522,8 +522,8 @@ BOOST_AUTO_TEST_CASE(interpreter_locals_can_change_type)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_REQUIRE(interpreter.getInterpreter().execute("value = 10", interpreter));
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getIntegerType());
@@ -543,8 +543,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_variables_keep_their_type)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_REQUIRE(interpreter.getInterpreter().execute("global.interpreterTyped = 10", interpreter));
     BOOST_TEST(!interpreter.getInterpreter().execute("global.interpreterTyped = \"text\"", interpreter));

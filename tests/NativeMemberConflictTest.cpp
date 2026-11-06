@@ -33,8 +33,8 @@ BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
 BOOST_AUTO_TEST_CASE(interpreter_rejects_creating_unknown_qualified_identifier) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const Interpreter interpreterEvaluator;
-    InterpreterContext interpreter(interpreterEvaluator, *machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_TEST(!interpreter.getInterpreter().execute("name.length = 10", interpreter));
     BOOST_REQUIRE(interpreter.getError() != nullptr);

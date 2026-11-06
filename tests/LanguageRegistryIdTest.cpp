@@ -205,8 +205,8 @@ BOOST_AUTO_TEST_CASE(dynamic_ids_remain_live_in_scripts_interpreter_and_format_s
     BOOST_TEST(outcome.leakedStrings == 0);
     BOOST_TEST(answer == 43);
     auto machine = runtime.createVirtualMachine();
-    const Interpreter contextEvaluator;
-    InterpreterContext context(contextEvaluator, *machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
     BOOST_REQUIRE(context.getInterpreter().execute("answer = 7", context));
     BOOST_TEST(answer == 7);
     BOOST_REQUIRE(context.getInterpreter().evaluateExpression("$(\"value={answer}\")", context));

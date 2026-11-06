@@ -72,7 +72,7 @@ void InterpreterContext::setVariable(
             throw std::invalid_argument("Frame variables cannot change type");
         }
         auto scratch = type->getSize() > 1 ? std::make_unique<RuntimeValue[]>(type->getSize()) : nullptr;
-        const auto destination = m_virtualMachine.getLocalStorage(
+        const auto destination = getVirtualMachine()->getLocalStorage(
             m_frameCallable->getVariableOffset(frameId), type->getSize());
         type->assignValue(storage.data(), destination.data(), scratch.get());
         return;
@@ -183,7 +183,7 @@ const RuntimeValue* InterpreterContext::getVariableValueById(const VariableId va
 std::span<const RuntimeValue> InterpreterContext::getVariableStorageById(const VariableId variableId) const {
     if (isFrameVariable(variableId)) {
         validateFrame();
-        return m_virtualMachine.getLocalStorage(m_frameCallable->getVariableOffset(variableId),
+        return getVirtualMachine()->getLocalStorage(m_frameCallable->getVariableOffset(variableId),
             m_frameCallable->getVariableType(variableId)->getSize());
     }
     if (variableId.isInvalid()) {
@@ -223,16 +223,12 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
     return variables;
 }
 
-InterpreterContext::InterpreterContext(
-    const Interpreter& interpreter,
-    VirtualMachine& virtualMachine
-):
+InterpreterContext::InterpreterContext(const Interpreter& interpreter):
     m_interpreter(interpreter),
-    m_runtime(virtualMachine.getRuntime()),
+    m_runtime(interpreter.getVirtualMachine().getRuntime()),
     m_function(std::make_unique<ScriptFunction>(
         CallableId{}, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""
-    )),
-    m_virtualMachine(virtualMachine)
+    ))
 {
 }
 
@@ -240,11 +236,11 @@ InterpreterContext::~InterpreterContext() = default;
 
 InterpreterContext::InterpreterContext(
     const Interpreter& interpreter,
-    VirtualMachine& virtualMachine,
     const ScriptCallableBase& function
 ):
-    InterpreterContext(interpreter, virtualMachine)
+    InterpreterContext(interpreter)
 {
+    auto& virtualMachine = interpreter.getVirtualMachine();
     if (virtualMachine.getCurrentCallable() != &function || function.getFunctionStart() == NOMAD_INVALID_INDEX) {
         throw NomadBug("Frame interpretation requires an active compiled script callable");
     }
@@ -291,9 +287,9 @@ bool InterpreterContext::isFrameVariable(const VariableId variableId) const {
 
 void InterpreterContext::validateFrame() const {
     if (isFrameBacked() &&
-        (m_virtualMachine.getCurrentCallable() != m_frameCallable ||
-         m_virtualMachine.m_parameterIndex != m_parameterIndex ||
-         m_virtualMachine.m_variableIndex != m_variableIndex)) {
+        (getVirtualMachine()->getCurrentCallable() != m_frameCallable ||
+         getVirtualMachine()->m_parameterIndex != m_parameterIndex ||
+         getVirtualMachine()->m_variableIndex != m_variableIndex)) {
         throw NomadBug("Interpreter context is not bound to the active script frame");
     }
 }
@@ -315,7 +311,7 @@ const Interpreter& InterpreterContext::getInterpreter() const {
 }
 
 VirtualMachine* InterpreterContext::getVirtualMachine() const {
-    return &m_virtualMachine;
+    return &m_interpreter.getVirtualMachine();
 }
 
 void InterpreterContext::setResult(const Type* type, const RuntimeValue& value) {
@@ -400,7 +396,7 @@ std::span<const RuntimeValue> InterpreterContext::getParameterStorage(const Noma
         throw NomadBug("Invalid frame-backed parameter access");
     }
     validateFrame();
-    return m_virtualMachine.getEnclosingParameterStorage(m_frameCallable->getParameterOffset(parameterId),
+    return getVirtualMachine()->getEnclosingParameterStorage(m_frameCallable->getParameterOffset(parameterId),
         m_frameCallable->getParameterType(parameterId)->getSize());
 }
 
@@ -418,7 +414,7 @@ std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
     if (!layout.receiverOffset.has_value()) {
         throw NomadBug("Nonempty struct callable has no receiver storage pointer");
     }
-    const auto pointer = m_virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1);
+    const auto pointer = getVirtualMachine()->getEnclosingParameterStorage(*layout.receiverOffset, 1);
     return {pointer[0].getStorageAddress(), size};
 }
 
@@ -447,7 +443,7 @@ void InterpreterContext::replaceReceiver(const InterpreterValue& replacement) {
         return;
     }
     const auto layout = m_frameCallable->getCallStorageLayout();
-    const auto pointer = m_virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1);
+    const auto pointer = getVirtualMachine()->getEnclosingParameterStorage(*layout.receiverOffset, 1);
     std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
     type->assignValue(replacement.getStorage().data(), pointer[0].getStorageAddress(),
         scratch.empty() ? nullptr : scratch.data());
@@ -464,7 +460,7 @@ void InterpreterContext::setParameter(
     const auto* type = m_frameCallable->getParameterType(parameterId);
     validateValueStorage(type, storage);
     auto scratch = type->getSize() > 1 ? std::make_unique<RuntimeValue[]>(type->getSize()) : nullptr;
-    const auto destination = m_virtualMachine.getEnclosingParameterStorage(
+    const auto destination = getVirtualMachine()->getEnclosingParameterStorage(
         m_frameCallable->getParameterOffset(parameterId), type->getSize());
     type->assignValue(storage.data(), destination.data(), scratch.get());
 }
