@@ -166,6 +166,20 @@ VirtualMachine& Interpreter::getVirtualMachine() const {
     return m_virtualMachine;
 }
 
+std::unique_ptr<InterpreterObjectReceiver> Interpreter::createObjectReceiver(
+    const ClassType& type,
+    NomadObject* object
+) const {
+    return std::make_unique<InterpreterObjectReceiver>(*this, type, object);
+}
+
+std::unique_ptr<InterpreterStructReceiver> Interpreter::createStructReceiver(
+    const StructType& type,
+    RuntimeValue* storage
+) const {
+    return std::make_unique<InterpreterStructReceiver>(*this, type, storage);
+}
+
 InterpreterValue Interpreter::runFunction(
     const CallableId functionId,
     const std::span<const InterpreterValue> arguments

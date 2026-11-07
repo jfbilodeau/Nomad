@@ -3407,6 +3407,45 @@ Completed:
   C++ and CMake files, and whitespace checks. No gameplay session was run.
 - Awaiting review before uniform AST property access.
 
+### Specialized receiver factories
+
+Approved scope:
+
+- Add `Interpreter::createObjectReceiver(const ClassType&, NomadObject*)` and
+  `Interpreter::createStructReceiver(const StructType&, RuntimeValue*)`.
+- Object receivers retain a non-null object and release it when destroyed.
+  Struct factory receivers borrow actual mutable storage without copying or
+  freeing it. Null storage is valid for zero-sized structs.
+- Route existing frame-backed receivers and object-property receiver creation
+  through the specialized factories without changing evaluation order.
+- Keep the existing owned-value struct constructor until AST callers provide
+  explicit backing-storage lifetimes. Do not borrow mutable storage from an
+  immutable `InterpreterValue` or enable source-level struct-method calls here.
+- Validate factory ownership, shared object identity, borrowed struct mutation,
+  string receivers, and zero-sized structs; run all six CTest unit groups and
+  stop for review.
+
+Completed:
+
+- Added both specialized factories. Existing frame-backed receiver creation and
+  object-property evaluation use them. Object receivers retain and release their
+  objects using the existing reference-count helpers, preserving VM diagnostics
+  when an unset object field is accessed.
+- Struct factory receivers borrow storage without copying or freeing it.
+  Regression coverage checks mutation through the borrowed address, independent
+  snapshots, object/string lifetimes, null storage for zero-sized structs and
+  fields, and rejection of null storage for nonzero-sized structs.
+- All six CTest unit groups passed across the validation runs. After correcting
+  null-object reference retention, the language and remaining groups were rerun
+  successfully. Whitespace checks passed. No gameplay session was run.
+- Awaiting review. Owned-value struct construction and the snapshot-producing
+  host method-call contract remain unchanged.
+
+Next: establish storage-connected AST receivers for named and nested destinations
+and scoped temporaries, then route uniform property access through them. Shared
+typed storing and struct-method invocation follow; argument-induced receiver
+replacement, reentry, and failure behavior still require agreement.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

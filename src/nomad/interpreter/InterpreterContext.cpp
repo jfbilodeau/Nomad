@@ -286,9 +286,9 @@ InterpreterContext::InterpreterContext(
             if (layout.receiverOffset.has_value()) {
                 storage = virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1)[0].getStorageAddress();
             }
-            m_receiver = std::make_unique<InterpreterStructReceiver>(interpreter, *owner, storage);
+            m_receiver = interpreter.createStructReceiver(*owner, storage);
         } else {
-            m_receiver = std::make_unique<InterpreterObjectReceiver>(interpreter, *type, virtualMachine.getScriptReceiver());
+            m_receiver = interpreter.createObjectReceiver(*type->asClassType(), virtualMachine.getScriptReceiver());
         }
     }
 }

@@ -2441,14 +2441,28 @@ selectors are IDs or names; dotted paths traverse nested stored struct fields.
 Direct object properties can use registered native accessors. Execution and
 copy failures throw; general source execution reports them through diagnostics.
 
-`InterpreterObjectReceiver` borrows its object without retaining an additional reference.
-The object and interpreter must outlive the wrapper. Value snapshots retain
-that same object, and field updates remain shared. A frame-backed object receiver
+`Interpreter::createObjectReceiver(classType, object)` returns a
+`std::unique_ptr<InterpreterObjectReceiver>`. The receiver retains the supplied
+non-null object and releases that reference when destroyed; the caller's
+reference is unchanged. The interpreter and type must outlive the receiver.
+Value snapshots retain that same object, and field updates remain shared.
+Strings are class types and use this factory too. A frame-backed object receiver
 refers to the script frame's receiver even when a native callback temporarily
-uses a different VM receiver.
+uses a different VM receiver. Directly constructed object receivers also retain
+their objects.
 
-`InterpreterStructReceiver` can borrow storage using its struct type and live storage
-address, or own an `InterpreterValue` supplied by value. An lvalue is copied;
+`Interpreter::createStructReceiver(structType, storage)` returns a
+`std::unique_ptr<InterpreterStructReceiver>` borrowing mutable storage. The
+factory does not copy, retain, or free the struct's slots. Its interpreter, type,
+and backing storage must remain alive, and the storage address must remain
+stable until the receiver is destroyed. Updates through the receiver reach that
+storage; `getValue()` returns an independent snapshot. Zero-sized structs are
+valid: their storage pointer may be null, including when they contain zero-sized
+stored fields.
+
+Directly constructed `InterpreterStructReceiver` wrappers can borrow storage
+using a struct type and live storage address, or own an `InterpreterValue`
+supplied by value. An lvalue is copied;
 an owned temporary transfers ownership. Borrowed storage is not freed by the
 wrapper. Struct snapshots and owned copies are independent; contained object
 references remain shared. Empty structs still have their logical type despite

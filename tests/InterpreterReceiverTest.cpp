@@ -51,6 +51,131 @@ public:
 
 BOOST_AUTO_TEST_SUITE(interpreter_receivers)
 
+BOOST_AUTO_TEST_CASE(object_factory_retains_identity_after_the_source_value_is_destroyed) {
+    Runtime runtime;
+    const auto ownerId = runtime.registerClass("FactoryObject", ClassMode::Closed);
+    const auto* owner = runtime.getType(ownerId).value()->asClassType();
+    const auto numberProperty = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
+    BOOST_REQUIRE(numberProperty.isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        std::unique_ptr<InterpreterObjectReceiver> receiver;
+        {
+            RuntimeValue value;
+            value.setObjectValue(new ScriptObject(owner));
+            const InterpreterValue source(owner, value);
+            value.freeObjectValue();
+            receiver = interpreter.createObjectReceiver(*owner, source.getValue().getObjectValue());
+            BOOST_TEST(receiver->getType() == owner);
+            BOOST_TEST(source.getValue().getObjectValue()->getReferenceCount() == 2U);
+        }
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 1);
+        const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}});
+        receiver->setProperty(numberProperty, number);
+        BOOST_TEST(receiver->getProperty(numberProperty).getValue().getIntegerValue() == 41);
+        const auto snapshot = receiver->getValue();
+        BOOST_TEST(snapshot.getValue().getObjectValue()->getReferenceCount() == 2U);
+        receiver.reset();
+        BOOST_TEST(snapshot.getValue().getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(snapshot.getValue().asObject<ScriptObject>()->getField(
+            owner->getFieldIndex(numberProperty)).getIntegerValue() == 41);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(object_factory_supports_string_class_receivers_and_releases_its_reference) {
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto* type = runtime.getStringType()->asClassType();
+    BOOST_REQUIRE(type != nullptr);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    {
+        auto receiver = [&]() {
+            RuntimeValue value{NomadString{"retained"}};
+            const InterpreterValue source(type, value);
+            value.freeObjectValue();
+            auto wrapper = interpreter.createObjectReceiver(*type, source.getValue().getObjectValue());
+            BOOST_TEST(source.getValue().getObjectValue()->getReferenceCount() == 2U);
+            return wrapper;
+        }();
+        BOOST_TEST(receiver->getType() == type);
+        BOOST_TEST(receiver->getProperty("length").getValue().getIntegerValue() == 8);
+        {
+            const auto snapshot = receiver->getValue();
+            BOOST_TEST(snapshot.getValue().getStringValue() == "retained");
+            BOOST_TEST(snapshot.getValue().getObjectValue()->getReferenceCount() == 2U);
+        }
+        receiver.reset();
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(struct_factory_borrows_storage_without_copying_or_releasing_it) {
+    Runtime runtime;
+    const auto ownerId = runtime.registerStruct("FactoryStruct");
+    const auto* owner = runtime.getType(ownerId).value()->asStructType();
+    const auto numberProperty = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
+    BOOST_REQUIRE(numberProperty.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    std::array<RuntimeValue, 2> storage{
+        RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadString{"borrowed"}}
+    };
+    {
+        const auto receiver = interpreter.createStructReceiver(*owner, storage.data());
+        BOOST_TEST(receiver->getType() == owner);
+        BOOST_TEST(storage[1].getObjectValue()->getReferenceCount() == 1U);
+        const auto snapshot = receiver->getValue();
+        storage[0].setIntegerValue(29);
+        BOOST_TEST(receiver->getProperty(numberProperty).getValue().getIntegerValue() == 29);
+        const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}});
+        receiver->setProperty(numberProperty, number);
+        BOOST_TEST(storage[0].getIntegerValue() == 41);
+        BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 17);
+        BOOST_TEST(snapshot.getStorage().data() != storage.data());
+    }
+    BOOST_TEST(storage[0].getIntegerValue() == 41);
+    BOOST_TEST(storage[1].getStringValue() == "borrowed");
+    BOOST_TEST(storage[1].getObjectValue()->getReferenceCount() == 1U);
+    BOOST_CHECK_THROW(
+        static_cast<void>(interpreter.createStructReceiver(*owner, nullptr)), std::invalid_argument);
+    owner->freeValue(storage.data());
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(struct_factory_supports_null_storage_for_zero_sized_structs_and_fields) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("FactoryEmpty");
+    const auto* empty = runtime.getType(emptyId).value()->asStructType();
+    const auto ownerId = runtime.registerStruct("FactoryEmptyOwner");
+    const auto* owner = runtime.getType(ownerId).value()->asStructType();
+    const auto property = runtime.registerProperty(ownerId, "empty", empty);
+    BOOST_REQUIRE(property.isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    BOOST_TEST(empty->getSize() == 0U);
+    BOOST_TEST(owner->getSize() == 0U);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto emptyReceiver = interpreter.createStructReceiver(*empty, nullptr);
+    const auto emptyValue = emptyReceiver->getValue();
+    BOOST_TEST(emptyValue.getType() == empty);
+    BOOST_TEST(emptyValue.getStorage().empty());
+    const auto ownerReceiver = interpreter.createStructReceiver(*owner, nullptr);
+    ownerReceiver->setProperty(property, emptyValue);
+    BOOST_TEST(ownerReceiver->getProperty(property).getType() == empty);
+    BOOST_TEST(ownerReceiver->getProperty("empty").getStorage().empty());
+    const auto snapshot = ownerReceiver->getValue();
+    BOOST_TEST(snapshot.getType() == owner);
+    BOOST_TEST(snapshot.getStorage().data() == nullptr);
+}
+
 BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_and_empty_values) {
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("CompositeEmpty");
@@ -148,14 +273,14 @@ BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_nativ
     auto* object = new ScriptObject(owner);
     {
         InterpreterObjectReceiver wrapper(interpreter, *owner, object);
-        BOOST_TEST(object->getReferenceCount() == 1U);
+        BOOST_TEST(object->getReferenceCount() == 2U);
         const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}});
         wrapper.setProperty(numberProperty, number);
         BOOST_TEST(wrapper.getProperty(numberProperty).getValue().getIntegerValue() == 41);
         {
             const auto snapshot = wrapper.getValue();
             BOOST_TEST(snapshot.getValue().getObjectValue() == object);
-            BOOST_TEST(object->getReferenceCount() == 2U);
+            BOOST_TEST(object->getReferenceCount() == 3U);
             wrapper.setProperty(nativeProperty, number);
             BOOST_TEST(snapshot.getValue().asObject<ScriptObject>()->getField(
                 owner->getFieldIndex(numberProperty)).getIntegerValue() == 41);
@@ -198,7 +323,7 @@ BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_owned_and_borrowed_r
             source.freeObjectValue();
             const auto create = [&]() {
                 return owned ? std::make_unique<InterpreterStructReceiver>(interpreter, InterpreterValue(pair, storage)) :
-                    std::make_unique<InterpreterStructReceiver>(interpreter, *pair, storage.data());
+                    interpreter.createStructReceiver(*pair, storage.data());
             };
             field->failCopyAt = 0;
             auto successful = create();

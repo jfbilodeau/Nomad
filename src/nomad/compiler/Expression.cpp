@@ -1044,8 +1044,10 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
             if (receiver.getType()->isStruct()) {
                 return InterpreterStructReceiver(context.getInterpreter(), receiver).getProperty(property->getId());
             }
-            return InterpreterObjectReceiver(context.getInterpreter(), *receiver.getType(),
-                receiver.getValue().getObjectValue()).getProperty(property->getId());
+            return context.getInterpreter().createObjectReceiver(
+                *receiver.getType()->asClassType(),
+                receiver.getValue().getObjectValue()
+            )->getProperty(property->getId());
         }
     }
     if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
@@ -1069,8 +1071,10 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
         }
         const auto* valueType = property->getValueType();
         if (receiver.getType()->getStorage() == TypeStorage::Object) {
-            return InterpreterObjectReceiver(context.getInterpreter(), *receiver.getType(),
-                receiver.getValue().getObjectValue()).getProperty(property->getId());
+            return context.getInterpreter().createObjectReceiver(
+                *receiver.getType()->asClassType(),
+                receiver.getValue().getObjectValue()
+            )->getProperty(property->getId());
         }
         RuntimeValue result;
 
@@ -1119,8 +1123,11 @@ InterpreterValue NativeMemberExpression::evaluateAssignment(
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
     if (receiver.getType()->getStorage() == TypeStorage::Object) {
-        InterpreterObjectReceiver object(context.getInterpreter(), *receiver.getType(), receiver.getValue().getObjectValue());
-        object.setProperty(property->getId(), assignedValue);
+        const auto object = context.getInterpreter().createObjectReceiver(
+            *receiver.getType()->asClassType(),
+            receiver.getValue().getObjectValue()
+        );
+        object->setProperty(property->getId(), assignedValue);
     } else {
         context.getVirtualMachine()->setProperty(property->getId(), receiver.getValue(), assignedValue.getValue());
     }

@@ -6,12 +6,18 @@
 
 namespace nomad {
 
+class ClassType;
 class NomadObject;
 
 class InterpreterObjectReceiver final : public InterpreterReceiver {
 public:
-    // The object and interpreter must outlive this borrowed wrapper.
-    InterpreterObjectReceiver(const Interpreter& interpreter, const Type& type, NomadObject* object);
+    // Retains a non-null object; the interpreter must outlive this wrapper.
+    InterpreterObjectReceiver(
+        const Interpreter& interpreter,
+        const ClassType& type,
+        NomadObject* object
+    );
+    ~InterpreterObjectReceiver() override;
 
     using InterpreterReceiver::getProperty;
     using InterpreterReceiver::setProperty;

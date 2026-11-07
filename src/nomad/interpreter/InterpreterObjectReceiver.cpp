@@ -3,6 +3,7 @@
 #include <nomad/interpreter/Interpreter.hpp>
 
 #include <nomad/script/ClassType.hpp>
+#include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/Type.hpp>
@@ -15,11 +16,18 @@ namespace nomad {
 
 InterpreterObjectReceiver::InterpreterObjectReceiver(
     const Interpreter& interpreter,
-    const Type& type,
+    const ClassType& type,
     NomadObject* object
 ):
-    InterpreterReceiver(interpreter, type), m_object(object)
-{}
+    InterpreterReceiver(interpreter, type),
+    m_object(object)
+{
+    nomad::addRef(m_object);
+}
+
+InterpreterObjectReceiver::~InterpreterObjectReceiver() {
+    nomad::releaseRef(m_object);
+}
 
 InterpreterValue InterpreterObjectReceiver::getValue() const {
     RuntimeValue value;

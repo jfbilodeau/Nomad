@@ -5,6 +5,8 @@
 #include <nomad/compiler/Source.hpp>
 
 #include <nomad/interpreter/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterObjectReceiver.hpp>
+#include <nomad/interpreter/InterpreterStructReceiver.hpp>
 #include <nomad/interpreter/InterpreterValue.hpp>
 
 #include <nomad/script/Callable.hpp>
@@ -12,6 +14,7 @@
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Property.hpp>
 
+#include <memory>
 #include <optional>
 
 namespace nomad {
@@ -29,6 +32,17 @@ public:
     Interpreter& operator=(const Interpreter&) = delete;
 
     [[nodiscard]] VirtualMachine& getVirtualMachine() const;
+
+    // Retains the object; the interpreter must outlive the receiver.
+    [[nodiscard]] std::unique_ptr<InterpreterObjectReceiver> createObjectReceiver(
+        const ClassType& type,
+        NomadObject* object
+    ) const;
+    // Borrows live storage; nullptr is valid for a zero-sized struct.
+    [[nodiscard]] std::unique_ptr<InterpreterStructReceiver> createStructReceiver(
+        const StructType& type,
+        RuntimeValue* storage
+    ) const;
 
     [[nodiscard]] InterpreterValue runFunction(
         CallableId functionId,
