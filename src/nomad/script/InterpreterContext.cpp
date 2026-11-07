@@ -3,8 +3,11 @@
 #include <nomad/script/InterpreterContext.hpp>
 
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/InterpreterObject.hpp>
+#include <nomad/script/InterpreterStruct.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -275,6 +278,18 @@ InterpreterContext::InterpreterContext(
         );
     }
     m_variables.resize(m_frameVariableCount);
+    if (const auto* type = function.getClassType()) {
+        if (const auto* owner = type->asStructType()) {
+            RuntimeValue* storage = nullptr;
+            const auto layout = function.getCallStorageLayout();
+            if (layout.receiverOffset.has_value()) {
+                storage = virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1)[0].getStorageAddress();
+            }
+            m_receiver = std::make_unique<InterpreterStruct>(interpreter, *owner, storage);
+        } else {
+            m_receiver = std::make_unique<InterpreterObject>(interpreter, *type, virtualMachine.getScriptReceiver());
+        }
+    }
 }
 
 bool InterpreterContext::isFrameBacked() const {
@@ -422,35 +437,36 @@ std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
     return {pointer[0].getStorageAddress(), size};
 }
 
+InterpreterComposite* InterpreterContext::getReceiver() {
+    validateFrame();
+    return m_receiver.get();
+}
+
+const InterpreterComposite* InterpreterContext::getReceiver() const {
+    validateFrame();
+    return m_receiver.get();
+}
+
 void InterpreterContext::setReceiverProperty(
     const PropertyId propertyId,
     const InterpreterValue& value
 ) {
-    const auto storage = getReceiverStorage();
-    const InterpreterValue current(m_frameCallable->getClassType(), storage);
-    replaceReceiver(m_interpreter.setProperty(current, propertyId, value));
+    auto* receiver = getReceiver();
+    if (receiver == nullptr) {
+        throw NomadBug("Receiver property assignment requires an active composite frame");
+    }
+    receiver->setProperty(propertyId, value);
 }
 
 void InterpreterContext::setReceiverProperty(
     const NomadStringView propertyPath,
     const InterpreterValue& value
 ) {
-    const auto storage = getReceiverStorage();
-    const InterpreterValue current(m_frameCallable->getClassType(), storage);
-    replaceReceiver(m_interpreter.setProperty(current, propertyPath, value));
-}
-
-void InterpreterContext::replaceReceiver(const InterpreterValue& replacement) {
-    const auto storage = getReceiverStorage();
-    const auto* type = m_frameCallable->getClassType();
-    if (storage.empty()) {
-        return;
+    auto* receiver = getReceiver();
+    if (receiver == nullptr) {
+        throw NomadBug("Receiver property assignment requires an active composite frame");
     }
-    const auto layout = m_frameCallable->getCallStorageLayout();
-    const auto pointer = getVirtualMachine()->getEnclosingParameterStorage(*layout.receiverOffset, 1);
-    std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
-    type->assignValue(replacement.getStorage().data(), pointer[0].getStorageAddress(),
-        scratch.empty() ? nullptr : scratch.data());
+    receiver->setProperty(propertyPath, value);
 }
 
 void InterpreterContext::setParameter(

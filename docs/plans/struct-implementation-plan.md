@@ -3325,6 +3325,39 @@ Next, after review: design source-level struct-method receiver writeback,
 including receiver evaluation, named/nested destinations, temporary receivers,
 and failure behavior, before changing AST or language semantics.
 
+### Step 5D1 follow-up: Composite evaluation receivers
+
+Agreed implementation sequence:
+
+1. Add public `InterpreterComposite`, `InterpreterObject`, and `InterpreterStruct`
+   classes for AST evaluation. The base provides type, owned-value snapshot, and
+   property access. Object wrappers borrow the existing object; struct wrappers
+   explicitly borrow frame storage or own an independent `InterpreterValue` copy.
+   Backing storage stays private. Contexts own receiver wrappers, bind them to
+   active class/struct frames, and route AST `this` reads and existing receiver
+   assignments through them. Preserve frame validation and existing behavior.
+   Validate and stop for review.
+2. Extract shared typed storing operations from variable/member assignment
+   evaluation. Accept already-evaluated values without synthetic AST assignments
+   or compiler lowering. Preserve receiver/RHS ordering, frame/copy contracts,
+   unrelated sibling changes, and assignment failure guarantees. Validate and
+   stop for review.
+3. Enable source-level struct methods using typed invocation and the shared
+   assignment path. Writable receivers receive the returned receiver update;
+   temporary receivers discard it. Complete writeback before delivering a call's
+   result. Continue running compiled method bodies through the VM. Validate and
+   stop for review.
+
+Only step 1 is currently approved for implementation. Wrapper types are public
+evaluation infrastructure, not required host-facing Interpreter argument/result
+types. Keep existing `InterpreterValue` embedding contracts, method dispatch,
+VM layouts/opcodes, and interpreter no-RVO behavior unchanged.
+
+Before step 3, agree on receiver value timing when arguments modify the receiver,
+copy-in/copy-out versus reentrant visibility, success/failure writeback behavior,
+and the initial supported writable destination forms. Those semantics are not
+approved by the wrapper implementation.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

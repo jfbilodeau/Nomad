@@ -476,6 +476,10 @@ void VirtualMachine::callNativeMethod(const CallableId memberId) {
     endNativeCall(frame);
 }
 
+NomadObject* VirtualMachine::getScriptReceiver() const {
+    return m_stack[m_variableIndex - 1].getObjectValue();
+}
+
 NomadObject* VirtualMachine::getThis() const {
     auto* instance = m_this.getObjectValue();
     if (instance == nullptr) {

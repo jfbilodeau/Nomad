@@ -20,6 +20,7 @@
 namespace nomad {
 
 class Interpreter;
+class InterpreterComposite;
 class Type;
 class Runtime;
 class ScriptCallableBase;
@@ -72,6 +73,9 @@ public:
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
+    // AST receiver access; null for contexts without a receiver. Wrappers borrow the active frame.
+    [[nodiscard]] InterpreterComposite* getReceiver();
+    [[nodiscard]] const InterpreterComposite* getReceiver() const;
     // Borrows the complete struct receiver of an active method/constructor frame.
     [[nodiscard]] std::span<const RuntimeValue> getReceiverStorage() const;
     void setReceiverProperty(PropertyId propertyId, const InterpreterValue& value);
@@ -123,11 +127,11 @@ private:
     friend class Interpreter;
 
     void validateFrame() const;
-    void replaceReceiver(const InterpreterValue& replacement);
 
     const Interpreter& m_interpreter;
     Runtime* m_runtime;
     std::unique_ptr<ScriptCallableBase> m_function;
+    std::unique_ptr<InterpreterComposite> m_receiver;
     const ScriptCallableBase* m_frameCallable = nullptr;
     NomadIndex m_parameterIndex = 0;
     NomadIndex m_variableIndex = 0;

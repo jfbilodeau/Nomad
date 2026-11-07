@@ -15,9 +15,10 @@
 
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Interpreter.hpp>
+#include <nomad/script/InterpreterObject.hpp>
+#include <nomad/script/InterpreterStruct.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
@@ -1040,14 +1041,10 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
         if (property->asNativeProperty() == nullptr) {
             const auto receiver = m_receiver->evaluate(context);
             if (receiver.getType()->isStruct()) {
-                return context.getInterpreter().getProperty(receiver, property->getId());
+                return InterpreterStruct(context.getInterpreter(), receiver).getProperty(property->getId());
             }
-            const auto* object = dynamic_cast<const ScriptObject*>(receiver.getValue().getObjectValue());
-            if (object == nullptr || object->getClassType() != property->getOwnerType()) {
-                context.getVirtualMachine()->fault("Stored property receiver has no matching field storage");
-            }
-            return InterpreterValue(getType(), object->getFieldStorage(
-                property->getOwnerType()->getFieldIndex(property->getId())));
+            return InterpreterObject(context.getInterpreter(), *receiver.getType(),
+                receiver.getValue().getObjectValue()).getProperty(property->getId());
         }
     }
     if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
@@ -1070,6 +1067,10 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
         const auto* valueType = property->getValueType();
+        if (receiver.getType()->getStorage() == TypeStorage::Object) {
+            return InterpreterObject(context.getInterpreter(), *receiver.getType(),
+                receiver.getValue().getObjectValue()).getProperty(property->getId());
+        }
         RuntimeValue result;
 
         try {
@@ -1116,8 +1117,12 @@ InterpreterValue NativeMemberExpression::evaluateAssignment(
     if (property == nullptr) {
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
-    context.getVirtualMachine()->setProperty(std::get<PropertyId>(m_memberId), receiver.getValue(),
-        assignedValue.getValue());
+    if (receiver.getType()->getStorage() == TypeStorage::Object) {
+        InterpreterObject object(context.getInterpreter(), *receiver.getType(), receiver.getValue().getObjectValue());
+        object.setProperty(property->getId(), assignedValue);
+    } else {
+        context.getVirtualMachine()->setProperty(property->getId(), receiver.getValue(), assignedValue.getValue());
+    }
     return InterpreterValue(property->getValueType(), assignedValue.getValue());
 }
 
@@ -2024,12 +2029,11 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
 InterpreterValue IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Receiver: {
-        if (getType()->isStruct()) {
-            return InterpreterValue(getType(), context.getReceiverStorage());
+        const auto* receiver = context.getReceiver();
+        if (receiver == nullptr) {
+            raiseException("Receiver requires an active callable frame");
         }
-        RuntimeValue receiver;
-        receiver.setObjectValue(context.getVirtualMachine()->getThis());
-        return InterpreterValue(getType(), receiver);
+        return receiver->getValue();
     }
     case IdentifierType::Constant: {
         RuntimeValue value;

@@ -104,6 +104,8 @@ public:
     [[nodiscard]]
     ScriptFunction* getCurrentFunction() const;
     [[nodiscard]] const ScriptCallableBase* getCurrentCallable() const;
+    // Borrows the object receiver saved in an active compiled script frame, not a temporary native receiver.
+    [[nodiscard]] NomadObject* getScriptReceiver() const;
 
     void callScriptFunction(NomadIndex address);
     void callScriptMethod(NomadIndex address);

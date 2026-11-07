@@ -2421,6 +2421,39 @@ a non-frame context or a class/free-function frame throws `NomadBug`.
 The interpreter can read `this` and its stored fields in such struct frames;
 the resulting values are owned copies, not mutable receiver aliases.
 
+### Advanced AST receiver access
+
+`InterpreterComposite`, `InterpreterObject`, and `InterpreterStruct` are public
+AST evaluation types. Ordinary embedding and invocation code continues to use
+`InterpreterValue`; composite wrappers are not required Interpreter inputs or
+results.
+
+`InterpreterContext::getReceiver()` returns the context's receiver wrapper, or
+`nullptr` when there is no receiver. Active class and struct method/constructor
+frames have wrappers, including empty structs. Receiver access validates that
+the originating script frame is still active. The returned wrapper must not be
+used after that frame or context ends.
+
+The common API provides `getType()`, `getValue()`, `getProperty(property)`, and
+`setProperty(property, value)`. Reads return owned typed values. Property
+selectors are IDs or names; dotted paths traverse nested stored struct fields.
+Direct object properties can use registered native accessors. Execution and
+copy failures throw; general source execution reports them through diagnostics.
+
+`InterpreterObject` borrows its object without retaining an additional reference.
+The object and interpreter must outlive the wrapper. Value snapshots retain
+that same object, and field updates remain shared. A frame-backed object receiver
+refers to the script frame's receiver even when a native callback temporarily
+uses a different VM receiver.
+
+`InterpreterStruct` can borrow storage using its struct type and live storage
+address, or own an `InterpreterValue` supplied by value. An lvalue is copied;
+an owned temporary transfers ownership. Borrowed storage is not freed by the
+wrapper. Struct snapshots and owned copies are independent; contained object
+references remain shared. Empty structs still have their logical type despite
+requiring no storage slots. These wrappers do not enable source-level struct
+method writeback.
+
 For already resolved calls, `Interpreter::runFunction(functionId, arguments)`
 and `Interpreter::construct(constructorId, arguments)` use the interpreter's
 borrowed VM and take `std::span<const InterpreterValue>` in logical parameter order.
@@ -2543,12 +2576,14 @@ field assignments still evaluate the RHS.
 
 `InterpreterContext::setVariableProperty(name, property, value)` updates a
 stored field in a named variable or frame parameter/local.
-`setReceiverProperty(property, value)` updates a stored field in the active
-struct receiver. Each accepts either a direct `PropertyId` or a field name/dotted
-path, with the same selector rules as the interpreter's value operations.
-They copy the current root at write time, so unrelated field changes made during
-the RHS are preserved. Failed copying before replacement leaves the destination
-unchanged. These setters do not change the context's result; source assignment
+`setReceiverProperty(property, value)` updates a property through the active
+class or struct receiver wrapper. Each accepts either a direct `PropertyId` or
+a field name/dotted stored-struct path.
+Struct updates use the current value at write time, so unrelated field changes
+made during the RHS are preserved. Failed copying before replacement leaves
+the destination unchanged. Object updates affect the shared instance; native
+accessor side effects are not rolled back. These setters do not change the
+context's result; source assignment
 statements separately publish their owned assignment snapshots.
 
 Class-owned and temporary-rooted struct writes, source-level interpreter struct
