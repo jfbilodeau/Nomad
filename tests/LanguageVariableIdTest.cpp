@@ -4,8 +4,9 @@
 
 #include <nomad/game/EntityVariableContext.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/ClassType.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Variable.hpp>

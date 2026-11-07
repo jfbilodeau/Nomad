@@ -2,8 +2,9 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 
 #include <boost/test/unit_test.hpp>
 

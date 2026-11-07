@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/script/InterpreterComposite.hpp>
+#include <nomad/interpreter/InterpreterComposite.hpp>
 
 #include <variant>
 

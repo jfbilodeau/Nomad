@@ -4,9 +4,10 @@
 
 #include <nomad/compiler/Identifier.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>

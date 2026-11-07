@@ -1,6 +1,7 @@
 #pragma once
 
-#include <nomad/script/InterpreterValue.hpp>
+#include <nomad/interpreter/InterpreterValue.hpp>
+
 #include <nomad/script/RuntimeValue.hpp>
 
 #include <span>

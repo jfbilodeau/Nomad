@@ -5,8 +5,9 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/VirtualMachine.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 
 namespace nomad {

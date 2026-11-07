@@ -10,10 +10,11 @@
 #include <nomad/compiler/StructMemberDeclaration.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterValue.hpp>
+
 #include <nomad/script/InstructionDump.hpp>
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterContext.hpp>
-#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>

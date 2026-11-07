@@ -12,9 +12,10 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/EnumType.hpp>
-#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/String.hpp>

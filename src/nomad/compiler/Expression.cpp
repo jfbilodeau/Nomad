@@ -13,10 +13,11 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterObject.hpp>
+#include <nomad/interpreter/InterpreterStruct.hpp>
+
 #include <nomad/script/FormatString.hpp>
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterObject.hpp>
-#include <nomad/script/InterpreterStruct.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>

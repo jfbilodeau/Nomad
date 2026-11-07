@@ -6,10 +6,11 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/InstructionDump.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>

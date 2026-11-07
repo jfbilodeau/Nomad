@@ -2,9 +2,10 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterCallFrame.hpp>
-#include <nomad/script/InterpreterValue.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
+#include <nomad/interpreter/InterpreterValue.hpp>
+
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>

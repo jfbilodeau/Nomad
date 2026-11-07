@@ -2,11 +2,12 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>

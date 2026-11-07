@@ -1,6 +1,7 @@
-#include <nomad/script/InterpreterStruct.hpp>
+#include <nomad/interpreter/InterpreterStruct.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/StructType.hpp>
 
 #include <stdexcept>

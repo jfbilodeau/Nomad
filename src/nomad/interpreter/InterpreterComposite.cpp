@@ -1,7 +1,8 @@
-#include <nomad/script/InterpreterComposite.hpp>
+#include <nomad/interpreter/InterpreterComposite.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
 
 #include <nomad/script/CompositeType.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 

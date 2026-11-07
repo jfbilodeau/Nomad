@@ -2,8 +2,9 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Closure.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

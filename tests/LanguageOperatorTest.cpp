@@ -4,7 +4,8 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

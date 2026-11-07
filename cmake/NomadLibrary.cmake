@@ -31,6 +31,14 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/EventStatement.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/ReturnStatement.cpp
 
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/Interpreter.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterCallFrame.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterComposite.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterContext.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterStruct.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterValue.cpp
+
     ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/FileSink.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/Logger.cpp
@@ -57,13 +65,6 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Hub.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InstructionDump.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterCallFrame.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterComposite.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterObject.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterStruct.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterValue.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp

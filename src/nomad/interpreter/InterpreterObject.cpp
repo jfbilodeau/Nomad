@@ -1,7 +1,8 @@
-#include <nomad/script/InterpreterObject.hpp>
+#include <nomad/interpreter/InterpreterObject.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
 
 #include <nomad/script/ClassType.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/Type.hpp>

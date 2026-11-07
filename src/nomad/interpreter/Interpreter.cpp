@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
@@ -10,10 +10,11 @@
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
+
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/CompositeType.hpp>
-#include <nomad/script/InterpreterCallFrame.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>

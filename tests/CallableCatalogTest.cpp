@@ -2,6 +2,9 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/compiler/Parser.hpp>
@@ -9,8 +12,6 @@
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/InstructionDump.hpp>
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>

@@ -1,4 +1,4 @@
-#include <nomad/script/InterpreterCallFrame.hpp>
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Type.hpp>

@@ -2,12 +2,13 @@
 
 #include <nomad/script/OpCode.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/system/Boolean.hpp>
 #include <nomad/system/Float.hpp>
 #include <nomad/system/Integer.hpp>
 #include <nomad/script/FormatString.hpp>
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 
 #include <nomad/script/Runtime.hpp>

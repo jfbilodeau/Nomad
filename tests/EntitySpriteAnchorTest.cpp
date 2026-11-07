@@ -6,7 +6,8 @@
 #include <nomad/game/Game.hpp>
 #include <nomad/game/GameExecutionContext.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

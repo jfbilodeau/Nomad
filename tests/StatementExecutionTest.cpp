@@ -8,7 +8,9 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
-#include <nomad/script/Interpreter.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

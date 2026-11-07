@@ -2,9 +2,10 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/RangeType.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>

@@ -19,13 +19,14 @@
 
 #include <nomad/game/Game.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Documentation.hpp>
 #include <nomad/script/InstructionDump.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

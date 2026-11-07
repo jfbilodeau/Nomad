@@ -8,8 +8,10 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterContext.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>

@@ -6,10 +6,11 @@
 
 #include <nomad/game/Game.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/DynamicVariable.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <SDL3/SDL.h>

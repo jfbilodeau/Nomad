@@ -3358,6 +3358,31 @@ copy-in/copy-out versus reentrant visibility, success/failure writeback behavior
 and the initial supported writable destination forms. Those semantics are not
 approved by the wrapper implementation.
 
+### Interpreter directory separation
+
+Approved scope:
+
+- Move `Interpreter`, `InterpreterContext`, `InterpreterValue`,
+  `InterpreterComposite`, `InterpreterObject`, `InterpreterStruct`, and
+  `InterpreterCallFrame` into matching `include/nomad/interpreter/` and
+  `src/nomad/interpreter/` directories.
+- Update includes, CMake source lists, and embedding documentation. Retain the
+  `nomad` namespace, existing language-library target, and all execution,
+  ownership, and invocation contracts.
+- Run unit tests through CTest, then stop for review. Uniform property access
+  and source-level struct-method writeback remain separate steps.
+
+Completed:
+
+- Relocated all seven interpreter classes and updated C++ includes, the language
+  library source list, embedding examples, and the frame-inspection header link.
+  No execution or ownership behavior was changed.
+- Moved a native-function registration outside its enclosing Boost assertion in
+  `InterpreterCompositeTest.cpp` to avoid MSVC's diagnostic string-length limit;
+  the callback body and its assertions are unchanged.
+- Validation passed: all six CTest unit groups and whitespace checks. No gameplay
+  session was run. Awaiting review before proceeding to uniform property access.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.
@@ -3467,7 +3492,7 @@ scope. No commit or push without a separate request.
   [OpCode.hpp](../../include/nomad/script/OpCode.hpp),
   [RuntimeOpCodes.cpp](../../src/nomad/script/RuntimeOpCodes.cpp).
 - Interpreter/captures:
-  [InterpreterContext.hpp](../../include/nomad/script/InterpreterContext.hpp),
+  [InterpreterContext.hpp](../../include/nomad/interpreter/InterpreterContext.hpp),
   [Closure.cpp](../../src/nomad/script/Closure.cpp).
 - Binding compatibility:
   [ScriptBindingObject.cpp](../../src/nomad/modules/ScriptBindingObject.cpp),

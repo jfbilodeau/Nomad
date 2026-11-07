@@ -2,10 +2,11 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterObject.hpp>
+#include <nomad/interpreter/InterpreterStruct.hpp>
+
 #include <nomad/script/ClassType.hpp>
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterObject.hpp>
-#include <nomad/script/InterpreterStruct.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -236,72 +237,79 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     auto visits = 0;
-    BOOST_REQUIRE(runtime.registerNativeFunction("inspectCompositeFrame", [&](VirtualMachine* active) {
-        ++visits;
-        const auto* callable = active->getCurrentCallable();
-        BOOST_REQUIRE(callable != nullptr);
-        const Interpreter interpreter(*active);
-        const auto state = active->captureExecutionState();
-        ScriptObject* foreign = nullptr;
-        NomadObject* original = nullptr;
-        const auto* type = callable->getClassType();
-        if (type != nullptr && !type->isStruct()) {
-            original = active->getScriptReceiver();
-            foreign = new ScriptObject(type->asClassType());
-            RuntimeValue foreignReceiver;
-            foreignReceiver.setObjectValue(foreign);
-            active->enterNativeFrame(foreignReceiver);
-        }
-        {
-            InterpreterContext context(interpreter, *callable);
-            const auto* receiver = std::as_const(context).getReceiver();
-            if (type == nullptr) {
-                BOOST_TEST(receiver == nullptr);
-            } else {
-                BOOST_REQUIRE(receiver != nullptr);
-                BOOST_TEST(receiver->getType() == type);
-                if (type->getSize() == 0) {
-                    BOOST_TEST(dynamic_cast<const InterpreterStruct*>(receiver) != nullptr);
-                    BOOST_TEST(receiver->getValue().getStorage().empty());
-                    BOOST_REQUIRE(interpreter.execute("this", context));
-                    BOOST_TEST(context.getResult()->getType() == type);
+    const auto inspectFrameId = runtime.registerNativeFunction(
+        "inspectCompositeFrame",
+        [&](VirtualMachine* active) {
+            ++visits;
+            const auto* callable = active->getCurrentCallable();
+            BOOST_REQUIRE(callable != nullptr);
+            const Interpreter interpreter(*active);
+            const auto state = active->captureExecutionState();
+            ScriptObject* foreign = nullptr;
+            NomadObject* original = nullptr;
+            const auto* type = callable->getClassType();
+            if (type != nullptr && !type->isStruct()) {
+                original = active->getScriptReceiver();
+                foreign = new ScriptObject(type->asClassType());
+                RuntimeValue foreignReceiver;
+                foreignReceiver.setObjectValue(foreign);
+                active->enterNativeFrame(foreignReceiver);
+            }
+            {
+                InterpreterContext context(interpreter, *callable);
+                const auto* receiver = std::as_const(context).getReceiver();
+                if (type == nullptr) {
+                    BOOST_TEST(receiver == nullptr);
                 } else {
-                    const auto before = receiver->getValue();
-                    const auto numberBefore = receiver->getProperty("number").getValue().getIntegerValue();
-                    if (type->isStruct()) {
+                    BOOST_REQUIRE(receiver != nullptr);
+                    BOOST_TEST(receiver->getType() == type);
+                    if (type->getSize() == 0) {
                         BOOST_TEST(dynamic_cast<const InterpreterStruct*>(receiver) != nullptr);
+                        BOOST_TEST(receiver->getValue().getStorage().empty());
+                        BOOST_REQUIRE(interpreter.execute("this", context));
+                        BOOST_TEST(context.getResult()->getType() == type);
                     } else {
-                        BOOST_TEST(dynamic_cast<const InterpreterObject*>(receiver) != nullptr);
-                        BOOST_TEST(before.getValue().getObjectValue() == original);
-                        BOOST_TEST(active->getThis() == foreign);
-                    }
-                    BOOST_REQUIRE(interpreter.execute("this.number = 29\nthis.number", context));
-                    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
-                    const InterpreterValue changed(runtime.getIntegerType(), RuntimeValue{NomadInteger{31}});
-                    context.setReceiverProperty("number", changed);
-                    BOOST_TEST(receiver->getProperty("number").getValue().getIntegerValue() == 31);
-                    if (type->isStruct()) {
-                        BOOST_TEST(before.getStorage()[0].getIntegerValue() == numberBefore);
-                        BOOST_TEST(context.getReceiverStorage()[0].getIntegerValue() == 31);
-                    } else {
-                        BOOST_TEST(before.getValue().asObject<ScriptObject>()->getField(0).getIntegerValue() == 31);
-                        BOOST_TEST(active->getThis() == foreign);
+                        const auto before = receiver->getValue();
+                        const auto numberBefore = receiver->getProperty("number").getValue().getIntegerValue();
+                        if (type->isStruct()) {
+                            BOOST_TEST(dynamic_cast<const InterpreterStruct*>(receiver) != nullptr);
+                        } else {
+                            BOOST_TEST(dynamic_cast<const InterpreterObject*>(receiver) != nullptr);
+                            BOOST_TEST(before.getValue().getObjectValue() == original);
+                            BOOST_TEST(active->getThis() == foreign);
+                        }
+                        BOOST_REQUIRE(interpreter.execute("this.number = 29\nthis.number", context));
+                        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
+                        const InterpreterValue changed(runtime.getIntegerType(), RuntimeValue{NomadInteger{31}});
+                        context.setReceiverProperty("number", changed);
+                        BOOST_TEST(receiver->getProperty("number").getValue().getIntegerValue() == 31);
+                        if (type->isStruct()) {
+                            BOOST_TEST(before.getStorage()[0].getIntegerValue() == numberBefore);
+                            BOOST_TEST(context.getReceiverStorage()[0].getIntegerValue() == 31);
+                        } else {
+                            BOOST_TEST(before.getValue().asObject<ScriptObject>()->getField(0).getIntegerValue() == 31);
+                            BOOST_TEST(active->getThis() == foreign);
+                        }
                     }
                 }
+                const auto current = active->captureExecutionState();
+                auto invalid = current;
+                ++invalid.parameterIndex;
+                active->restoreExecutionState(invalid);
+                BOOST_CHECK_THROW(static_cast<void>(context.getReceiver()), NomadBug);
+                BOOST_CHECK_THROW(static_cast<void>(std::as_const(context).getReceiver()), NomadBug);
+                active->restoreExecutionState(current);
             }
-            const auto current = active->captureExecutionState();
-            auto invalid = current;
-            ++invalid.parameterIndex;
-            active->restoreExecutionState(invalid);
-            BOOST_CHECK_THROW(static_cast<void>(context.getReceiver()), NomadBug);
-            BOOST_CHECK_THROW(static_cast<void>(std::as_const(context).getReceiver()), NomadBug);
-            active->restoreExecutionState(current);
-        }
-        active->restoreExecutionState(state);
-        if (foreign != nullptr) {
-            foreign->releaseRef();
-        }
-    }, {}, runtime.getVoidType(), "").isValid());
+            active->restoreExecutionState(state);
+            if (foreign != nullptr) {
+                foreign->releaseRef();
+            }
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(inspectFrameId.isValid());
     fixture.addFunction("compositeFrameTypes",
         "class CompositeFrameObject\nnumber = 7\n"
         "init number:int\nthis.number = number\ninspectCompositeFrame\nend\n"

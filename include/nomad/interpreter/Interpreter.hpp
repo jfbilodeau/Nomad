@@ -4,10 +4,11 @@
 
 #include <nomad/compiler/Source.hpp>
 
+#include <nomad/interpreter/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterValue.hpp>
+
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/FormatString.hpp>
-#include <nomad/script/InterpreterContext.hpp>
-#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Property.hpp>
 

@@ -5,9 +5,10 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/InstructionDump.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>

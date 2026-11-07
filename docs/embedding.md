@@ -2217,7 +2217,7 @@ and module lifecycle are preserved.
 ## Persistent interpretation
 
 ```cpp
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -2337,7 +2337,7 @@ empty struct retains its type without a slot pointer. A function call used as a
 statement releases its result, including owned fields in a returned struct.
 Aggregate calls execute synchronously; aggregate yield/resume remains unsupported.
 
-Include `<nomad/script/InterpreterValue.hpp>` to use immutable interpreter values
+Include `<nomad/interpreter/InterpreterValue.hpp>` to use immutable interpreter values
 independently of an interpreter context. `InterpreterValue(type, storage)` copies a
 `std::span<const RuntimeValue>` containing
 exactly `type->getSize()` contiguous slots. The type's layout must be finalized.
@@ -2525,7 +2525,7 @@ For struct receivers, use
 `Interpreter::runStructMethod(receiver, methodId, arguments)`. It accepts
 complete typed arguments, including structs and empty structs, and invokes
 native or compiled script methods. It returns a `StructMethodResult`, declared
-in `<nomad/script/Interpreter.hpp>`, containing:
+in `<nomad/interpreter/Interpreter.hpp>`, containing:
 
 - `receiver`: an owned copy of the updated struct receiver.
 - `result`: the method's owned scalar, reference, struct, empty, or void result.

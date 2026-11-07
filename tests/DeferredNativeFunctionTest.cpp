@@ -8,9 +8,10 @@
 #include <nomad/compiler/FunctionParameterTypeTarget.hpp>
 #include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/modules/ScriptBindings.hpp>
 
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 

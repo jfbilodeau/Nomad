@@ -6,8 +6,9 @@
 
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/interpreter/InterpreterValue.hpp>
+
 #include <nomad/script/Callable.hpp>
-#include <nomad/script/InterpreterValue.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/Variable.hpp>

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/script/InterpreterValue.hpp>
+#include <nomad/interpreter/InterpreterValue.hpp>
 
 #include <nomad/script/Type.hpp>
 

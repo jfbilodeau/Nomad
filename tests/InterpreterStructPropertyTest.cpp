@@ -1,7 +1,8 @@
 #include <LanguageTestFixture.hpp>
 
-#include <nomad/script/Interpreter.hpp>
-#include <nomad/script/InterpreterValue.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterValue.hpp>
+
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>

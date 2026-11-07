@@ -7,7 +7,8 @@
 #include <nomad/compiler/Identifier.hpp>
 #include <nomad/compiler/StorageLocation.hpp>
 
-#include <nomad/script/InterpreterValue.hpp>
+#include <nomad/interpreter/InterpreterValue.hpp>
+
 #include <nomad/script/OpCode.hpp>
 
 #include <memory>

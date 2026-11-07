@@ -7,7 +7,8 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
-#include <nomad/script/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/Runtime.hpp>
 
 namespace nomad {

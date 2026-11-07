@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#pragma once
+#include <nomad/interpreter/InterpreterComposite.hpp>
 
-#include <nomad/script/InterpreterComposite.hpp>
+#pragma once
 
 namespace nomad {
 

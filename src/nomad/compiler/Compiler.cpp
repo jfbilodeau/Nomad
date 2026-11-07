@@ -18,7 +18,8 @@
 #include <nomad/compiler/statements/EventStatement.hpp>
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
-#include <nomad/script/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/StructType.hpp>
