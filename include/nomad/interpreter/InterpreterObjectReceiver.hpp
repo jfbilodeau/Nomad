@@ -1,20 +1,20 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/interpreter/InterpreterComposite.hpp>
-
 #pragma once
+
+#include <nomad/interpreter/InterpreterReceiver.hpp>
 
 namespace nomad {
 
 class NomadObject;
 
-class InterpreterObject final : public InterpreterComposite {
+class InterpreterObjectReceiver final : public InterpreterReceiver {
 public:
     // The object and interpreter must outlive this borrowed wrapper.
-    InterpreterObject(const Interpreter& interpreter, const Type& type, NomadObject* object);
+    InterpreterObjectReceiver(const Interpreter& interpreter, const Type& type, NomadObject* object);
 
-    using InterpreterComposite::getProperty;
-    using InterpreterComposite::setProperty;
+    using InterpreterReceiver::getProperty;
+    using InterpreterReceiver::setProperty;
     [[nodiscard]] InterpreterValue getValue() const override;
     [[nodiscard]] InterpreterValue getProperty(PropertyId propertyId) const override;
     void setProperty(PropertyId propertyId, const InterpreterValue& value) override;

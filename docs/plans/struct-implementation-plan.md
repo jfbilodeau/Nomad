@@ -3325,11 +3325,11 @@ Next, after review: design source-level struct-method receiver writeback,
 including receiver evaluation, named/nested destinations, temporary receivers,
 and failure behavior, before changing AST or language semantics.
 
-### Step 5D1 follow-up: Composite evaluation receivers
+### Step 5D1 follow-up: Evaluation receivers
 
 Agreed implementation sequence:
 
-1. Add public `InterpreterComposite`, `InterpreterObject`, and `InterpreterStruct`
+1. Add public `InterpreterReceiver`, `InterpreterObjectReceiver`, and `InterpreterStructReceiver`
    classes for AST evaluation. The base provides type, owned-value snapshot, and
    property access. Object wrappers borrow the existing object; struct wrappers
    explicitly borrow frame storage or own an independent `InterpreterValue` copy.
@@ -3363,7 +3363,7 @@ approved by the wrapper implementation.
 Approved scope:
 
 - Move `Interpreter`, `InterpreterContext`, `InterpreterValue`,
-  `InterpreterComposite`, `InterpreterObject`, `InterpreterStruct`, and
+  `InterpreterReceiver`, `InterpreterObjectReceiver`, `InterpreterStructReceiver`, and
   `InterpreterCallFrame` into matching `include/nomad/interpreter/` and
   `src/nomad/interpreter/` directories.
 - Update includes, CMake source lists, and embedding documentation. Retain the
@@ -3378,10 +3378,34 @@ Completed:
   library source list, embedding examples, and the frame-inspection header link.
   No execution or ownership behavior was changed.
 - Moved a native-function registration outside its enclosing Boost assertion in
-  `InterpreterCompositeTest.cpp` to avoid MSVC's diagnostic string-length limit;
+  `InterpreterReceiverTest.cpp` to avoid MSVC's diagnostic string-length limit;
   the callback body and its assertions are unchanged.
 - Validation passed: all six CTest unit groups and whitespace checks. No gameplay
   session was run. Awaiting review before proceeding to uniform property access.
+
+### Interpreter receiver naming
+
+Approved scope:
+
+- Rename `InterpreterComposite` to `InterpreterReceiver`, `InterpreterObject`
+  to `InterpreterObjectReceiver`, and `InterpreterStruct` to
+  `InterpreterStructReceiver`, including matching headers and sources.
+- Rename the receiver regression test file and update C++ references, CMake
+  source lists, and embedding documentation without changing behavior.
+- Keep only object and struct receiver implementations. Native properties
+  require class owners; registered native methods require class or struct
+  owners. Strings are class types and use object receivers.
+- Run all six CTest unit groups and stop for review. Uniform AST property access
+  is the next step; shared typed storing and struct-method writeback follow.
+
+Completed:
+
+- Renamed the three receiver classes, their matching files, and the receiver
+  regression test file. Updated source references, sorted CMake source lists,
+  and embedding documentation. No receiver behavior or ownership contract changed.
+- Validation passed: all six CTest unit groups, absence of old receiver names in
+  C++ and CMake files, and whitespace checks. No gameplay session was run.
+- Awaiting review before uniform AST property access.
 
 ### Step 6: Conservative named return-value optimization
 

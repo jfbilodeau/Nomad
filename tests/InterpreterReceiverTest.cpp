@@ -3,8 +3,8 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
-#include <nomad/interpreter/InterpreterObject.hpp>
-#include <nomad/interpreter/InterpreterStruct.hpp>
+#include <nomad/interpreter/InterpreterObjectReceiver.hpp>
+#include <nomad/interpreter/InterpreterStructReceiver.hpp>
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -49,7 +49,7 @@ public:
 
 } // namespace
 
-BOOST_AUTO_TEST_SUITE(interpreter_composites)
+BOOST_AUTO_TEST_SUITE(interpreter_receivers)
 
 BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_and_empty_values) {
     Runtime runtime;
@@ -73,9 +73,9 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_a
             RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadString{"borrowed"}}
         };
         {
-            InterpreterStruct borrowed(interpreter, *root, storage.data());
+            InterpreterStructReceiver borrowed(interpreter, *root, storage.data());
             const auto original = borrowed.getValue();
-            InterpreterStruct copied(interpreter, original);
+            InterpreterStructReceiver copied(interpreter, original);
             const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{29}});
             borrowed.setProperty("leaf.number", number);
             BOOST_TEST(storage[0].getIntegerValue() == 29);
@@ -90,9 +90,9 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_a
             BOOST_TEST(copied.getProperty("leaf.text").getValue().getStringValue() == "copied");
             BOOST_TEST(storage[1].getStringValue() == "borrowed");
             BOOST_TEST(snapshot.getStorage()[1].getStringValue() == "borrowed");
-            InterpreterStruct borrowedEmpty(interpreter, *empty, nullptr);
+            InterpreterStructReceiver borrowedEmpty(interpreter, *empty, nullptr);
             const auto emptyValue = borrowedEmpty.getValue();
-            InterpreterStruct copiedEmpty(interpreter, emptyValue);
+            InterpreterStructReceiver copiedEmpty(interpreter, emptyValue);
             BOOST_TEST(emptyValue.getType() == empty);
             BOOST_TEST(copiedEmpty.getValue().getStorage().empty());
             borrowed.setProperty(emptyProperty, emptyValue);
@@ -100,8 +100,8 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_a
             BOOST_TEST(borrowed.getProperty(leafProperty).getStorage()[0].getIntegerValue() == 29);
             BOOST_CHECK_THROW(static_cast<void>(borrowed.getProperty("leaf.")), std::invalid_argument);
             BOOST_CHECK_THROW(static_cast<void>(borrowed.getProperty("missing")), std::invalid_argument);
-            BOOST_CHECK_THROW((InterpreterStruct{interpreter, *root, nullptr}), std::invalid_argument);
-            BOOST_CHECK_THROW((InterpreterStruct{interpreter, number}), std::invalid_argument);
+            BOOST_CHECK_THROW((InterpreterStructReceiver{interpreter, *root, nullptr}), std::invalid_argument);
+            BOOST_CHECK_THROW((InterpreterStructReceiver{interpreter, number}), std::invalid_argument);
         }
         BOOST_TEST(storage[1].getObjectValue()->getReferenceCount() == 1U);
         root->freeValue(storage.data());
@@ -147,7 +147,7 @@ BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_nativ
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     auto* object = new ScriptObject(owner);
     {
-        InterpreterObject wrapper(interpreter, *owner, object);
+        InterpreterObjectReceiver wrapper(interpreter, *owner, object);
         BOOST_TEST(object->getReferenceCount() == 1U);
         const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}});
         wrapper.setProperty(numberProperty, number);
@@ -197,8 +197,8 @@ BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_owned_and_borrowed_r
             const InterpreterValue replacement(field, source);
             source.freeObjectValue();
             const auto create = [&]() {
-                return owned ? std::make_unique<InterpreterStruct>(interpreter, InterpreterValue(pair, storage)) :
-                    std::make_unique<InterpreterStruct>(interpreter, *pair, storage.data());
+                return owned ? std::make_unique<InterpreterStructReceiver>(interpreter, InterpreterValue(pair, storage)) :
+                    std::make_unique<InterpreterStructReceiver>(interpreter, *pair, storage.data());
             };
             field->failCopyAt = 0;
             auto successful = create();
@@ -264,7 +264,7 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
                     BOOST_REQUIRE(receiver != nullptr);
                     BOOST_TEST(receiver->getType() == type);
                     if (type->getSize() == 0) {
-                        BOOST_TEST(dynamic_cast<const InterpreterStruct*>(receiver) != nullptr);
+                        BOOST_TEST(dynamic_cast<const InterpreterStructReceiver*>(receiver) != nullptr);
                         BOOST_TEST(receiver->getValue().getStorage().empty());
                         BOOST_REQUIRE(interpreter.execute("this", context));
                         BOOST_TEST(context.getResult()->getType() == type);
@@ -272,9 +272,9 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
                         const auto before = receiver->getValue();
                         const auto numberBefore = receiver->getProperty("number").getValue().getIntegerValue();
                         if (type->isStruct()) {
-                            BOOST_TEST(dynamic_cast<const InterpreterStruct*>(receiver) != nullptr);
+                            BOOST_TEST(dynamic_cast<const InterpreterStructReceiver*>(receiver) != nullptr);
                         } else {
-                            BOOST_TEST(dynamic_cast<const InterpreterObject*>(receiver) != nullptr);
+                            BOOST_TEST(dynamic_cast<const InterpreterObjectReceiver*>(receiver) != nullptr);
                             BOOST_TEST(before.getValue().getObjectValue() == original);
                             BOOST_TEST(active->getThis() == foreign);
                         }

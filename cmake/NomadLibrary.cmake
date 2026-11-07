@@ -33,10 +33,10 @@ add_library(nomad-language SHARED
 
     ${NOMAD_SOURCE_DIR}/nomad/interpreter/Interpreter.cpp
     ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterCallFrame.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterComposite.cpp
     ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterContext.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterObject.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterStruct.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterObjectReceiver.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterReceiver.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterStructReceiver.cpp
     ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterValue.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp

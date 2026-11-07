@@ -12,11 +12,11 @@ class Interpreter;
 class Type;
 
 // AST evaluation infrastructure; host invocation APIs continue to use InterpreterValue.
-class InterpreterComposite {
+class InterpreterReceiver {
 public:
-    InterpreterComposite(const InterpreterComposite&) = delete;
-    InterpreterComposite& operator=(const InterpreterComposite&) = delete;
-    virtual ~InterpreterComposite();
+    InterpreterReceiver(const InterpreterReceiver&) = delete;
+    InterpreterReceiver& operator=(const InterpreterReceiver&) = delete;
+    virtual ~InterpreterReceiver();
 
     [[nodiscard]] const Type* getType() const;
     [[nodiscard]] virtual InterpreterValue getValue() const = 0;
@@ -27,7 +27,7 @@ public:
     void setProperty(NomadStringView propertyPath, const InterpreterValue& value);
 
 protected:
-    InterpreterComposite(const Interpreter& interpreter, const Type& type);
+    InterpreterReceiver(const Interpreter& interpreter, const Type& type);
     [[nodiscard]] const Interpreter& getInterpreter() const;
 
 private:

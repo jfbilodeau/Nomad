@@ -3,8 +3,8 @@
 #include <nomad/interpreter/InterpreterContext.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
-#include <nomad/interpreter/InterpreterObject.hpp>
-#include <nomad/interpreter/InterpreterStruct.hpp>
+#include <nomad/interpreter/InterpreterObjectReceiver.hpp>
+#include <nomad/interpreter/InterpreterStructReceiver.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -286,9 +286,9 @@ InterpreterContext::InterpreterContext(
             if (layout.receiverOffset.has_value()) {
                 storage = virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1)[0].getStorageAddress();
             }
-            m_receiver = std::make_unique<InterpreterStruct>(interpreter, *owner, storage);
+            m_receiver = std::make_unique<InterpreterStructReceiver>(interpreter, *owner, storage);
         } else {
-            m_receiver = std::make_unique<InterpreterObject>(interpreter, *type, virtualMachine.getScriptReceiver());
+            m_receiver = std::make_unique<InterpreterObjectReceiver>(interpreter, *type, virtualMachine.getScriptReceiver());
         }
     }
 }
@@ -438,12 +438,12 @@ std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
     return {pointer[0].getStorageAddress(), size};
 }
 
-InterpreterComposite* InterpreterContext::getReceiver() {
+InterpreterReceiver* InterpreterContext::getReceiver() {
     validateFrame();
     return m_receiver.get();
 }
 
-const InterpreterComposite* InterpreterContext::getReceiver() const {
+const InterpreterReceiver* InterpreterContext::getReceiver() const {
     validateFrame();
     return m_receiver.get();
 }

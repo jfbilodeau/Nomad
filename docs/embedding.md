@@ -2423,10 +2423,11 @@ the resulting values are owned copies, not mutable receiver aliases.
 
 ### Advanced AST receiver access
 
-`InterpreterComposite`, `InterpreterObject`, and `InterpreterStruct` are public
-AST evaluation types. Ordinary embedding and invocation code continues to use
-`InterpreterValue`; composite wrappers are not required Interpreter inputs or
-results.
+`InterpreterReceiver`, `InterpreterObjectReceiver`, and
+`InterpreterStructReceiver` are public AST evaluation types. Ordinary embedding
+and invocation code continues to use `InterpreterValue`; receiver wrappers are
+not required Interpreter inputs or results. Their headers are under
+`nomad/interpreter/`.
 
 `InterpreterContext::getReceiver()` returns the context's receiver wrapper, or
 `nullptr` when there is no receiver. Active class and struct method/constructor
@@ -2440,13 +2441,13 @@ selectors are IDs or names; dotted paths traverse nested stored struct fields.
 Direct object properties can use registered native accessors. Execution and
 copy failures throw; general source execution reports them through diagnostics.
 
-`InterpreterObject` borrows its object without retaining an additional reference.
+`InterpreterObjectReceiver` borrows its object without retaining an additional reference.
 The object and interpreter must outlive the wrapper. Value snapshots retain
 that same object, and field updates remain shared. A frame-backed object receiver
 refers to the script frame's receiver even when a native callback temporarily
 uses a different VM receiver.
 
-`InterpreterStruct` can borrow storage using its struct type and live storage
+`InterpreterStructReceiver` can borrow storage using its struct type and live storage
 address, or own an `InterpreterValue` supplied by value. An lvalue is copied;
 an owned temporary transfers ownership. Borrowed storage is not freed by the
 wrapper. Struct snapshots and owned copies are independent; contained object

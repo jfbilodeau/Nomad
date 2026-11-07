@@ -1,4 +1,4 @@
-#include <nomad/interpreter/InterpreterObject.hpp>
+#include <nomad/interpreter/InterpreterObjectReceiver.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
 
@@ -13,21 +13,21 @@
 
 namespace nomad {
 
-InterpreterObject::InterpreterObject(
+InterpreterObjectReceiver::InterpreterObjectReceiver(
     const Interpreter& interpreter,
     const Type& type,
     NomadObject* object
 ):
-    InterpreterComposite(interpreter, type), m_object(object)
+    InterpreterReceiver(interpreter, type), m_object(object)
 {}
 
-InterpreterValue InterpreterObject::getValue() const {
+InterpreterValue InterpreterObjectReceiver::getValue() const {
     RuntimeValue value;
     value.setObjectValue(m_object);
     return InterpreterValue(getType(), value);
 }
 
-InterpreterValue InterpreterObject::getProperty(const PropertyId propertyId) const {
+InterpreterValue InterpreterObjectReceiver::getProperty(const PropertyId propertyId) const {
     const auto* property = getType()->getRuntime()->getProperty(propertyId);
     if (property == nullptr) {
         throw std::invalid_argument("Invalid interpreter property getter");
@@ -56,7 +56,7 @@ InterpreterValue InterpreterObject::getProperty(const PropertyId propertyId) con
     }
 }
 
-void InterpreterObject::setProperty(const PropertyId propertyId, const InterpreterValue& value) {
+void InterpreterObjectReceiver::setProperty(const PropertyId propertyId, const InterpreterValue& value) {
     const auto* property = getType()->getRuntime()->getProperty(propertyId);
     if (property == nullptr) {
         throw std::invalid_argument("Invalid interpreter property setter");

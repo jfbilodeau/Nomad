@@ -14,8 +14,8 @@
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
-#include <nomad/interpreter/InterpreterObject.hpp>
-#include <nomad/interpreter/InterpreterStruct.hpp>
+#include <nomad/interpreter/InterpreterObjectReceiver.hpp>
+#include <nomad/interpreter/InterpreterStructReceiver.hpp>
 
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -1042,9 +1042,9 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
         if (property->asNativeProperty() == nullptr) {
             const auto receiver = m_receiver->evaluate(context);
             if (receiver.getType()->isStruct()) {
-                return InterpreterStruct(context.getInterpreter(), receiver).getProperty(property->getId());
+                return InterpreterStructReceiver(context.getInterpreter(), receiver).getProperty(property->getId());
             }
-            return InterpreterObject(context.getInterpreter(), *receiver.getType(),
+            return InterpreterObjectReceiver(context.getInterpreter(), *receiver.getType(),
                 receiver.getValue().getObjectValue()).getProperty(property->getId());
         }
     }
@@ -1069,7 +1069,7 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
         }
         const auto* valueType = property->getValueType();
         if (receiver.getType()->getStorage() == TypeStorage::Object) {
-            return InterpreterObject(context.getInterpreter(), *receiver.getType(),
+            return InterpreterObjectReceiver(context.getInterpreter(), *receiver.getType(),
                 receiver.getValue().getObjectValue()).getProperty(property->getId());
         }
         RuntimeValue result;
@@ -1119,7 +1119,7 @@ InterpreterValue NativeMemberExpression::evaluateAssignment(
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
     if (receiver.getType()->getStorage() == TypeStorage::Object) {
-        InterpreterObject object(context.getInterpreter(), *receiver.getType(), receiver.getValue().getObjectValue());
+        InterpreterObjectReceiver object(context.getInterpreter(), *receiver.getType(), receiver.getValue().getObjectValue());
         object.setProperty(property->getId(), assignedValue);
     } else {
         context.getVirtualMachine()->setProperty(property->getId(), receiver.getValue(), assignedValue.getValue());

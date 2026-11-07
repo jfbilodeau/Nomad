@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/interpreter/InterpreterComposite.hpp>
+#include <nomad/interpreter/InterpreterReceiver.hpp>
 
 #include <variant>
 
@@ -10,15 +10,15 @@ namespace nomad {
 
 class StructType;
 
-class InterpreterStruct final : public InterpreterComposite {
+class InterpreterStructReceiver final : public InterpreterReceiver {
 public:
     // Borrows getSize() live slots; empty struct storage may be null.
-    InterpreterStruct(const Interpreter& interpreter, const StructType& type, RuntimeValue* storage);
+    InterpreterStructReceiver(const Interpreter& interpreter, const StructType& type, RuntimeValue* storage);
     // Owns an independent value when passed an lvalue; temporaries transfer ownership.
-    InterpreterStruct(const Interpreter& interpreter, InterpreterValue value);
+    InterpreterStructReceiver(const Interpreter& interpreter, InterpreterValue value);
 
-    using InterpreterComposite::getProperty;
-    using InterpreterComposite::setProperty;
+    using InterpreterReceiver::getProperty;
+    using InterpreterReceiver::setProperty;
     [[nodiscard]] InterpreterValue getValue() const override;
     [[nodiscard]] InterpreterValue getProperty(PropertyId propertyId) const override;
     void setProperty(PropertyId propertyId, const InterpreterValue& value) override;

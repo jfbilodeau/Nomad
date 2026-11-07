@@ -28,7 +28,7 @@ add_executable(
     ./GameEventQueueTest.cpp
     ./GameStartupTest.cpp
     ./GeometryTest.cpp
-    ./InterpreterCompositeTest.cpp
+    ./InterpreterReceiverTest.cpp
     ./InterpreterStructAssignmentTest.cpp
     ./InterpreterStructCallTest.cpp
     ./InterpreterStructMethodTest.cpp

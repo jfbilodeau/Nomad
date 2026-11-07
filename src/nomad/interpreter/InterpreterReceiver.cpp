@@ -1,4 +1,4 @@
-#include <nomad/interpreter/InterpreterComposite.hpp>
+#include <nomad/interpreter/InterpreterReceiver.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
 
@@ -10,21 +10,21 @@
 
 namespace nomad {
 
-InterpreterComposite::InterpreterComposite(const Interpreter& interpreter, const Type& type):
+InterpreterReceiver::InterpreterReceiver(const Interpreter& interpreter, const Type& type):
     m_interpreter(interpreter), m_type(type)
 {}
 
-InterpreterComposite::~InterpreterComposite() = default;
+InterpreterReceiver::~InterpreterReceiver() = default;
 
-const Type* InterpreterComposite::getType() const {
+const Type* InterpreterReceiver::getType() const {
     return &m_type;
 }
 
-const Interpreter& InterpreterComposite::getInterpreter() const {
+const Interpreter& InterpreterReceiver::getInterpreter() const {
     return m_interpreter;
 }
 
-PropertyId InterpreterComposite::resolveProperty(const NomadStringView name) const {
+PropertyId InterpreterReceiver::resolveProperty(const NomadStringView name) const {
     const auto member = m_type.getRuntime()->getNativeMemberId(&m_type, NomadString{name});
     if (m_type.getRuntime()->getMemberType(member) == MemberType::Property) {
         return std::get<PropertyId>(member);
@@ -37,7 +37,7 @@ PropertyId InterpreterComposite::resolveProperty(const NomadStringView name) con
     return property->getId();
 }
 
-InterpreterValue InterpreterComposite::getProperty(const NomadStringView propertyPath) const {
+InterpreterValue InterpreterReceiver::getProperty(const NomadStringView propertyPath) const {
     const auto separator = propertyPath.find('.');
     const auto propertyId = resolveProperty(propertyPath.substr(0, separator));
     auto value = getProperty(propertyId);
@@ -47,7 +47,7 @@ InterpreterValue InterpreterComposite::getProperty(const NomadStringView propert
     return m_interpreter.getProperty(value, propertyPath.substr(separator + 1));
 }
 
-void InterpreterComposite::setProperty(
+void InterpreterReceiver::setProperty(
     const NomadStringView propertyPath,
     const InterpreterValue& value
 ) {
