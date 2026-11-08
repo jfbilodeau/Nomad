@@ -485,7 +485,7 @@ InterpreterValue Interpreter::setProperty(
     const PropertyId propertyId,
     const InterpreterValue& value
 ) const {
-    return setStoredProperty(receiver, std::span<const PropertyId>{&propertyId, 1}, value);
+    return setProperty(receiver, std::span<const PropertyId>{&propertyId, 1}, value);
 }
 
 InterpreterValue Interpreter::setProperty(
@@ -494,7 +494,7 @@ InterpreterValue Interpreter::setProperty(
     const InterpreterValue& value
 ) const {
     const auto properties = resolveStoredPropertyPath(receiver.getType(), propertyPath);
-    return setStoredProperty(receiver, properties, value);
+    return setProperty(receiver, properties, value);
 }
 
 InterpreterValue Interpreter::getStoredProperty(
@@ -512,7 +512,7 @@ void Interpreter::setProperty(
     const PropertyId propertyId,
     const InterpreterValue& value
 ) const {
-    setStoredProperty(type, receiverStorage, std::span<const PropertyId>{&propertyId, 1}, value);
+    setProperty(type, receiverStorage, std::span<const PropertyId>{&propertyId, 1}, value);
 }
 
 void Interpreter::setProperty(
@@ -522,10 +522,10 @@ void Interpreter::setProperty(
     const InterpreterValue& value
 ) const {
     const auto properties = resolveStoredPropertyPath(&type, propertyPath);
-    setStoredProperty(type, receiverStorage, properties, value);
+    setProperty(type, receiverStorage, properties, value);
 }
 
-void Interpreter::setStoredProperty(
+void Interpreter::setProperty(
     const StructType& receiverType,
     const std::span<RuntimeValue> receiverStorage,
     const std::span<const PropertyId> properties,
@@ -544,7 +544,7 @@ void Interpreter::setStoredProperty(
         scratch.empty() ? nullptr : scratch.data());
 }
 
-InterpreterValue Interpreter::setStoredProperty(
+InterpreterValue Interpreter::setProperty(
     const InterpreterValue& receiver,
     const std::span<const PropertyId> properties,
     const InterpreterValue& value

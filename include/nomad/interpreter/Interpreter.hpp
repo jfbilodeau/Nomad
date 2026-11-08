@@ -151,12 +151,12 @@ private:
         const InterpreterValue& receiver,
         std::span<const PropertyId> properties
     ) const;
-    [[nodiscard]] InterpreterValue setStoredProperty(
+    [[nodiscard]] InterpreterValue setProperty(
         const InterpreterValue& receiver,
         std::span<const PropertyId> properties,
         const InterpreterValue& value
     ) const;
-    void setStoredProperty(
+    void setProperty(
         const StructType& type,
         std::span<RuntimeValue> receiverStorage,
         std::span<const PropertyId> properties,
