@@ -988,9 +988,10 @@ BOOST_AUTO_TEST_CASE(host_method_validation_precedes_stack_changes_and_execution
             std::invalid_argument);
     }
     BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(empty, structMethodId, {})), std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, structArgumentId, {&empty, 1})),
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, structArgumentId, {&amount, 1})),
         std::invalid_argument);
-    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, structReturnId, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, structReturnId, {&empty, 1})),
+        std::invalid_argument);
     BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runObjectMethod(receiver, uncompiledId, {})), std::invalid_argument,
         [](const auto& error) { return NomadString{error.what()}.find("not compiled") != NomadString::npos; });
     BOOST_TEST(unsupportedCalls == 0);
@@ -999,6 +1000,11 @@ BOOST_AUTO_TEST_CASE(host_method_validation_precedes_stack_changes_and_execution
     BOOST_TEST(machine->getIntegerResult() == 41);
     BOOST_TEST(machine->getIntegerIntermediate() == 43);
     BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+    BOOST_TEST(interpreter.runObjectMethod(receiver, structArgumentId, {&empty, 1}).getType()->isVoid());
+    const auto returnedEmpty = interpreter.runObjectMethod(receiver, structReturnId, {});
+    BOOST_TEST(returnedEmpty.getType() == empty.getType());
+    BOOST_TEST(returnedEmpty.getStorage().data() == nullptr);
+    BOOST_TEST(unsupportedCalls == 2);
     const auto result = interpreter.runObjectMethod(receiver, increment.id, {&amount, 1});
     BOOST_TEST(result.getValue().getIntegerValue() == 7);
     machine->pop1();

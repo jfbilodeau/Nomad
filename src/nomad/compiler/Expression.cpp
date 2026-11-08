@@ -1051,7 +1051,7 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
             return receiver.getProperty(property->getId());
         });
     }
-    if (!m_receiver->getType()->isStruct() && getType()->isStruct()) {
+    if (m_receiver->getType()->asCompositeType() == nullptr && getType()->isStruct()) {
         raiseException("Struct member values are not supported by the interpreter");
     }
     if (m_memberType == MemberType::Method) {

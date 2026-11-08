@@ -2603,20 +2603,33 @@ the interpreter's runtime. Invalid IDs/kinds, receiver types, argument counts
 or types, null object receivers, and uncompiled methods throw
 `std::invalid_argument` before execution.
 
-This method API currently supports class/reference receivers with scalar or
-reference arguments and scalar, reference, or void results. Struct receivers,
-arguments, and results remain unsupported and throw `std::invalid_argument`.
+This method API supports class receivers with scalar, reference, struct, or
+empty-struct arguments and scalar, reference, struct, empty-struct, or void
+results. Struct receivers use the separate `runStructMethod` entry points.
 Source evaluation still evaluates the receiver first and arguments right-to-left.
-Arguments are copied; mutations of referenced class objects remain shared,
+Struct arguments and results own independent field-wise storage, including
+nested structs. Empty structs retain their logical argument/result positions
+without physical slots. Arguments are copied; mutations of referenced class objects remain shared,
 including changes made before a method throws. Method results retain returned
 objects and strings independently of the receiver, arguments, interpreter,
 and VM, provided their runtime/type descriptors remain alive.
 
 Completed method calls restore the enclosing VM frame and result/intermediate
 registers. Script methods retain their existing restriction against yielding.
+Native methods with any struct argument or result are synchronous and cannot
+yield, including empty-struct signatures; they preserve the caller's prior
+yield state. Scalar-only native method calls retain their existing yield behavior.
 Execution and value-copy failures propagate to host callers; fatal VM fault
 recovery remains unsupported. Property/accessor execution is separate from
 this method API.
+
+After method bodies have been compiled, interpreted source can use these
+aggregate class methods for arguments, assignments, property reads on returned
+structs, or discarded calls. Receiver objects are retained across argument
+evaluation and invocation: clearing or replacing their former variable during
+argument evaluation does not redirect the call or destroy the receiver.
+Compiled struct-returning class-method call expressions remain a separate
+unsupported surface.
 
 For struct receivers, use
 `Interpreter::runStructMethod(receiver, methodId, arguments)`. It accepts

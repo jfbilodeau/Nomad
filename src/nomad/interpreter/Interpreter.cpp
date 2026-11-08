@@ -111,9 +111,8 @@ const Method& resolveObjectMethod(
     }
     validateCallArguments(runtime, *method, arguments);
     receiverType = validateMethodReceiver(runtime, *method, receiverType);
-    if (receiverType->isStruct() || method->getReturnType()->isStruct() ||
-        std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
-        throw std::invalid_argument("Interpreter method calls do not yet support struct storage");
+    if (!receiverType->isClass()) {
+        throw std::invalid_argument("Object method calls require a class receiver");
     }
     const auto* script = method->asScriptMethod();
     if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
@@ -392,6 +391,22 @@ InterpreterValue Interpreter::runObjectMethod(
         if (!runScriptCallable(*script, receiver.getValue())) {
             m_virtualMachine.fault("Script methods cannot yield");
         }
+    } else if (method.getReturnType()->isStruct() ||
+        std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
+        const auto state = m_virtualMachine.captureExecutionState();
+        auto invocation = state;
+        invocation.yielded = false;
+        m_virtualMachine.restoreExecutionState(invocation);
+        try {
+            runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
+            if (m_virtualMachine.hasYielded()) {
+                m_virtualMachine.fault("Aggregate object methods cannot yield");
+            }
+        } catch (...) {
+            m_virtualMachine.restoreExecutionState(state);
+            throw;
+        }
+        m_virtualMachine.restoreExecutionState(state);
     } else {
         runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
     }

@@ -447,6 +447,121 @@ BOOST_AUTO_TEST_CASE(interpreter_methods_evaluate_the_receiver_before_right_to_l
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_and_host_object_methods_copy_struct_arguments_and_return_owned_structs) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    CallableId emptyMethodId;
+    auto frameVisits = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("inspectObjectAggregateFrame", [&](VirtualMachine* active) {
+        ++frameVisits;
+        const auto* callable = active->getCurrentCallable();
+        auto* object = active->getScriptReceiver();
+        const Interpreter interpreter(*active);
+        InterpreterContext frame(interpreter, *callable);
+        BOOST_TEST(frame.getParameterStorage(0).size() == runtime.getTypeByName("ObjectMethodValue")->getSize());
+        BOOST_TEST(frame.getParameterStorage(1).data() == nullptr);
+        BOOST_REQUIRE_MESSAGE(interpreter.execute("local.leaf.number = 211", frame),
+            (frame.getError() ? *frame.getError() : ""));
+        RuntimeValue receiverValue;
+        receiverValue.setObjectValue(object);
+        const InterpreterValue receiver(callable->getClassType(), receiverValue);
+        const InterpreterValue empty(runtime.getTypeByName("ObjectMethodEmpty"), std::span<const RuntimeValue>{});
+        const auto nested = interpreter.runObjectMethod(receiver, emptyMethodId, {&empty, 1});
+        BOOST_TEST(nested.getType() == empty.getType());
+        BOOST_TEST(nested.getStorage().data() == nullptr);
+        BOOST_TEST(active->getScriptReceiver() == object);
+        BOOST_TEST(active->getCurrentCallable() == callable);
+        BOOST_TEST(frame.getVariableStorage("local")[0].getIntegerValue() == 211);
+    }, {}, runtime.getVoidType(), "").isValid());
+    fixture.addFunction("objectAggregateMethodTypes",
+        "struct ObjectMethodEmpty\nend\n"
+        "class ObjectMethodShared\nnumber = 5\nend\n"
+        "struct ObjectMethodLeaf\nnumber = 7\ntext = \"initial\"\nshared = new ObjectMethodShared\nend\n"
+        "struct ObjectMethodValue\nleaf = new ObjectMethodLeaf\nlabel = \"outer\"\nend\n"
+        "class ObjectMethodOwner\nnumber = 0\nvalue = new ObjectMethodValue\n"
+        "fun exchange argument:ObjectMethodValue empty:ObjectMethodEmpty delta:int\n"
+        "argument.leaf.number = argument.leaf.number + delta\nargument.leaf.text = \"updated\"\n"
+        "this.number = argument.leaf.number\nargument.leaf.shared.number = this.number\n"
+        "local = argument\ninspectObjectAggregateFrame\nthis.value = argument\nreturn argument\nend\n"
+        "fun empty value:ObjectMethodEmpty\nreturn value\nend\n"
+        "fun consume argument:ObjectMethodValue\nthis.value = argument\nreturn\nend\n"
+        "fun read argument:ObjectMethodValue\nreturn argument.leaf.number\nend\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* owner = runtime.getTypeByName("ObjectMethodOwner")->asClassType();
+    const auto* type = runtime.getTypeByName("ObjectMethodValue");
+    const auto* emptyType = runtime.getTypeByName("ObjectMethodEmpty");
+    const auto exchange = runtime.resolveMethod(owner, "exchange", {type, emptyType, runtime.getIntegerType()});
+    const auto emptyMethod = runtime.resolveMethod(owner, "empty", {emptyType});
+    const auto consume = runtime.resolveMethod(owner, "consume", {type});
+    const auto read = runtime.resolveMethod(owner, "read", {type});
+    BOOST_REQUIRE(exchange.isResolved() && emptyMethod.isResolved() && consume.isResolved() && read.isResolved());
+    emptyMethodId = emptyMethod.id;
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            std::optional<InterpreterValue> retained;
+            {
+                auto machine = runtime.createVirtualMachine();
+                const Interpreter interpreter(*machine);
+                const auto receiver = interpreter.construct(owner->getConstructors().front()->getId(), {});
+                const auto argument = interpreter.construct(type->asCompositeType()->getConstructors().front()->getId(), {});
+                const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
+                const InterpreterValue delta(runtime.getIntegerType(), RuntimeValue{NomadInteger{3}});
+                const std::array arguments{argument, empty, delta};
+                machine->pushInteger(1234);
+                machine->setIntegerResult(41);
+                machine->setIntegerIntermediate(43);
+                retained = interpreter.runObjectMethod(receiver, exchange.id, arguments);
+                BOOST_TEST(interpreter.getProperty(argument, "leaf.number").getValue().getIntegerValue() == 7);
+                BOOST_TEST(interpreter.getProperty(argument, "leaf.text").getValue().getStringValue() == "initial");
+                BOOST_TEST(interpreter.getProperty(*retained, "leaf.number").getValue().getIntegerValue() == 10);
+                BOOST_TEST(interpreter.getProperty(*retained, "leaf.text").getValue().getStringValue() == "updated");
+                const auto shared = interpreter.getProperty(argument, "leaf.shared");
+                const auto sharedReceiver = interpreter.createObjectReceiver(
+                    *shared.getType()->asClassType(), shared.getValue().getObjectValue());
+                BOOST_TEST(sharedReceiver->getProperty("number").getValue().getIntegerValue() == 10);
+                const auto copied = interpreter.runObjectMethod(*owner, receiver.getValue().getObjectValue(),
+                    consume.id, {&argument, 1});
+                BOOST_TEST(copied.getType()->isVoid());
+                BOOST_TEST(interpreter.runObjectMethod(receiver, read.id, {&argument, 1})
+                    .getValue().getIntegerValue() == 7);
+                const auto objectReceiver = interpreter.createObjectReceiver(*owner, receiver.getValue().getObjectValue());
+                objectReceiver->setProperty("value.leaf.number", delta);
+                BOOST_TEST(interpreter.getProperty(*retained, "leaf.number").getValue().getIntegerValue() == 10);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+                machine->pop1();
+                InterpreterContext context(interpreter);
+                BOOST_REQUIRE_MESSAGE(interpreter.execute(
+                    "owner = new ObjectMethodOwner\nargument = new ObjectMethodValue\n"
+                    "result = owner.exchange argument (new ObjectMethodEmpty) 5\n"
+                    "owner.value.leaf.number = 99\nresult.leaf.number", context),
+                    (context.getError() ? *context.getError() : ""));
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 12);
+                BOOST_TEST(interpreter.getProperty(
+                    InterpreterValue(type, context.getVariableStorage("argument")), "leaf.number")
+                    .getValue().getIntegerValue() == 7);
+                BOOST_REQUIRE(interpreter.execute("owner.consume argument\nowner.read argument", context));
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 7);
+                BOOST_REQUIRE(interpreter.execute("(new ObjectMethodOwner).empty (new ObjectMethodEmpty)", context));
+                BOOST_TEST(context.getResult()->getType() == emptyType);
+                BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
+                BOOST_REQUIRE(interpreter.execute(
+                    "(new ObjectMethodOwner).exchange argument (new ObjectMethodEmpty) 1", context));
+                BOOST_TEST(interpreter.getProperty(*context.getResult(), "leaf.number").getValue().getIntegerValue() == 8);
+            }
+            BOOST_TEST(retained->getStorage()[0].getIntegerValue() == 10);
+            BOOST_TEST(retained->getStorage()[1].getStringValue() == "updated");
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(frameVisits == 9);
+}
+
 BOOST_AUTO_TEST_CASE(interpreter_host_script_methods_keep_the_existing_yield_restriction) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
@@ -483,6 +598,88 @@ BOOST_AUTO_TEST_CASE(interpreter_host_script_methods_keep_the_existing_yield_res
         BOOST_TEST(machine->getIntegerIntermediate() == 43);
         BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
         BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        machine->pop1();
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(aggregate_object_methods_are_synchronous_without_changing_scalar_native_yield_behavior) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.registerNativeFunction("pauseObjectAggregateMethod", [](VirtualMachine* active) {
+        active->yield(RuntimeValue{NomadInteger{37}});
+    }, {}, runtime.getVoidType(), "").isValid());
+    fixture.addFunction("objectAggregateYieldTypes",
+        "struct ObjectAggregateYieldEmpty\nend\n"
+        "class ObjectAggregateYieldOwner\n"
+        "fun echo value:ObjectAggregateYieldEmpty\nreturn value\nend\n"
+        "fun pause value:ObjectAggregateYieldEmpty\npauseObjectAggregateMethod\nreturn value\nend\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* owner = runtime.getTypeByName("ObjectAggregateYieldOwner")->asClassType();
+    const auto* emptyType = runtime.getTypeByName("ObjectAggregateYieldEmpty");
+    const auto scriptEcho = runtime.resolveMethod(owner, "echo", {emptyType});
+    const auto scriptPause = runtime.resolveMethod(owner, "pause", {emptyType});
+    const auto nativeEcho = runtime.addMethod(owner->getId(), {
+        .name = "nativeEcho", .parameters = {{emptyType->getId(), "empty", ""}}, .returnTypeId = emptyType->getId(),
+        .function = [](VirtualMachine*) {}
+    });
+    const auto nativePause = runtime.addMethod(owner->getId(), {
+        .name = "nativePause", .parameters = {{emptyType->getId(), "empty", ""}}, .returnTypeId = emptyType->getId(),
+        .function = [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); }
+    });
+    const auto scalarPause = runtime.addMethod(owner->getId(), {
+        .name = "scalarPause", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); }
+    });
+    BOOST_REQUIRE(scriptEcho.isResolved() && scriptPause.isResolved() &&
+        nativeEcho.isValid() && nativePause.isValid() && scalarPause.isValid());
+    const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (const auto initiallyYielded : {false, true}) {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        const auto receiver = interpreter.construct(owner->getConstructors().front()->getId(), {});
+        machine->pushInteger(1234);
+        machine->setIntegerResult(41);
+        machine->setIntegerIntermediate(43);
+        if (initiallyYielded) {
+            machine->yield(RuntimeValue{NomadInteger{41}});
+        }
+        const auto before = machine->captureExecutionState();
+        const auto assertRestored = [&]() {
+            const auto after = machine->captureExecutionState();
+            BOOST_TEST(after.instructionIndex == before.instructionIndex);
+            BOOST_TEST(after.parameterIndex == before.parameterIndex);
+            BOOST_TEST(after.variableIndex == before.variableIndex);
+            BOOST_TEST(after.stackIndex == before.stackIndex);
+            BOOST_TEST(after.running == before.running);
+            BOOST_TEST(after.yielded == before.yielded);
+            BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+            BOOST_TEST(machine->getIntegerResult() == 41);
+            BOOST_TEST(machine->getIntegerIntermediate() == 43);
+            BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+        };
+        for (const auto methodId : {scriptEcho.id, nativeEcho}) {
+            const auto result = interpreter.runObjectMethod(receiver, methodId, {&empty, 1});
+            BOOST_TEST(result.getType() == emptyType);
+            BOOST_TEST(result.getStorage().data() == nullptr);
+            assertRestored();
+        }
+        BOOST_CHECK_EXCEPTION(static_cast<void>(
+            interpreter.runObjectMethod(receiver, nativePause, {&empty, 1})), VirtualMachineException,
+            [](const auto& error) { return NomadString{error.what()} == "Aggregate object methods cannot yield"; });
+        assertRestored();
+        BOOST_CHECK_EXCEPTION(static_cast<void>(
+            interpreter.runObjectMethod(receiver, scriptPause.id, {&empty, 1})), VirtualMachineException,
+            [](const auto& error) { return NomadString{error.what()} == "Script methods cannot yield"; });
+        assertRestored();
+        const auto result = interpreter.runObjectMethod(receiver, scalarPause, {});
+        BOOST_TEST(result.getValue().getIntegerValue() == 37);
+        BOOST_TEST(machine->hasYielded());
+        BOOST_TEST(!machine->isRunning());
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
         machine->pop1();
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);

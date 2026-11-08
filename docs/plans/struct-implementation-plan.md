@@ -33,6 +33,10 @@ class-owned structs, and temporary roots is implemented and validated.
 Borrowed-storage
 property setters update only the selected field; immutable-value setters retain
 their independent replacement contract.
+Interpreter/host class methods now support copied struct arguments and owned
+struct results, including empty structs. Aggregate native object-method calls
+are synchronous; scalar native method behavior remains unchanged. This slice
+is implemented and validated, awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -3731,6 +3735,62 @@ Validation:
 
 Aggregate captures, field-aware formatting, remaining host/native property
 parity, NRVO, and fatal VM fault cleanup remain separate.
+
+### Step 5E: Interpreter/host aggregate class-method calls
+
+Approved scope:
+
+- Enable class-receiver interpreter and host methods with copied struct arguments
+  and owned struct results, including empty structs, using existing call storage
+  and native/script dispatch. Add no opcodes or new callable APIs.
+- Preserve class-reference semantics, receiver retention, argument ordering,
+  enclosing frames/registers, and scalar method behavior.
+- Keep aggregate native object-method calls synchronous, including zero-slot
+  signatures. Preserve the existing script-method yield restriction and scalar
+  native yield behavior.
+- Validate native/script methods, ownership and snapshots, receiver retention,
+  nested reentry, host failures, empty values, and suspension behavior. Update
+  documentation, build/test, and stop for review without committing.
+- Leave compiled struct-returning class-method call lowering for the next slice.
+
+Implementation:
+
+- Object-method validation accepts struct arguments/results while still requiring
+  class receivers. Interpreter AST method evaluation uses the existing receiver
+  invocation path for aggregate class results.
+- Existing call frames own copied argument and result slots; native aggregate
+  object-method dispatch rejects yielding and restores prior execution state.
+- Tests cover nested/empty and one-slot values, script parameter/local inspection,
+  temporary receivers and owner clearing during argument preparation, independent
+  arguments/results, shared class fields, result lifetime after VM destruction,
+  native/script reentry, partial copy/result failures, exact stack capacity,
+  prior yield-state restoration, and unchanged scalar native yielding.
+
+Validation:
+
+- CTest's automatic build and all six unit groups passed, along with script
+  staging and compiler-export integration checks.
+- The first targeted run exposed test assumptions about native function versus
+  script receiver access, physical struct argument indexing, and string objects
+  in lifetime counts. Corrected tests passed both targeted and final combined
+  runs. No compiled class-method aggregate lowering was enabled.
+- New ownership/copy-failure scenarios repeat three times and restore live
+  string/object counts. Native and script aggregate suspension checks preserve
+  prior execution state; scalar native yielding retains its existing behavior.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing.
+
+Next, after review:
+
+1. Compiled struct-returning class-method calls using the existing return ABI.
+2. Native accessor-backed struct property parity.
+3. Struct capture copies and callback layouts.
+4. Field-aware static/dynamic formatting and remaining host parity.
+5. Conservative NRVO after Step 5 is approved, then final tooling/documentation
+   and integration completion checks.
+
+Fatal VM fault recovery and gameplay/performance validation remain separate.
 
 ### Step 6: Conservative named return-value optimization
 

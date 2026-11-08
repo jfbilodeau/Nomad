@@ -861,6 +861,231 @@ BOOST_AUTO_TEST_CASE(host_method_copy_failures_release_arguments_results_and_rec
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
+BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_receiver_and_argument_bindings) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("NativeObjectMethodEmpty");
+    const auto valueId = runtime.registerStruct("NativeObjectMethodValue");
+    const auto* type = runtime.getTypeByName("NativeObjectMethodValue");
+    const auto* emptyType = runtime.getTypeByName("NativeObjectMethodEmpty");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    const auto singleId = runtime.registerStruct("NativeObjectMethodSingle");
+    const auto* singleType = runtime.getTypeByName("NativeObjectMethodSingle");
+    BOOST_REQUIRE(runtime.registerProperty(singleId, "number", runtime.getIntegerType()).isValid());
+    const auto ownerId = runtime.registerClass("NativeAggregateOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("NativeAggregateOwner")->asClassType();
+    runtime.finalizeCompositeFieldLayout(valueId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.finalizeCompositeFieldLayout(singleId);
+    const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
+        .parameters = {},
+        .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
+    });
+    const auto readId = runtime.addMethod(ownerId, {
+        .name = "read", .parameters = {{valueId, "value", ""}},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->setIntegerResult(active->getParameterStorage(0, 2)[0].getIntegerValue());
+        }
+    });
+    const auto singleMethodId = runtime.addMethod(ownerId, {
+        .name = "single", .parameters = {{singleId, "value", ""}}, .returnTypeId = singleId,
+        .function = [singleType](VirtualMachine* active) {
+            singleType->copyValue(active->getParameterStorage(0, 1).data(), &active->getStorageParameter(1, 0));
+        }
+    });
+    auto calls = 0;
+    InterpreterContext* activeContext = nullptr;
+    const auto exchangeId = runtime.addMethod(ownerId, {
+        .name = "exchange",
+        .parameters = {{valueId, "value", ""}, {emptyId, "empty", ""},
+            {runtime.getIntegerType()->getId(), "delta", ""}},
+        .returnTypeId = valueId,
+        .function = [&](VirtualMachine* active) {
+            ++calls;
+            auto* object = active->getThis();
+            const auto argument = active->getParameterStorage(0, 2);
+            auto* destination = &active->getStorageParameter(3, 0);
+            BOOST_TEST(argument.data() != destination);
+            argument[0].setIntegerValue(argument[0].getIntegerValue() + active->getIntegerParameter(2));
+            argument[1].freeObjectValue();
+            argument[1].setStringValue("native argument copy");
+            const Interpreter nested(*active);
+            const InterpreterValue snapshot(type, argument);
+            const auto result = nested.runObjectMethod(*owner, object, readId, {&snapshot, 1});
+            BOOST_TEST(result.getValue().getIntegerValue() == 20);
+            BOOST_TEST(active->getThis() == object);
+            BOOST_TEST(active->getParameterStorage(0, 2).data() == argument.data());
+            BOOST_TEST(&active->getStorageParameter(3, 0) == destination);
+            BOOST_TEST(active->getIntegerParameter(2) == 3);
+            type->copyValue(argument.data(), destination);
+        }
+    });
+    BOOST_REQUIRE(constructorId.isValid() && readId.isValid() && singleMethodId.isValid() && exchangeId.isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("clearObjectMethodOwner", [&](VirtualMachine*) {
+        activeContext->clearVariableValue("owner");
+    }, {}, emptyType, "").isValid());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            std::optional<InterpreterValue> retained;
+            {
+                auto machine = runtime.createVirtualMachine();
+                const Interpreter interpreter(*machine);
+                const auto receiver = interpreter.construct(constructorId, {});
+                std::array<RuntimeValue, 2> source{RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadString{"source"}}};
+                const InterpreterValue argument(type, source);
+                type->freeValue(source.data());
+                const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
+                const InterpreterValue delta(runtime.getIntegerType(), RuntimeValue{NomadInteger{3}});
+                const std::array arguments{argument, empty, delta};
+                machine->pushInteger(1234);
+                machine->setIntegerResult(41);
+                machine->setIntegerIntermediate(43);
+                const RuntimeValue singleSource{NomadInteger{31}};
+                const InterpreterValue single(singleType, std::span<const RuntimeValue>{&singleSource, 1});
+                const auto singleResult = interpreter.runObjectMethod(receiver, singleMethodId, {&single, 1});
+                BOOST_TEST(singleResult.getType() == singleType);
+                BOOST_TEST(singleResult.getStorage().size() == 1U);
+                BOOST_TEST(singleResult.getStorage()[0].getIntegerValue() == 31);
+                BOOST_TEST(singleResult.getStorage().data() != single.getStorage().data());
+                retained = interpreter.runObjectMethod(receiver, exchangeId, arguments);
+                BOOST_TEST(retained->getStorage()[0].getIntegerValue() == 20);
+                BOOST_TEST(retained->getStorage()[1].getStringValue() == "native argument copy");
+                BOOST_TEST(retained->getStorage().data() != argument.getStorage().data());
+                BOOST_TEST(argument.getStorage()[0].getIntegerValue() == 17);
+                BOOST_TEST(argument.getStorage()[1].getStringValue() == "source");
+                InterpreterContext context(interpreter);
+                activeContext = &context;
+                context.setVariable("owner", owner, receiver.getStorage());
+                context.setVariable("argument", type, argument.getStorage());
+                context.setVariable("empty", emptyType, std::span<const RuntimeValue>{});
+                BOOST_REQUIRE_MESSAGE(interpreter.execute("result = owner.exchange argument empty 3",
+                    context), (context.getError() ? *context.getError() : ""));
+                BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 20);
+                BOOST_TEST(context.getVariableStorage("argument")[0].getIntegerValue() == 17);
+                {
+                    const auto temporaryOwner = interpreter.construct(constructorId, {});
+                    context.setVariable("owner", owner, temporaryOwner.getStorage());
+                }
+                const auto ownersWithTemporary = NomadObject::getLiveObjectCount();
+                BOOST_REQUIRE_MESSAGE(interpreter.execute("owner.exchange argument (clearObjectMethodOwner) 3", context),
+                    (context.getError() ? *context.getError() : ""));
+                BOOST_TEST(context.getVariableType("owner") == nullptr);
+                BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 20);
+                context.clearResult();
+                BOOST_TEST(NomadObject::getLiveObjectCount() == ownersWithTemporary - 1);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+                machine->pop1();
+            }
+            BOOST_TEST(retained->getStorage()[1].getStringValue() == "native argument copy");
+            BOOST_TEST(retained->getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(calls == 9);
+}
+
+BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_and_results) {
+    Runtime runtime;
+    FailingCallCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>("ObjectAggregateCopyField", ClassMode::Closed, field);
+    const auto valueId = runtime.registerStruct("ObjectAggregateCopyValue");
+    const auto* type = runtime.getTypeByName("ObjectAggregateCopyValue");
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    const auto ownerId = runtime.registerClass("ObjectAggregateCopyOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("ObjectAggregateCopyOwner")->asClassType();
+    const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
+        .parameters = {},
+        .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
+    });
+    auto calls = 0;
+    auto throwAfterWrite = false;
+    const auto methodId = runtime.addMethod(ownerId, {
+        .name = "copy", .parameters = {{valueId, "argument", ""}}, .returnTypeId = valueId,
+        .function = [&](VirtualMachine* active) {
+            ++calls;
+            auto* destination = &active->getStorageParameter(2, 0);
+            if (throwAfterWrite) {
+                destination[0].setStringValue("partial object method result");
+                throw NomadException("Object method failed");
+            }
+            type->copyValue(active->getParameterStorage(0, 2).data(), destination);
+        }
+    });
+    BOOST_REQUIRE(constructorId.isValid() && methodId.isValid());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            const auto receiver = interpreter.construct(constructorId, {});
+            std::array<RuntimeValue, 2> source{
+                RuntimeValue{NomadString{"first source"}}, RuntimeValue{NomadString{"second source"}}};
+            const InterpreterValue argument(type, source);
+            type->freeValue(source.data());
+            machine->pushInteger(1234);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            field->copyCount = 0;
+            field->failCopyAt = 0;
+            {
+                const auto result = interpreter.runObjectMethod(receiver, methodId, {&argument, 1});
+                BOOST_TEST(result.getStorage()[0].getStringValue() == "first source");
+            }
+            const auto copyStages = field->copyCount;
+            BOOST_TEST(copyStages == 6U);
+            const auto live = RuntimeValue::getLiveStringCount();
+            for (auto failure = NomadIndex{1}; failure <= copyStages; ++failure) {
+                field->copyCount = 0;
+                field->failCopyAt = failure;
+                BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, methodId, {&argument, 1})),
+                    NomadException);
+                BOOST_TEST(argument.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(argument.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            }
+            field->failCopyAt = 0;
+            throwAfterWrite = true;
+            BOOST_CHECK_THROW(static_cast<void>(interpreter.runObjectMethod(receiver, methodId, {&argument, 1})),
+                NomadException);
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+            throwAfterWrite = false;
+            const auto beforeOverflow = calls;
+            {
+                VirtualMachine smallMachine(&runtime, 3);
+                const Interpreter smallInterpreter(smallMachine);
+                smallMachine.pushInteger(4321);
+                BOOST_CHECK_EXCEPTION(static_cast<void>(
+                    smallInterpreter.runObjectMethod(receiver, methodId, {&argument, 1})), VirtualMachineException,
+                    [](const auto& error) { return NomadString{error.what()} == "Stack overflow"; });
+                BOOST_TEST(calls == beforeOverflow);
+                BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(smallMachine.peekStack(0).getIntegerValue() == 4321);
+                smallMachine.pop1();
+            }
+            machine->pop1();
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_every_owned_snapshot) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;
