@@ -573,23 +573,16 @@ MemberAssignmentStatement::MemberAssignmentStatement(
     const NomadIndex line,
     const NomadIndex column,
     std::unique_ptr<Expression> target,
-    std::unique_ptr<Expression> expression,
-    NomadString targetName
+    std::unique_ptr<Expression> expression
 ):
     Statement(line, column),
     m_target(std::move(target)),
-    m_expression(std::move(expression)),
-    m_targetName(std::move(targetName))
+    m_expression(std::move(expression))
 {
 }
 
 void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
-    m_propertyPath.clear();
     if (!m_expression->resolve(context, function)) {
-        return;
-    }
-    if (context->getMode() == CompilerMode::Interpreter && !m_targetName.empty() &&
-        resolveStructTarget(context, function)) {
         return;
     }
     auto* target = m_target.get();
@@ -612,86 +605,12 @@ void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptCallab
     }
 }
 
-bool MemberAssignmentStatement::resolveStructTarget(CompilerContext* context, ScriptCallableBase* function) {
-    auto separator = m_targetName.rfind('.');
-    IdentifierDefinition definition;
-    while (separator != NomadString::npos) {
-        const auto rootName = m_targetName.substr(0, separator);
-        context->getCompiler()->getIdentifierDefinition(rootName, function, definition);
-        if (definition.identifierType != IdentifierType::Unknown) {
-            if (definition.valueType == nullptr || !definition.valueType->isStruct() ||
-                (definition.identifierType != IdentifierType::FunctionVariable &&
-                 definition.identifierType != IdentifierType::Parameter &&
-                 definition.identifierType != IdentifierType::Receiver)) {
-                return false;
-            }
-            auto* runtime = context->getRuntime();
-            const auto* type = definition.valueType;
-            auto start = separator + 1;
-            while (start < m_targetName.size()) {
-                const auto end = m_targetName.find('.', start);
-                const auto name = m_targetName.substr(start, end == NomadString::npos ? end : end - start);
-                if (!type->isStruct()) {
-                    return false;
-                }
-                const auto* owner = type->asCompositeType();
-                if (runtime->getMemberType(runtime->getNativeMemberId(type, name)) != MemberType::Unknown ||
-                    std::ranges::any_of(owner->getMethods(),
-                        [&](const auto* method) { return method->getName() == name; })) {
-                    return false;
-                }
-                const auto* property = owner->getProperty(name);
-                if (property == nullptr) {
-                    reportError(context, function, "Unknown struct property '" + name +
-                        "' on type '" + type->getTypeName() + "'");
-                    return true;
-                }
-                if (property->asNativeProperty() != nullptr) {
-                    return false;
-                }
-                type = property->getValueType();
-                if (end == NomadString::npos) {
-                    break;
-                }
-                start = end + 1;
-            }
-            if (type != m_expression->getType()) {
-                reportError(context, function,
-                    "Cannot assign value of type '" + getTypeDisplayName(m_expression->getType()) +
-                    "' to member of type '" + getTypeDisplayName(type) + "'");
-                return true;
-            }
-            m_rootName = rootName;
-            m_rootDefinition = definition;
-            m_propertyPath = m_targetName.substr(separator + 1);
-            return true;
-        }
-        separator = m_targetName.rfind('.', separator - 1);
-    }
-    return false;
-}
-
 void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     m_target->compileAssignment(compiler, function, m_expression.get());
 }
 
 InterpreterValue MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
-    if (m_propertyPath.empty()) {
-        return m_target->evaluateAssignment(context, m_expression.get());
-    }
-    const auto isReceiver = m_rootDefinition.identifierType == IdentifierType::Receiver;
-    const auto* rootType = isReceiver ? context.getCallable()->getClassType() :
-        context.getVariableType(m_rootName);
-    if (rootType != m_rootDefinition.valueType) {
-        raiseException("Assignment root is unassigned or changed type");
-    }
-    auto assigned = m_expression->evaluate(context);
-    if (isReceiver) {
-        context.setReceiverProperty(m_propertyPath, assigned);
-    } else {
-        context.setVariableProperty(m_rootName, m_propertyPath, assigned);
-    }
-    return assigned;
+    return m_target->evaluateAssignment(context, m_expression.get());
 }
 
 ///////////////////////////////////////////////////////////////////////////////

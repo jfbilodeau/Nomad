@@ -506,6 +506,44 @@ InterpreterValue Interpreter::getStoredProperty(
         receiver.getStorage().subspan(offset, type->getSize()));
 }
 
+void Interpreter::setProperty(
+    const StructType& type,
+    const std::span<RuntimeValue> receiverStorage,
+    const PropertyId propertyId,
+    const InterpreterValue& value
+) const {
+    setStoredProperty(type, receiverStorage, std::span<const PropertyId>{&propertyId, 1}, value);
+}
+
+void Interpreter::setProperty(
+    const StructType& type,
+    const std::span<RuntimeValue> receiverStorage,
+    const NomadStringView propertyPath,
+    const InterpreterValue& value
+) const {
+    const auto properties = resolveStoredPropertyPath(&type, propertyPath);
+    setStoredProperty(type, receiverStorage, properties, value);
+}
+
+void Interpreter::setStoredProperty(
+    const StructType& receiverType,
+    const std::span<RuntimeValue> receiverStorage,
+    const std::span<const PropertyId> properties,
+    const InterpreterValue& value
+) const {
+    if (receiverStorage.size() != receiverType.getSize()) {
+        throw std::invalid_argument("Struct receiver storage must match its type's physical size");
+    }
+    const auto [type, offset] = resolveStoredProperty(&receiverType, properties);
+    if (type != value.getType()) {
+        throw std::invalid_argument("Stored property assignment requires a matching value type");
+    }
+    std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+    type->assignValue(value.getStorage().data(),
+        type->getSize() == 0 ? nullptr : receiverStorage.data() + offset,
+        scratch.empty() ? nullptr : scratch.data());
+}
+
 InterpreterValue Interpreter::setStoredProperty(
     const InterpreterValue& receiver,
     const std::span<const PropertyId> properties,

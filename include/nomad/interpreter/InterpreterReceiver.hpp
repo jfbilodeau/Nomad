@@ -29,15 +29,14 @@ public:
     ) = 0;
     // Paths traverse stored struct fields beneath the selected property.
     [[nodiscard]] InterpreterValue getProperty(NomadStringView propertyPath) const;
-    void setProperty(NomadStringView propertyPath, const InterpreterValue& value);
+    virtual void setProperty(NomadStringView propertyPath, const InterpreterValue& value) = 0;
 
 protected:
     InterpreterReceiver(const Interpreter& interpreter, const Type& type);
     [[nodiscard]] const Interpreter& getInterpreter() const;
-
-private:
     [[nodiscard]] PropertyId resolveProperty(NomadStringView name) const;
 
+private:
     const Interpreter& m_interpreter;
     const Type& m_type;
 };

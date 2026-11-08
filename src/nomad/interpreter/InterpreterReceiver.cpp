@@ -47,19 +47,4 @@ InterpreterValue InterpreterReceiver::getProperty(const NomadStringView property
     return m_interpreter.getProperty(value, propertyPath.substr(separator + 1));
 }
 
-void InterpreterReceiver::setProperty(
-    const NomadStringView propertyPath,
-    const InterpreterValue& value
-) {
-    const auto separator = propertyPath.find('.');
-    const auto propertyId = resolveProperty(propertyPath.substr(0, separator));
-    if (separator == NomadStringView::npos) {
-        setProperty(propertyId, value);
-        return;
-    }
-    const auto current = getProperty(propertyId);
-    const auto replacement = m_interpreter.setProperty(current, propertyPath.substr(separator + 1), value);
-    setProperty(propertyId, replacement);
-}
-
 } // namespace nomad

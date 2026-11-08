@@ -477,12 +477,10 @@ parameters, and returns have independent struct storage; contained class fields
 retain reference semantics. Methods mutate their stored receiver. Empty structs
 occupy no slots but still run constructor and method side effects. The interpreter
 supports owned struct values, construction, and free-function arguments/results;
-it can also read stored struct properties and assign fields rooted in named
-struct variables or `this`. Interpreted method calls borrow named, frame-backed,
+it can also read and assign stored struct properties through named, frame-backed,
+nested, class-owned, and temporary roots. Interpreted method calls borrow named, frame-backed,
 nested, object-owned, and temporary struct receivers. Host snapshot-based
-struct-method calls return explicit updated receiver/result values. General
-interpreter field assignments through class-owned or temporary struct roots
-remain unsupported.
+struct-method calls return explicit updated receiver/result values.
 
 Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
@@ -1055,8 +1053,8 @@ temporary field changes only that temporary, except for shared class references
 stored in its fields. Empty fields still evaluate and release their root.
 The interpreter can read stored struct properties through these roots and owns
 the extracted value. It can invoke methods on stored and temporary struct
-receivers. Interpreter field assignments through temporary roots and native
-accessor-backed struct properties remain unsupported.
+receivers and assign their stored fields. Native accessor-backed struct
+properties remain unsupported by the interpreter.
 
 Object-owned reads evaluate the owner once and keep it alive until copied values
 are independently owned. Writes retain the original owner and capture the
@@ -2391,6 +2389,18 @@ replacement types throw `std::invalid_argument`. Failed copying releases partial
 results and leaves both inputs unchanged. These value operations require no
 interpreter context and do not change a context's result.
 
+`Interpreter::setProperty(structType, storage, property, value)` instead updates
+borrowed mutable struct storage. The span must contain exactly
+`structType.getSize()` slots; empty structs use empty spans. The selector accepts
+the same direct IDs and field names/dotted paths as the immutable-value overload.
+Only the selected field is copied and replaced; unrelated fields are not copied.
+Copying completes before the previous field value is released, including for
+self-assignment. A failed field copy leaves that destination unchanged.
+Invalid selectors, mismatched value types, and incorrect span widths throw
+`std::invalid_argument` before replacement. The caller must keep the borrowed
+storage alive throughout the operation. This overload returns no value and
+does not change context results or immutable snapshots.
+
 Use the span overloads of `InterpreterContext::setVariable(name, type, storage)`
 and `setResult(type, storage)` for structs. Both copy the complete value before
 releasing what they replace, so their own storage can be supplied as the source.
@@ -2691,28 +2701,36 @@ supported. Empty reads still evaluate their receiver's side effects. Contained
 class references remain shared; their existing property/method APIs remain
 available.
 
-Stored fields rooted in named struct variables, frame locals/parameters, and
-struct `this` can be assigned, including nested fields and complete struct fields.
+Stored fields rooted in named struct variables, frame locals/parameters,
+struct `this`, class-owned structs, and temporary construction/call results can
+be assigned, including nested fields and complete struct fields.
 For example, `root.leaf.number = 31`, `root.leaf = source`, and
 `this.leaf.text = "updated"` are supported. The RHS completes before replacement.
 Copies remain independent, contained class references remain shared, and empty
-field assignments still evaluate the RHS.
+field assignments still evaluate the RHS. Object and temporary owners are
+evaluated once before the RHS and retained until the write finishes. Replacing
+an owner variable during the RHS does not redirect the write to a new object.
+Context-owned struct locations are rechecked after the RHS: same-type replacement
+uses the current storage, while clearing or retyping the root reports a diagnostic
+without committing the selected field. A temporary-rooted write changes only that
+temporary, apart from contained shared class objects, and returns an owned
+assignment value.
 
 `InterpreterContext::setVariableProperty(name, property, value)` updates a
 stored field in a named variable or frame parameter/local.
 `setReceiverProperty(property, value)` updates a property through the active
 class or struct receiver wrapper. Each accepts either a direct `PropertyId` or
 a field name/dotted stored-struct path.
-Struct updates use the current value at write time, so unrelated field changes
-made during the RHS are preserved. Failed copying before replacement leaves
-the destination unchanged. Object updates affect the shared instance; native
+Struct updates assign only the selected field in current storage, so unrelated
+fields are not copied and field changes made during the RHS are preserved.
+Failed field copying before replacement leaves that destination unchanged;
+RHS side effects remain visible. Object updates affect the shared instance; native
 accessor side effects are not rolled back. These setters do not change the
 context's result; source assignment
 statements separately publish their owned assignment snapshots.
 
-Class-owned and temporary-rooted struct writes, source-level interpreter struct
-method calls,
-aggregate captures, and field-aware struct formatting remain unsupported.
+Native accessor-backed struct properties, aggregate captures, and field-aware
+struct formatting remain unsupported.
 
 ## Parameterized types
 

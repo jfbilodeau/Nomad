@@ -243,8 +243,7 @@ public:
         NomadIndex line,
         NomadIndex column,
         std::unique_ptr<Expression> target,
-        std::unique_ptr<Expression> expression,
-        NomadString targetName = {}
+        std::unique_ptr<Expression> expression
     );
 
 protected:
@@ -253,14 +252,8 @@ protected:
     [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
-    [[nodiscard]] bool resolveStructTarget(CompilerContext* context, ScriptCallableBase* function);
-
     std::unique_ptr<Expression> m_target;
     std::unique_ptr<Expression> m_expression;
-    NomadString m_targetName;
-    NomadString m_rootName;
-    IdentifierDefinition m_rootDefinition;
-    NomadString m_propertyPath;
 };
 
 class ExpressionStatement final : public Statement {

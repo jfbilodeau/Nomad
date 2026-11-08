@@ -5,12 +5,15 @@
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/ScriptObject.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
 #include <array>
 #include <utility>
+#include <vector>
 
 using namespace nomad;
 
@@ -117,8 +120,12 @@ BOOST_AUTO_TEST_CASE(named_roots_copy_nested_fields_and_preserve_shared_referenc
             BOOST_TEST(!context.getInterpreter().execute("root.leaf.text = source", context));
             integerResult("root.leaf.number", 53);
             execute("holder = new AssignmentHolder");
-            BOOST_TEST(!context.getInterpreter().execute("holder.value.leaf.number = 7", context));
-            BOOST_TEST(!context.getInterpreter().execute("(new AssignmentRoot).leaf.number = 7", context));
+            execute("holder.value.leaf.number = 7");
+            integerResult("holder.value.leaf.number", 7);
+            execute("holder.value.leaf = source\nholder.value = root");
+            integerResult("holder.value.leaf.number", 53);
+            integerResult("(new AssignmentRoot).leaf.number = 7", 7);
+            integerResult("root.leaf.number", 53);
         }
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -225,6 +232,10 @@ BOOST_AUTO_TEST_CASE(empty_receiver_writes_preserve_effects_without_storage_poin
         InterpreterContext context(contextEvaluator, *callable);
         const auto* property = callable->getClassType()->asCompositeType()->getProperty("empty");
         const InterpreterValue emptyValue(property->getValueType(), std::span<const RuntimeValue>{});
+        context.getInterpreter().setProperty(*callable->getClassType()->asStructType(), {},
+            property->getId(), emptyValue);
+        context.getInterpreter().setProperty(*callable->getClassType()->asStructType(), {},
+            "empty", emptyValue);
         context.setReceiverProperty(property->getId(), emptyValue);
         context.setReceiverProperty("empty", emptyValue);
         const auto success = context.getInterpreter().execute("this.empty = makeEmptyAssignment", context);
@@ -306,6 +317,187 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
             field->failCopyAt = 0;
             BOOST_REQUIRE(context.getInterpreter().execute("root.pair = source", context));
             BOOST_TEST(context.getVariableStorage("root")[0].getStringValue() == "new first");
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(stored_field_writes_do_not_copy_unrelated_fields) {
+    Runtime runtime;
+    FailingAssignmentCopyType* reference = nullptr;
+    const auto referenceId = runtime.registerClass<FailingAssignmentCopyType>(
+        "AssignmentUnreadReference", ClassMode::Closed, reference);
+    BOOST_REQUIRE(referenceId.isValid());
+    const auto leafId = runtime.registerStruct("AssignmentLiveLeaf");
+    const auto* leaf = runtime.getTypeByName("AssignmentLiveLeaf")->asStructType();
+    const auto numberId = runtime.registerProperty(leafId, "number", runtime.getIntegerType());
+    BOOST_REQUIRE(numberId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "reference", reference).isValid());
+    const auto rootId = runtime.registerStruct("AssignmentLiveRoot");
+    const auto* root = runtime.getTypeByName("AssignmentLiveRoot")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(rootId, "leaf", leaf).isValid());
+    const auto siblingId = runtime.registerProperty(rootId, "sibling", runtime.getIntegerType());
+    BOOST_REQUIRE(siblingId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(rootId, "reference", reference).isValid());
+    const auto ownerId = runtime.registerClass("AssignmentLiveOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("AssignmentLiveOwner")->asClassType();
+    const auto rootPropertyId = runtime.registerProperty(ownerId, "value", root);
+    BOOST_REQUIRE(rootPropertyId.isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            InterpreterContext context(interpreter);
+            std::array<RuntimeValue, 4> source{
+                RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadString{"leaf reference"}},
+                RuntimeValue{NomadInteger{3}}, RuntimeValue{NomadString{"root reference"}}};
+            context.setVariable("root", root, source);
+            const InterpreterValue snapshot(root, source);
+            root->freeValue(source.data());
+            RuntimeValue object;
+            object.setObjectValue(new ScriptObject(owner));
+            const auto objectReceiver = interpreter.createObjectReceiver(*owner, object.getObjectValue());
+            objectReceiver->setProperty(rootPropertyId, snapshot);
+            context.setVariable("holder", owner, object);
+            object.freeObjectValue();
+            const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{29}});
+            const auto storage = context.getMutableVariableStorageById(context.getCallable()->getVariableId("root"));
+            const auto rootReceiver = interpreter.createStructReceiver(*root, storage.data());
+            const auto leafReceiver = interpreter.createStructReceiver(*leaf, storage.data());
+            reference->copyCount = 0;
+            reference->failCopyAt = 1;
+            context.setVariableProperty("root", siblingId, number);
+            context.setVariableProperty("root", "leaf.number", number);
+            rootReceiver->setProperty("leaf.number", number);
+            leafReceiver->setProperty(numberId, number);
+            objectReceiver->setProperty("value.leaf.number", number);
+            interpreter.setProperty(*root, storage, "leaf.number", number);
+            interpreter.setProperty(*leaf, storage.first(leaf->getSize()), numberId, number);
+            BOOST_REQUIRE_MESSAGE(interpreter.execute("root.leaf.number = 41", context),
+                (context.getError() ? *context.getError() : ""));
+            BOOST_REQUIRE_MESSAGE(interpreter.execute("holder.value.leaf.number = 53", context),
+                (context.getError() ? *context.getError() : ""));
+            BOOST_TEST(reference->copyCount == 0U);
+            BOOST_TEST(storage[0].getIntegerValue() == 41);
+            BOOST_TEST(storage[2].getIntegerValue() == 29);
+            BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 17);
+            BOOST_TEST(snapshot.getStorage()[2].getIntegerValue() == 3);
+            BOOST_REQUIRE(interpreter.execute("holder.value.leaf.number", context));
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 53);
+            BOOST_TEST(reference->copyCount == 0U);
+            BOOST_CHECK_THROW(interpreter.setProperty(*root, storage.first(1), siblingId, number),
+                std::invalid_argument);
+            BOOST_CHECK_THROW(interpreter.setProperty(*root, storage, numberId, number), std::invalid_argument);
+            for (const auto* path : {"", ".leaf", "leaf.", "leaf..number", "missing", "sibling.number"}) {
+                BOOST_CHECK_THROW(interpreter.setProperty(*root, storage, path, number), std::invalid_argument);
+            }
+            const InterpreterValue wrongType(runtime.getBooleanType(), RuntimeValue{NomadBoolean{true}});
+            BOOST_CHECK_THROW(interpreter.setProperty(*root, storage, "leaf.number", wrongType),
+                std::invalid_argument);
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 53);
+            BOOST_TEST(storage[0].getIntegerValue() == 41);
+            BOOST_TEST(reference->copyCount == 0U);
+            reference->failCopyAt = 0;
+            BOOST_REQUIRE(interpreter.execute("holder.value = root", context));
+            BOOST_TEST(objectReceiver->getProperty("value.leaf.number").getValue().getIntegerValue() == 41);
+            BOOST_REQUIRE(interpreter.execute("root.leaf.number = 67", context));
+            BOOST_TEST(objectReceiver->getProperty("value.leaf.number").getValue().getIntegerValue() == 41);
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(assignments_rebind_struct_roots_and_retain_object_and_temporary_owners) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    InterpreterContext* activeContext = nullptr;
+    NomadString duringRight;
+    auto clearRoot = false;
+    auto failRight = false;
+    std::vector<NomadString> order;
+    const auto textId = runtime.registerNativeFunction("assignmentText", [](VirtualMachine* machine) {
+        machine->setStringResult("retained assignment");
+    }, {}, runtime.getStringType(), "");
+    const auto inspectId = runtime.registerNativeFunction("inspectAssignmentFrame", [](VirtualMachine*) {},
+        {}, runtime.getVoidType(), "");
+    const auto rightId = runtime.registerNativeFunction("assignmentRight", [&](VirtualMachine* machine) {
+        order.push_back("right");
+        if (!duringRight.empty()) {
+            BOOST_REQUIRE_MESSAGE(activeContext->getInterpreter().execute(duringRight, *activeContext),
+                (activeContext->getError() ? *activeContext->getError() : ""));
+        }
+        if (clearRoot) {
+            activeContext->clearVariableValue("root");
+        }
+        if (failRight) {
+            throw NomadException("Assignment RHS failed");
+        }
+        machine->setIntegerResult(43);
+    }, {}, runtime.getIntegerType(), "");
+    const auto ownerId = runtime.registerNativeFunction("assignmentOwnerEffect", [&](VirtualMachine*) {
+        order.push_back("owner");
+    }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(textId.isValid() && inspectId.isValid() && rightId.isValid() && ownerId.isValid());
+    addAssignmentTypes(fixture);
+    fixture.addFunction("makeAssignmentTemporary", "assignmentOwnerEffect\nreturn new AssignmentRoot");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            InterpreterContext context(interpreter);
+            activeContext = &context;
+            const auto execute = [&](const NomadString& source) {
+                BOOST_REQUIRE_MESSAGE(interpreter.execute(source, context),
+                    (context.getError() ? *context.getError() : source));
+            };
+            execute("root = new AssignmentRoot\nholder = new AssignmentHolder\nsaved = holder");
+            duringRight = "root = new AssignmentRoot\nroot.sibling = 71";
+            execute("root.leaf.number = assignmentRight");
+            execute("root.leaf.number");
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
+            execute("root.sibling");
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 71);
+            duringRight = "root = 5";
+            BOOST_TEST(!interpreter.execute("root.leaf.number = assignmentRight", context));
+            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_TEST(context.getError()->find("changed type") != NomadString::npos);
+            BOOST_TEST(context.getResult() == nullptr);
+            BOOST_TEST(context.getVariableValue("root")->getIntegerValue() == 5);
+            duringRight = "";
+            clearRoot = true;
+            execute("root = new AssignmentRoot");
+            BOOST_TEST(!interpreter.execute("root.leaf.number = assignmentRight", context));
+            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_TEST(context.getError()->find("not been assigned") != NomadString::npos);
+            BOOST_TEST(context.getVariableType("root") == nullptr);
+            clearRoot = false;
+            duringRight = "holder = new AssignmentHolder";
+            execute("holder.value.leaf.number = assignmentRight");
+            execute("saved.value.leaf.number");
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
+            execute("holder.value.leaf.number");
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
+            duringRight = "";
+            order.clear();
+            execute("(makeAssignmentTemporary).leaf.number = assignmentRight");
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
+            BOOST_REQUIRE(order.size() == 2U);
+            BOOST_TEST(order[0] == "owner");
+            BOOST_TEST(order[1] == "right");
+            failRight = true;
+            BOOST_TEST(!interpreter.execute("(makeAssignmentTemporary).leaf.number = assignmentRight", context));
+            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_TEST(context.getError()->find("Assignment RHS failed") != NomadString::npos);
+            BOOST_TEST(context.getResult() == nullptr);
+            failRight = false;
         }
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);

@@ -121,7 +121,7 @@ public:
 
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
     void setVariable(const NomadString& name, const Type* type, std::span<const RuntimeValue> storage);
-    // Copies the current root at write time, preserving unrelated RHS changes.
+    // Assigns the selected field in current storage, preserving unrelated RHS changes.
     void setVariableProperty(
         const NomadString& name,
         PropertyId propertyId,

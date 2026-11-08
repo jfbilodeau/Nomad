@@ -760,10 +760,6 @@ bool NativeMemberExpression::resolveMember(
                 }
                 m_storage = storage->getProperty(*property);
             }
-            if (assignment && context->getMode() == CompilerMode::Interpreter) {
-                reportError(context, function, "Struct property assignments are not supported by the interpreter");
-                return false;
-            }
             m_memberId = property->getId();
             m_memberType = MemberType::Property;
             return true;
@@ -1089,25 +1085,24 @@ InterpreterValue NativeMemberExpression::evaluateAssignment(
     InterpreterContext& context,
     const Expression* expression
 ) const {
-    if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
-        raiseException("Struct member values are not supported by the interpreter");
-    }
-    const auto receiver = m_receiver->evaluate(context);
-    auto assignedValue = expression->evaluate(context);
-
     const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
     if (property == nullptr) {
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
-    if (receiver.getType()->getStorage() == TypeStorage::Object) {
-        const auto object = context.getInterpreter().createObjectReceiver(
-            *receiver.getType()->asClassType(),
-            receiver.getValue().getObjectValue()
-        );
-        object->setProperty(property->getId(), assignedValue);
-    } else {
-        context.getVirtualMachine()->setProperty(property->getId(), receiver.getValue(), assignedValue.getValue());
+    if (m_receiver->getType()->asCompositeType() != nullptr) {
+        if (property->asNativeProperty() != nullptr && getType()->isStruct()) {
+            raiseException("Struct member values are not supported by the interpreter");
+        }
+        const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
+        std::optional<InterpreterValue> assignedValue;
+        return location.withReceiver(context, [&](InterpreterReceiver& receiver) {
+            receiver.setProperty(property->getId(), *assignedValue);
+            return std::move(*assignedValue);
+        }, [&]() { assignedValue = expression->evaluate(context); });
     }
+    const auto receiver = m_receiver->evaluate(context);
+    auto assignedValue = expression->evaluate(context);
+    context.getVirtualMachine()->setProperty(property->getId(), receiver.getValue(), assignedValue.getValue());
     return InterpreterValue(property->getValueType(), assignedValue.getValue());
 }
 

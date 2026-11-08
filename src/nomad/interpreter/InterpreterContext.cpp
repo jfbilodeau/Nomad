@@ -157,13 +157,15 @@ void InterpreterContext::setVariableProperty(
     const PropertyId propertyId,
     const InterpreterValue& value
 ) {
+    const auto guard = beginEvaluation();
     const auto* type = getVariableType(name);
-    if (type == nullptr) {
-        throw std::invalid_argument("Stored property assignment requires an assigned variable");
+    if (type == nullptr || !type->isStruct()) {
+        throw std::invalid_argument("Stored property assignment requires an assigned struct variable");
     }
-    const InterpreterValue current(type, getVariableStorage(name));
-    const auto replacement = m_interpreter.setProperty(current, propertyId, value);
-    setVariable(name, type, replacement.getStorage());
+    const auto parameterId = getCallable()->getParameterId(name);
+    const auto storage = parameterId != NOMAD_INVALID_ID ? getMutableParameterStorage(parameterId) :
+        getMutableVariableStorageById(getCallable()->getVariableId(name));
+    m_interpreter.setProperty(*type->asStructType(), storage, propertyId, value);
 }
 
 void InterpreterContext::setVariableProperty(
@@ -171,13 +173,15 @@ void InterpreterContext::setVariableProperty(
     const NomadStringView propertyPath,
     const InterpreterValue& value
 ) {
+    const auto guard = beginEvaluation();
     const auto* type = getVariableType(name);
-    if (type == nullptr) {
-        throw std::invalid_argument("Stored property assignment requires an assigned variable");
+    if (type == nullptr || !type->isStruct()) {
+        throw std::invalid_argument("Stored property assignment requires an assigned struct variable");
     }
-    const InterpreterValue current(type, getVariableStorage(name));
-    const auto replacement = m_interpreter.setProperty(current, propertyPath, value);
-    setVariable(name, type, replacement.getStorage());
+    const auto parameterId = getCallable()->getParameterId(name);
+    const auto storage = parameterId != NOMAD_INVALID_ID ? getMutableParameterStorage(parameterId) :
+        getMutableVariableStorageById(getCallable()->getVariableId(name));
+    m_interpreter.setProperty(*type->asStructType(), storage, propertyPath, value);
 }
 
 const Type* InterpreterContext::getVariableType(const NomadString& name) const {
@@ -547,6 +551,7 @@ void InterpreterContext::setReceiverProperty(
     const PropertyId propertyId,
     const InterpreterValue& value
 ) {
+    const auto guard = beginEvaluation();
     auto* receiver = getReceiver();
     if (receiver == nullptr) {
         throw NomadBug("Receiver property assignment requires an active composite frame");
@@ -558,6 +563,7 @@ void InterpreterContext::setReceiverProperty(
     const NomadStringView propertyPath,
     const InterpreterValue& value
 ) {
+    const auto guard = beginEvaluation();
     auto* receiver = getReceiver();
     if (receiver == nullptr) {
         throw NomadBug("Receiver property assignment requires an active composite frame");

@@ -5,7 +5,6 @@
 #include <nomad/script/StructType.hpp>
 
 #include <stdexcept>
-#include <vector>
 
 namespace nomad {
 
@@ -38,9 +37,28 @@ InterpreterValue InterpreterStructReceiver::getProperty(const PropertyId propert
 }
 
 void InterpreterStructReceiver::setProperty(const PropertyId propertyId, const InterpreterValue& value) {
-    const auto replacement = getInterpreter().setProperty(getValue(), propertyId, value);
-    std::vector<RuntimeValue> scratch(getType()->getAssignmentScratchSize());
-    getType()->assignValue(replacement.getStorage().data(), m_storage, scratch.empty() ? nullptr : scratch.data());
+    getInterpreter().setProperty(
+        *getType()->asStructType(),
+        getType()->getSize() == 0 ?
+             std::span<RuntimeValue>{} :
+            std::span<RuntimeValue>{m_storage, getType()->getSize()},
+        propertyId, 
+        value
+    );
+}
+
+void InterpreterStructReceiver::setProperty(
+    const NomadStringView propertyPath,
+    const InterpreterValue& value
+) {
+    getInterpreter().setProperty(
+        *getType()->asStructType(),
+        getType()->getSize() == 0 ?
+            std::span<RuntimeValue>{} :
+            std::span<RuntimeValue>{m_storage, getType()->getSize()},
+        propertyPath, 
+        value
+    );
 }
 
 InterpreterValue InterpreterStructReceiver::callMethod(

@@ -28,6 +28,11 @@ properties rooted in that storage. Registered methods can also borrow
 object-owned struct properties with retained owners. Value reads/writes,
 argument/return copies, and staged replacements through that storage are
 supported.
+Live stored-field assignment through named/frame roots, nested fields,
+class-owned structs, and temporary roots is implemented and validated.
+Borrowed-storage
+property setters update only the selected field; immutable-value setters retain
+their independent replacement contract.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -3680,6 +3685,52 @@ Implemented and validated:
   preserved on failed implicit source-name lookup.
 - All six CTest unit groups passed with automatic build. Whitespace and
   obsolete-reference checks passed. Stop for review without committing.
+
+### Step 5D2: Live interpreter stored-field assignments
+
+Approved scope:
+
+- Use existing storage locations and typed assignment operations for writes
+  through named/frame roots, nested stored fields, class-owned structs, and
+  temporary roots. Preserve compiled assignment behavior and add no opcodes.
+- Evaluate and retain object/temporary owners before the RHS. Recheck context
+  locations afterward, preserving same-type replacement and diagnosing cleared
+  or retyped roots before committing the selected field.
+- Add borrowed-storage `Interpreter::setProperty` overloads for direct IDs and
+  names/dotted paths, reusing the existing stored-property resolution. Keep
+  immutable-value setters and their independent replacement values unchanged.
+- Route receiver and context setters through selected-field assignment.
+  Assignment failure follows the selected field's existing `Type::assignValue`
+  contract; unrelated fields are not copied. RHS side effects are not rolled back.
+- Add focused copy-count, ownership, ordering, reentry, empty-value, and invalid
+  host-input coverage. Build/test, then stop for review without committing.
+
+Implementation:
+
+- Removed the named-root-only statement resolver and replacement path. Stored
+  assignments use ordinary member resolution and scoped receiver operations.
+- Struct receiver/context setters update live selected fields; object path
+  setters borrow the stored struct field while retaining the object owner.
+- Regression coverage includes complete/nested writes, copied source isolation,
+  zero copies of unrelated fields, immutable snapshots, class-owned and temporary
+  writes, RHS replacement/clear/retype, retained original owners, RHS failure
+  cleanup, empty roots, wrong-owner IDs, invalid paths/types, and span widths.
+
+Validation:
+
+- CTest's automatic build and all six unit groups passed, as did script staging
+  and compiler-export integration checks. The initial build exposed missing
+  parentheses in new Boost.Test diagnostic expressions; the corrected retry
+  compiled and passed the affected groups before the final combined run.
+- Ownership/copy-failure regressions passed. New lifetime scenarios repeat three
+  times and restore live string/object counts; selected-field writes demonstrate
+  zero copies of unrelated reference fields.
+- Four documentation preparation tests and the generated strict MkDocs build
+  passed. Whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing before the next Step 5 parity slice.
+
+Aggregate captures, field-aware formatting, remaining host/native property
+parity, NRVO, and fatal VM fault cleanup remain separate.
 
 ### Step 6: Conservative named return-value optimization
 

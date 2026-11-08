@@ -1176,7 +1176,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         }
 
         return std::make_unique<MemberAssignmentStatement>(
-            line, column, std::move(target), std::move(expression), variableName);
+            line, column, std::move(target), std::move(expression));
     }
 
     if (identifierDefinition.identifierType == IdentifierType::Unknown && function != nullptr) {

@@ -95,6 +95,19 @@ public:
         NomadStringView propertyPath,
         const InterpreterValue& value
     ) const;
+    // Assigns only the selected field; the caller keeps borrowed storage alive.
+    void setProperty(
+        const StructType& type,
+        std::span<RuntimeValue> receiverStorage,
+        PropertyId propertyId,
+        const InterpreterValue& value
+    ) const;
+    void setProperty(
+        const StructType& type,
+        std::span<RuntimeValue> receiverStorage,
+        NomadStringView propertyPath,
+        const InterpreterValue& value
+    ) const;
 
     // Source failures are retained as diagnostics; unsuccessful calls have no result.
     [[nodiscard]] NomadBoolean execute(const NomadString& source, InterpreterContext& context) const;
@@ -140,6 +153,12 @@ private:
     ) const;
     [[nodiscard]] InterpreterValue setStoredProperty(
         const InterpreterValue& receiver,
+        std::span<const PropertyId> properties,
+        const InterpreterValue& value
+    ) const;
+    void setStoredProperty(
+        const StructType& type,
+        std::span<RuntimeValue> receiverStorage,
         std::span<const PropertyId> properties,
         const InterpreterValue& value
     ) const;

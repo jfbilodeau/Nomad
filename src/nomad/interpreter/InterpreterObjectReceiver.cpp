@@ -6,6 +6,7 @@
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -93,6 +94,31 @@ InterpreterValue InterpreterObjectReceiver::callMethod(
     const std::span<const InterpreterValue> arguments
 ) {
     return getInterpreter().runObjectMethod(*getType()->asClassType(), m_object, methodId, arguments);
+}
+
+void InterpreterObjectReceiver::setProperty(
+    const NomadStringView propertyPath,
+    const InterpreterValue& value
+) {
+    const auto separator = propertyPath.find('.');
+    const auto propertyId = resolveProperty(propertyPath.substr(0, separator));
+    if (separator == NomadStringView::npos) {
+        setProperty(propertyId, value);
+        return;
+    }
+    const auto* property = getType()->getRuntime()->getProperty(propertyId);
+    const auto* type = property->getValueType()->asStructType();
+    if (type == nullptr) {
+        throw std::invalid_argument("Stored property paths require struct owners");
+    }
+    auto* object = dynamic_cast<ScriptObject*>(m_object);
+    if (property->asNativeProperty() != nullptr || object == nullptr ||
+        object->getClassType() != property->getOwnerType()) {
+        getInterpreter().getVirtualMachine().fault("Stored property receiver has no matching field storage");
+    }
+    getInterpreter().setProperty(*type,
+        object->getFieldStorage(property->getOwnerType()->getFieldIndex(propertyId)),
+        propertyPath.substr(separator + 1), value);
 }
 
 } // namespace nomad
