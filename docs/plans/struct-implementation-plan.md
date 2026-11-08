@@ -37,6 +37,10 @@ Interpreter/host class methods now support copied struct arguments and owned
 struct results, including empty structs. Aggregate native object-method calls
 are synchronous; scalar native method behavior remains unchanged. This slice
 is implemented and validated, awaiting review.
+Compiled native/script class-method struct results now support local and
+forwarded return destinations, including retained temporary receivers and
+staged assignment targets. This slice is implemented and validated, awaiting
+review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -3791,6 +3795,59 @@ Next, after review:
    and integration completion checks.
 
 Fatal VM fault recovery and gameplay/performance validation remain separate.
+
+### Step 5F: Compiled struct-returning class-method calls
+
+Approved scope:
+
+- Enable compiled native/script class-method struct results in reserved locals
+  and existing forwarded return destinations. Cover nested/temporary receivers,
+  arguments, property initializers, staged assignments, discarded calls, and
+  empty/one-slot results.
+- Add specialized `Compiler::addObjectMethodCallIntoLocal` and
+  `addObjectMethodCallIntoReturn` emitters using existing opcodes and return ABI.
+  Retain the evaluated class receiver outside the callee's storage layout.
+- Preserve receiver-first/right-to-left argument order, enclosing receiver
+  restoration, independent result/argument copies, and RHS-before-replacement
+  behavior. Do not add NRVO or enable native accessor-backed struct properties.
+- Verify emitted destination/forwarding operations, execution, ownership, native
+  reentry, and owner replacement during argument preparation. Update embedding
+  documentation, build/test, and stop for review without committing.
+
+Implementation:
+
+- Class-valued method receivers now use the specialized destination emitters.
+  Direct method returns forward the caller's storage without intermediate return
+  locals/copies; ordinary assignment still uses its existing staging storage.
+- Receiver references remain retained below the hidden return pointer and
+  explicit arguments. Empty results omit the pointer without omitting execution.
+- Regression coverage checks native/script calls, mixed zero/one/many-slot
+  parameters/results, nested/temporary receiver and result field access,
+  property initialization, source/result isolation and shared class fields,
+  nested receiver restoration, native reentry, exact forwarded pointer identity,
+  RHS target preservation, and original-owner retention during variable replacement.
+- Instruction dumps verify no local return destination or aggregate return-copy
+  operations in forwarded wrappers. Ownership scenarios run three times and
+  restore live string/object counts.
+
+Validation:
+
+- CTest's automatic build and targeted language/remaining groups passed on the
+  first run. After adding native one-slot returns and property-initializer
+  coverage, all six unit groups, script staging, and compiler-export integration
+  checks passed.
+- Instruction dumps and native pointer-identity checks verify forwarded return
+  storage without intermediate return locals/copies. Receiver/argument ordering,
+  original-owner retention, staged-target visibility, nested/native reentry,
+  empty results, and repeated ownership cleanup passed.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting the next parity slice.
+
+Next, after review: native accessor-backed struct property parity, then struct
+captures/callbacks, field-aware formatting, and remaining host parity. Conservative
+NRVO follows Step 5 approval, then final tooling/documentation and integration
+completion checks. Fatal VM fault cleanup remains deferred.
 
 ### Step 6: Conservative named return-value optimization
 

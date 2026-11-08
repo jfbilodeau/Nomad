@@ -969,10 +969,9 @@ copied into the caller's destination before local cleanup, except that
 `return makePoint ...` forwards a struct-returning free-function call directly
 to that destination, and `return new Point ...` constructs there directly,
 without an intermediate return local or copy. `return point.copy ...` also
-forwards a struct result from a method on a struct receiver. This also
-works inside struct methods, without confusing the result destination with
-the borrowed receiver. Local/parameter/property returns retain their copy paths.
-Struct-valued method calls on class receivers are not supported by this path.
+forwards a struct result from a method on a struct or class receiver. This also
+works inside methods, without confusing the result destination with the receiver.
+Local/parameter/property returns retain their copy paths.
 Existing assignment
 targets are replaced only after their source expression finishes. Discarded
 struct results are released, and empty results still execute their side effects.
@@ -1010,6 +1009,27 @@ owned values, disjoint from borrowed receiver and argument storage. Enclosing
 class owners are retained across argument evaluation and the call, then released.
 Empty receivers and results omit only their respective hidden pointers. This API
 does not allocate receiver temporaries or stage assignment targets.
+
+`Compiler::addObjectMethodCallIntoLocal(methodId, caller, arguments, receiver,
+destinationId)` emits a native/script class-method call returning a struct into
+a same-type reserved local. `receiver` is a resolved class-valued `Expression`;
+arguments contain only explicit arguments, without an object receiver type.
+The receiver is evaluated once before right-to-left argument evaluation and
+retained until the call finishes. Replacing its original variable during argument
+evaluation does not redirect the call. Destination fields must be cleared or
+valid owned values; use disjoint staging storage when replacing an existing
+assignment target.
+
+`Compiler::addObjectMethodCallIntoReturn(methodId, caller, arguments, receiver)`
+instead forwards the enclosing callable's same-type struct return destination.
+It does not register an intermediate return local or copy. Neither emitter
+changes the caller's enclosing object receiver. Empty results execute the call
+without a destination pointer; one-slot structs still use struct return storage.
+
+Compiled native/script class methods can return structs for local values,
+arguments, property initializers, staged assignments, discarded calls, and
+temporary-rooted field access. Returned structs own independent field storage;
+contained class references retain ordinary shared reference semantics.
 
 Compiled member expressions can call registered struct methods on locals,
 ordinary parameters, a struct method's `this`, and nested struct properties
@@ -2628,8 +2648,8 @@ aggregate class methods for arguments, assignments, property reads on returned
 structs, or discarded calls. Receiver objects are retained across argument
 evaluation and invocation: clearing or replacing their former variable during
 argument evaluation does not redirect the call or destroy the receiver.
-Compiled struct-returning class-method call expressions remain a separate
-unsupported surface.
+Compiled source supports these struct-returning class-method expressions too,
+including forwarded returns and temporary-rooted property reads.
 
 For struct receivers, use
 `Interpreter::runStructMethod(receiver, methodId, arguments)`. It accepts

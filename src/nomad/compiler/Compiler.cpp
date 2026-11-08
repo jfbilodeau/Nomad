@@ -1243,6 +1243,107 @@ void Compiler::addStructMethodCallIntoReturn(
     receiver.emitFreeOwner(*this, function);
 }
 
+void Compiler::addObjectMethodCallIntoLocal(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    Expression& receiver,
+    const VariableId destinationId
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    if (method == nullptr || function == nullptr || arguments == nullptr ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Object method destination call requires a resolved method, caller, and explicit arguments");
+    }
+    const auto* ownerType = method->getClassType();
+    const auto* receiverType = receiver.getType();
+    const auto* returnType = method->getReturnType();
+    if (ownerType == nullptr || !ownerType->isClass() || receiverType == nullptr ||
+        !receiverType->isClass() || !ownerType->acceptsArgument(receiverType) ||
+        returnType == nullptr || !returnType->isStruct() ||
+        destinationId.isInvalid() || function->getVariableType(destinationId) != returnType) {
+        reportInternalError("Object method destination call requires a class receiver and matching struct local");
+    }
+    const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    addOpCode(OpCodes::op_push_this);
+    receiver.compile(this, function, ExpressionTarget::Intermediate);
+    addPushIntermediate(receiverType);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_local_address_push);
+        addIndex(function->getVariableOffset(destinationId));
+    }
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(layout.stackSlotCount);
+    if (method->asScriptMethod() != nullptr) {
+        addOpCode(OpCodes::op_call_script_method);
+        addFunctionLink(methodId, m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_method);
+        addId(methodId.id);
+    }
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    receiverType->emitFreeStackValue(*this, 0);
+    addOpCode(OpCodes::op_pop_1);
+    addOpCode(OpCodes::op_pop_this);
+}
+
+void Compiler::addObjectMethodCallIntoReturn(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    Expression& receiver
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    if (method == nullptr || function == nullptr || arguments == nullptr ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Object method return call requires a resolved method, caller, and explicit arguments");
+    }
+    const auto* ownerType = method->getClassType();
+    const auto* receiverType = receiver.getType();
+    const auto* returnType = method->getReturnType();
+    if (ownerType == nullptr || !ownerType->isClass() || receiverType == nullptr ||
+        !receiverType->isClass() || !ownerType->acceptsArgument(receiverType) ||
+        returnType == nullptr || !returnType->isStruct() || function->getReturnType() != returnType) {
+        reportInternalError("Object method return call requires a class receiver and matching caller result");
+    }
+    const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.returnOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Object method return call requires matching destination storage");
+    }
+    addOpCode(OpCodes::op_push_this);
+    receiver.compile(this, function, ExpressionTarget::Intermediate);
+    addPushIntermediate(receiverType);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(layout.stackSlotCount);
+    if (method->asScriptMethod() != nullptr) {
+        addOpCode(OpCodes::op_call_script_method);
+        addFunctionLink(methodId, m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_method);
+        addId(methodId.id);
+    }
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    receiverType->emitFreeStackValue(*this, 0);
+    addOpCode(OpCodes::op_pop_1);
+    addOpCode(OpCodes::op_pop_this);
+}
+
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
     const auto stackCount = arguments->getStackCount();
 

@@ -509,6 +509,87 @@ BOOST_AUTO_TEST_CASE(method_return_forwarding_preserves_stored_borrowed_and_temp
     }
 }
 
+BOOST_AUTO_TEST_CASE(class_method_struct_results_support_local_and_forwarded_destinations_and_temporary_roots) {
+    nomad::test::LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "struct ClassReturnEmpty\nend\n"
+        "struct ClassReturnSingle\nnumber = 3\nend\n"
+        "class ClassReturnShared\nnumber = 5\nend\n"
+        "struct ClassReturnLeaf\nnumber = 7\ntext = \"leaf\"\nshared = new ClassReturnShared\nend\n"
+        "struct ClassReturnPayload\nleaf = new ClassReturnLeaf\nlabel = \"outer\"\nempty = new ClassReturnEmpty\nend\n"
+        "class ClassReturnFactory\npayload = new ClassReturnPayload\ncount = 0\n"
+        "fun copy delta:int\nthis.count = this.count + 1\n"
+        "result = this.payload\nresult.leaf.number = result.leaf.number + delta\n"
+        "result.leaf.text = \"copied\"\nreturn result\nend\n"
+        "fun relay delta:int\nreturn this.copy delta\nend\n"
+        "fun combine first:ClassReturnPayload empty:ClassReturnEmpty second:ClassReturnPayload\n"
+        "first.leaf.number = first.leaf.number + second.leaf.number\nreturn first\nend\n"
+        "fun single\nreturn new ClassReturnSingle\nend\n"
+        "fun empty\nthis.count = this.count + 1\nreturn new ClassReturnEmpty\nend\n"
+        "fun nested other:ClassReturnFactory\nresult = other.copy 1\n"
+        "this.count = this.count + 10\nreturn result\nend\nend\n"
+        "class ClassReturnContainer\nfactory = new ClassReturnFactory\nend\n"
+        "class ClassReturnResultHolder\npayload = (new ClassReturnFactory).copy 1\nend\n"
+        "fun forwardClassReturn factory:ClassReturnFactory\nreturn factory.copy 1\nend\n"
+        "fun forwardTemporaryClassReturn\nreturn (new ClassReturnFactory).copy 2\nend\n"
+        "fun forwardNestedClassReturn container:ClassReturnContainer\nreturn container.factory.relay 3\nend\n"
+        "fun forwardClassEmpty factory:ClassReturnFactory\nreturn factory.empty\nend\n"
+        "fun forwardClassSingle factory:ClassReturnFactory\nreturn factory.single\nend\n"
+        "factory = new ClassReturnFactory\nother = new ClassReturnFactory\ncontainer = new ClassReturnContainer\n"
+        "first = factory.copy 2\nsecond = forwardClassReturn factory\n"
+        "temporary = forwardTemporaryClassReturn\nnested = forwardNestedClassReturn container\n"
+        "assert factory.payload.leaf.number == 7\nassert first.leaf.number == 9\n"
+        "assert second.leaf.number == 8\nassert temporary.leaf.number == 9\nassert nested.leaf.number == 10\n"
+        "holder = new ClassReturnResultHolder\nassert holder.payload.leaf.number == 8\n"
+        "first.leaf.shared.number = 29\nassert factory.payload.leaf.shared.number == 29\n"
+        "combined = factory.combine (factory.copy 1) (new ClassReturnEmpty) (other.copy 2)\n"
+        "assert combined.leaf.number == 17\nassert other.payload.leaf.number == 7\n"
+        "factory.payload = factory.copy 4\nassert factory.payload.leaf.number == 11\n"
+        "assert first.leaf.number == 9\nassert factory.payload.leaf.text == \"copied\"\n"
+        "read = ((new ClassReturnFactory).copy 5).leaf.text\nassert read == \"copied\"\n"
+        "temporaryNumber = (container.factory.copy 2).leaf.number\nassert temporaryNumber == 9\n"
+        "factory.copy 3\nforwardClassEmpty factory\n(new ClassReturnFactory).empty\n"
+        "single = forwardClassSingle factory\nassert single.number == 3\n"
+        "before = factory.count\nnestedResult = factory.nested other\n"
+        "assert nestedResult.leaf.number == 8\nassert factory.count == before + 10\n"
+        "return combined.leaf.number + factory.payload.leaf.number + single.number");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    for (const auto* name : {
+        "forwardClassReturn", "forwardTemporaryClassReturn", "forwardNestedClassReturn",
+        "forwardClassEmpty", "forwardClassSingle"
+    }) {
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(function != nullptr);
+        BOOST_TEST(function->getVariableCount() == 0U);
+        std::ostringstream dump;
+        dumpInstructions(runtime, *function, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_call_script_method) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+        BOOST_TEST((dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos) ==
+            (NomadStringView{name} != "forwardClassEmpty"));
+    }
+    const auto* factory = runtime.getTypeByName("ClassReturnFactory")->asClassType();
+    const auto relay = runtime.resolveMethod(factory, "relay", {runtime.getIntegerType()});
+    BOOST_REQUIRE(relay.isResolved());
+    const auto* callable = runtime.getMethod(relay.id)->asScriptCallable();
+    BOOST_REQUIRE(callable != nullptr);
+    BOOST_TEST(callable->getVariableCount() == 0U);
+    BOOST_TEST(!callable->getCallStorageLayout().receiverOffset.has_value());
+    BOOST_TEST(callable->getCallStorageLayout().returnOffset.value() == 1U);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 31);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(method_return_forwarding_handles_empty_receiver_and_result_combinations) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();

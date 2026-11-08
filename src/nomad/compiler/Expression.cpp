@@ -1007,6 +1007,11 @@ void NativeMemberExpression::onCompileIntoLocal(
         m_storage->emitCopyToLocal(*compiler, function, destination);
         return;
     }
+    if (m_memberType == MemberType::Method && m_receiver->getType()->isClass()) {
+        m_arguments.setReceiverType(nullptr);
+        compiler->addObjectMethodCallIntoLocal(m_method->getId(), function, &m_arguments, *m_receiver, destination);
+        return;
+    }
     if (m_memberType != MemberType::Method || !m_receiver->getType()->isStruct()) {
         compiler->reportError("Struct local destinations currently require a struct method receiver");
     }
@@ -1020,11 +1025,17 @@ void NativeMemberExpression::onCompileIntoLocal(
 }
 
 bool NativeMemberExpression::supportsReturnDestination() const {
-    return m_memberType == MemberType::Method && m_structReceiver.has_value() &&
+    return m_memberType == MemberType::Method &&
+        (m_structReceiver.has_value() || (m_receiver->getType() != nullptr && m_receiver->getType()->isClass())) &&
         getType() != nullptr && getType()->isStruct();
 }
 
 void NativeMemberExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_receiver->getType()->isClass()) {
+        m_arguments.setReceiverType(nullptr);
+        compiler->addObjectMethodCallIntoReturn(m_method->getId(), function, &m_arguments, *m_receiver);
+        return;
+    }
     if (m_receiverVariable.isValid()) {
         m_receiver->compileIntoLocal(compiler, function, m_receiverVariable);
     }

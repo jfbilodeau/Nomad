@@ -2633,6 +2633,161 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     }
 }
 
+BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_reentry_and_staged_targets) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto payloadId = runtime.registerStruct("NativeClassReturnPayload");
+    const auto* payload = runtime.getTypeByName("NativeClassReturnPayload");
+    BOOST_REQUIRE(runtime.registerProperty(payloadId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(payloadId, "text", runtime.getStringType()).isValid());
+    const auto emptyId = runtime.registerStruct("NativeClassReturnEmpty");
+    const auto* empty = runtime.getTypeByName("NativeClassReturnEmpty");
+    const auto singleId = runtime.registerStruct("NativeClassReturnSingle");
+    BOOST_REQUIRE(runtime.registerProperty(singleId, "number", runtime.getIntegerType()).isValid());
+    const auto ownerId = runtime.registerClass("NativeClassReturnOwner", ClassMode::Closed);
+    const auto* ownerType = runtime.getTypeByName("NativeClassReturnOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", payload).isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.finalizeCompositeFieldLayout(singleId);
+    std::vector<NomadInteger> calls;
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeNativeClassReturnOwner", [ownerType](VirtualMachine* active) {
+        active->getResult().setObjectValue(new ScriptObject(ownerType));
+    }, {}, ownerType, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeNativeClassReturnEmpty", [](VirtualMachine*) {},
+        {}, empty, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("selectNativeClassReturnOwner", [&](VirtualMachine* active) {
+        calls.push_back(1);
+        active->getResult().copyObjectValue(active->getParameter(0));
+    }, {defParameter("owner", ownerType, "")}, ownerType, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("nativeClassReturnArgument", [&](VirtualMachine* active) {
+        const auto number = active->getIntegerParameter(0);
+        calls.push_back(number);
+        active->setIntegerResult(number);
+    }, {defParameter("number", runtime.getIntegerType(), "")}, runtime.getIntegerType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("replaceNativeClassReturnOwner", [&](VirtualMachine* active) {
+        calls.push_back(2);
+        const Interpreter interpreter(*active);
+        InterpreterContext context(interpreter, *active->getCurrentCallable());
+        RuntimeValue replacement;
+        replacement.setObjectValue(new ScriptObject(ownerType));
+        context.setVariable("owner", ownerType, replacement);
+        replacement.freeObjectValue();
+        active->setIntegerResult(2);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    const auto methodId = runtime.addMethod(ownerId, {
+        .name = "copied",
+        .parameters = {{payloadId, "snapshot", ""}, {emptyId, "empty", ""},
+            {runtime.getIntegerType()->getId(), "first", ""}, {runtime.getIntegerType()->getId(), "second", ""}},
+        .returnTypeId = payloadId,
+        .function = [&](VirtualMachine* active) {
+            calls.push_back(100);
+            auto* owner = static_cast<ScriptObject*>(active->getThis());
+            const auto receiver = owner->getFieldStorage(0);
+            const auto argument = active->getParameterStorage(0, 2);
+            auto* destination = &active->getStorageParameter(4, 0);
+            BOOST_TEST(active->getIntegerParameter(2) == 2);
+            BOOST_TEST(active->getIntegerParameter(3) == 3);
+            BOOST_TEST(receiver.data() != destination);
+            BOOST_TEST(argument.data() != destination);
+            BOOST_TEST(argument.data() != receiver.data());
+            BOOST_TEST(receiver[0].getIntegerValue() == 5);
+            argument[0].setIntegerValue(99);
+            const auto* callable = active->getCurrentCallable();
+            if (callable->getReturnType()->isStruct()) {
+                const auto layout = callable->getCallStorageLayout();
+                BOOST_TEST(active->getEnclosingParameterStorage(*layout.returnOffset, 1)[0].getStorageAddress() ==
+                    destination);
+            }
+            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("nativeClassReturnSuccess"));
+            active->run(success, {});
+            BOOST_TEST(active->getIntegerResult() == 42);
+            BOOST_TEST(active->getThis() == owner);
+            BOOST_TEST(active->getParameterStorage(0, 2).data() == argument.data());
+            BOOST_TEST(&active->getStorageParameter(4, 0) == destination);
+            payload->freeValue(destination);
+            payload->copyValue(receiver.data(), destination);
+            destination[0].setIntegerValue(17);
+            BOOST_TEST(receiver[0].getIntegerValue() == 5);
+        }
+    });
+    const auto emptyMethodId = runtime.addMethod(ownerId, {
+        .name = "empty", .parameters = {{emptyId, "empty", ""}}, .returnTypeId = emptyId,
+        .function = [&](VirtualMachine* active) {
+            calls.push_back(200);
+            BOOST_TEST(active->getThis()->getReferenceCount() > 0U);
+        }
+    });
+    const auto singleMethodId = runtime.addMethod(ownerId, {
+        .name = "single", .parameters = {{emptyId, "empty", ""}}, .returnTypeId = singleId,
+        .function = [](VirtualMachine* active) {
+            active->getStorageParameter(0, 0).setIntegerValue(31);
+        }
+    });
+    BOOST_REQUIRE(methodId.isValid() && emptyMethodId.isValid() && singleMethodId.isValid());
+    fixture.addFunction("nativeClassReturnSuccess", "return 42");
+    fixture.addFunction("main",
+        "fun forwardNativeClassReturn owner:NativeClassReturnOwner empty:NativeClassReturnEmpty\n"
+        "return (selectNativeClassReturnOwner owner).copied owner.payload empty "
+        "(nativeClassReturnArgument 2) (nativeClassReturnArgument 3)\nend\n"
+        "fun forwardNativeClassEmpty owner:NativeClassReturnOwner empty:NativeClassReturnEmpty\n"
+        "return owner.empty empty\nend\n"
+        "fun forwardNativeClassSingle owner:NativeClassReturnOwner empty:NativeClassReturnEmpty\n"
+        "return owner.single empty\nend\n"
+        "owner = makeNativeClassReturnOwner\nempty = makeNativeClassReturnEmpty\n"
+        "owner.payload.number = 5\nowner.payload.text = \"owned\"\n"
+        "owner.payload = forwardNativeClassReturn owner empty\n"
+        "assert owner.payload.number == 17\nassert owner.payload.text == \"owned\"\n"
+        "owner.payload.number = 5\n"
+        "copy = owner.copied owner.payload empty (nativeClassReturnArgument 2) (nativeClassReturnArgument 3)\n"
+        "assert copy.number == 17\nassert owner.payload.number == 5\n"
+        "saved = owner\n"
+        "owner.payload = (selectNativeClassReturnOwner owner).copied owner.payload empty "
+        "(replaceNativeClassReturnOwner) (nativeClassReturnArgument 3)\n"
+        "assert saved.payload.number == 17\nassert saved.payload.text == \"owned\"\n"
+        "assert owner.payload.number == 0\n"
+        "forwardNativeClassEmpty owner empty\n"
+        "(makeNativeClassReturnOwner).empty empty\n"
+        "single = forwardNativeClassSingle owner empty\nassert single.number == 31\n"
+        "return saved.payload.number + copy.number + single.number");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardNativeClassReturn"));
+    BOOST_REQUIRE(wrapper != nullptr);
+    BOOST_TEST(wrapper->getVariableCount() == 0U);
+    std::ostringstream dump;
+    dumpInstructions(runtime, *wrapper, dump);
+    BOOST_TEST(dump.str().find(OpCodes::op_call_native_method) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    const auto* emptyWrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardNativeClassEmpty"));
+    BOOST_REQUIRE(emptyWrapper != nullptr);
+    BOOST_TEST(emptyWrapper->getVariableCount() == 0U);
+    std::ostringstream emptyDump;
+    dumpInstructions(runtime, *emptyWrapper, emptyDump);
+    BOOST_TEST(emptyDump.str().find(OpCodes::op_storage_parameter_address_push) == NomadString::npos);
+    const auto* singleWrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardNativeClassSingle"));
+    BOOST_REQUIRE(singleWrapper != nullptr);
+    BOOST_TEST(singleWrapper->getVariableCount() == 0U);
+    std::ostringstream singleDump;
+    dumpInstructions(runtime, *singleWrapper, singleDump);
+    BOOST_TEST(singleDump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+    BOOST_TEST(singleDump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+    const std::vector<NomadInteger> expectedCalls{1, 3, 2, 100, 3, 2, 100, 1, 3, 2, 100, 200, 200};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        calls.clear();
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 65);
+        BOOST_TEST(calls == expectedCalls, boost::test_tools::per_element());
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(native_method_return_forwarding_preserves_borrowed_storage_order_reentry_and_staging) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();

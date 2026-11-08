@@ -212,6 +212,20 @@ public:
         const ArgumentList* arguments,
         const StorageLocation& receiver
     );
+    // Evaluates and retains the class receiver outside the callee's storage layout.
+    void addObjectMethodCallIntoLocal(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        Expression& receiver,
+        VariableId destinationId
+    );
+    void addObjectMethodCallIntoReturn(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        Expression& receiver
+    );
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addScriptObjectCreation(
         CallableId constructorId,
