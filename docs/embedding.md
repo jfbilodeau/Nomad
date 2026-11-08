@@ -2500,9 +2500,13 @@ Contexts and borrowed VM frames must themselves remain alive.
 
 Source execution, formatting, direct AST evaluation, and scoped storage-location
 operations establish these evaluation lifetimes automatically. Hosts manually
-holding context-backed receivers can balance `beginEvaluation()` and
-`endEvaluation()` to establish the same lifetime; views must not outlive the
-outermost exit. No variable renaming or logical-ID compaction occurs.
+holding context-backed receivers can keep the guard returned by
+`context.beginEvaluation()` in a local variable to establish the same lifetime.
+Its destructor ends that evaluation on normal return or exception. Create guards
+through the context; do not manually call `endEvaluation()` while a guard is
+active. Guards cannot be copied or moved, and the context must outlive them.
+Views must not outlive the outermost guard. No variable renaming or logical-ID
+compaction occurs.
 
 `getMutableVariableStorageById`, `getMutableParameterStorage`, and
 `getMutableReceiverStorage` provide the corresponding live context/frame views.

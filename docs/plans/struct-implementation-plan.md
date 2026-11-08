@@ -3602,10 +3602,42 @@ Approved scope:
 - Validate receivers continuing after clear/retype, nested evaluation not freeing
   caller storage, cleanup after success/failure, snapshots, and stable IDs.
 
-Implementation is complete; unit validation is pending.
+Implemented and validated:
+
+- Added context-owned retired storage and nested evaluation tracking. Same-type
+  assignment, active variable lookup, and logical IDs remain unchanged.
+- Native clear/retype tests verify old receivers survive nested interpretation
+  and retired references are released after success or failure. Scoped receiver
+  and formatting tests cover independent snapshots and cleanup.
+- Enabled the existing Boost.ScopeExit header-only dependency for exception-safe
+  evaluation exits, without adding another value or receiver class.
+- All six CTest unit groups passed with automatic build. No gameplay was run.
 
 Next: review this lifetime policy before simplifying remaining field-assignment
 copy paths. No immutable/versioned same-type assignment behavior is introduced.
+
+### Local interpreter evaluation guard
+
+Approved scope:
+
+- Return a noncopyable, nonmovable `InterpreterEvaluationGuard` from
+  `InterpreterContext::beginEvaluation()`. Its destructor ends one evaluation.
+- Replace repeated begin/scope-exit pairs with a local guard at existing entry
+  points. Preserve nested evaluation, retirement cleanup, and exception behavior.
+- Remove the Boost.ScopeExit dependency. Add no context cloning, value/receiver
+  ownership changes, or callback wrapper around evaluation bodies.
+- Validate explicit nested guards, early returns, exception exits, and existing
+  interpreter regressions; run all six CTest unit groups and stop for review.
+
+Implemented and validated:
+
+- Evaluation entry points now keep the returned guard in a local variable;
+  paired begin/end macros and the ScopeExit dependency are removed.
+- At the user's request, the guard is declared in `InterpreterContext.hpp` and
+  implemented in `InterpreterContext.cpp`; no separate guard files remain.
+- Guard type traits, nested scopes, early returns, exception cleanup, and all
+  six CTest unit groups passed with automatic build. Whitespace checks passed.
+- Stop for review without committing. No gameplay was run.
 
 ### Step 6: Conservative named return-value optimization
 

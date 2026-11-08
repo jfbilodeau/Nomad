@@ -130,8 +130,17 @@ void InterpreterContext::clearVariableValue(const NomadString& name) {
     }
 }
 
-void InterpreterContext::beginEvaluation() {
+InterpreterEvaluationGuard::InterpreterEvaluationGuard(InterpreterContext& context) noexcept:
+    m_context(context)
+{}
+
+InterpreterEvaluationGuard::~InterpreterEvaluationGuard() {
+    m_context.endEvaluation();
+}
+
+InterpreterEvaluationGuard InterpreterContext::beginEvaluation() {
     ++m_evaluationDepth;
+    return InterpreterEvaluationGuard(*this);
 }
 
 void InterpreterContext::endEvaluation() {

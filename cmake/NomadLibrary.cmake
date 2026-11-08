@@ -122,7 +122,6 @@ target_link_libraries(nomad-language
     Boost::locale
     Boost::spirit
     PRIVATE
-    Boost::scope_exit
     tomlplusplus::tomlplusplus
     ${CMAKE_DL_LIBS}
 )

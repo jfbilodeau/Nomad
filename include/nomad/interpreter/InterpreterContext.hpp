@@ -21,6 +21,7 @@
 namespace nomad {
 
 class Interpreter;
+class InterpreterContext;
 class InterpreterReceiver;
 class InterpreterStorage;
 class Type;
@@ -28,6 +29,20 @@ class Runtime;
 class ScriptCallableBase;
 class ScriptFunction;
 class VirtualMachine;
+
+class InterpreterEvaluationGuard {
+public:
+    // Adopts one evaluation entered by InterpreterContext::beginEvaluation().
+    explicit InterpreterEvaluationGuard(InterpreterContext& context) noexcept;
+    InterpreterEvaluationGuard(const InterpreterEvaluationGuard&) = delete;
+    InterpreterEvaluationGuard& operator=(const InterpreterEvaluationGuard&) = delete;
+    InterpreterEvaluationGuard(InterpreterEvaluationGuard&&) = delete;
+    InterpreterEvaluationGuard& operator=(InterpreterEvaluationGuard&&) = delete;
+    ~InterpreterEvaluationGuard();
+
+private:
+    InterpreterContext& m_context;
+};
 
 struct InterpreterVariableInfo {
     NomadString name;
@@ -128,7 +143,7 @@ public:
     [[nodiscard]] std::span<RuntimeValue> getMutableVariableStorageById(VariableId variableId);
     [[nodiscard]] std::vector<InterpreterVariableInfo> listVariables() const;
     // Nested evaluations retain replaced storage until the outermost exit.
-    void beginEvaluation();
+    [[nodiscard]] InterpreterEvaluationGuard beginEvaluation();
     void endEvaluation();
 
 private:

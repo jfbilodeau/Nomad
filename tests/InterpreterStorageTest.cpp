@@ -24,6 +24,54 @@
 
 using namespace nomad;
 
+static_assert(!std::is_copy_constructible_v<InterpreterEvaluationGuard>);
+static_assert(!std::is_move_constructible_v<InterpreterEvaluationGuard>);
+static_assert(std::is_same_v<decltype(std::declval<InterpreterContext&>().beginEvaluation()),
+    InterpreterEvaluationGuard>);
+
+BOOST_AUTO_TEST_CASE(evaluation_guards_release_retired_storage_only_on_outermost_scope_exit) {
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    RuntimeValue source{NomadString{"guarded"}};
+    context.setVariable("text", runtime.getStringType(), source);
+    source.freeObjectValue();
+    {
+        const auto guard = context.beginEvaluation();
+        context.clearVariableValue("text");
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+        const auto nested = [&]() {
+            const auto nestedGuard = context.beginEvaluation();
+            throw std::runtime_error("Guard exit");
+        };
+        BOOST_CHECK_THROW(nested(), std::runtime_error);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    const auto failing = [&]() {
+        const auto guard = context.beginEvaluation();
+        RuntimeValue value{NomadString{"failure"}};
+        context.setVariable("text", runtime.getStringType(), value);
+        value.freeObjectValue();
+        context.clearVariableValue("text");
+        throw std::runtime_error("Outermost guard exit");
+    };
+    BOOST_CHECK_THROW(failing(), std::runtime_error);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    const auto returning = [&]() {
+        const auto guard = context.beginEvaluation();
+        RuntimeValue value{NomadString{"return"}};
+        context.setVariable("text", runtime.getStringType(), value);
+        value.freeObjectValue();
+        context.clearVariableValue("text");
+        return 7;
+    };
+    BOOST_TEST(returning() == 7);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
 BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_released_on_success_or_failure) {
     Runtime runtime;
     const auto id = runtime.registerStruct("RetiredCounter");

@@ -13,7 +13,6 @@ set(
     phoenix
     process
     program_options
-    scope_exit
     spirit
     test
     tokenizer
