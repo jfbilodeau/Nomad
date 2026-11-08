@@ -4,8 +4,6 @@
 
 #include <nomad/interpreter/InterpreterReceiver.hpp>
 
-#include <variant>
-
 namespace nomad {
 
 class StructType;
@@ -14,19 +12,18 @@ class InterpreterStructReceiver final : public InterpreterReceiver {
 public:
     // Borrows getSize() live slots; empty struct storage may be null.
     InterpreterStructReceiver(const Interpreter& interpreter, const StructType& type, RuntimeValue* storage);
-    // Owns an independent value when passed an lvalue; temporaries transfer ownership.
-    InterpreterStructReceiver(const Interpreter& interpreter, InterpreterValue value);
-
     using InterpreterReceiver::getProperty;
     using InterpreterReceiver::setProperty;
     [[nodiscard]] InterpreterValue getValue() const override;
     [[nodiscard]] InterpreterValue getProperty(PropertyId propertyId) const override;
     void setProperty(PropertyId propertyId, const InterpreterValue& value) override;
+    [[nodiscard]] InterpreterValue callMethod(
+        CallableId methodId,
+        std::span<const InterpreterValue> arguments
+    ) override;
 
 private:
-    void replaceValue(InterpreterValue value);
-
-    std::variant<RuntimeValue*, InterpreterValue> m_storage;
+    RuntimeValue* m_storage;
 };
 
 } // namespace nomad

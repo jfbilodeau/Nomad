@@ -11,13 +11,16 @@
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
+#include <nomad/interpreter/InterpreterStorage.hpp>
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -60,15 +63,67 @@ void validateCallArguments(
 const Type* validateMethodReceiver(
     const Runtime& runtime,
     const Method& method,
-    const InterpreterValue& receiver
+    const Type* receiverType
 ) {
-    const auto* receiverType = receiver.getType();
     const auto* ownerType = method.getClassType();
     if (receiverType == nullptr || ownerType == nullptr || receiverType->getRuntime() != &runtime ||
         ownerType->getRuntime() != &runtime || !ownerType->acceptsArgument(receiverType)) {
         throw std::invalid_argument("Method receiver type does not match its owner");
     }
     return receiverType;
+}
+
+const Method& resolveStructMethod(
+    const Runtime& runtime,
+    const Type* receiverType,
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) {
+    const auto* method = runtime.getMethod(methodId);
+    if (method == nullptr) {
+        throw std::invalid_argument("Unknown method id");
+    }
+    validateCallArguments(runtime, *method, arguments);
+    receiverType = validateMethodReceiver(runtime, *method, receiverType);
+    if (!receiverType->isStruct()) {
+        throw std::invalid_argument("Struct method calls require a struct receiver");
+    }
+    const auto* script = method->asScriptMethod();
+    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        script->getFunctionStart() >= script->getFunctionEnd())) {
+        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
+    }
+    if (script == nullptr && method->asNativeMethod() == nullptr) {
+        throw std::invalid_argument("Unsupported method implementation");
+    }
+    return *method;
+}
+
+const Method& resolveObjectMethod(
+    const Runtime& runtime,
+    const Type* receiverType,
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) {
+    const auto* method = runtime.getMethod(methodId);
+    if (method == nullptr) {
+        throw std::invalid_argument("Unknown method id");
+    }
+    validateCallArguments(runtime, *method, arguments);
+    receiverType = validateMethodReceiver(runtime, *method, receiverType);
+    if (receiverType->isStruct() || method->getReturnType()->isStruct() ||
+        std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
+        throw std::invalid_argument("Interpreter method calls do not yet support struct storage");
+    }
+    const auto* script = method->asScriptMethod();
+    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        script->getFunctionStart() >= script->getFunctionEnd())) {
+        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
+    }
+    if (script == nullptr && method->asNativeMethod() == nullptr) {
+        throw std::invalid_argument("Unsupported method implementation");
+    }
+    return *method;
 }
 
 struct StoredPropertySelection {
@@ -291,42 +346,54 @@ void Interpreter::runNativeStructMethod(const NativeMethod& method) const {
     m_virtualMachine.restoreExecutionState(state);
 }
 
+void Interpreter::runStructMethod(const Method& method) const {
+    if (const auto* script = method.asScriptMethod()) {
+        if (!runScriptCallable(*script)) {
+            m_virtualMachine.fault("Struct method calls cannot yield");
+        }
+    } else {
+        runNativeStructMethod(*method.asNativeMethod());
+    }
+}
+
 InterpreterValue Interpreter::runObjectMethod(
     const InterpreterValue& receiver,
     const CallableId methodId,
     const std::span<const InterpreterValue> arguments
 ) const {
-    auto& machine = m_virtualMachine;
-    const auto* runtime = machine.getRuntime();
-    const auto* method = runtime->getMethod(methodId);
-    if (method == nullptr) {
-        throw std::invalid_argument("Unknown method id");
-    }
-    validateCallArguments(*runtime, *method, arguments);
-    const auto* receiverType = validateMethodReceiver(*runtime, *method, receiver);
-    const auto* type = method->getReturnType();
-    if (receiverType->isStruct() || type->isStruct() ||
-        std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
-        throw std::invalid_argument("Interpreter method calls do not yet support struct storage");
-    }
-    if (receiverType->asClassType() != nullptr && receiver.getValue().getObjectValue() == nullptr) {
+    const auto& method = resolveObjectMethod(*m_virtualMachine.getRuntime(), receiver.getType(), methodId, arguments);
+    return runObjectMethod(method, *receiver.getType(), receiver.getValue().getObjectValue(), arguments);
+}
+
+InterpreterValue Interpreter::runObjectMethod(
+    const ClassType& type,
+    NomadObject* object,
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) const {
+    const auto& method = resolveObjectMethod(*m_virtualMachine.getRuntime(), &type, methodId, arguments);
+    return runObjectMethod(method, type, object, arguments);
+}
+
+InterpreterValue Interpreter::runObjectMethod(
+    const Method& method,
+    const Type& receiverType,
+    NomadObject* object,
+    const std::span<const InterpreterValue> arguments
+) const {
+    if (object == nullptr) {
         throw std::invalid_argument("Method receiver cannot be null");
     }
-    const auto* script = method->asScriptMethod();
-    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd())) {
-        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
-    }
-    if (script == nullptr && method->asNativeMethod() == nullptr) {
-        throw std::invalid_argument("Unsupported method implementation");
-    }
-    InterpreterCallFrame frame(machine, *method, arguments, type, &receiver);
-    if (script != nullptr) {
+    RuntimeValue value;
+    value.setObjectValue(object);
+    const InterpreterValue receiver(&receiverType, value);
+    InterpreterCallFrame frame(m_virtualMachine, method, arguments, method.getReturnType());
+    if (const auto* script = method.asScriptMethod()) {
         if (!runScriptCallable(*script, receiver.getValue())) {
-            machine.fault("Script methods cannot yield");
+            m_virtualMachine.fault("Script methods cannot yield");
         }
     } else {
-        runNativeCallable(method->asNativeMethod()->getFn(), receiver.getValue());
+        runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
     }
     return frame.getResult();
 }
@@ -337,33 +404,26 @@ StructMethodResult Interpreter::runStructMethod(
     const std::span<const InterpreterValue> arguments
 ) const {
     auto& machine = m_virtualMachine;
-    const auto* runtime = machine.getRuntime();
-    const auto* method = runtime->getMethod(methodId);
-    if (method == nullptr) {
-        throw std::invalid_argument("Unknown method id");
+    const auto& method = resolveStructMethod(*machine.getRuntime(), receiver.getType(), methodId, arguments);
+    InterpreterStorage storage(receiver.getType(), receiver.getStorage());
+    InterpreterCallFrame frame(machine, method, arguments, method.getReturnType(), storage.getMutableStorage().data());
+    runStructMethod(method);
+    return {InterpreterValue(receiver.getType(), storage.getStorage()), frame.getResult()};
+}
+
+InterpreterValue Interpreter::runStructMethod(
+    const StructType& type,
+    const std::span<RuntimeValue> receiverStorage,
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) const {
+    const auto& method = resolveStructMethod(*m_virtualMachine.getRuntime(), &type, methodId, arguments);
+    if (receiverStorage.size() != type.getSize()) {
+        throw std::invalid_argument("Struct receiver storage must match its type's physical size");
     }
-    validateCallArguments(*runtime, *method, arguments);
-    const auto* receiverType = validateMethodReceiver(*runtime, *method, receiver);
-    if (!receiverType->isStruct()) {
-        throw std::invalid_argument("Struct method calls require a struct receiver");
-    }
-    const auto* script = method->asScriptMethod();
-    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd())) {
-        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
-    }
-    if (script == nullptr && method->asNativeMethod() == nullptr) {
-        throw std::invalid_argument("Unsupported method implementation");
-    }
-    InterpreterCallFrame frame(machine, *method, arguments, method->getReturnType(), &receiver);
-    if (script != nullptr) {
-        if (!runScriptCallable(*script)) {
-            machine.fault("Struct method calls cannot yield");
-        }
-    } else {
-        runNativeStructMethod(*method->asNativeMethod());
-    }
-    return {frame.getReceiver(), frame.getResult()};
+    InterpreterCallFrame frame(m_virtualMachine, method, arguments, method.getReturnType(), receiverStorage.data());
+    runStructMethod(method);
+    return frame.getResult();
 }
 
 InterpreterValue Interpreter::construct(

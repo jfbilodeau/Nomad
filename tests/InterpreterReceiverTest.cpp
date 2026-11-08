@@ -4,6 +4,7 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterObjectReceiver.hpp>
+#include <nomad/interpreter/InterpreterStorage.hpp>
 #include <nomad/interpreter/InterpreterStructReceiver.hpp>
 
 #include <nomad/script/ClassType.hpp>
@@ -15,6 +16,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -176,7 +178,7 @@ BOOST_AUTO_TEST_CASE(struct_factory_supports_null_storage_for_zero_sized_structs
     BOOST_TEST(snapshot.getStorage().data() == nullptr);
 }
 
-BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_and_empty_values) {
+BOOST_AUTO_TEST_CASE(struct_wrappers_borrow_original_or_caller_owned_storage_and_support_empty_values) {
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("CompositeEmpty");
     const auto* empty = runtime.getTypeByName("CompositeEmpty")->asStructType();
@@ -200,7 +202,8 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_a
         {
             InterpreterStructReceiver borrowed(interpreter, *root, storage.data());
             const auto original = borrowed.getValue();
-            InterpreterStructReceiver copied(interpreter, original);
+            InterpreterStorage copiedStorage(root, original.getStorage());
+            InterpreterStructReceiver copied(interpreter, *root, copiedStorage.getMutableStorage().data());
             const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{29}});
             borrowed.setProperty("leaf.number", number);
             BOOST_TEST(storage[0].getIntegerValue() == 29);
@@ -217,7 +220,8 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_a
             BOOST_TEST(snapshot.getStorage()[1].getStringValue() == "borrowed");
             InterpreterStructReceiver borrowedEmpty(interpreter, *empty, nullptr);
             const auto emptyValue = borrowedEmpty.getValue();
-            InterpreterStructReceiver copiedEmpty(interpreter, emptyValue);
+            InterpreterStorage emptyStorage(empty, emptyValue.getStorage());
+            InterpreterStructReceiver copiedEmpty(interpreter, *empty, emptyStorage.getMutableStorage().data());
             BOOST_TEST(emptyValue.getType() == empty);
             BOOST_TEST(copiedEmpty.getValue().getStorage().empty());
             borrowed.setProperty(emptyProperty, emptyValue);
@@ -226,7 +230,6 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_distinguish_borrowed_storage_owned_copies_a
             BOOST_CHECK_THROW(static_cast<void>(borrowed.getProperty("leaf.")), std::invalid_argument);
             BOOST_CHECK_THROW(static_cast<void>(borrowed.getProperty("missing")), std::invalid_argument);
             BOOST_CHECK_THROW((InterpreterStructReceiver{interpreter, *root, nullptr}), std::invalid_argument);
-            BOOST_CHECK_THROW((InterpreterStructReceiver{interpreter, number}), std::invalid_argument);
         }
         BOOST_TEST(storage[1].getObjectValue()->getReferenceCount() == 1U);
         root->freeValue(storage.data());
@@ -299,7 +302,7 @@ BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_nativ
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
-BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_owned_and_borrowed_receivers) {
+BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_original_and_caller_owned_storage) {
     Runtime runtime;
     FailingCompositeCopyType* field = nullptr;
     const auto fieldId = runtime.registerClass<FailingCompositeCopyType>("CompositeCopy", ClassMode::Closed, field);
@@ -321,9 +324,13 @@ BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_owned_and_borrowed_r
             RuntimeValue source{NomadString{"replacement"}};
             const InterpreterValue replacement(field, source);
             source.freeObjectValue();
+            std::optional<InterpreterStorage> copiedStorage;
             const auto create = [&]() {
-                return owned ? std::make_unique<InterpreterStructReceiver>(interpreter, InterpreterValue(pair, storage)) :
-                    interpreter.createStructReceiver(*pair, storage.data());
+                if (owned) {
+                    copiedStorage.emplace(pair, storage);
+                    return interpreter.createStructReceiver(*pair, copiedStorage->getMutableStorage().data());
+                }
+                return interpreter.createStructReceiver(*pair, storage.data());
             };
             field->failCopyAt = 0;
             auto successful = create();
@@ -331,6 +338,7 @@ BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_owned_and_borrowed_r
             successful->setProperty(firstProperty, replacement);
             const auto copyStages = field->copyCount;
             successful.reset();
+            copiedStorage.reset();
             storage[0].freeObjectValue();
             storage[0].setStringValue("old first");
             BOOST_REQUIRE(copyStages > 0);
@@ -423,6 +431,7 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
                 active->restoreExecutionState(invalid);
                 BOOST_CHECK_THROW(static_cast<void>(context.getReceiver()), NomadBug);
                 BOOST_CHECK_THROW(static_cast<void>(std::as_const(context).getReceiver()), NomadBug);
+                BOOST_CHECK_THROW(static_cast<void>(context.getMutableReceiverStorage()), NomadBug);
                 active->restoreExecutionState(current);
             }
             active->restoreExecutionState(state);

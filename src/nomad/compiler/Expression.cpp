@@ -15,11 +15,11 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterObjectReceiver.hpp>
-#include <nomad/interpreter/InterpreterStructReceiver.hpp>
 
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
@@ -743,17 +743,23 @@ bool NativeMemberExpression::resolveMember(
                 reportError(context, function, "Struct property '" + m_qualifiedName + "' does not take arguments");
                 return false;
             }
-            if (context->getMode() == CompilerMode::Script && function != nullptr) {
+            if (context->getMode() == CompilerMode::Interpreter ||
+                (context->getMode() == CompilerMode::Script && function != nullptr)) {
                 auto storage = m_receiver->getStorageLocation();
                 if (!storage.has_value()) {
-                    if (m_receiverVariable.isInvalid()) {
-                        m_receiverVariable = function->registerVariable(
-                            "$propertyReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
+                    if (context->getMode() == CompilerMode::Interpreter) {
+                        storage = StorageLocation(m_receiver.get());
+                    } else {
+                        if (m_receiverVariable.isInvalid()) {
+                            m_receiverVariable = function->registerVariable(
+                                "$propertyReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
+                        }
+                        storage = StorageLocation(m_receiver.get(), m_receiverVariable);
                     }
-                    storage = StorageLocation(m_receiver.get(), m_receiverVariable);
                 }
                 m_storage = storage->getProperty(*property);
-            } else if (assignment) {
+            }
+            if (assignment && context->getMode() == CompilerMode::Interpreter) {
                 reportError(context, function, "Struct property assignments are not supported by the interpreter");
                 return false;
             }
@@ -773,7 +779,8 @@ bool NativeMemberExpression::resolveMember(
                     reportError(context, function, "Class field '" + m_qualifiedName + "' does not take arguments");
                     return false;
                 }
-                if (context->getMode() == CompilerMode::Script && function != nullptr &&
+                if ((context->getMode() == CompilerMode::Interpreter ||
+                     (context->getMode() == CompilerMode::Script && function != nullptr)) &&
                     property->getValueType() != nullptr && property->getValueType()->isStruct() &&
                     property->asNativeProperty() == nullptr) {
                     m_storage = StorageLocation(m_receiver.get(), property);
@@ -820,7 +827,8 @@ bool NativeMemberExpression::resolveAssignmentTarget(
             context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
         }
         setType(property->getValueType());
-        if (m_storage.has_value() && getType()->isStruct() && m_stagingVariable.isInvalid()) {
+        if (context->getMode() == CompilerMode::Script && m_storage.has_value() &&
+            getType()->isStruct() && m_stagingVariable.isInvalid()) {
             m_stagingVariable = function->registerVariable(
                 "$property" + std::to_string(function->getVariableCount()), getType());
         }
@@ -897,13 +905,13 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             reportError(context, function, "Method '" + m_qualifiedName + "' has not been compiled");
             return;
         }
-        if (m_receiver->getType()->isStruct()) {
-            if (context->getMode() != CompilerMode::Script || function == nullptr) {
-                reportError(context, function, "Struct method calls are not supported by the interpreter");
-                return;
-            }
+        if (m_receiver->getType()->isStruct() && context->getMode() == CompilerMode::Script) {
             m_structReceiver = m_receiver->getStorageLocation();
             if (!m_structReceiver.has_value()) {
+                if (function == nullptr) {
+                    reportError(context, function, "Struct method calls require a resolved caller");
+                    return;
+                }
                 if (m_receiverVariable.isInvalid()) {
                     m_receiverVariable = function->registerVariable(
                         "$methodReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
@@ -1033,60 +1041,28 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
     if (m_memberType == MemberType::Unknown) {
         raiseException("Native member has not been resolved: " + m_qualifiedName);
     }
-    if (m_memberType == MemberType::Property &&
-        (m_receiver->getType()->isStruct() || getType()->isStruct())) {
+    if (m_memberType == MemberType::Property) {
         const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
         if (property == nullptr) {
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
-        if (property->asNativeProperty() == nullptr) {
-            const auto receiver = m_receiver->evaluate(context);
-            if (receiver.getType()->isStruct()) {
-                return InterpreterStructReceiver(context.getInterpreter(), receiver).getProperty(property->getId());
-            }
-            return context.getInterpreter().createObjectReceiver(
-                *receiver.getType()->asClassType(),
-                receiver.getValue().getObjectValue()
-            )->getProperty(property->getId());
+        if (property->asNativeProperty() != nullptr && getType()->isStruct()) {
+            raiseException("Struct member values are not supported by the interpreter");
         }
+        const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
+        return location.withReceiver(context, [&](InterpreterReceiver& receiver) {
+            return receiver.getProperty(property->getId());
+        });
     }
-    if (m_receiver->getType()->isStruct() || getType()->isStruct()) {
+    if (!m_receiver->getType()->isStruct() && getType()->isStruct()) {
         raiseException("Struct member values are not supported by the interpreter");
     }
-    const auto receiver = m_receiver->evaluate(context);
     if (m_memberType == MemberType::Method) {
-        const auto evaluatedArguments = m_arguments.evaluate(context);
-        return context.getInterpreter().runObjectMethod(
-            receiver,
-            m_method->getId(),
-            evaluatedArguments
-        );
-    }
-
-    auto* runtime = context.getRuntime();
-    if (m_memberType == MemberType::Property) {
-        const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
-        if (property == nullptr) {
-            raiseException("Invalid property getter: " + m_qualifiedName);
-        }
-        const auto* valueType = property->getValueType();
-        if (receiver.getType()->getStorage() == TypeStorage::Object) {
-            return context.getInterpreter().createObjectReceiver(
-                *receiver.getType()->asClassType(),
-                receiver.getValue().getObjectValue()
-            )->getProperty(property->getId());
-        }
-        RuntimeValue result;
-
-        try {
-            context.getVirtualMachine()->getProperty(std::get<PropertyId>(m_memberId), receiver.getValue(), result);
-            InterpreterValue value(valueType, result);
-            valueType->freeValue(&result);
-            return value;
-        } catch (...) {
-            valueType->freeValue(&result);
-            throw;
-        }
+        const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
+        std::vector<InterpreterValue> arguments;
+        return location.withReceiver(context, [&](InterpreterReceiver& receiver) {
+            return receiver.callMethod(m_method->getId(), arguments);
+        }, [&]() { arguments = m_arguments.evaluate(context); });
     }
 
     raiseException("Unsupported interpreter member: " + m_qualifiedName);

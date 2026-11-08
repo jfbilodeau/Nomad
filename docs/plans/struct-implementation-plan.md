@@ -19,8 +19,9 @@ The immutable `InterpreterValue` rename and interpreter-produced replacement
 operations are implemented and validated, awaiting review.
 Conventional stored-property name/path and direct-ID APIs are implemented and
 validated, awaiting review.
-Host-only struct-method calls with explicit updated receiver/result values are
-implemented and validated; source-level receiver writeback remains a separate slice.
+Host struct-method calls with explicit updated receiver/result values are
+implemented and validated. Borrowed source-level interpreter invocation is
+implemented and validated; it requires no receiver writeback.
 Struct argument copies, destination returns, and registered method calls on
 locals, parameters, and `this` are supported, including nested stored struct
 properties rooted in that storage. Registered methods can also borrow
@@ -3327,6 +3328,9 @@ and failure behavior, before changing AST or language semantics.
 
 ### Step 5D1 follow-up: Evaluation receivers
 
+The original sequence below used copy-in/copy-out source invocation. The
+borrowed invocation slice supersedes its receiver-writeback dependency.
+
 Agreed implementation sequence:
 
 1. Add public `InterpreterReceiver`, `InterpreterObjectReceiver`, and `InterpreterStructReceiver`
@@ -3485,6 +3489,102 @@ Keeping backing storage alive across argument evaluation and reentry remains
 part of that design; no shared ownership or new language restriction is approved
 by this backing-storage slice. Shared typed storing and borrowed method
 invocation follow after their timing and failure contracts are agreed.
+
+### Scoped AST property receivers (superseded)
+
+This slice was validated, then superseded after review of its additional AST
+evaluation API. The borrowed invocation slice removes that API and scope class.
+
+Approved scope:
+
+- Add `InterpreterEvaluationReceiver`, owning a short-lived receiver and any
+  temporary `InterpreterStorage` or parent scope needed by a nested field.
+  Destroy the receiver before its owned backing storage and parent scope.
+- Add narrow mutable context/frame storage accessors and direct stored-property
+  storage access on object and struct receivers. Do not use `const_cast`, shared
+  struct ownership, or mutable access to immutable snapshots.
+- Add AST receiver evaluation. Named struct roots borrow context/frame storage;
+  nested stored fields borrow parent storage; temporary structs use separately
+  owned backing storage. Object receivers retain their object owners.
+- Route AST property reads through the common receiver API. Borrowed struct
+  field reads copy only the selected field, not the whole root. Preserve ordinary
+  snapshot semantics, native property dispatch, zero-sized types, existing
+  assignment ordering/write-time roots, and current method-call restrictions.
+- Keep context roots alive and at the same type while their storage is borrowed.
+  This slice does not impose a new language restriction or claim to solve
+  reentrant replacement of borrowed context storage.
+- Validate live storage identity, nested and temporary lifetimes, zero-sized
+  fields, unread-field copy counts, exception cleanup, and frame validation.
+  Run all six CTest unit groups and stop for review.
+
+Next: shared typed assignment operations. Before borrowed method invocation,
+agree on argument-induced receiver replacement, reentry, and failure behavior.
+
+Completed and validated:
+
+- Added scoped AST property receiver evaluation and live stored-field borrowing.
+- Added five receiver regression cases covering live nested storage, zero unread
+  field copies, temporary/AST lifetime separation, retained object parents,
+  zero-sized fields, and native getter exception cleanup.
+- Extended existing frame tests to verify mutable/const storage address identity
+  and rejection of invalidated receiver frames.
+- All six CTest unit groups passed with automatic build; whitespace checks passed.
+- Assignment and method-call behavior remain unchanged. The source-level
+  `c.next + c.next` mutation example is not enabled by this step.
+
+### Borrowed interpreter method invocation
+
+Approved scope:
+
+- Enable interpreted struct-method calls against live receiver storage using
+  the existing VM call-storage ABI and compiled method bodies. Add no opcodes
+  or method-body AST evaluator.
+- Replace AST receiver evaluation and `InterpreterEvaluationReceiver` with a
+  scoped operation on the existing `StorageLocation`. Evaluate and retain
+  object/temporary owners before arguments; recheck context locations afterward.
+  Do not allocate compiler locals for interpreter temporaries.
+- Keep receiver implementations thin. Object receivers retain their object;
+  struct receivers borrow slots only. Remove the owned-value struct constructor,
+  storage variant, and mutable stored-field view virtual.
+- Add common receiver `callMethod` dispatch. Call frames borrow struct receiver
+  addresses and own argument/result storage only. Keep explicit-copy host
+  struct calls, including independent receiver/result snapshots; retain class
+  receivers at the invocation boundary without changing class call restrictions.
+- Preserve copied ordinary parameters/results, zero-width receiver/result
+  behavior, selected-field property reads, frame validation, and synchronous
+  method/yield policy. Writes before a borrowed call fails remain visible.
+- Preserve same-type argument changes. Clear/retype during argument preparation
+  produces diagnostics before invocation; evaluated object owners stay alive.
+  Native reentry can read/call live storage while its owner remains valid.
+  Clearing/retyping a context root during the method remains an unresolved
+  lifetime policy, not a new language restriction or shared ownership mechanism.
+- Validate the exact Counter expression, live address identity, copied values,
+  nested/object-owned/temporary and empty receivers, argument ordering and root
+  replacement, reentry visibility, exception cleanup, and existing host contracts.
+  Run all six CTest unit groups and stop for review.
+
+Implementation:
+
+- Added the storage-location bridge and common receiver invocation; removed the
+  second AST evaluation path, scope class, and dual-mode struct wrapper.
+- Call frames no longer copy or free receivers. Existing host snapshot calls
+  own their private mutable copy separately; object calls retain their receiver
+  outside the frame.
+- Added source invocation regression coverage and migrated property/lifetime
+  tests to scoped storage-location operations.
+- All six CTest unit groups passed with automatic build. The exact Counter
+  regression verifies `total == 3` and live `c.value == 2`; native address-identity
+  coverage also verifies zero copies of unread receiver fields.
+- Existing host snapshot/copy-failure tests, class receiver retention, argument
+  order/root replacement, nested/temporary/empty receivers, native reentry, and
+  writes-before-failure coverage passed. Whitespace and obsolete-code-reference
+  checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting the following slice.
+
+Next: agree on context-root clearing/retyping during an active borrowed call,
+then consider simplifying the remaining snapshot-based field assignment paths.
+Neither shared assignment extraction nor automatic receiver writeback is a
+prerequisite for these borrowed method calls.
 
 ### Step 6: Conservative named return-value optimization
 

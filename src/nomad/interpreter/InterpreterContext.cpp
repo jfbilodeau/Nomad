@@ -214,6 +214,23 @@ std::span<const RuntimeValue> InterpreterContext::getVariableStorageById(const V
     return variable != nullptr ? variable->getStorage() : std::span<const RuntimeValue>{};
 }
 
+std::span<RuntimeValue> InterpreterContext::getMutableVariableStorageById(const VariableId variableId) {
+    if (isFrameVariable(variableId)) {
+        validateFrame();
+        return getVirtualMachine()->getLocalStorage(m_frameCallable->getVariableOffset(variableId),
+            m_frameCallable->getVariableType(variableId)->getSize());
+    }
+    if (variableId.isInvalid()) {
+        return {};
+    }
+    const auto index = toNomadIndex(variableId.id);
+    if (index >= m_variables.size()) {
+        return {};
+    }
+    const auto& variable = m_variables[index];
+    return variable != nullptr ? variable->getMutableStorage() : std::span<RuntimeValue>{};
+}
+
 std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
     std::vector<InterpreterVariableInfo> variables;
     variables.reserve(m_variables.size());
@@ -431,7 +448,34 @@ std::span<const RuntimeValue> InterpreterContext::getParameterStorage(const Noma
         m_frameCallable->getParameterType(parameterId)->getSize());
 }
 
+std::span<RuntimeValue> InterpreterContext::getMutableParameterStorage(const NomadId parameterId) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter access");
+    }
+    validateFrame();
+    return getVirtualMachine()->getEnclosingParameterStorage(m_frameCallable->getParameterOffset(parameterId),
+        m_frameCallable->getParameterType(parameterId)->getSize());
+}
+
 std::span<const RuntimeValue> InterpreterContext::getReceiverStorage() const {
+    if (!isFrameBacked() || m_frameCallable->getClassType() == nullptr ||
+        !m_frameCallable->getClassType()->isStruct()) {
+        throw NomadBug("Struct receiver storage requires an active struct callable frame");
+    }
+    validateFrame();
+    const auto size = m_frameCallable->getClassType()->getSize();
+    if (size == 0) {
+        return {};
+    }
+    const auto layout = m_frameCallable->getCallStorageLayout();
+    if (!layout.receiverOffset.has_value()) {
+        throw NomadBug("Nonempty struct callable has no receiver storage pointer");
+    }
+    const auto pointer = getVirtualMachine()->getEnclosingParameterStorage(*layout.receiverOffset, 1);
+    return {pointer[0].getStorageAddress(), size};
+}
+
+std::span<RuntimeValue> InterpreterContext::getMutableReceiverStorage() {
     if (!isFrameBacked() || m_frameCallable->getClassType() == nullptr ||
         !m_frameCallable->getClassType()->isStruct()) {
         throw NomadBug("Struct receiver storage requires an active struct callable frame");

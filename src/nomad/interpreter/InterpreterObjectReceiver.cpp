@@ -88,4 +88,11 @@ void InterpreterObjectReceiver::setProperty(const PropertyId propertyId, const I
     getInterpreter().getVirtualMachine().setProperty(propertyId, receiver, value.getValue());
 }
 
+InterpreterValue InterpreterObjectReceiver::callMethod(
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) {
+    return getInterpreter().runObjectMethod(*getType()->asClassType(), m_object, methodId, arguments);
+}
+
 } // namespace nomad

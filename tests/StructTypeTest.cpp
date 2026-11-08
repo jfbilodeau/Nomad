@@ -2987,7 +2987,7 @@ BOOST_AUTO_TEST_CASE(native_methods_borrow_temporary_receivers_and_preserve_owne
     }
 }
 
-BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_receivers_but_reject_interpreter_storage) {
+BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_and_interpreter_receivers) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     const auto typeId = runtime.registerStruct("ReceiverChecks");
@@ -3027,10 +3027,11 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_receivers_but_reject
     VirtualMachine machine(&runtime);
     const Interpreter interpreterEvaluator(machine);
     InterpreterContext interpreter(interpreterEvaluator);
-    BOOST_CHECK_THROW(static_cast<void>(expression.evaluate(interpreter)), AstException);
+    interpreter.setVariable("value", type, std::span<const RuntimeValue>{});
+    BOOST_TEST(expression.evaluate(interpreter).getValue().getIntegerValue() == 1);
     BOOST_TEST(!interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);
-    BOOST_TEST(calls == 1);
+    BOOST_TEST(calls == 2);
     const auto scriptId = runtime.registerScriptMethod(typeId, "checkProperties", {}, "properties.nomad", "");
     auto* script = runtime.getScriptCallable(scriptId);
     BOOST_REQUIRE(script != nullptr);

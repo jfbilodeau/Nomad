@@ -4,6 +4,7 @@
 
 #include <nomad/interpreter/InterpreterValue.hpp>
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/Property.hpp>
 
 namespace nomad {
@@ -22,6 +23,10 @@ public:
     [[nodiscard]] virtual InterpreterValue getValue() const = 0;
     [[nodiscard]] virtual InterpreterValue getProperty(PropertyId propertyId) const = 0;
     virtual void setProperty(PropertyId propertyId, const InterpreterValue& value) = 0;
+    [[nodiscard]] virtual InterpreterValue callMethod(
+        CallableId methodId,
+        std::span<const InterpreterValue> arguments
+    ) = 0;
     // Paths traverse stored struct fields beneath the selected property.
     [[nodiscard]] InterpreterValue getProperty(NomadStringView propertyPath) const;
     void setProperty(NomadStringView propertyPath, const InterpreterValue& value);

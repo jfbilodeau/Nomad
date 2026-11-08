@@ -6,24 +6,35 @@
 
 #include <nomad/script/OpCode.hpp>
 
+#include <functional>
 #include <vector>
 
 namespace nomad {
 
 class Compiler;
 class Expression;
+class InterpreterContext;
+class InterpreterReceiver;
+class InterpreterValue;
 class Property;
 class ScriptCallableBase;
 
 class StorageLocation {
 public:
     explicit StorageLocation(IdentifierDefinition root);
+    explicit StorageLocation(Expression* value);
     StorageLocation(Expression* value, VariableId variable);
     explicit StorageLocation(const Property* property);
     StorageLocation(Expression* owner, const Property* property);
 
     [[nodiscard]] const Type* getType() const;
     [[nodiscard]] StorageLocation getProperty(const Property& property) const;
+    // Owners/temporaries precede preparation; context storage is rebound afterward.
+    [[nodiscard]] InterpreterValue withReceiver(
+        InterpreterContext& context,
+        const std::function<InterpreterValue(InterpreterReceiver&)>& operation,
+        const std::function<void()>& prepare = {}
+    ) const;
     void validate(const ScriptCallableBase* function) const;
     void emitRetainOwner(Compiler& compiler, ScriptCallableBase* function) const;
     void emitFreeOwner(Compiler& compiler, const ScriptCallableBase* function) const;

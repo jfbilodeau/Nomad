@@ -5,9 +5,16 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterStorage.hpp>
+
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/ScriptCallableBase.hpp>
+#include <nomad/script/ScriptObject.hpp>
+#include <nomad/script/StructType.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 namespace nomad {
 
@@ -21,9 +28,17 @@ StorageLocation::StorageLocation(const IdentifierDefinition root):
     }
 }
 
-StorageLocation::StorageLocation(Expression* value, const VariableId variable):
+StorageLocation::StorageLocation(Expression* value):
     m_type(value != nullptr ? value->getType() : nullptr),
     m_temporary(value) {
+    if (m_type == nullptr || m_type->asCompositeType() == nullptr) {
+        throw NomadBug("Temporary receiver location requires a resolved composite value");
+    }
+    m_root.valueType = m_type;
+}
+
+StorageLocation::StorageLocation(Expression* value, const VariableId variable):
+    StorageLocation(value) {
     if (m_type == nullptr || !m_type->isStruct() || variable.isInvalid()) {
         throw NomadBug("Temporary storage location requires a resolved struct value and local");
     }
@@ -63,6 +78,112 @@ StorageLocation StorageLocation::getProperty(const Property& property) const {
     storage.m_properties.push_back(&property);
     storage.m_type = property.getValueType();
     return storage;
+}
+
+InterpreterValue StorageLocation::withReceiver(
+    InterpreterContext& context,
+    const std::function<InterpreterValue(InterpreterReceiver&)>& operation,
+    const std::function<void()>& prepare
+) const {
+    if (!operation || m_type->asCompositeType() == nullptr) {
+        throw NomadBug("Receiver operation requires a composite storage location");
+    }
+    const auto offset = getPropertyOffset();
+    const auto size = m_type->getSize();
+    const auto select = [&](const std::span<RuntimeValue> storage) {
+        if (offset > storage.size() || size > storage.size() - offset) {
+            throw NomadBug("Receiver location exceeds its root storage");
+        }
+        return size == 0 ? std::span<RuntimeValue>{} : storage.subspan(offset, size);
+    };
+    const auto invokeObject = [&](const auto& getValue) -> InterpreterValue {
+        auto receiver = [&]() {
+            const auto value = getValue();
+            return context.getInterpreter().createObjectReceiver(
+                *m_type->asClassType(), value.getValue().getObjectValue());
+        }();
+        if (prepare) {
+            prepare();
+        }
+        return operation(*receiver);
+    };
+    const auto invoke = [&](const auto& getStorage) -> InterpreterValue {
+        auto storage = select(getStorage());
+        if (m_type->isClass()) {
+            return invokeObject([&]() { return InterpreterValue(m_type, storage); });
+        }
+        if (prepare) {
+            prepare();
+            storage = select(getStorage());
+        }
+        auto receiver = context.getInterpreter().createStructReceiver(*m_type->asStructType(), storage.data());
+        return operation(*receiver);
+    };
+
+    if (m_objectProperty != nullptr) {
+        const auto* enclosing = m_owner == nullptr ? context.getReceiver() : nullptr;
+        if (m_owner == nullptr && enclosing == nullptr) {
+            throw NomadBug("Stored receiver location requires an enclosing object");
+        }
+        const auto owner = m_owner != nullptr ? m_owner->evaluate(context) : enclosing->getValue();
+        auto* object = dynamic_cast<ScriptObject*>(owner.getValue().getObjectValue());
+        if (object == nullptr || object->getClassType() != m_objectProperty->getOwnerType()) {
+            context.getVirtualMachine()->fault("Stored property receiver has no matching field storage");
+        }
+        return invoke([&]() {
+            return object->getFieldStorage(m_objectProperty->getOwnerType()->getFieldIndex(m_objectProperty->getId()));
+        });
+    }
+    if (m_temporary != nullptr) {
+        if (m_root.valueType->isStruct()) {
+            auto storage = [&]() {
+                const auto value = m_temporary->evaluate(context);
+                return InterpreterStorage(m_root.valueType, value.getStorage());
+            }();
+            return invoke([&]() { return storage.getMutableStorage(); });
+        }
+        return invokeObject([&]() { return m_temporary->evaluate(context); });
+    }
+    switch (m_root.identifierType) {
+    case IdentifierType::FunctionVariable:
+        return invoke([&]() {
+            if (!isIdInRange(m_root.variableId.id, context.getCallable()->getVariableCount())) {
+                throw NomadBug("Receiver location variable is not defined in this context");
+            }
+            const auto* type = context.getVariableTypeById(m_root.variableId);
+            const auto& name = context.getCallable()->getVariableName(m_root.variableId);
+            if (type == nullptr) {
+                throw NomadException("Variable '" + name + "' has not been assigned a value");
+            }
+            if (type != m_root.valueType) {
+                throw NomadException("Variable '" + name + "' changed type after this expression was resolved");
+            }
+            return context.getMutableVariableStorageById(m_root.variableId);
+        });
+    case IdentifierType::Parameter:
+        return invoke([&]() {
+            const auto storage = context.getMutableParameterStorage(m_root.parameterId);
+            if (context.getCallable()->getParameterType(m_root.parameterId) != m_root.valueType) {
+                throw NomadBug("Receiver parameter type does not match its location");
+            }
+            return storage;
+        });
+    case IdentifierType::Receiver:
+        if (context.getCallable()->getClassType() != m_root.valueType) {
+            throw NomadBug("Receiver type does not match its location");
+        }
+        if (m_root.valueType->isStruct()) {
+            return invoke([&]() { return context.getMutableReceiverStorage(); });
+        } else {
+            const auto* receiver = context.getReceiver();
+            if (receiver == nullptr) {
+                throw NomadBug("Receiver location requires an active callable frame");
+            }
+            return invokeObject([&]() { return receiver->getValue(); });
+        }
+    default:
+        throw NomadBug("Invalid interpreter receiver location root");
+    }
 }
 
 NomadIndex StorageLocation::getPropertyOffset() const {

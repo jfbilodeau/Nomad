@@ -17,6 +17,7 @@
 #include <span>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -45,9 +46,265 @@ void addStructMethodSources(LanguageTestFixture& fixture) {
         "return 0");
 }
 
+void addCounterMethodSources(LanguageTestFixture& fixture) {
+    fixture.addFunction("counterMethodTypes",
+        "struct Counter\nvalue = 0\n"
+        "fun next\nthis.value = this.value + 1\nreturn this.value\nend\n"
+        "fun bump delta:int\nthis.value = this.value + delta\nreturn this.value\nend\n"
+        "fun add first:int second:int\nthis.value = this.value + first * 10 + second\nreturn this.value\nend\n"
+        "fun relay\nreturn this.next + this.next\nend\nend\n"
+        "struct CounterOuter\nprefix = 7\ncounter = new Counter\nlabel = \"outer\"\nend\n"
+        "class CounterHolder\ncounter = new CounterOuter\nend\nreturn 0");
+}
+
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(interpreter_struct_methods)
+
+BOOST_AUTO_TEST_CASE(source_counter_calls_mutate_the_original_before_the_next_operand_and_preserve_value_copies) {
+    LanguageTestFixture fixture;
+    addCounterMethodSources(fixture);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto* counter = runtime.getTypeByName("Counter");
+    const auto instructionsBefore = runtime.getInstructions().size();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    machine->pushInteger(1234);
+    machine->setIntegerResult(41);
+    machine->setIntegerIntermediate(43);
+    {
+        InterpreterContext context(interpreter);
+        BOOST_REQUIRE_MESSAGE(interpreter.execute("c = new Counter\ntotal = c.next + c.next", context),
+            (context.getError() != nullptr ? *context.getError() : ""));
+        BOOST_TEST(context.getVariableStorage("c")[0].getIntegerValue() == 2);
+        BOOST_TEST(context.getVariableValue("total")->getIntegerValue() == 3);
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
+        const auto* address = context.getVariableStorage("c").data();
+        const InterpreterValue snapshot(counter, context.getVariableStorage("c"));
+        BOOST_REQUIRE(interpreter.execute("copy = c\ncopyResult = copy.next\nnested = c.relay", context));
+        BOOST_TEST(context.getVariableStorage("c").data() == address);
+        BOOST_TEST(context.getVariableStorage("copy").data() != address);
+        BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 3);
+        BOOST_TEST(context.getVariableStorage("c")[0].getIntegerValue() == 4);
+        BOOST_TEST(context.getVariableValue("nested")->getIntegerValue() == 7);
+        BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 2);
+        BOOST_TEST(runtime.getInstructions().size() == instructionsBefore);
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+    }
+    machine->pop1();
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(source_methods_borrow_nested_and_object_owned_fields_and_discard_temporary_storage) {
+    LanguageTestFixture fixture;
+    addCounterMethodSources(fixture);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    {
+        InterpreterContext context(interpreter);
+        BOOST_REQUIRE_MESSAGE(interpreter.execute(
+            "outer = new CounterOuter\nfirst = outer.counter.next\nsecond = outer.counter.next\n"
+            "holder = new CounterHolder\nheld = holder.counter.counter.next\n"
+            "temporary = (new Counter).next\nnestedTemporary = (new CounterOuter).counter.next", context),
+            (context.getError() != nullptr ? *context.getError() : ""));
+        BOOST_TEST(context.getVariableStorage("outer")[0].getIntegerValue() == 7);
+        BOOST_TEST(context.getVariableStorage("outer")[1].getIntegerValue() == 2);
+        BOOST_TEST(context.getVariableStorage("outer")[2].getStringValue() == "outer");
+        BOOST_TEST(context.getVariableValue("first")->getIntegerValue() == 1);
+        BOOST_TEST(context.getVariableValue("second")->getIntegerValue() == 2);
+        BOOST_TEST(context.getVariableValue("held")->getIntegerValue() == 1);
+        BOOST_TEST(context.getVariableValue("temporary")->getIntegerValue() == 1);
+        BOOST_TEST(context.getVariableValue("nestedTemporary")->getIntegerValue() == 1);
+        BOOST_REQUIRE(interpreter.execute("holder.counter.counter.value", context));
+        BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(source_method_parameters_and_returned_structs_are_independent_and_empty_methods_remain_callable) {
+    LanguageTestFixture fixture;
+    addStructMethodSources(fixture);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    {
+        InterpreterContext context(interpreter);
+        BOOST_REQUIRE_MESSAGE(interpreter.execute(
+            "value = new HostMethodValue 17 \"source\"\n"
+            "returned = value.mutate value (new HostMethodEmpty) 11\n"
+            "returned.number = 41\nempty = new HostMethodEmpty\n"
+            "same = empty.emptyReturn\nscalar = empty.scalar\n"
+            "made = empty.make 9\nempty.clear", context),
+            (context.getError() != nullptr ? *context.getError() : ""));
+        BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 28);
+        BOOST_TEST(context.getVariableStorage("value")[1].getStringValue() == "updated");
+        BOOST_TEST(context.getVariableStorage("returned")[0].getIntegerValue() == 41);
+        BOOST_TEST(context.getVariableStorage("returned").data() != context.getVariableStorage("value").data());
+        BOOST_TEST(context.getVariableType("same") == runtime.getTypeByName("HostMethodEmpty"));
+        BOOST_TEST(context.getVariableStorage("same").empty());
+        BOOST_TEST(context.getVariableValue("scalar")->getIntegerValue() == 7);
+        BOOST_TEST(context.getVariableStorage("made")[0].getIntegerValue() == 9);
+        BOOST_TEST(context.getResult()->getType()->isVoid());
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(source_receiver_evaluation_precedes_right_to_left_arguments_and_rebinds_context_storage) {
+    LanguageTestFixture fixture;
+    addCounterMethodSources(fixture);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto* counter = runtime.getTypeByName("Counter");
+    std::vector<NomadString> events;
+    const auto make = runtime.registerNativeFunction("makeSourceCounter", [&](VirtualMachine* active) {
+        events.emplace_back("receiver");
+        active->getStorageParameter(0, 0).setIntegerValue(0);
+    }, {}, counter, "");
+    const auto first = runtime.registerNativeFunction("firstSourceArgument", [&](VirtualMachine* active) {
+        events.emplace_back("first");
+        active->setIntegerResult(1);
+    }, {}, runtime.getIntegerType(), "");
+    const auto second = runtime.registerNativeFunction("secondSourceArgument", [&](VirtualMachine* active) {
+        events.emplace_back("second");
+        active->setIntegerResult(2);
+    }, {}, runtime.getIntegerType(), "");
+    BOOST_REQUIRE(make.isValid() && first.isValid() && second.isValid());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    BOOST_REQUIRE_MESSAGE(interpreter.execute(
+        "result = (makeSourceCounter).add (firstSourceArgument) (secondSourceArgument)", context),
+        (context.getError() != nullptr ? *context.getError() : ""));
+    const std::vector<NomadString> expected{"receiver", "second", "first"};
+    BOOST_TEST(events == expected, boost::test_tools::per_element());
+    BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 12);
+    BOOST_REQUIRE(interpreter.execute("c = new Counter", context));
+    const auto* address = context.getVariableStorage("c").data();
+    auto replacementMode = 0;
+    const auto replace = runtime.registerNativeFunction("replaceSourceCounter", [&](VirtualMachine* active) {
+        if (replacementMode == 0) {
+            const std::array<RuntimeValue, 1> replacement{RuntimeValue{NomadInteger{100}}};
+            context.setVariable("c", counter, replacement);
+        } else if (replacementMode == 1) {
+            context.clearVariableValue("c");
+        } else {
+            context.setVariable("c", runtime.getIntegerType(), RuntimeValue{NomadInteger{42}});
+        }
+        active->setIntegerResult(1);
+    }, {}, runtime.getIntegerType(), "");
+    BOOST_REQUIRE(replace.isValid());
+    BOOST_REQUIRE(interpreter.execute("result = c.bump (replaceSourceCounter)", context));
+    BOOST_TEST(context.getVariableStorage("c").data() == address);
+    BOOST_TEST(context.getVariableStorage("c")[0].getIntegerValue() == 101);
+    BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 101);
+    replacementMode = 1;
+    BOOST_TEST(!interpreter.execute("result = c.bump (replaceSourceCounter)", context));
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(context.getError()->find("has not been assigned") != NomadString::npos);
+    BOOST_TEST(context.getResult() == nullptr);
+    BOOST_REQUIRE(interpreter.execute("c = new Counter", context));
+    replacementMode = 2;
+    BOOST_TEST(!interpreter.execute("result = c.bump (replaceSourceCounter)", context));
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(context.getError()->find("changed type") != NomadString::npos);
+    BOOST_TEST(context.getVariableValue("c")->getIntegerValue() == 42);
+    BOOST_TEST(context.getResult() == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(source_object_field_receivers_keep_the_evaluated_owner_across_argument_replacement) {
+    LanguageTestFixture fixture;
+    addCounterMethodSources(fixture);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    const auto* holder = runtime.getTypeByName("CounterHolder");
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    BOOST_REQUIRE(interpreter.execute("holder = new CounterHolder", context));
+    const InterpreterValue original(holder, context.getVariableStorage("holder"));
+    const auto replace = runtime.registerNativeFunction("replaceSourceHolder", [&](VirtualMachine* active) {
+        context.setVariable("holder", runtime.getIntegerType(), RuntimeValue{NomadInteger{42}});
+        active->setIntegerResult(1);
+    }, {}, runtime.getIntegerType(), "");
+    BOOST_REQUIRE(replace.isValid());
+    BOOST_REQUIRE_MESSAGE(interpreter.execute("result = holder.counter.counter.bump (replaceSourceHolder)", context),
+        (context.getError() != nullptr ? *context.getError() : ""));
+    BOOST_TEST(context.getVariableValue("holder")->getIntegerValue() == 42);
+    BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 1);
+    const auto storage = original.getValue().asObject<ScriptObject>()->getFieldStorage(0);
+    BOOST_TEST(storage[0].getIntegerValue() == 7);
+    BOOST_TEST(storage[1].getIntegerValue() == 1);
+    BOOST_TEST(storage[2].getStringValue() == "outer");
+}
+
+BOOST_AUTO_TEST_CASE(source_methods_expose_live_mutations_during_native_reentry_and_preserve_writes_before_failure) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    InterpreterContext* evaluation = nullptr;
+    const Interpreter* evaluator = nullptr;
+    auto observations = 0;
+    const auto observe = runtime.registerNativeFunction("observeSourceCounter", [&](VirtualMachine* active) {
+        ++observations;
+        const auto* callable = active->getCurrentCallable();
+        const auto parameter = active->getParameterStorage(0, 1);
+        BOOST_TEST(parameter[0].getIntegerValue() == 7);
+        BOOST_TEST(evaluation->getVariableStorage("c")[0].getIntegerValue() == 1);
+        BOOST_REQUIRE(evaluator->execute("nested = c.next", *evaluation));
+        BOOST_TEST(evaluation->getVariableStorage("c")[0].getIntegerValue() == 2);
+        BOOST_TEST(active->getCurrentCallable() == callable);
+        BOOST_TEST(active->getParameterStorage(0, 1).data() == parameter.data());
+    }, {Parameter{.name = "marker", .type = runtime.getIntegerType()}}, runtime.getVoidType(), "");
+    const auto fail = runtime.registerNativeFunction("failSourceCounter", [](VirtualMachine*) {
+        throw NomadException("Source counter failure");
+    }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(observe.isValid() && fail.isValid());
+    fixture.addFunction("observedCounterTypes",
+        "struct Counter\nvalue = 0\n"
+        "fun next\nthis.value = this.value + 1\nreturn this.value\nend\n"
+        "fun observe\nthis.value = this.value + 1\nobserveSourceCounter 7\nreturn this.value\nend\n"
+        "fun fail\nthis.value = this.value + 1\nfailSourceCounter\nreturn this.value\nend\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    evaluation = &context;
+    evaluator = &interpreter;
+    machine->pushInteger(1234);
+    machine->setIntegerResult(41);
+    machine->setIntegerIntermediate(43);
+    BOOST_REQUIRE_MESSAGE(interpreter.execute("c = new Counter\nresult = c.observe", context),
+        (context.getError() != nullptr ? *context.getError() : ""));
+    BOOST_TEST(observations == 1);
+    BOOST_TEST(context.getVariableValue("nested")->getIntegerValue() == 2);
+    BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 2);
+    BOOST_TEST(!interpreter.execute("result = c.fail", context));
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(context.getError()->find("Source counter failure") != NomadString::npos);
+    BOOST_TEST(context.getVariableStorage("c")[0].getIntegerValue() == 3);
+    BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 2);
+    BOOST_TEST(context.getResult() == nullptr);
+    BOOST_TEST(machine->getIntegerResult() == 41);
+    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+    BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+    BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+    machine->pop1();
+}
 
 BOOST_AUTO_TEST_CASE(script_methods_return_independent_receiver_and_result_values_without_implicit_writeback) {
     LanguageTestFixture fixture;
@@ -328,7 +585,7 @@ BOOST_AUTO_TEST_CASE(native_empty_and_one_slot_receivers_keep_hidden_pointer_lay
     BOOST_TEST(made.result.getStorage()[0].getIntegerValue() == 9);
 }
 
-BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_struct_calls_remain_disabled) {
+BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_struct_calls_are_enabled) {
     Runtime runtime;
     const auto valueId = runtime.registerStruct("CheckedStructReceiver");
     const auto otherId = runtime.registerStruct("OtherStructReceiver");
@@ -406,15 +663,15 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
     BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
     InterpreterContext context(interpreter);
     context.setVariable("value", type, receiver.getStorage());
-    BOOST_TEST(!interpreter.execute("value.read 3", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("Struct method calls are not supported by the interpreter") != NomadString::npos);
-    BOOST_TEST(calls == 0);
+    BOOST_REQUIRE(interpreter.execute("value.read 3", context));
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
+    BOOST_TEST(calls == 1);
     BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 17);
     const auto result = interpreter.runStructMethod(receiver, methodId, {&number, 1});
     BOOST_TEST(result.result.getValue().getIntegerValue() == 3);
     BOOST_TEST(result.receiver.getStorage()[0].getIntegerValue() == 17);
-    BOOST_TEST(calls == 1);
+    BOOST_TEST(calls == 2);
     machine->pop1();
 }
 

@@ -24,6 +24,10 @@ public:
     [[nodiscard]] InterpreterValue getValue() const override;
     [[nodiscard]] InterpreterValue getProperty(PropertyId propertyId) const override;
     void setProperty(PropertyId propertyId, const InterpreterValue& value) override;
+    [[nodiscard]] InterpreterValue callMethod(
+        CallableId methodId,
+        std::span<const InterpreterValue> arguments
+    ) override;
 
 private:
     NomadObject* m_object;

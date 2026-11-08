@@ -203,9 +203,15 @@ BOOST_AUTO_TEST_CASE(reads_support_live_parameters_locals_and_borrowed_struct_re
         BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
         if (isReceiver) {
             const auto receiver = context.getReceiverStorage();
+            BOOST_TEST(context.getMutableReceiverStorage().data() == receiver.data());
             BOOST_TEST(receiver.size() == callable->getClassType()->getSize());
             BOOST_REQUIRE(context.getInterpreter().execute("this", context));
             BOOST_TEST(context.getResult()->getStorage().data() != receiver.data());
+        } else {
+            BOOST_TEST(context.getMutableParameterStorage(0).data() == context.getParameterStorage(0).data());
+            const auto localId = context.getCallable()->getVariableId("local");
+            BOOST_TEST(context.getMutableVariableStorageById(localId).data() ==
+                context.getVariableStorageById(localId).data());
         }
         BOOST_TEST(machine->getCurrentCallable() == callable);
         BOOST_TEST(machine->getInstructionIndex() == instructionIndex);

@@ -5,23 +5,9 @@
 #include <nomad/script/StructType.hpp>
 
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace nomad {
-
-namespace {
-
-const StructType& getStructType(const InterpreterValue& value) {
-    const auto* type = value.getType();
-    const auto* owner = type != nullptr ? type->asStructType() : nullptr;
-    if (owner == nullptr) {
-        throw std::invalid_argument("InterpreterStructReceiver requires a struct value");
-    }
-    return *owner;
-}
-
-} // namespace
 
 InterpreterStructReceiver::InterpreterStructReceiver(
     const Interpreter& interpreter,
@@ -35,33 +21,36 @@ InterpreterStructReceiver::InterpreterStructReceiver(
     }
 }
 
-InterpreterStructReceiver::InterpreterStructReceiver(const Interpreter& interpreter, InterpreterValue value):
-    InterpreterReceiver(interpreter, getStructType(value)), m_storage(std::move(value))
-{}
-
 InterpreterValue InterpreterStructReceiver::getValue() const {
-    if (const auto* storage = std::get_if<RuntimeValue*>(&m_storage)) {
-        return InterpreterValue(getType(), getType()->getSize() == 0 ? std::span<const RuntimeValue>{} :
-            std::span<const RuntimeValue>{*storage, getType()->getSize()});
-    }
-    return std::get<InterpreterValue>(m_storage);
+    return InterpreterValue(getType(), getType()->getSize() == 0 ? std::span<const RuntimeValue>{} :
+        std::span<const RuntimeValue>{m_storage, getType()->getSize()});
 }
 
 InterpreterValue InterpreterStructReceiver::getProperty(const PropertyId propertyId) const {
-    return getInterpreter().getProperty(getValue(), propertyId);
+    const auto* owner = getType()->asStructType();
+    const auto* property = owner->getProperty(propertyId);
+    if (property == nullptr || property->asNativeProperty() != nullptr) {
+        throw std::invalid_argument("Stored property path does not match the struct type");
+    }
+    const auto* type = property->getValueType();
+    return InterpreterValue(type, type->getSize() == 0 ? std::span<const RuntimeValue>{} :
+        std::span<const RuntimeValue>{m_storage + owner->getFieldOffset(propertyId), type->getSize()});
 }
 
 void InterpreterStructReceiver::setProperty(const PropertyId propertyId, const InterpreterValue& value) {
-    replaceValue(getInterpreter().setProperty(getValue(), propertyId, value));
+    const auto replacement = getInterpreter().setProperty(getValue(), propertyId, value);
+    std::vector<RuntimeValue> scratch(getType()->getAssignmentScratchSize());
+    getType()->assignValue(replacement.getStorage().data(), m_storage, scratch.empty() ? nullptr : scratch.data());
 }
 
-void InterpreterStructReceiver::replaceValue(InterpreterValue value) {
-    if (const auto* storage = std::get_if<RuntimeValue*>(&m_storage)) {
-        std::vector<RuntimeValue> scratch(getType()->getAssignmentScratchSize());
-        getType()->assignValue(value.getStorage().data(), *storage, scratch.empty() ? nullptr : scratch.data());
-    } else {
-        m_storage = std::move(value);
-    }
+InterpreterValue InterpreterStructReceiver::callMethod(
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
+) {
+    return getInterpreter().runStructMethod(*getType()->asStructType(),
+        getType()->getSize() == 0 ? std::span<RuntimeValue>{} :
+            std::span<RuntimeValue>{m_storage, getType()->getSize()},
+        methodId, arguments);
 }
 
 } // namespace nomad

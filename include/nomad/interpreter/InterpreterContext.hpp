@@ -75,11 +75,13 @@ public:
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
+    [[nodiscard]] std::span<RuntimeValue> getMutableParameterStorage(NomadId parameterId);
     // AST receiver access; null for contexts without a receiver. Wrappers borrow the active frame.
     [[nodiscard]] InterpreterReceiver* getReceiver();
     [[nodiscard]] const InterpreterReceiver* getReceiver() const;
     // Borrows the complete struct receiver of an active method/constructor frame.
     [[nodiscard]] std::span<const RuntimeValue> getReceiverStorage() const;
+    [[nodiscard]] std::span<RuntimeValue> getMutableReceiverStorage();
     void setReceiverProperty(PropertyId propertyId, const InterpreterValue& value);
     void setReceiverProperty(NomadStringView propertyPath, const InterpreterValue& value);
 
@@ -123,6 +125,7 @@ public:
     // Empty views also represent missing values; query the variable type to distinguish empty structs.
     [[nodiscard]] std::span<const RuntimeValue> getVariableStorage(const NomadString& name) const;
     [[nodiscard]] std::span<const RuntimeValue> getVariableStorageById(VariableId variableId) const;
+    [[nodiscard]] std::span<RuntimeValue> getMutableVariableStorageById(VariableId variableId);
     [[nodiscard]] std::vector<InterpreterVariableInfo> listVariables() const;
 
 private:

@@ -53,8 +53,21 @@ public:
         CallableId methodId,
         std::span<const InterpreterValue> arguments
     ) const;
+    [[nodiscard]] InterpreterValue runObjectMethod(
+        const ClassType& type,
+        NomadObject* object,
+        CallableId methodId,
+        std::span<const InterpreterValue> arguments
+    ) const;
     [[nodiscard]] StructMethodResult runStructMethod(
         const InterpreterValue& receiver,
+        CallableId methodId,
+        std::span<const InterpreterValue> arguments
+    ) const;
+    // Mutates borrowed storage directly; the caller keeps it alive for the call.
+    [[nodiscard]] InterpreterValue runStructMethod(
+        const StructType& type,
+        std::span<RuntimeValue> receiverStorage,
         CallableId methodId,
         std::span<const InterpreterValue> arguments
     ) const;
@@ -107,6 +120,13 @@ private:
         const RuntimeValue& receiver = RuntimeValue{}
     ) const;
     void runNativeStructMethod(const NativeMethod& method) const;
+    void runStructMethod(const Method& method) const;
+    [[nodiscard]] InterpreterValue runObjectMethod(
+        const Method& method,
+        const Type& receiverType,
+        NomadObject* object,
+        std::span<const InterpreterValue> arguments
+    ) const;
 
     [[nodiscard]] std::optional<InterpreterValue> evaluateFormatExpression(
         const SourceText& source,

@@ -478,9 +478,11 @@ retain reference semantics. Methods mutate their stored receiver. Empty structs
 occupy no slots but still run constructor and method side effects. The interpreter
 supports owned struct values, construction, and free-function arguments/results;
 it can also read stored struct properties and assign fields rooted in named
-struct variables or `this`. Host struct-method calls return explicit updated
-receiver/result values. Class-owned and temporary-rooted struct writes and
-source-level interpreter struct method calls remain unsupported.
+struct variables or `this`. Interpreted method calls borrow named, frame-backed,
+nested, object-owned, and temporary struct receivers. Host snapshot-based
+struct-method calls return explicit updated receiver/result values. General
+interpreter field assignments through class-owned or temporary struct roots
+remain unsupported.
 
 Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
@@ -1052,8 +1054,9 @@ remain independently owned. Assigning to or calling a mutating method on a
 temporary field changes only that temporary, except for shared class references
 stored in its fields. Empty fields still evaluate and release their root.
 The interpreter can read stored struct properties through these roots and owns
-the extracted value. Interpreter writes through temporary roots and struct method
-calls remain unsupported, as do native accessor-backed struct properties.
+the extracted value. It can invoke methods on stored and temporary struct
+receivers. Interpreter field assignments through temporary roots and native
+accessor-backed struct properties remain unsupported.
 
 Object-owned reads evaluate the owner once and keep it alive until copied values
 are independently owned. Writes retain the original owner and capture the
@@ -2448,8 +2451,8 @@ nor ordinary struct arguments become mutable aliases.
 Context-owned variables use these buffers. Frame-backed variables continue using
 VM storage, and published context results remain immutable `InterpreterValue`
 snapshots. A borrowed receiver does not keep its backing owner alive: destroy it
-before replacing or destroying that owner. This storage API does not enable
-source-level struct-method calls.
+before replacing or destroying that owner. Ordinary struct parameters and
+published results remain independent snapshots.
 
 ### Advanced AST receiver access
 
@@ -2465,11 +2468,36 @@ frames have wrappers, including empty structs. Receiver access validates that
 the originating script frame is still active. The returned wrapper must not be
 used after that frame or context ends.
 
-The common API provides `getType()`, `getValue()`, `getProperty(property)`, and
-`setProperty(property, value)`. Reads return owned typed values. Property
+The common API provides `getType()`, `getValue()`, `getProperty(property)`,
+`setProperty(property, value)`, and `callMethod(methodId, arguments)`.
+Reads and method results return owned typed values. Property
 selectors are IDs or names; dotted paths traverse nested stored struct fields.
 Direct object properties can use registered native accessors. Execution and
 copy failures throw; general source execution reports them through diagnostics.
+
+For a resolved AST receiver location, include
+`<nomad/compiler/StorageLocation.hpp>` and call
+`location.withReceiver(context, operation, prepare)`. The operation accepts an
+`InterpreterReceiver&` and returns an owned `InterpreterValue`. The optional
+preparation callback runs before the operation, after evaluating and retaining
+any object owner or temporary root; use it to evaluate call arguments.
+Context storage is checked again after preparation. Same-type assignments remain
+visible, while an unassigned or retyped context root produces an exception before
+method execution. Receiver and borrowed views must not escape the operation.
+Ordinary AST evaluation still uses `Expression::evaluate(context)`.
+
+Object owners and temporary backing storage remain alive until the operation
+finishes. Context-owned struct storage and VM frames are borrowed, not retained.
+Do not clear, retype, or destroy the backing root/context/frame during an active
+borrowed method invocation. Same-type in-place updates and reentrant reads or
+calls are supported while the backing storage stays alive. Retaining detached
+context storage after retyping or clearing it during the method is not provided.
+
+`getMutableVariableStorageById`, `getMutableParameterStorage`, and
+`getMutableReceiverStorage` provide the corresponding live context/frame views.
+Frame-backed access performs the same frame validation as the const accessors.
+An empty variable view can still mean a missing variable or a zero-sized struct;
+query its type to distinguish them. These APIs do not change assignment ordering.
 
 `Interpreter::createObjectReceiver(classType, object)` returns a
 `std::unique_ptr<InterpreterObjectReceiver>`. The receiver retains the supplied
@@ -2490,14 +2518,11 @@ storage; `getValue()` returns an independent snapshot. Zero-sized structs are
 valid: their storage pointer may be null, including when they contain zero-sized
 stored fields.
 
-Directly constructed `InterpreterStructReceiver` wrappers can borrow storage
-using a struct type and live storage address, or own an `InterpreterValue`
-supplied by value. An lvalue is copied;
-an owned temporary transfers ownership. Borrowed storage is not freed by the
-wrapper. Struct snapshots and owned copies are independent; contained object
-references remain shared. Empty structs still have their logical type despite
-requiring no storage slots. These wrappers do not enable source-level struct
-method writeback.
+Directly constructed `InterpreterStructReceiver` wrappers also borrow storage
+using a struct type and live storage address. For a mutable temporary or private
+copy, keep an `InterpreterStorage` owner alive separately. The wrapper never
+owns or frees struct slots. Empty structs retain their logical type despite
+requiring no storage slots.
 
 For already resolved calls, `Interpreter::runFunction(functionId, arguments)`
 and `Interpreter::construct(constructorId, arguments)` use the interpreter's
@@ -2546,6 +2571,8 @@ The VM's scalar script scheduler retains its existing aggregate-storage restrict
 native or compiled script method and returns an owned `InterpreterValue`.
 Supply a typed receiver and arguments in logical parameter order; no context
 is required, and results are published only when the caller stores them.
+The overload `runObjectMethod(classType, object, methodId, arguments)` accepts a
+raw object receiver and retains it for the duration of the call.
 Receiver and argument types must match the method's signature and belong to
 the interpreter's runtime. Invalid IDs/kinds, receiver types, argument counts
 or types, null object receivers, and uncompiled methods throw
@@ -2599,8 +2626,45 @@ class objects remain visible even if the call fails.
 Struct-method calls are synchronous and cannot yield, for either native or
 script methods. They preserve the enclosing execution frame, current object
 receiver, and result/intermediate registers. Fatal VM fault recovery remains
-unsupported. Source-level interpreter struct-method calls are still disabled;
-automatic receiver writeback is not provided.
+unsupported. This snapshot-based host API does not automatically replace
+context variables.
+
+### Borrowed struct-method invocation
+
+`Interpreter::runStructMethod(structType, storage, methodId, arguments)` accepts
+a mutable span containing exactly the struct's physical slots. It invokes the
+method against that storage and returns only the owned method result.
+`InterpreterStructReceiver::callMethod(methodId, arguments)` uses this live
+invocation contract. There is no receiver copy or writeback step. Zero-sized
+structs use empty spans and still execute their methods.
+
+After struct declarations and method bodies have been compiled, interpreted
+source can call methods on variables, frame locals, copied ordinary parameters,
+`this`, nested stored fields, object-owned fields, and temporary structs.
+For a `Counter.next` method that increments and returns `this.value`:
+
+```nomad
+c = new Counter
+total = c.next + c.next
+```
+
+Each invocation updates `c` before returning its result: `c.value` is `2` and
+`total` is `3`. Assignments such as `copy = c`, ordinary struct parameters, and
+returned struct values still have independent storage.
+
+Receiver expressions and object/temporary owners are evaluated once before
+right-to-left explicit argument evaluation. Context-backed locations are
+rechecked before invocation, preserving same-type argument changes and reporting
+cleared or retyped roots without using an invalidated address. Object field
+receivers continue using the evaluated, retained owner even when its former
+variable is replaced by an argument.
+
+Borrowed calls are synchronous and cannot yield. Mutations performed before a
+method throws or its result cannot be copied remain visible; argument and result
+cleanup and enclosing VM state restoration still occur. Source execution
+reports failures as diagnostics and clears its published result, without
+committing the failed assignment's target. Hosts must keep borrowed backing
+storage alive throughout the method, including native reentry.
 
 `listVariables()` displays struct type names rather than formatting their
 fields. Stored fields can be read through struct variables, ordinary parameters,
