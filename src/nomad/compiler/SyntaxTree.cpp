@@ -11,6 +11,8 @@
 
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <algorithm>
 #include <utility>
 
@@ -119,6 +121,8 @@ void Statement::checkReachability(CompilerContext* /*context*/, const ScriptCall
 }
 
 InterpreterValue Statement::evaluate(InterpreterContext& context) const {
+    context.beginEvaluation();
+    BOOST_SCOPE_EXIT_ALL(&context) { context.endEvaluation(); };
     if (context.hasError()) {
         raiseException(*context.getError());
     }
@@ -748,6 +752,8 @@ void StatementList::compile(Compiler* compiler, ScriptCallableBase* function) co
 }
 
 InterpreterValue StatementList::evaluate(InterpreterContext& context) const {
+    context.beginEvaluation();
+    BOOST_SCOPE_EXIT_ALL(&context) { context.endEvaluation(); };
     if (context.hasError()) {
         throw AstException(*context.getError(), 0, 0);
     }

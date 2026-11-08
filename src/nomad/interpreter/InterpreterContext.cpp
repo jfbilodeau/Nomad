@@ -94,6 +94,10 @@ void InterpreterContext::setVariable(
     }
 
     auto replacement = std::make_unique<InterpreterStorage>(type, storage);
+    if (m_evaluationDepth != 0 && frameId.isValid() &&
+        toNomadIndex(frameId.id) < m_variables.size() && m_variables[toNomadIndex(frameId.id)] != nullptr) {
+        m_retiredStorage.reserve(m_retiredStorage.size() + 1);
+    }
 
     auto variableId = m_function->getVariableId(name);
     if (variableId.isInvalid()) {
@@ -107,6 +111,9 @@ void InterpreterContext::setVariable(
     if (index >= m_variables.size()) {
         m_variables.resize(index + 1);
     }
+    if (m_evaluationDepth != 0 && m_variables[index] != nullptr) {
+        m_retiredStorage.push_back(std::move(m_variables[index]));
+    }
     m_variables[index] = std::move(replacement);
 }
 
@@ -114,7 +121,25 @@ void InterpreterContext::clearVariableValue(const NomadString& name) {
     const auto variableId = m_function->getVariableId(name);
     if (variableId.isValid() && !isFrameVariable(variableId) &&
         toNomadIndex(variableId.id) < m_variables.size()) {
-        m_variables[toNomadIndex(variableId.id)].reset();
+        auto& storage = m_variables[toNomadIndex(variableId.id)];
+        if (m_evaluationDepth != 0 && storage != nullptr) {
+            m_retiredStorage.push_back(std::move(storage));
+        } else {
+            storage.reset();
+        }
+    }
+}
+
+void InterpreterContext::beginEvaluation() {
+    ++m_evaluationDepth;
+}
+
+void InterpreterContext::endEvaluation() {
+    if (m_evaluationDepth == 0) {
+        throw NomadBug("Interpreter evaluation exits must match their entries");
+    }
+    if (--m_evaluationDepth == 0) {
+        m_retiredStorage.clear();
     }
 }
 

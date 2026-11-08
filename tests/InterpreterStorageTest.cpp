@@ -2,6 +2,8 @@
 
 #include <nomad/interpreter/InterpreterStorage.hpp>
 
+#include <nomad/compiler/StorageLocation.hpp>
+
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterValue.hpp>
 
@@ -21,6 +23,106 @@
 #include <utility>
 
 using namespace nomad;
+
+BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_released_on_success_or_failure) {
+    Runtime runtime;
+    const auto id = runtime.registerStruct("RetiredCounter");
+    const auto* type = runtime.getType(id).value();
+    BOOST_REQUIRE(runtime.registerProperty(id, "value", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(id, "label", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(id);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    auto clear = false;
+    auto fail = false;
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto method = runtime.addMethod(id, {
+        .name = "next", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            auto* receiver = &active->getStorageParameter(0, 0);
+            receiver[0].setIntegerValue(1);
+            if (clear) {
+                context.clearVariableValue("c");
+            } else {
+                context.setVariable("c", runtime.getIntegerType(), RuntimeValue{NomadInteger{42}});
+            }
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+            BOOST_REQUIRE(interpreter.execute("nested = 7", context));
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+            BOOST_TEST(receiver[1].getStringValue() == "retired");
+            receiver[0].setIntegerValue(2);
+            if (fail) {
+                throw NomadException("Retired receiver failure");
+            }
+            active->setIntegerResult(receiver[0].getIntegerValue());
+        }
+    });
+    BOOST_REQUIRE(method.isValid());
+    for (const auto clearing : {false, true}) {
+        for (const auto failing : {false, true}) {
+            clear = clearing;
+            fail = failing;
+            std::array<RuntimeValue, 2> source{
+                RuntimeValue{NomadInteger{0}}, RuntimeValue{NomadString{"retired"}}
+            };
+            context.setVariable("c", type, source);
+            type->freeValue(source.data());
+            context.setVariable("result", runtime.getIntegerType(), RuntimeValue{NomadInteger{99}});
+            BOOST_TEST(interpreter.execute("result = c.next", context) == !fail);
+            BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == (fail ? 99 : 2));
+            BOOST_TEST(context.getVariableValue("nested")->getIntegerValue() == 7);
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+            if (clear) {
+                BOOST_TEST(context.getVariableType("c") == nullptr);
+            } else {
+                BOOST_TEST(context.getVariableValue("c")->getIntegerValue() == 42);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_changing_logical_variable_ids) {
+    Runtime runtime;
+    const auto id = runtime.registerStruct("RetiredView");
+    const auto* type = runtime.getType(id).value();
+    const auto field = runtime.registerProperty(id, "text", runtime.getStringType());
+    BOOST_REQUIRE(field.isValid());
+    runtime.finalizeCompositeFieldLayout(id);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    RuntimeValue source{NomadString{"old"}};
+    context.setVariable("value", type, std::span<const RuntimeValue>{&source, 1});
+    type->freeValue(&source);
+    const auto variable = context.getCallable()->getVariableId("value");
+    IdentifierDefinition root;
+    root.identifierType = IdentifierType::FunctionVariable;
+    root.variableId = variable;
+    root.valueType = type;
+    const StorageLocation location(root);
+    const auto snapshot = location.withReceiver(context, [&](InterpreterReceiver& receiver) {
+        context.clearVariableValue("value");
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+        return receiver.getProperty(field);
+    });
+    BOOST_TEST(snapshot.getValue().getStringValue() == "old");
+    BOOST_TEST(snapshot.getValue().getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(context.getCallable()->getVariableId("value") == variable);
+    const auto replace = runtime.registerNativeFunction("replaceFormattedVariable", [&](VirtualMachine* active) {
+        context.clearVariableValue("text");
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 2);
+        active->setIntegerResult(5);
+    }, {}, runtime.getIntegerType(), "");
+    BOOST_REQUIRE(replace.isValid());
+    RuntimeValue text{NomadString{"formatted"}};
+    context.setVariable("text", runtime.getStringType(), text);
+    text.freeObjectValue();
+    const auto formatted = interpreter.formatString("{replaceFormattedVariable}", context, "retirement", 1, 1);
+    BOOST_TEST(formatted.text == "5");
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+}
 
 static_assert(!std::is_copy_constructible_v<InterpreterStorage>);
 static_assert(!std::is_copy_assignable_v<InterpreterStorage>);

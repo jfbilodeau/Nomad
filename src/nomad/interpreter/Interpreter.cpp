@@ -24,6 +24,8 @@
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
@@ -587,6 +589,8 @@ DynamicFormatResult Interpreter::formatString(
     const NomadIndex line,
     const NomadIndex column
 ) const {
+    context.beginEvaluation();
+    BOOST_SCOPE_EXIT_ALL(&context) { context.endEvaluation(); };
     DynamicFormatResult result;
     const auto parsed = parseFormatTemplate(format);
     const auto appendError = [&](const FormatTemplateSegment& segment, const NomadString& message) {
@@ -632,6 +636,8 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
 }
 
 NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& evaluation) const {
+    evaluation.beginEvaluation();
+    BOOST_SCOPE_EXIT_ALL(&evaluation) { evaluation.endEvaluation(); };
     evaluation.clearError();
     evaluation.clearResult();
     evaluation.setLoopControl(LoopControl::None);

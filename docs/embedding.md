@@ -2399,8 +2399,10 @@ releasing what they replace, so their own storage can be supplied as the source.
 complete variable storage; `getResult()->getStorage()` borrows result storage.
 Assignments to an existing context-owned variable of the same type preserve its
 slot addresses and update its contents. Adding other variables does not relocate
-those slots. Changing a variable's type or clearing it invalidates its views;
-replacing a result invalidates result views. Copy into an `InterpreterValue` when
+those slots. Changing a variable's type or clearing it removes its old storage
+from name/ID lookup. During evaluation, that storage remains alive until the
+outermost evaluation exits; outside evaluation it is released immediately.
+Replacing a result invalidates result views. Copy into an `InterpreterValue` when
 an independent snapshot must survive those operations.
 
 An empty view can mean either an empty struct or a missing variable; check
@@ -2488,10 +2490,19 @@ Ordinary AST evaluation still uses `Expression::evaluate(context)`.
 
 Object owners and temporary backing storage remain alive until the operation
 finishes. Context-owned struct storage and VM frames are borrowed, not retained.
-Do not clear, retype, or destroy the backing root/context/frame during an active
-borrowed method invocation. Same-type in-place updates and reentrant reads or
-calls are supported while the backing storage stays alive. Retaining detached
-context storage after retyping or clearing it during the method is not provided.
+Clearing or retyping a context-owned variable during evaluation retires its old
+storage until the outermost evaluation exits, including failure paths. An active
+receiver continues using that old storage without overwriting the new binding.
+Nested interpretation does not release its caller's retired storage. Same-type
+updates still modify the existing buffer in place. Variable names and logical
+IDs remain stable; retired storage is not exposed by variable lookup/listing.
+Contexts and borrowed VM frames must themselves remain alive.
+
+Source execution, formatting, direct AST evaluation, and scoped storage-location
+operations establish these evaluation lifetimes automatically. Hosts manually
+holding context-backed receivers can balance `beginEvaluation()` and
+`endEvaluation()` to establish the same lifetime; views must not outlive the
+outermost exit. No variable renaming or logical-ID compaction occurs.
 
 `getMutableVariableStorageById`, `getMutableParameterStorage`, and
 `getMutableReceiverStorage` provide the corresponding live context/frame views.

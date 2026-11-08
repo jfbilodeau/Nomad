@@ -127,6 +127,9 @@ public:
     [[nodiscard]] std::span<const RuntimeValue> getVariableStorageById(VariableId variableId) const;
     [[nodiscard]] std::span<RuntimeValue> getMutableVariableStorageById(VariableId variableId);
     [[nodiscard]] std::vector<InterpreterVariableInfo> listVariables() const;
+    // Nested evaluations retain replaced storage until the outermost exit.
+    void beginEvaluation();
+    void endEvaluation();
 
 private:
     friend class Interpreter;
@@ -146,6 +149,8 @@ private:
     std::vector<Diagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
     std::vector<std::unique_ptr<InterpreterStorage>> m_variables;
+    std::vector<std::unique_ptr<InterpreterStorage>> m_retiredStorage;
+    NomadIndex m_evaluationDepth = 0;
 };
 
 } // namespace nomad

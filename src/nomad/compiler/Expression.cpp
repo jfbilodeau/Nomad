@@ -24,6 +24,8 @@
 
 #include <nomad/system/String.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <algorithm>
 #include <any>
 #include <cctype>
@@ -144,6 +146,8 @@ InterpreterValue Expression::evaluateAssignment(InterpreterContext&, const Expre
 }
 
 InterpreterValue Expression::evaluate(InterpreterContext& context) const {
+    context.beginEvaluation();
+    BOOST_SCOPE_EXIT_ALL(&context) { context.endEvaluation(); };
     if (context.hasError()) {
         raiseException(*context.getError());
     }

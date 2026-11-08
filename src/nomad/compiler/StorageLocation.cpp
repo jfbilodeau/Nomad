@@ -16,6 +16,8 @@
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
+
 namespace nomad {
 
 StorageLocation::StorageLocation(const IdentifierDefinition root):
@@ -85,6 +87,8 @@ InterpreterValue StorageLocation::withReceiver(
     const std::function<InterpreterValue(InterpreterReceiver&)>& operation,
     const std::function<void()>& prepare
 ) const {
+    context.beginEvaluation();
+    BOOST_SCOPE_EXIT_ALL(&context) { context.endEvaluation(); };
     if (!operation || m_type->asCompositeType() == nullptr) {
         throw NomadBug("Receiver operation requires a composite storage location");
     }

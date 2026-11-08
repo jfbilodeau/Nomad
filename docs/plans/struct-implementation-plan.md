@@ -3586,6 +3586,27 @@ then consider simplifying the remaining snapshot-based field assignment paths.
 Neither shared assignment extraction nor automatic receiver writeback is a
 prerequisite for these borrowed method calls.
 
+### Deferred interpreter storage retirement
+
+Approved scope:
+
+- Preserve same-type in-place assignments and logical variable IDs.
+- When a context-owned variable is cleared or replaced with another type during
+  evaluation, retain its old storage outside the active variable table until the
+  outermost evaluation exits. Outside evaluation, release it immediately.
+- Cover source execution, formatting, direct AST evaluation, scoped receiver
+  operations, native reentry, and exception paths. Borrowed frames and contexts
+  still obey their existing owner lifetime contracts.
+- Use the existing context/storage owners; introduce no new value/receiver
+  classes, shared struct ownership, variable renaming, or ID compaction.
+- Validate receivers continuing after clear/retype, nested evaluation not freeing
+  caller storage, cleanup after success/failure, snapshots, and stable IDs.
+
+Implementation is complete; unit validation is pending.
+
+Next: review this lifetime policy before simplifying remaining field-assignment
+copy paths. No immutable/versioned same-type assignment behavior is introduced.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.
