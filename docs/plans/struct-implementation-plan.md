@@ -3639,6 +3639,48 @@ Implemented and validated:
   six CTest unit groups passed with automatic build. Whitespace checks passed.
 - Stop for review without committing. No gameplay was run.
 
+### Interpreter context metadata access
+
+Approved scope:
+
+- Remove `friend class Interpreter` from `InterpreterContext`.
+- Expose mutable resolution metadata through `getResolutionCallable()`, retaining
+  frame validation at the same execution/formatting boundaries.
+- Use existing read-only callable and runtime getters elsewhere. Preserve
+  metadata ownership, source diagnostics, and existing getter behavior.
+- Test valid/stale frame metadata access and run all six CTest unit groups.
+
+Implemented and validated:
+
+- Interpreter execution and formatting use `getResolutionCallable()` for
+  mutable metadata and frame validation, and existing getters for runtime/path.
+  No friendship or direct context-private access remains in the interpreter.
+- Valid and invalidated frame getter tests and all six CTest unit groups passed
+  with automatic build. Existing read-only metadata access remains unchanged.
+- Whitespace checks passed. Stop for review without committing.
+
+### Combined callable metadata getter
+
+Approved scope:
+
+- Replace the separately named resolution getter with mutable/const `getCallable`
+  overloads. Both validate borrowed frames; invalidated read-only access now
+  throws intentionally.
+- Preserve implicit and explicit source execution error reporting, including
+  source names, when callable access fails frame validation.
+- Update metadata access tests and documentation, run all six CTest unit groups,
+  and stop for review without committing.
+
+Implemented and validated:
+
+- Both `getCallable()` overloads validate frames. The separately named getter
+  and interpreter friendship are absent.
+- Invalid-frame read-only/mutable access and implicit source diagnostics are
+  covered by regression tests. Source names and cleared published results are
+  preserved on failed implicit source-name lookup.
+- All six CTest unit groups passed with automatic build. Whitespace and
+  obsolete-reference checks passed. Stop for review without committing.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.

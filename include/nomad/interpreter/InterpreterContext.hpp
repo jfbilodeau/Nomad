@@ -82,7 +82,8 @@ public:
     [[nodiscard]] VirtualMachine* getVirtualMachine() const;
     // Function-only access to context-owned metadata; nullptr for method or constructor frames.
     [[nodiscard]] const ScriptFunction* getFunction() const;
-    // Context-owned resolution metadata, never registered with the Runtime.
+    // Context-owned resolution metadata; validates borrowed frames before access.
+    [[nodiscard]] ScriptCallableBase* getCallable();
     [[nodiscard]] const ScriptCallableBase* getCallable() const;
     [[nodiscard]] bool isFrameBacked() const;
     [[nodiscard]] bool isFrameVariable(VariableId variableId) const;
@@ -147,8 +148,6 @@ public:
     void endEvaluation();
 
 private:
-    friend class Interpreter;
-
     void validateFrame() const;
 
     const Interpreter& m_interpreter;

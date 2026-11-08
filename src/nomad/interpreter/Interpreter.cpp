@@ -540,10 +540,9 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     evaluation.clearError();
     evaluation.clearResult();
     evaluation.setLoopControl(LoopControl::None);
-    evaluation.validateFrame();
-    auto compiler = evaluation.m_runtime->createCompiler();
+    auto* function = evaluation.getCallable();
+    auto compiler = evaluation.getRuntime()->createCompiler();
     CompilerContext context(compiler.get(), CompilerMode::Interpreter, &evaluation);
-    auto* function = evaluation.m_function.get();
     if (sourceLine == 0 || sourceLine == NOMAD_INVALID_INDEX) {
         sourceLine = 1;
     }
@@ -629,7 +628,15 @@ DynamicFormatResult Interpreter::formatString(
 }
 
 NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext& evaluation) const {
-    return execute(SourceText{evaluation.m_function->getPath(), source}, evaluation);
+    try {
+        return execute(SourceText{evaluation.getCallable()->getPath(), source}, evaluation);
+    } catch (const NomadBug& error) {
+        evaluation.clearError();
+        evaluation.clearResult();
+        evaluation.setLoopControl(LoopControl::None);
+        evaluation.setError(error.what());
+        return false;
+    }
 }
 
 NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& evaluation) const {
@@ -639,8 +646,9 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
     evaluation.setLoopControl(LoopControl::None);
     const RegisterRestoration registers(*evaluation.getVirtualMachine());
     try {
-        evaluation.validateFrame();
-        auto compiler = evaluation.m_runtime->createCompiler();
+        auto* callable = evaluation.getCallable();
+        auto* runtime = evaluation.getRuntime();
+        auto compiler = runtime->createCompiler();
         CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter, &evaluation);
         Tokenizer tokenizer(&compilerContext, source.sourceName, source.text);
         if (compilerContext.hasError()) {
@@ -657,9 +665,9 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         const auto isStatement = firstToken.type == TokenType::Identifier &&
                                  compiler->isStatement(firstToken.textValue);
         const auto functionId = firstToken.type == TokenType::Identifier
-            ? evaluation.m_runtime->getCallableId(firstToken.textValue)
+            ? runtime->getCallableId(firstToken.textValue)
             : CallableId{};
-        const auto* function = evaluation.m_runtime->getFunction(functionId);
+        const auto* function = runtime->getFunction(functionId);
         const auto isValueReturningCall =
             function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid();
         const auto line = tokenizer.getLineIndex();
@@ -670,9 +678,9 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         std::unique_ptr<Statement> statement;
         StatementList statements;
         if (parseAsExpression) {
-            auto expression = parser::parseExpression(&compilerContext, evaluation.m_function.get(), &tokenizer);
+            auto expression = parser::parseExpression(&compilerContext, callable, &tokenizer);
             if (expression != nullptr &&
-                parser::expectEndOfLine(&compilerContext, evaluation.m_function.get(), &tokenizer)) {
+                parser::expectEndOfLine(&compilerContext, callable, &tokenizer)) {
                 if (auto* member = expression->asNativeExpression()) {
                     member->setAllowVoid(true);
                 }
@@ -684,7 +692,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
             }
         } else {
             do {
-                statements.addStatement(parser::parseLine(&compilerContext, evaluation.m_function.get(), &tokenizer));
+                statements.addStatement(parser::parseLine(&compilerContext, callable, &tokenizer));
             } while (tokenizer.nextLine());
         }
         statements.addStatement(std::move(statement));
@@ -699,7 +707,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
             return true;
         }
 
-        if (!statements.resolve(&compilerContext, evaluation.m_function.get())) {
+        if (!statements.resolve(&compilerContext, callable)) {
             retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
             if (!evaluation.hasError()) {
                 reportInputError(evaluation, source, "Failed to resolve interpreter input");

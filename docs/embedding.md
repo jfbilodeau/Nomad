@@ -3458,6 +3458,11 @@ are supported; member frames also expose their receiver as `this`.
 New interpreter variables stay in the context and never change the compiled
 callable's locals, parameters, or captures. `context.getCallable()` exposes
 context-owned resolution metadata representing both sets of variables.
+`getCallable()` has mutable and const overloads, both validating any borrowed
+script frame before access. The mutable overload is intended for parsing and
+resolving interpreter input. The callable remains owned by the context and is
+not registered with the runtime. Access through an invalidated frame-backed
+context throws `NomadBug`, including read-only access.
 `context.getFunction()` remains function-only and returns `nullptr` for member
 frames. `machine.getCurrentFunction()` likewise remains function-only.
 

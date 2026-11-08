@@ -376,7 +376,13 @@ const ScriptFunction* InterpreterContext::getFunction() const {
     return dynamic_cast<const ScriptFunction*>(m_function.get());
 }
 
+ScriptCallableBase* InterpreterContext::getCallable() {
+    validateFrame();
+    return m_function.get();
+}
+
 const ScriptCallableBase* InterpreterContext::getCallable() const {
+    validateFrame();
     return m_function.get();
 }
 

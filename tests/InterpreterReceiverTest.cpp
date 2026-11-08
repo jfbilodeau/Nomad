@@ -426,12 +426,20 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
                     }
                 }
                 const auto current = active->captureExecutionState();
+                const auto* metadata = context.getCallable();
+                BOOST_TEST(std::as_const(context).getCallable() == metadata);
                 auto invalid = current;
                 ++invalid.parameterIndex;
                 active->restoreExecutionState(invalid);
                 BOOST_CHECK_THROW(static_cast<void>(context.getReceiver()), NomadBug);
                 BOOST_CHECK_THROW(static_cast<void>(std::as_const(context).getReceiver()), NomadBug);
                 BOOST_CHECK_THROW(static_cast<void>(context.getMutableReceiverStorage()), NomadBug);
+                BOOST_CHECK_THROW(static_cast<void>(context.getCallable()), NomadBug);
+                BOOST_CHECK_THROW(static_cast<void>(std::as_const(context).getCallable()), NomadBug);
+                BOOST_TEST(!interpreter.execute("0", context));
+                BOOST_REQUIRE(context.getError() != nullptr);
+                BOOST_TEST(context.getDiagnostics()[0].sourceName == metadata->getPath());
+                BOOST_TEST(context.getResult() == nullptr);
                 active->restoreExecutionState(current);
             }
             active->restoreExecutionState(state);
