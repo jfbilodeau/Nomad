@@ -209,10 +209,38 @@ PropertyId TypeManager::registerNativeClassProperty(
         return PropertyId::INVALID;
     }
     const auto* valueType = definition.valueType;
-    const auto hasAccessors = static_cast<bool>(definition.getter) || static_cast<bool>(definition.setter);
+    const auto hasCallbacks = static_cast<bool>(definition.getter) || static_cast<bool>(definition.setter);
+    const auto hasMethods = definition.getterMethodId.isValid() || definition.setterMethodId.isValid();
+    if (hasMethods && hasCallbacks) {
+        log::error("Cannot register native property '" + definition.name + "': callbacks and accessor methods cannot be mixed");
+        return PropertyId::INVALID;
+    }
+    if (hasMethods) {
+        const auto* getter = m_runtime.getMethod(definition.getterMethodId);
+        const auto* setter = m_runtime.getMethod(definition.setterMethodId);
+        if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
+            log::error("Cannot register native property '" + definition.name + "': accessor methods require a resolved value type");
+            return PropertyId::INVALID;
+        }
+        if (definition.getterMethodId.isValid() &&
+            (getter == nullptr || getter->asNativeMethod() == nullptr || getter->getClassType() != classType ||
+             getter->getParameterCount() != 0 || getter->getReturnType() != valueType)) {
+            log::error("Cannot register native property '" + definition.name + "': getter must be a native method on its owner with no arguments and a matching result");
+            return PropertyId::INVALID;
+        }
+        if (definition.setterMethodId.isValid() &&
+            (setter == nullptr || setter->asNativeMethod() == nullptr || setter->getClassType() != classType ||
+             setter->getParameterCount() != 1 || setter->getParameters()[0].type != valueType ||
+             setter->getReturnType() == nullptr || !setter->getReturnType()->isVoid())) {
+            log::error("Cannot register native property '" + definition.name + "': setter must be a native method on its owner with one matching argument and a void result");
+            return PropertyId::INVALID;
+        }
+    }
+    const auto hasAccessors = hasCallbacks || hasMethods;
     auto property = std::make_unique<NativeProperty>(
         classType, definition.name, valueType,
-        std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation)
+        std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation),
+        definition.getterMethodId, definition.setterMethodId
     );
     const auto belongsToRuntime = valueType != nullptr && valueType->getRuntime() == &m_runtime;
     const auto isDeferredType = !property->isTypeResolved() && belongsToRuntime;

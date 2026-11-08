@@ -1073,8 +1073,9 @@ temporary field changes only that temporary, except for shared class references
 stored in its fields. Empty fields still evaluate and release their root.
 The interpreter can read stored struct properties through these roots and owns
 the extracted value. It can invoke methods on stored and temporary struct
-receivers and assign their stored fields. Native accessor-backed struct
-properties remain unsupported by the interpreter.
+receivers and assign their stored fields. Method-backed native struct-valued
+properties support interpreter access; their getters return owned temporaries,
+not stored-field aliases.
 
 Object-owned reads evaluate the owner once and keep it alive until copied values
 are independently owned. Writes retain the original owner and capture the
@@ -1596,7 +1597,8 @@ same runtime, or a placeholder obtained from its configured compiler's
 Host registration is permitted on both open and closed types.
 Include `<nomad/script/NativeMember.hpp>` for `NativePropertyDefinition`.
 `Runtime::addProperty` remains a compatibility entry point with identical behavior.
-Native struct accessors are not supported; struct owner IDs are rejected.
+Properties require class owners; struct owner IDs are rejected. Struct-valued
+properties can use registered native accessor methods, described below.
 
 Provide a getter, a setter, or both. A getter-only property is read-only; a
 setter-only property is write-only. The runtime owns the registered name,
@@ -1630,6 +1632,51 @@ Registration adds the property to Runtime's shared native-member indexes without
 running callbacks or adding stored-field slots. It remains permitted after
 class field layout finalization. Runtime retains property lookup and deferred
 type-resolution APIs.
+
+#### Method-backed native properties
+
+Instead of callbacks, supply `getterMethodId`, `setterMethodId`, or both in
+`NativePropertyDefinition`. Register those methods first using ordinary native
+method APIs. The getter must belong to the property's exact owner, take no
+arguments, and return the property's value type. The setter must belong to the
+same owner, take one argument of that type, and return `void`. The value type
+must already be resolved and registered; deferred types retain the callback-only
+registration path. Do not mix callbacks and method IDs on one property.
+Invalid methods, owners, or signatures are logged and rejected without
+publishing the property or executing a callback.
+
+```cpp
+const auto propertyId = runtime.addProperty(ownerTypeId, {
+    .valueType = pointType,
+    .name = "point",
+    .documentation = "A point snapshot.",
+    .getterMethodId = getPointMethodId,
+    .setterMethodId = setPointMethodId
+});
+```
+
+Method-backed properties add no stored-field slots. Metadata snapshots expose
+their method IDs; `getFn` and `setFn` remain empty for this form. A getter-only
+property is read-only, and a setter-only property is write-only. Scalar,
+reference, struct, and empty-struct values use the existing typed method-call
+contracts, including independent struct arguments/results and synchronous
+aggregate calls.
+
+Use `InterpreterObjectReceiver::getProperty`/`setProperty`, context receiver
+setters, or interpreted source after registering the methods. Getters produce
+owned snapshots. Whole-property assignment invokes the setter after evaluating
+the RHS. Setting a field or calling a mutating method through a getter result
+changes only the temporary snapshot; it does not invoke the setter automatically.
+This remains allowed for getter-only properties. Contained class references
+retain their ordinary shared reference semantics. To persist a field update,
+read the snapshot, produce a replacement, and assign the complete property.
+
+Failures propagate as exceptions to host callers and as diagnostics from source
+execution. Argument/result cleanup still occurs, but accessor side effects,
+including setter changes before an exception, are not rolled back.
+Compiled source and the VM's raw property APIs do not yet support method-backed
+properties; they report explicit unsupported-access errors. Existing scalar
+callback properties are unchanged.
 
 For low-level integration, `Runtime::canRegisterNativeMember` checks registered
 class ownership, collisions, and shared native-member parameter signatures,
@@ -2762,8 +2809,9 @@ accessor side effects are not rolled back. These setters do not change the
 context's result; source assignment
 statements separately publish their owned assignment snapshots.
 
-Native accessor-backed struct properties, aggregate captures, and field-aware
-struct formatting remain unsupported.
+Method-backed native struct-valued properties support typed interpreter/host
+receiver access. Their compiled integration remains pending, along with
+aggregate captures and field-aware struct formatting.
 
 ## Parameterized types
 

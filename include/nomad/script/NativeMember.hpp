@@ -49,6 +49,8 @@ struct NativePropertyDefinition {
     NativePropertyGetFn getter;
     NativePropertySetFn setter;
     NomadString documentation;
+    CallableId getterMethodId = CallableId::INVALID;
+    CallableId setterMethodId = CallableId::INVALID;
 };
 
 struct NativeIndexerDefinition {
@@ -72,6 +74,8 @@ struct NativePropertyInfo {
     NativePropertyGetFn getFn;
     NativePropertySetFn setFn;
     NomadDocField;
+    CallableId getterMethodId = CallableId::INVALID;
+    CallableId setterMethodId = CallableId::INVALID;
 };
 
 DeclareId(IndexerId);

@@ -1,8 +1,10 @@
 #include <nomad/interpreter/InterpreterObjectReceiver.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterStorage.hpp>
 
 #include <nomad/script/ClassType.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -41,6 +43,15 @@ InterpreterValue InterpreterObjectReceiver::getProperty(const PropertyId propert
     if (property == nullptr) {
         throw std::invalid_argument("Invalid interpreter property getter");
     }
+    if (const auto* native = property->asNativeProperty()) {
+        const auto info = native->getInfo();
+        if (info.getterMethodId.isValid()) {
+            return getInterpreter().runObjectMethod(*getType()->asClassType(), m_object, info.getterMethodId, {});
+        }
+        if (info.setterMethodId.isValid()) {
+            throw std::invalid_argument("Native property '" + info.name + "' is write-only");
+        }
+    }
     const auto* type = property->getValueType();
     if (type->isStruct()) {
         const auto* object = dynamic_cast<const ScriptObject*>(m_object);
@@ -69,6 +80,17 @@ void InterpreterObjectReceiver::setProperty(const PropertyId propertyId, const I
     const auto* property = getType()->getRuntime()->getProperty(propertyId);
     if (property == nullptr) {
         throw std::invalid_argument("Invalid interpreter property setter");
+    }
+    if (const auto* native = property->asNativeProperty()) {
+        const auto info = native->getInfo();
+        if (info.setterMethodId.isValid()) {
+            static_cast<void>(getInterpreter().runObjectMethod(
+                *getType()->asClassType(), m_object, info.setterMethodId, {&value, 1}));
+            return;
+        }
+        if (info.getterMethodId.isValid()) {
+            throw std::invalid_argument("Native property '" + info.name + "' is read-only");
+        }
     }
     const auto* type = property->getValueType();
     if (type->isStruct()) {
@@ -110,6 +132,15 @@ void InterpreterObjectReceiver::setProperty(
     const auto* type = property->getValueType()->asStructType();
     if (type == nullptr) {
         throw std::invalid_argument("Stored property paths require struct owners");
+    }
+    if (const auto* native = property->asNativeProperty()) {
+        const auto info = native->getInfo();
+        if (info.getterMethodId.isValid() || info.setterMethodId.isValid()) {
+            const auto current = getProperty(propertyId);
+            InterpreterStorage temporary(type, current.getStorage());
+            getInterpreter().setProperty(*type, temporary.getMutableStorage(), propertyPath.substr(separator + 1), value);
+            return;
+        }
     }
     auto* object = dynamic_cast<ScriptObject*>(m_object);
     if (property->asNativeProperty() != nullptr || object == nullptr ||

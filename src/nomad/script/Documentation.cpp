@@ -550,7 +550,9 @@ void writeMemberDocumentation(const Runtime* runtime, const bool includeScript, 
                 if (!info) {
                     throw NomadException("Registered native property is unavailable");
                 }
-                access = info->getFn ? (info->setFn ? "read/write" : "read-only") : "write-only";
+                const auto canRead = static_cast<bool>(info->getFn) || info->getterMethodId.isValid();
+                const auto canWrite = static_cast<bool>(info->setFn) || info->setterMethodId.isValid();
+                access = canRead ? (canWrite ? "read/write" : "read-only") : "write-only";
             }
 
             out << " (*" << access << (native ? " property*)" : " field*)") << std::endl;

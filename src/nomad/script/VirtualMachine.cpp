@@ -508,6 +508,9 @@ void VirtualMachine::getNativeProperty(
     RuntimeValue& result
 ) {
     const auto info = m_runtime->getNativePropertyInfo(memberId);
+    if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+        fault("Method-backed native properties require typed interpreter access");
+    }
     if (!info || !info->getFn) {
         fault("Invalid native property getter");
     }
@@ -580,6 +583,9 @@ void VirtualMachine::setNativeProperty(
     const RuntimeValue& value
 ) {
     const auto info = m_runtime->getNativePropertyInfo(memberId);
+    if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+        fault("Method-backed native properties require typed interpreter access");
+    }
     if (!info || !info->setFn) {
         fault("Invalid native property setter");
     }

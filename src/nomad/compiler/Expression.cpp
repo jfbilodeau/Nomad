@@ -17,6 +17,7 @@
 #include <nomad/interpreter/InterpreterObjectReceiver.hpp>
 
 #include <nomad/script/FormatString.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
@@ -831,8 +832,13 @@ bool NativeMemberExpression::resolveAssignmentTarget(
         }
         return true;
     }
-    if (!info->setFn) {
+    if (!info->setFn && info->setterMethodId.isInvalid()) {
         reportError(context, function, "Native property '" + m_qualifiedName + "' is read-only");
+        return false;
+    }
+    if (context->getMode() == CompilerMode::Script &&
+        (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+        reportError(context, function, "Method-backed native properties are not supported by compiled source yet");
         return false;
     }
     setType(info->valueType);
@@ -859,8 +865,13 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             return;
         }
 
-        if (!info->getFn) {
+        if (!info->getFn && info->getterMethodId.isInvalid()) {
             reportError(context, function, "Native property '" + m_qualifiedName + "' is write-only");
+            return;
+        }
+        if (context->getMode() == CompilerMode::Script &&
+            (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+            reportError(context, function, "Method-backed native properties are not supported by compiled source yet");
             return;
         }
 
@@ -1054,7 +1065,8 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
         if (property == nullptr) {
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
-        if (property->asNativeProperty() != nullptr && getType()->isStruct()) {
+        if (const auto* native = property->asNativeProperty();
+            native != nullptr && getType()->isStruct() && native->getInfo().getterMethodId.isInvalid()) {
             raiseException("Struct member values are not supported by the interpreter");
         }
         const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
@@ -1101,7 +1113,8 @@ InterpreterValue NativeMemberExpression::evaluateAssignment(
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
     if (m_receiver->getType()->asCompositeType() != nullptr) {
-        if (property->asNativeProperty() != nullptr && getType()->isStruct()) {
+        if (const auto* native = property->asNativeProperty();
+            native != nullptr && getType()->isStruct() && native->getInfo().setterMethodId.isInvalid()) {
             raiseException("Struct member values are not supported by the interpreter");
         }
         const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));

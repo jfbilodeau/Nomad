@@ -475,4 +475,321 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
     BOOST_TEST(visits == 6);
 }
 
+BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke_whole_value_setters) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto sharedId = runtime.registerClass("AccessorMethodShared", ClassMode::Closed);
+    const auto* shared = runtime.getTypeByName("AccessorMethodShared")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(sharedId, "number", runtime.getIntegerType()).isValid());
+    runtime.finalizeCompositeFieldLayout(sharedId);
+    const auto valueId = runtime.registerStruct("AccessorMethodValue");
+    const auto* type = runtime.getTypeByName("AccessorMethodValue")->asStructType();
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "shared", shared).isValid());
+    const auto emptyId = runtime.registerStruct("AccessorMethodEmpty");
+    const auto* emptyType = runtime.getTypeByName("AccessorMethodEmpty");
+    const auto ownerId = runtime.registerClass("AccessorMethodOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("AccessorMethodOwner")->asClassType();
+    const auto backingId = runtime.registerProperty(ownerId, "backing", type);
+    BOOST_REQUIRE(backingId.isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    auto getterCalls = 0;
+    auto setterCalls = 0;
+    auto emptyGetterCalls = 0;
+    auto emptySetterCalls = 0;
+    const auto numberMethod = runtime.addMethod(ownerId, {
+        .name = "readNumber", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->setIntegerResult(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[0].getIntegerValue());
+        }
+    });
+    const auto getter = runtime.addMethod(ownerId, {
+        .name = "getValue", .parameters = {}, .returnTypeId = valueId,
+        .function = [&](VirtualMachine* active) {
+            ++getterCalls;
+            auto* object = static_cast<ScriptObject*>(active->getThis());
+            auto* destination = &active->getStorageParameter(0, 0);
+            const Interpreter nested(*active);
+            const auto number = nested.runObjectMethod(*owner, object, numberMethod, {});
+            BOOST_TEST(number.getValue().getIntegerValue() == object->getFieldStorage(0)[0].getIntegerValue());
+            BOOST_TEST(active->getThis() == object);
+            BOOST_TEST(&active->getStorageParameter(0, 0) == destination);
+            type->copyValue(object->getFieldStorage(0).data(), destination);
+        }
+    });
+    const auto setter = runtime.addMethod(ownerId, {
+        .name = "setValue", .parameters = {{valueId, "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            ++setterCalls;
+            auto* object = static_cast<ScriptObject*>(active->getThis());
+            const auto argument = active->getParameterStorage(0, type->getSize());
+            const Interpreter nested(*active);
+            const auto previous = nested.runObjectMethod(*owner, object, getter, {});
+            BOOST_TEST(previous.getStorage()[0].getIntegerValue() == object->getFieldStorage(0)[0].getIntegerValue());
+            BOOST_TEST(active->getThis() == object);
+            BOOST_TEST(active->getParameterStorage(0, type->getSize()).data() == argument.data());
+            std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+            object->setFieldStorage(0, argument, scratch);
+            argument[0].setIntegerValue(99);
+        }
+    });
+    const auto emptyGetter = runtime.addMethod(ownerId, {
+        .name = "getEmpty", .parameters = {}, .returnTypeId = emptyId,
+        .function = [&](VirtualMachine*) { ++emptyGetterCalls; }
+    });
+    const auto emptySetter = runtime.addMethod(ownerId, {
+        .name = "setEmpty", .parameters = {{emptyId, "empty", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine*) { ++emptySetterCalls; }
+    });
+    BOOST_REQUIRE(numberMethod.isValid() && getter.isValid() && setter.isValid() &&
+        emptyGetter.isValid() && emptySetter.isValid());
+    const auto propertyId = runtime.addProperty(ownerId, {
+        .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
+    });
+    const auto readOnlyId = runtime.addProperty(ownerId, {
+        .valueType = type, .name = "readOnly", .getterMethodId = getter
+    });
+    const auto writeOnlyId = runtime.addProperty(ownerId, {
+        .valueType = type, .name = "writeOnly", .setterMethodId = setter
+    });
+    const auto emptyProperty = runtime.addProperty(ownerId, {
+        .valueType = emptyType, .name = "empty", .getterMethodId = emptyGetter, .setterMethodId = emptySetter
+    });
+    const auto numberProperty = runtime.addProperty(ownerId, {
+        .valueType = runtime.getIntegerType(), .name = "number", .getterMethodId = numberMethod
+    });
+    BOOST_REQUIRE(propertyId.isValid() && readOnlyId.isValid() && writeOnlyId.isValid() &&
+        emptyProperty.isValid() && numberProperty.isValid());
+    BOOST_REQUIRE(runtime.addMethod(valueId, {
+        .name = "bump", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            auto& number = active->getStorageParameter(0, 0);
+            number.setIntegerValue(number.getIntegerValue() + 1);
+            active->setIntegerResult(number.getIntegerValue());
+        }
+    }).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeAccessorMethodOwner", [owner](VirtualMachine* active) {
+        active->getResult().setObjectValue(new ScriptObject(owner));
+    }, {}, owner, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeAccessorMethodValue", [shared](VirtualMachine* active) {
+        auto* destination = &active->getStorageParameter(0, 0);
+        destination[0].setIntegerValue(7);
+        destination[1].setStringValue("accessor argument");
+        destination[2].setObjectValue(new ScriptObject(shared));
+    }, {}, type, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeAccessorMethodEmpty", [](VirtualMachine*) {},
+        {}, emptyType, "").isValid());
+    fixture.addFunction("accessorMethodTypes", "return 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            std::optional<InterpreterValue> retained;
+            {
+                auto machine = runtime.createVirtualMachine();
+                const Interpreter interpreter(*machine);
+                InterpreterContext context(interpreter);
+                const auto execute = [&](const NomadString& source) {
+                    BOOST_REQUIRE_MESSAGE(interpreter.execute(source, context),
+                        (context.getError() ? *context.getError() : source));
+                };
+                execute("owner = makeAccessorMethodOwner\nsource = makeAccessorMethodValue\nowner.value = source\ncopy = owner.value");
+                const auto wrapper = interpreter.createObjectReceiver(*owner, context.getVariableValue("owner")->getObjectValue());
+                retained = wrapper->getProperty(propertyId);
+                const auto settersBeforeMutation = setterCalls;
+                const auto gettersBeforeMutation = getterCalls;
+                execute("owner.value.number = 31\nowner.value.bump\nowner.readOnly.number = 53\nowner.readOnly.bump\nowner.value.number");
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 7);
+                BOOST_TEST(getterCalls == gettersBeforeMutation + 5);
+                BOOST_TEST(setterCalls == settersBeforeMutation);
+                execute("copy.shared.number = 29\nowner.value.shared.number");
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
+                const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}});
+                wrapper->setProperty("value.number", number);
+                BOOST_TEST(wrapper->getProperty(numberProperty).getValue().getIntegerValue() == 7);
+                BOOST_TEST(setterCalls == settersBeforeMutation);
+                execute("copy.number");
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 7);
+                execute("source.number");
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 7);
+                execute("source.number = 17\nowner.writeOnly = source\nowner.value.number");
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
+                BOOST_TEST(retained->getStorage()[0].getIntegerValue() == 7);
+                BOOST_TEST(!interpreter.execute("owner.readOnly = source", context));
+                BOOST_REQUIRE(context.getError() != nullptr);
+                BOOST_TEST(context.getError()->find("read-only") != NomadString::npos);
+                BOOST_TEST(!interpreter.execute("owner.writeOnly", context));
+                BOOST_REQUIRE(context.getError() != nullptr);
+                BOOST_TEST(context.getError()->find("write-only") != NomadString::npos);
+                BOOST_CHECK_THROW(wrapper->setProperty(readOnlyId, *retained), std::invalid_argument);
+                BOOST_CHECK_THROW(static_cast<void>(wrapper->getProperty(writeOnlyId)), std::invalid_argument);
+                BOOST_CHECK_THROW(wrapper->setProperty(propertyId, number), std::invalid_argument);
+                execute("owner.empty = makeAccessorMethodEmpty\nowner.empty");
+                BOOST_TEST(context.getResult()->getType() == emptyType);
+                BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
+                execute("(makeAccessorMethodOwner).value.number");
+                BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 0);
+                RuntimeValue receiver;
+                receiver.setObjectValue(context.getVariableValue("owner")->getObjectValue());
+                RuntimeValue result;
+                BOOST_CHECK_EXCEPTION(machine->getNativeProperty(propertyId, receiver, result), VirtualMachineException,
+                    [](const auto& error) {
+                        return NomadString{error.what()} == "Method-backed native properties require typed interpreter access";
+                    });
+            }
+            BOOST_TEST(retained->getStorage()[0].getIntegerValue() == 7);
+            BOOST_TEST(retained->getStorage()[1].getStringValue() == "accessor argument");
+            BOOST_TEST(retained->getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(retained->getStorage()[2].getObjectValue()->getReferenceCount() == 1U);
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(getterCalls > 0);
+    BOOST_TEST(setterCalls == 6);
+    BOOST_TEST(emptyGetterCalls == 3);
+    BOOST_TEST(emptySetterCalls == 3);
+}
+
+BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_preserve_callback_mutations) {
+    Runtime runtime;
+    FailingCompositeCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCompositeCopyType>("MethodAccessorCopy", ClassMode::Closed, field);
+    const auto valueId = runtime.registerStruct("MethodAccessorPair");
+    const auto* type = runtime.getTypeByName("MethodAccessorPair");
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    const auto ownerId = runtime.registerClass("MethodAccessorFailureOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("MethodAccessorFailureOwner")->asClassType();
+    const auto backingId = runtime.registerProperty(ownerId, "backing", type);
+    BOOST_REQUIRE(backingId.isValid());
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    auto failGetter = false;
+    auto failSetter = false;
+    const auto getter = runtime.addMethod(ownerId, {
+        .name = "getValue", .parameters = {}, .returnTypeId = valueId,
+        .function = [&](VirtualMachine* active) {
+            auto* destination = &active->getStorageParameter(0, 0);
+            if (failGetter) {
+                destination[0].setStringValue("partial accessor result");
+                throw NomadException("Accessor getter failed");
+            }
+            type->copyValue(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0).data(), destination);
+        }
+    });
+    const auto setter = runtime.addMethod(ownerId, {
+        .name = "setValue", .parameters = {{valueId, "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            auto* object = static_cast<ScriptObject*>(active->getThis());
+            std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+            object->setFieldStorage(0, active->getParameterStorage(0, type->getSize()), scratch);
+            if (failSetter) {
+                throw NomadException("Accessor setter failed");
+            }
+        }
+    });
+    BOOST_REQUIRE(getter.isValid() && setter.isValid());
+    const auto propertyId = runtime.addProperty(ownerId, {
+        .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
+    });
+    BOOST_REQUIRE(propertyId.isValid());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            RuntimeValue object;
+            object.setObjectValue(new ScriptObject(owner));
+            const auto receiver = interpreter.createObjectReceiver(*owner, object.getObjectValue());
+            object.freeObjectValue();
+            std::array<RuntimeValue, 2> oldSource{RuntimeValue{NomadString{"old first"}}, RuntimeValue{NomadString{"old second"}}};
+            std::array<RuntimeValue, 2> newSource{RuntimeValue{NomadString{"new first"}}, RuntimeValue{NomadString{"new second"}}};
+            const InterpreterValue original(type, oldSource);
+            const InterpreterValue replacement(type, newSource);
+            type->freeValue(oldSource.data());
+            type->freeValue(newSource.data());
+            receiver->setProperty(backingId, original);
+            machine->pushInteger(1234);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            const auto live = RuntimeValue::getLiveStringCount();
+            for (auto failure = NomadIndex{1}; failure <= 4; ++failure) {
+                field->copyCount = 0;
+                field->failCopyAt = failure;
+                BOOST_CHECK_THROW(static_cast<void>(receiver->getProperty(propertyId)), NomadException);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(original.getStorage()[0].getObjectValue()->getReferenceCount() == 2U);
+                field->copyCount = 0;
+                BOOST_CHECK_THROW(receiver->setProperty(propertyId, replacement), NomadException);
+                BOOST_TEST(original.getStorage()[0].getObjectValue()->getReferenceCount() == 2U);
+                BOOST_TEST(replacement.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+            }
+            field->failCopyAt = 0;
+            failGetter = true;
+            BOOST_CHECK_THROW(static_cast<void>(receiver->getProperty(propertyId)), NomadException);
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+            failGetter = false;
+            InterpreterContext context(interpreter);
+            context.setVariable("owner", owner, receiver->getValue().getStorage());
+            context.setVariable("replacement", type, replacement.getStorage());
+            failSetter = true;
+            BOOST_TEST(!interpreter.execute("owner.value = replacement", context));
+            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_TEST(context.getError()->find("Accessor setter failed") != NomadString::npos);
+            BOOST_TEST(context.getResult() == nullptr);
+            const auto changed = receiver->getProperty(backingId);
+            BOOST_TEST(changed.getStorage()[0].getStringValue() == "new first");
+            BOOST_TEST(replacement.getStorage()[0].getStringValue() == "new first");
+            failSetter = false;
+            machine->pop1();
+        }
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(method_backed_properties_report_compiled_access_as_unsupported_until_the_next_slice) {
+    for (const auto* source : {"owner.value", "owner.value = argument"}) {
+        nomad::test::LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto valueId = runtime.registerStruct("PendingAccessorValue");
+        const auto* type = runtime.getTypeByName("PendingAccessorValue");
+        BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+        const auto ownerId = runtime.registerClass("PendingAccessorOwner", ClassMode::Closed);
+        const auto* owner = runtime.getTypeByName("PendingAccessorOwner")->asClassType();
+        runtime.finalizeCompositeFieldLayout(valueId);
+        const auto getter = runtime.addMethod(ownerId, {
+            .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = [](VirtualMachine*) {}
+        });
+        const auto setter = runtime.addMethod(ownerId, {
+            .name = "setValue", .parameters = {{valueId, "value", ""}},
+            .returnTypeId = runtime.getVoidType()->getId(), .function = [](VirtualMachine*) {}
+        });
+        BOOST_REQUIRE(getter.isValid() && setter.isValid());
+        BOOST_REQUIRE(runtime.addProperty(ownerId, {
+            .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
+        }).isValid());
+        fixture.addFunction("main", NomadString{"params owner:PendingAccessorOwner argument:PendingAccessorValue\n"} +
+            source + "\nreturn 0");
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.getDiagnostics().find("Method-backed native properties are not supported by compiled source yet") !=
+            NomadString::npos);
+        BOOST_TEST(fixture.getDiagnostics().find("Internal error") == NomadString::npos);
+        BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    }
+}
+
 BOOST_AUTO_TEST_SUITE_END()

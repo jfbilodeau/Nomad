@@ -17,11 +17,15 @@ NativeProperty::NativeProperty(
     const Type* valueType,
     NativePropertyGetFn getFn,
     NativePropertySetFn setFn,
-    NomadString doc
+    NomadString doc,
+    const CallableId getterMethodId,
+    const CallableId setterMethodId
 ):
     Property(classType, std::move(name), valueType, std::move(doc)),
     m_getFn(std::move(getFn)),
     m_setFn(std::move(setFn)),
+    m_getterMethodId(getterMethodId),
+    m_setterMethodId(setterMethodId),
     m_typeResolved(dynamic_cast<const DeferredType*>(valueType) == nullptr)
 {}
 
@@ -31,7 +35,8 @@ const NativeProperty* NativeProperty::asNativeProperty() const {
 
 NativePropertyInfo NativeProperty::getInfo() const {
     if (m_typeResolved) {
-        return {getId(), getClassType(), getName(), getValueType(), m_getFn, m_setFn, getDoc()};
+        return {getId(), getClassType(), getName(), getValueType(), m_getFn, m_setFn, getDoc(),
+            m_getterMethodId, m_setterMethodId};
     }
     NativePropertyGetFn getter;
     NativePropertySetFn setter;
@@ -47,7 +52,17 @@ NativePropertyInfo NativeProperty::getInfo() const {
             m_setFn(machine, value);
         };
     }
-    return {getId(), getClassType(), getName(), getValueType(), std::move(getter), std::move(setter), getDoc()};
+    return {
+        getId(), 
+        getClassType(), 
+        getName(), 
+        getValueType(), 
+        std::move(getter), 
+        std::move(setter), 
+        getDoc(),
+        m_getterMethodId, 
+        m_setterMethodId
+    };
 }
 
 bool NativeProperty::isTypeResolved() const {

@@ -41,6 +41,10 @@ Compiled native/script class-method struct results now support local and
 forwarded return destinations, including retained temporary receivers and
 staged assignment targets. This slice is implemented and validated, awaiting
 review.
+Method-backed native properties are implemented for registration and typed
+interpreter/host receiver access. Getter results are owned snapshots; nested
+mutations do not automatically invoke setters. Compiled integration is separate.
+This slice is implemented and validated, awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -3848,6 +3852,64 @@ Next, after review: native accessor-backed struct property parity, then struct
 captures/callbacks, field-aware formatting, and remaining host parity. Conservative
 NRVO follows Step 5 approval, then final tooling/documentation and integration
 completion checks. Fatal VM fault cleanup remains deferred.
+
+### Step 5G1: Method-backed native property registration and interpreter access
+
+Approved scope:
+
+- Let native properties reference registered native getter/setter methods,
+  reusing ordinary method signatures and the existing aggregate call ABI.
+  Preserve existing scalar callback properties and add no opcodes or new
+  span-callback family.
+- Implement registration and typed interpreter/host receiver access first.
+  Getter results are owned snapshots. Whole-property writes invoke setters;
+  nested writes/mutating calls affect getter temporaries without automatic
+  setter writeback or a getter-only mutation restriction.
+- Validate signatures and ownership at registration, preserve receiver retention,
+  reentry, copied arguments/results, and empty-value effects. Report unsupported
+  compiled/raw property access explicitly until its subsequent integration slice.
+- Add tests and documentation, build/test, then stop for review without committing.
+
+Implementation:
+
+- `NativePropertyDefinition`/`Info` carry optional getter/setter method IDs;
+  existing callback fields and aggregate initialization positions are preserved.
+- Registration requires same-owner native methods, a zero-argument matching
+  getter result, and a one-argument matching void setter. Method-backed value types
+  must already resolve; callback/deferred registration is unchanged. Mixed
+  callback/method definitions and invalid signatures are rejected without publishing.
+- Typed object receiver access delegates to the ordinary interpreter method APIs.
+  Native properties remain outside object storage layouts. Generated
+  API documentation reports read/write access correctly for either property form.
+- Interpreter source accepts whole-value reads/writes and snapshot-based nested
+  mutation. Read-only/write-only checks account for method IDs. Compiled source
+  and raw VM property APIs report explicit unsupported-access errors.
+- Regression coverage includes registration/metadata/layout and generated access
+  descriptions, scalar/empty/multi-slot results, getter single evaluation, shared
+  contained objects, immutable snapshots, getter-only temporary mutation without
+  writeback, setter argument isolation, native reentry, retained result lifetime,
+  partial-copy/result cleanup, and setter side effects surviving failed source calls.
+
+Validation:
+
+- The initial build exposed a test-only enum-printing requirement in Boost.Test.
+  The corrected retry built and passed the targeted language/remaining groups.
+- After adding shared-object and getter single-evaluation coverage, CTest's
+  automatic build and all six unit groups passed, along with script staging and
+  compiler-export integration checks.
+- New ownership and failure scenarios repeat three times and restore live
+  string/object counts. Getter snapshots, setter input isolation, empty effects,
+  temporary mutation without writeback, native reentry, partial cleanup, and
+  setter mutations before failure passed.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting compiled accessor integration.
+
+Next, after review: compiled method-backed accessor reads and whole-property
+writes using ordinary native method calls; then captures/callbacks, field-aware
+formatting, remaining host parity, and NRVO after Step 5 approval. Getter results
+remain temporaries rather than addressable stored properties. Fatal VM fault
+cleanup remains deferred.
 
 ### Step 6: Conservative named return-value optimization
 

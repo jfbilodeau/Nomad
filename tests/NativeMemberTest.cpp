@@ -5,6 +5,7 @@
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 
 #include <algorithm>
 #include <array>
@@ -25,9 +26,12 @@ static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativeIn
 static_assert(std::is_same_v<decltype(ParameterDefinition{}.typeId), TypeId>);
 static_assert(std::is_same_v<decltype(NativeMethodDefinition{}.returnTypeId), TypeId>);
 static_assert(std::is_same_v<decltype(NativePropertyDefinition{}.valueType), const Type*>);
+static_assert(std::is_same_v<decltype(NativePropertyDefinition{}.getterMethodId), CallableId>);
+static_assert(std::is_same_v<decltype(NativePropertyDefinition{}.setterMethodId), CallableId>);
 static_assert(std::is_same_v<decltype(NativeIndexerDefinition{}.indexTypes), std::vector<TypeId>>);
 static_assert(std::is_same_v<decltype(NativeInterableDefinition{}.factory), NativeMethodDefinition>);
 static_assert(std::is_same_v<decltype(NativePropertyInfo{}.id), PropertyId>);
+static_assert(std::is_same_v<decltype(NativePropertyInfo{}.getterMethodId), CallableId>);
 static_assert(std::is_same_v<decltype(std::declval<const NativeProperty&>().getInfo()), NativePropertyInfo>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativePropertyInfo(PropertyId{})),
     std::optional<NativePropertyInfo>>);
@@ -598,6 +602,110 @@ BOOST_AUTO_TEST_CASE(native_creation_definitions_own_their_inputs_without_regist
     BOOST_TEST(methodCalls == 2);
     BOOST_TEST(runtime.getCallableId("answer").isInvalid());
     BOOST_TEST(runtime.getNativeIndexers().size() == originalIndexerCount);
+}
+
+BOOST_AUTO_TEST_CASE(method_backed_properties_validate_accessor_signatures_and_preserve_metadata_and_layout) {
+    Runtime runtime;
+    const auto ownerId = runtime.registerClass("MethodPropertyOwner", ClassMode::Closed);
+    const auto otherOwnerId = runtime.registerClass("OtherMethodPropertyOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("MethodPropertyOwner")->asClassType();
+    const auto valueId = runtime.registerStruct("MethodPropertyValue");
+    const auto* valueType = runtime.getTypeByName("MethodPropertyValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    auto calls = 0;
+    const auto getter = runtime.addMethod(ownerId, {
+        .name = "getValue", .parameters = {}, .returnTypeId = valueId,
+        .function = [&](VirtualMachine*) { ++calls; }
+    });
+    const auto setter = runtime.addMethod(ownerId, {
+        .name = "setValue", .parameters = {{valueId, "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(), .function = [&](VirtualMachine*) { ++calls; }
+    });
+    const auto wrongGetter = runtime.addMethod(ownerId, {
+        .name = "getWrongValue", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = methodFunction()
+    });
+    const auto getterWithArgument = runtime.addMethod(ownerId, {
+        .name = "getWithArgument", .parameters = {{valueId, "value", ""}}, .returnTypeId = valueId,
+        .function = methodFunction()
+    });
+    const auto wrongSetter = runtime.addMethod(ownerId, {
+        .name = "setWrongValue", .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(), .function = methodFunction()
+    });
+    const auto returningSetter = runtime.addMethod(ownerId, {
+        .name = "setReturningValue", .parameters = {{valueId, "value", ""}}, .returnTypeId = valueId,
+        .function = methodFunction()
+    });
+    const auto otherGetter = runtime.addMethod(otherOwnerId, {
+        .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = methodFunction()
+    });
+    const auto scriptGetter = runtime.registerScriptMethod(ownerId, "getScriptValue", {}, "getter.nomad", "return 0");
+    BOOST_REQUIRE(scriptGetter.isValid());
+    runtime.getScriptCallable(scriptGetter)->setReturnType(valueType);
+    const auto functionId = runtime.registerNativeFunction("propertyFunction", methodFunction(), {}, valueType, "");
+    BOOST_REQUIRE(getter.isValid() && setter.isValid() && wrongGetter.isValid() && getterWithArgument.isValid() &&
+        wrongSetter.isValid() && returningSetter.isValid() && otherGetter.isValid() && functionId.isValid());
+    NativePropertyDefinition definition{
+        .valueType = valueType, .name = "methodValue", .documentation = "Method-backed value.",
+        .getterMethodId = getter, .setterMethodId = setter
+    };
+    const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, definition);
+    BOOST_REQUIRE(id.isValid());
+    const auto readOnlyId = runtime.addProperty(ownerId, {
+        .valueType = valueType, .name = "readOnlyValue", .getterMethodId = getter
+    });
+    const auto writeOnlyId = runtime.addProperty(ownerId, {
+        .valueType = valueType, .name = "writeOnlyValue", .setterMethodId = setter
+    });
+    BOOST_REQUIRE(readOnlyId.isValid() && writeOnlyId.isValid());
+    auto info = runtime.getNativePropertyInfo(id).value();
+    BOOST_TEST(info.getterMethodId == getter);
+    BOOST_TEST(info.setterMethodId == setter);
+    BOOST_TEST(!info.getFn);
+    BOOST_TEST(!info.setFn);
+    BOOST_TEST(info.valueType == valueType);
+    BOOST_TEST(info.doc == "Method-backed value.");
+    info.getterMethodId = CallableId::INVALID;
+    definition.getterMethodId = CallableId::INVALID;
+    BOOST_TEST(runtime.getNativePropertyInfo(id)->getterMethodId == getter);
+    BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(runtime.getNativePropertyInfo(readOnlyId)->setterMethodId.isInvalid());
+    BOOST_TEST(runtime.getNativePropertyInfo(writeOnlyId)->getterMethodId.isInvalid());
+    std::ostringstream documentation;
+    generateMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("#### `methodValue` (*read/write property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `readOnlyValue` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `writeOnlyValue` (*write-only property*)") != NomadString::npos);
+    for (const auto invalidGetter : {functionId, otherGetter, wrongGetter, getterWithArgument, scriptGetter}) {
+        BOOST_TEST(runtime.addProperty(ownerId, {
+            .valueType = valueType, .name = "rejectedGetter", .getterMethodId = invalidGetter
+        }).isInvalid());
+    }
+    for (const auto invalidSetter : {getter, wrongSetter, returningSetter, functionId}) {
+        BOOST_TEST(runtime.addProperty(ownerId, {
+            .valueType = valueType, .name = "rejectedSetter", .setterMethodId = invalidSetter
+        }).isInvalid());
+    }
+    BOOST_TEST(runtime.addProperty(ownerId, {
+        .valueType = valueType, .name = "mixed", .getter = propertyGetter(), .setterMethodId = setter
+    }).isInvalid());
+    BOOST_TEST(runtime.addProperty(ownerId, {
+        .valueType = valueType, .name = "noAccessors"
+    }).isInvalid());
+    BOOST_TEST(runtime.addProperty(ownerId, {
+        .valueType = runtime.getVoidType(), .name = "voidValue", .getterMethodId = getter
+    }).isInvalid());
+    BOOST_TEST(runtime.addProperty(ownerId, {
+        .valueType = valueType, .name = "methodValue", .getterMethodId = getter
+    }).isInvalid());
+    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(owner, "rejectedGetter")) == MemberType::Unknown));
+    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(owner, "rejectedSetter")) == MemberType::Unknown));
+    BOOST_TEST(calls == 0);
 }
 
 BOOST_AUTO_TEST_CASE(native_property_info_is_a_snapshot_of_registered_metadata) {
