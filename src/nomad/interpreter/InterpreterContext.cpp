@@ -4,6 +4,7 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterObjectReceiver.hpp>
+#include <nomad/interpreter/InterpreterStorage.hpp>
 #include <nomad/interpreter/InterpreterStructReceiver.hpp>
 
 #include <nomad/script/Runtime.hpp>
@@ -82,7 +83,17 @@ void InterpreterContext::setVariable(
         return;
     }
 
-    auto replacement = std::make_unique<InterpreterValue>(type, storage);
+    if (frameId.isValid()) {
+        const auto index = toNomadIndex(frameId.id);
+        if (index < m_variables.size() && m_variables[index] != nullptr &&
+            m_variables[index]->getType() == type) {
+            m_variables[index]->assign(storage);
+            m_function->setVariableType(frameId, type);
+            return;
+        }
+    }
+
+    auto replacement = std::make_unique<InterpreterStorage>(type, storage);
 
     auto variableId = m_function->getVariableId(name);
     if (variableId.isInvalid()) {
@@ -218,7 +229,7 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
             m_function->getVariableName(variableId),
             variable->getType(),
             variable->getType()->isStruct() ? variable->getType()->getTypeName() :
-                variable->getType()->toString(variable->getValue())
+                variable->getType()->toString(variable->getStorage().front())
         });
     }
 

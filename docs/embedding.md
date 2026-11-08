@@ -2394,8 +2394,11 @@ releasing what they replace, so their own storage can be supplied as the source.
 `setResult(const InterpreterValue&)` likewise takes an owned copy.
 `getVariableStorage(name)` and `getVariableStorageById(variableId)` borrow
 complete variable storage; `getResult()->getStorage()` borrows result storage.
-Replacing or clearing an owning variable/result invalidates its views. Copy into
-an `InterpreterValue` when a snapshot must survive those operations.
+Assignments to an existing context-owned variable of the same type preserve its
+slot addresses and update its contents. Adding other variables does not relocate
+those slots. Changing a variable's type or clearing it invalidates its views;
+replacing a result invalidates result views. Copy into an `InterpreterValue` when
+an independent snapshot must survive those operations.
 
 An empty view can mean either an empty struct or a missing variable; check
 `getVariableType` or `getVariableTypeById` to distinguish them. Empty struct
@@ -2420,6 +2423,33 @@ It returns an empty view without a pointer for an empty struct. Calling it on
 a non-frame context or a class/free-function frame throws `NomadBug`.
 The interpreter can read `this` and its stored fields in such struct frames;
 the resulting values are owned copies, not mutable receiver aliases.
+
+### Mutable interpreter storage
+
+Include `<nomad/interpreter/InterpreterStorage.hpp>` for an owning, mutable slot
+buffer. `InterpreterStorage(type, source)` copies exactly `type->getSize()` slots
+using the type's lifecycle operations. The type and finalized layout must remain
+valid until the storage is destroyed. The owner is noncopyable and has a fixed
+type; destruction releases its contained values.
+
+`getStorage()` returns a const view; `getMutableStorage()` exposes the live slots
+for borrowed receiver access. Their addresses remain stable for the owner's
+lifetime. `assign(source)` replaces the contents without resizing the buffer.
+Source and destination may overlap, including self-assignment. Copy failures
+leave the destination unchanged; null types and incorrect view sizes throw
+`std::invalid_argument`. Zero-sized structs retain their type with empty views
+and accept empty assignments.
+
+Use typed assignment or receiver operations when replacing reference-valued
+slots so that their ownership is maintained. Constructing an `InterpreterValue`
+from the const view creates an independent snapshot; neither snapshot contents
+nor ordinary struct arguments become mutable aliases.
+
+Context-owned variables use these buffers. Frame-backed variables continue using
+VM storage, and published context results remain immutable `InterpreterValue`
+snapshots. A borrowed receiver does not keep its backing owner alive: destroy it
+before replacing or destroying that owner. This storage API does not enable
+source-level struct-method calls.
 
 ### Advanced AST receiver access
 

@@ -22,6 +22,7 @@ namespace nomad {
 
 class Interpreter;
 class InterpreterReceiver;
+class InterpreterStorage;
 class Type;
 class Runtime;
 class ScriptCallableBase;
@@ -141,7 +142,7 @@ private:
     LoopControl m_loopControl = LoopControl::None;
     std::vector<Diagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
-    std::vector<std::unique_ptr<InterpreterValue>> m_variables;
+    std::vector<std::unique_ptr<InterpreterStorage>> m_variables;
 };
 
 } // namespace nomad

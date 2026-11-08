@@ -3446,6 +3446,46 @@ and scoped temporaries, then route uniform property access through them. Shared
 typed storing and struct-method invocation follow; argument-induced receiver
 replacement, reentry, and failure behavior still require agreement.
 
+### Mutable interpreter backing storage
+
+Approved scope:
+
+- Add `InterpreterStorage` with a fixed `const Type*` and owned mutable
+  `RuntimeValue` slots. Keep `InterpreterValue` immutable.
+- Copy and clean up using the existing type lifecycle operations. Typed
+  assignment preserves slot addresses, permits overlapping sources, and retains
+  existing copy-failure guarantees. Zero-sized structs remain valid typed owners.
+- Use these owners for context-owned variables. Preserve same-type storage
+  addresses across assignment and context variable growth; changing a variable's
+  type or clearing it still invalidates its storage.
+- Keep frame-backed variables, ordinary value-copy semantics, published
+  snapshots, AST dispatch, and method-call behavior unchanged.
+- Validate ownership, borrowed receiver mutation, zero-sized storage, self and
+  overlapping assignment, failed copying, context growth, and type replacement.
+  Run all six CTest unit groups, then stop for review.
+
+Completed:
+
+- Added the mutable storage owner and switched context-owned variables to it.
+  Same-type assignments use typed in-place replacement; variable growth does not
+  relocate existing buffers. Frame storage and immutable published values are
+  unchanged.
+- Added eight focused regression cases covering stable addresses, independent
+  snapshots, retained object/string references, live borrowed struct updates,
+  zero-sized storage, self-assignment, invalid widths, partial-copy cleanup,
+  failed assignments, context growth, and failed type replacement.
+- All six CTest unit groups passed across the validation runs. After correcting
+  the new snapshot test's source syntax and assertion formatting, the remaining
+  group was rerun successfully. Whitespace checks passed. No gameplay session
+  was run.
+- Awaiting review before scoped AST receiver work.
+
+Next: scoped storage-connected AST receivers and uniform property access.
+Keeping backing storage alive across argument evaluation and reentry remains
+part of that design; no shared ownership or new language restriction is approved
+by this backing-storage slice. Shared typed storing and borrowed method
+invocation follow after their timing and failure contracts are agreed.
+
 ### Step 6: Conservative named return-value optimization
 
 Prerequisite: step 5 approved.
