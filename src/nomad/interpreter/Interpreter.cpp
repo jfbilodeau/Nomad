@@ -16,6 +16,7 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/ClassType.hpp>
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -287,6 +288,82 @@ InterpreterValue Interpreter::runFunction(
     if (!runScriptCallable(*script)) {
         machine.fault("Aggregate script calls cannot yield");
     }
+    return frame.getResult();
+}
+
+InterpreterValue Interpreter::runFunction(
+    const Closure& closure,
+    const std::span<const InterpreterValue> arguments
+) const {
+    auto& machine = m_virtualMachine;
+    const auto* function = closure.getFunction();
+    if (
+        machine.getRuntime()->getScriptFunction(function->getId()) != function ||
+        function->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        function->getFunctionStart() >= function->getFunctionEnd()
+    ) {
+        throw std::invalid_argument(
+            "Closure requires a compiled script function in the interpreter's runtime"
+        );
+    }
+
+    const auto captureCount = closure.getCaptureCount();
+    if (
+        captureCount != function->getCaptureCount() ||
+        captureCount > function->getParameterCount() ||
+        arguments.size() != function->getParameterCount() - captureCount
+    ) {
+        throw std::invalid_argument("Incorrect explicit argument or capture count for closure");
+    }
+
+    std::vector<InterpreterValue> values(arguments.begin(), arguments.end());
+    values.reserve(function->getParameterCount());
+    for (auto index = NomadIndex{0}; index < captureCount; ++index) {
+        values.emplace_back(closure.getCaptureType(index), closure.getCaptureStorage(index));
+    }
+
+    validateCallArguments(*machine.getRuntime(), *function, values);
+    const auto* type = function->getReturnType();
+    if (
+        !type->isStruct() &&
+        std::ranges::none_of(values, [](const auto& value) {
+
+            return value.getType()->isStruct();
+        })
+    ) {
+        std::vector<RuntimeValue> explicitValues;
+        std::vector<RuntimeValue> captures;
+        explicitValues.reserve(arguments.size());
+        captures.reserve(captureCount);
+        for (auto index = NomadIndex{0}; index < values.size(); ++index) {
+            if (index < arguments.size()) {
+                explicitValues.push_back(values[index].getValue());
+            } else {
+                captures.push_back(values[index].getValue());
+            }
+
+        }
+
+        const RegisterRestoration registers(machine);
+        machine.setResult(RuntimeValue{});
+        machine.run(function, explicitValues, captures);
+        try {
+            InterpreterValue result(type, machine.getResult());
+            type->freeValue(&machine.getResult());
+
+            return result;
+        } catch (...) {
+            type->freeValue(&machine.getResult());
+            throw;
+        }
+
+    }
+
+    InterpreterCallFrame frame(machine, *function, values, type);
+    if (!runScriptCallable(*function)) {
+        machine.fault("Aggregate closure calls cannot yield");
+    }
+
     return frame.getResult();
 }
 

@@ -19,6 +19,8 @@
 
 namespace nomad {
 
+class Closure;
+
 struct StructMethodResult {
     InterpreterValue receiver;
     InterpreterValue result;
@@ -46,6 +48,10 @@ public:
 
     [[nodiscard]] InterpreterValue runFunction(
         CallableId functionId,
+        std::span<const InterpreterValue> arguments
+    ) const;
+    [[nodiscard]] InterpreterValue runFunction(
+        const Closure& closure,
         std::span<const InterpreterValue> arguments
     ) const;
     [[nodiscard]] InterpreterValue runObjectMethod(

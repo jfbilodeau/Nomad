@@ -52,6 +52,10 @@ Flat closure capture storage and full-width current/enclosing frame snapshots
 are implemented, including empty captures and copied struct receivers. This
 storage slice does not enable source-level struct capture or callback execution;
 it is implemented and validated, awaiting review.
+Typed closure invocation and source-level struct captures are implemented,
+including copied struct `this`, nested propagation, empty captures, and existing
+Runtime callback adapters. Aggregate calls remain synchronous; scalar callback
+suspension is unchanged. This slice is implemented and validated, awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -4029,6 +4033,65 @@ source-level struct captures, including value-semantic struct `this`; then
 field-aware formatting and remaining host parity. NRVO follows Step 5 approval,
 then final tooling/documentation and integration checks. Fatal VM fault cleanup
 remains deferred.
+
+### Step 5H2: Typed closure invocation and source-level struct captures
+
+Approved scope:
+
+- Add a typed closure overload of `Interpreter::runFunction`, supplying complete
+  capture snapshots after explicit arguments through the existing call ABI.
+- Enable source-level struct captures, including copied struct `this`, nested
+  propagation, and empty values. Captures/ordinary parameters remain independent
+  value copies; contained class references retain shared semantics.
+- Route existing Runtime/game callbacks with struct captures through typed
+  dispatch while retaining scalar callback suspension behavior. Aggregate
+  arguments/captures/results are synchronous, including empty structs.
+- Keep raw Runtime explicit arguments/results scalar-only; typed closure calls
+  accept complete struct arguments/results. Add no opcodes, shared struct
+  ownership, automatic receiver writeback, or new callback syntax.
+- Test repeated/nested calls, receiver capture snapshots, ownership, reentry,
+  failure cleanup, event adapters, host validation, and suspension. Update docs,
+  build/test, then stop for review without committing.
+
+Implementation:
+
+- The typed overload validates the registered compiled target and explicit count,
+  combines explicit values with complete typed capture snapshots, and reuses
+  existing signature validation and call frames. Scalar-only calls use the
+  existing script suspension path; aggregate calls restore enclosing execution
+  state and reject yielding.
+- Removed the compiler's struct-capture rejection. Existing capture propagation
+  and complete frame snapshots support locals, parameters, zero/one/many-slot
+  captures, nested structs, and value-semantic struct receivers.
+- Runtime raw closure adapters dispatch struct captures through the typed API.
+  Raw explicit argument/result restrictions are checked before execution; scalar
+  callback consumers retain their existing path.
+- Tests cover independent captured/source/parameter values, repeated invocation,
+  nested propagation, shared class fields, copied and empty struct `this`, owned
+  aggregate/empty/void results, VM/closure-independent result lifetime, native
+  reentry, event adapter exceptions, partial-copy failures and stack bounds,
+  foreign/invalid host inputs, and scalar versus aggregate suspension behavior.
+
+Validation:
+
+- The automatic build succeeded. The first targeted tests exposed an obsolete
+  struct-capture rejection expectation and a string-literal reference-count
+  expectation; both were updated to the new behavior and actual constant ownership.
+  Targeted language/remaining groups then passed.
+- All six CTest unit groups, script staging, compiler exports, LSP process, and
+  module-runtime integration checks passed with automatic build after adding
+  event-adapter failure and one-slot capture coverage.
+- New ownership/copy-failure scenarios repeat three times and restore live
+  string/object counts. Repeated/nested callback snapshots, copied struct `this`,
+  aggregate arguments/results, native reentry, raw adapter errors, event exceptions,
+  stack bounds, and scalar/aggregate suspension checks passed.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting formatting changes.
+
+Next, after review: field-aware static/dynamic formatting and remaining host
+parity, then conservative NRVO after Step 5 approval. Final tooling/documentation
+and integration checks follow. Fatal VM fault cleanup remains deferred.
 
 ### Step 6: Conservative named return-value optimization
 

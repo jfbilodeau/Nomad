@@ -43,7 +43,7 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
   );
   ```
 - Format long control-flow conditions similarly: leave `(` with the control-flow keyword, put each condition on its own line indented by four spaces, and align the closing `)` with the keyword.
-- Always include a blank line after a closing block (`}`).
+- Always include a blank line after a closing block (`}`) unless followed by another closing block.
 - Always include a blank line before a `return` statement. When this follows a closing block, one blank line satisfies both rules:
   ```cpp
   if (

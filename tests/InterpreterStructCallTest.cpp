@@ -1087,6 +1087,106 @@ BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_
     }
 }
 
+BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_result_snapshots) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    FailingCallCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
+        "ClosureInvocationField",
+        ClassMode::Closed,
+        field
+    );
+    const auto valueId = runtime.registerStruct("ClosureInvocationValue");
+    const auto* type = runtime.getTypeByName("ClosureInvocationValue");
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeClosureInvocationValue",
+        [](VirtualMachine* active) {
+            active->getStorageParameter(0, 0).setStringValue("first captured");
+            active->getStorageParameter(0, 1).setStringValue("second captured");
+        },
+        {},
+        type,
+        ""
+    ).isValid());
+    std::unique_ptr<Closure> closure;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "keepFailingTypedClosure",
+        [&](VirtualMachine* active) {
+            closure = active->createClosure(&runtime, active->getCallableIdParameter(0));
+        },
+        {defParameter("callback", runtime.getCallbackType({}, type), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction(
+        "main",
+        "captured = makeClosureInvocationValue\n"
+        "keepFailingTypedClosure fun\nreturn captured\nend\nreturn 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            const auto outcome = fixture.execute("main");
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_REQUIRE(closure != nullptr);
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            machine->pushInteger(1234);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            field->copyCount = 0;
+            {
+                const auto result = interpreter.runFunction(*closure, {});
+                BOOST_TEST(result.getStorage()[0].getStringValue() == "first captured");
+                BOOST_TEST(result.getStorage()[1].getStringValue() == "second captured");
+            }
+
+            const auto copyStages = field->copyCount;
+            BOOST_REQUIRE(copyStages > 0U);
+            const auto live = RuntimeValue::getLiveStringCount();
+            for (auto failure = NomadIndex{1}; failure <= copyStages; ++failure) {
+                field->copyCount = 0;
+                field->failCopyAt = failure;
+                BOOST_CHECK_THROW(static_cast<void>(interpreter.runFunction(*closure, {})), NomadException);
+                BOOST_TEST(closure->getCaptureStorage(0)[0].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(closure->getCaptureStorage(0)[1].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+            }
+
+            field->failCopyAt = 0;
+            {
+                VirtualMachine smallMachine(&runtime, 3);
+                const Interpreter smallInterpreter(smallMachine);
+                smallMachine.pushInteger(4321);
+                BOOST_CHECK_EXCEPTION(
+                    static_cast<void>(smallInterpreter.runFunction(*closure, {})),
+                    VirtualMachineException,
+                    [](const auto& error) { return NomadString{error.what()} == "Stack overflow"; }
+                );
+                BOOST_TEST(smallMachine.peekStack(0).getIntegerValue() == 4321);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                smallMachine.pop1();
+            }
+
+            machine->pop1();
+        }
+
+        closure.reset();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
 BOOST_AUTO_TEST_CASE(closure_capture_copy_failures_release_completed_and_partial_capture_slots) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;

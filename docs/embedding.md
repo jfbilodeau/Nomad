@@ -2660,8 +2660,9 @@ struct storage.
 
 Completed calls preserve the enclosing VM registers/frame. Scalar script calls
 retain their existing suspension behavior; calls with struct arguments or
-returns remain synchronous and cannot yield. Closure/capture arguments are not
-supported by these entry points. Fatal VM fault recovery remains unsupported.
+returns remain synchronous and cannot yield. For captured functions, use the
+closure overload described below rather than passing a function ID.
+Fatal VM fault recovery remains unsupported.
 Call `context.setResult(result)` explicitly to publish a returned value in a
 context. The context no longer exposes function-execution or construction APIs.
 The legacy `Runtime::executeNativeFunction` context adapter has been removed.
@@ -2830,8 +2831,8 @@ context's result; source assignment
 statements separately publish their owned assignment snapshots.
 
 Method-backed native struct-valued properties support typed interpreter/host
-receiver access and compiled getter/setter calls. Aggregate captures and
-field-aware struct formatting remain pending.
+receiver access and compiled getter/setter calls. Struct captures and typed
+callback invocation are supported; field-aware struct formatting remains pending.
 
 ### Closure capture storage
 
@@ -2872,10 +2873,44 @@ the current script frame, not an enclosing native-call parameter frame.
 Both paths copy full struct values, preserve zero-slot capture positions, and
 release completed/partial copies when copying throws.
 
-This storage support does not yet enable source-level struct captures or
-aggregate callback invocation. The compiler's existing struct-capture diagnostic
-remains in place. Scalar closure execution remains available; typed callback
-invocation and field-aware formatting are subsequent slices.
+### Typed callback invocation
+
+`Interpreter::runFunction(closure, arguments)` accepts a `const Closure&` and
+explicit `InterpreterValue` arguments in logical parameter order. Do not append
+capture arguments yourself. The interpreter supplies complete owned capture
+copies after the explicit arguments and returns an owned typed result.
+The closure's script function must be compiled and registered in the interpreter's
+runtime. Invalid explicit counts/types, foreign closures, and uncompiled targets
+throw `std::invalid_argument` without executing the callback.
+
+Scalar/reference, empty-struct, and complete struct arguments/results are
+supported. Explicit struct parameters and captured structs have independent
+invocation storage. Modifying them does not replace the caller's value or the
+closure's saved snapshot. Repeated invocation starts from the same captured
+struct values; contained class objects remain shared, including mutations
+performed before a callback throws. Returned values can outlive the interpreter,
+VM, closure, and inputs while their runtime/type metadata remains alive.
+
+Source callbacks can capture struct locals, parameters, and struct `this`,
+including nested and empty structs. Captures are snapshots taken when the closure
+is created. Nested callbacks propagate complete value copies from their enclosing
+callback's current invocation. Captured class receivers retain ordinary object
+identity; captured struct receivers do not write back to the original receiver.
+
+Calls with any struct argument, capture, or result are synchronous and cannot
+yield, including zero-slot signatures. Such calls restore enclosing VM
+registers/frame and prior yield state. Scalar-only callbacks retain the existing
+script suspension behavior. Copying/execution failures propagate to the host;
+temporary argument/result cleanup occurs, but shared-object side effects are
+not rolled back. Fatal VM fault recovery remains unsupported.
+
+`Runtime::executeFunction(closure, rawArguments)` and its raw-result overload
+also accept struct captures, so existing event/game callback adapters can invoke
+them without reading captures as scalars. These adapters retain their scalar/
+reference explicit-argument and scalar/reference/void result limits. Use the typed
+interpreter overload for aggregate explicit arguments or results. The legacy
+scalar-only callback dispatch path is unchanged. Field-aware formatting remains
+a subsequent slice.
 
 ## Parameterized types
 

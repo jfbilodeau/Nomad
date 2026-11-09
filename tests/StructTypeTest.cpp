@@ -3447,8 +3447,10 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_and_interpreter_rece
     auto* nested = runtime.getScriptFunction(nestedId);
     nested->setParentId(scriptId);
     IdentifierExpression capture(nullptr, 1, 1, "this");
-    BOOST_CHECK_THROW(capture.resolve(&context, nested), CompilerException);
-    BOOST_TEST(nested->getParameterCount() == 0U);
+    BOOST_REQUIRE(capture.resolve(&context, nested));
+    BOOST_TEST(nested->getParameterCount() == 1U);
+    BOOST_TEST(nested->getCaptureCount() == 1U);
+    BOOST_TEST(nested->getCaptureType(0) == type);
 }
 
 BOOST_AUTO_TEST_CASE(source_struct_properties_share_nested_local_parameter_and_borrowed_storage) {

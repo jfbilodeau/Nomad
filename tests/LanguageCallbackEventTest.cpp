@@ -161,6 +161,455 @@ FunctionOutcome invokeStoredClosure(Runtime& runtime, const CallbackStore& store
 
 BOOST_AUTO_TEST_SUITE(language_callbacks)
 
+BOOST_AUTO_TEST_CASE(source_struct_captures_are_snapshots_across_nested_and_repeated_callback_invocation) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<std::unique_ptr<Closure>> callbacks;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.keepStructCapture",
+        [&](VirtualMachine* active) {
+            callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.reenterStructCapture",
+        [&](VirtualMachine* active) {
+            const auto* callable = active->getCurrentCallable();
+            const auto savedResult = active->getResult();
+            const auto savedIntermediate = active->getIntermediate();
+            const Interpreter interpreter(*active);
+            const InterpreterValue argument(runtime.getIntegerType(), active->getParameter(0));
+            const auto result = interpreter.runFunction(*callbacks[0], {&argument, 1});
+            BOOST_TEST(active->getCurrentCallable() == callable);
+            BOOST_TEST(active->getIntegerParameter(0) == 2);
+            BOOST_TEST(active->getResult().getIntegerValue() == savedResult.getIntegerValue());
+            BOOST_TEST(active->getIntermediate().getIntegerValue() == savedIntermediate.getIntegerValue());
+            active->setIntegerResult(result.getValue().getIntegerValue());
+        },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("reenterStructCapture", "return test.reenterStructCapture 2");
+    fixture.addFunction(
+        "main",
+        "class CapturedShared\nnumber = 5\nend\n"
+        "struct CapturedEmpty\nend\n"
+        "struct CapturedSingle\nnumber = 11\nend\n"
+        "struct CapturedLeaf\nnumber = 7\ntext = \"captured\"\nshared = new CapturedShared\nend\n"
+        "struct CapturedRoot\nleaf = new CapturedLeaf\nempty = new CapturedEmpty\nend\n"
+        "fun createStructCallback parameter:CapturedRoot tail:int\n"
+        "local = parameter\nempty = new CapturedEmpty\nsingle = new CapturedSingle\n"
+        "test.keepStructCapture fun delta\n"
+        "local.leaf.number = local.leaf.number + delta\n"
+        "parameter.leaf.number = parameter.leaf.number + 1\ncopy = empty\nsingle.number = 53\n"
+        "local.leaf.shared.number = local.leaf.shared.number + 1\n"
+        "test.keepStructCapture fun amount\n"
+        "local.leaf.number = local.leaf.number + amount\n"
+        "return local.leaf.number + parameter.leaf.number + tail\nend\n"
+        "return local.leaf.number + parameter.leaf.number + tail\nend\n"
+        "local.leaf.number = 99\nparameter.leaf.number = 101\nend\n"
+        "root = new CapturedRoot\ncreateStructCallback root 3\nroot.leaf.number = 201\nreturn 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            const auto outcome = fixture.execute("main");
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_REQUIRE(callbacks.size() == 1U);
+            const auto* original = callbacks[0].get();
+            const auto* function = original->getFunction();
+            const auto localId = function->getCaptureId("local");
+            const auto parameterId = function->getCaptureId("parameter");
+            const auto emptyId = function->getCaptureId("empty");
+            const auto singleId = function->getCaptureId("single");
+            BOOST_REQUIRE(localId != NOMAD_INVALID_ID);
+            BOOST_REQUIRE(parameterId != NOMAD_INVALID_ID);
+            BOOST_REQUIRE(emptyId != NOMAD_INVALID_ID);
+            BOOST_REQUIRE(singleId != NOMAD_INVALID_ID);
+            BOOST_TEST(original->getCaptureStorage(toNomadIndex(localId))[0].getIntegerValue() == 7);
+            BOOST_TEST(original->getCaptureStorage(toNomadIndex(parameterId))[0].getIntegerValue() == 7);
+            BOOST_TEST(original->getCaptureStorage(toNomadIndex(emptyId)).data() == nullptr);
+            BOOST_TEST(original->getCaptureStorage(toNomadIndex(singleId)).size() == 1U);
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            const InterpreterValue delta(runtime.getIntegerType(), RuntimeValue{NomadInteger{2}});
+            machine->pushInteger(1234);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            for (auto invocation = 0; invocation < 2; ++invocation) {
+                const auto result = interpreter.runFunction(*original, {&delta, 1});
+                BOOST_TEST(result.getValue().getIntegerValue() == 20);
+                BOOST_TEST(original->getCaptureStorage(toNomadIndex(localId))[0].getIntegerValue() == 7);
+                BOOST_TEST(original->getCaptureStorage(toNomadIndex(parameterId))[0].getIntegerValue() == 7);
+                BOOST_TEST(original->getCaptureStorage(toNomadIndex(singleId))[0].getIntegerValue() == 11);
+                const auto nested = interpreter.runFunction(*callbacks.back(), {&delta, 1});
+                BOOST_TEST(nested.getValue().getIntegerValue() == 22);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+            }
+
+            RuntimeValue rawResult;
+            runtime.executeFunction(original, {RuntimeValue{NomadInteger{2}}}, rawResult);
+            BOOST_TEST(rawResult.getIntegerValue() == 20);
+            BOOST_TEST(original->getCaptureStorage(toNomadIndex(localId))[2].getObjectValue() ==
+                original->getCaptureStorage(toNomadIndex(parameterId))[2].getObjectValue());
+            auto* shared = static_cast<ScriptObject*>(
+                original->getCaptureStorage(toNomadIndex(localId))[2].getObjectValue()
+            );
+            BOOST_TEST(shared->getFieldStorage(0)[0].getIntegerValue() == 8);
+            const auto reentered = fixture.execute("reenterStructCapture");
+            BOOST_REQUIRE_MESSAGE(!reentered.fault.has_value(), reentered.fault.value_or(""));
+            BOOST_TEST(reentered.integerValue == 20);
+            BOOST_TEST(shared->getFieldStorage(0)[0].getIntegerValue() == 9);
+            machine->pop1();
+        }
+
+        callbacks.clear();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(source_struct_and_empty_receiver_captures_copy_this_without_writeback) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<std::unique_ptr<Closure>> callbacks;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.keepReceiverCapture",
+        [&](VirtualMachine* active) {
+            callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction(
+        "main",
+        "struct SourceReceiver\nnumber = 7\ntext = \"receiver\"\n"
+        "fun keep\n"
+        "test.keepReceiverCapture fun\nthis.number = this.number + 1\nreturn this.number\nend\n"
+        "this.number = 99\nend\nend\n"
+        "struct SourceEmptyReceiver\n"
+        "fun keep\n"
+        "test.keepReceiverCapture fun\ncopy = this\nreturn 17\nend\nend\nend\n"
+        "receiver = new SourceReceiver\nreceiver.keep\nassert receiver.number == 99\n"
+        "(new SourceEmptyReceiver).keep\nreturn 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            const auto outcome = fixture.execute("main");
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_REQUIRE(callbacks.size() == 2U);
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            for (auto invocation = 0; invocation < 2; ++invocation) {
+                BOOST_TEST(interpreter.runFunction(*callbacks[0], {}).getValue().getIntegerValue() == 8);
+                BOOST_TEST(interpreter.runFunction(*callbacks[1], {}).getValue().getIntegerValue() == 17);
+            }
+
+            BOOST_TEST(callbacks[0]->getCaptureStorage(0)[0].getIntegerValue() == 7);
+            BOOST_TEST(callbacks[1]->getCaptureStorage(0).data() == nullptr);
+            RuntimeValue result;
+            runtime.executeFunction(callbacks[0].get(), {}, result);
+            BOOST_TEST(result.getIntegerValue() == 8);
+            runtime.executeFunction(callbacks[1].get(), {}, result);
+            BOOST_TEST(result.getIntegerValue() == 17);
+        }
+
+        callbacks.clear();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_structs_after_the_vm_is_destroyed) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto valueId = runtime.registerStruct("TypedCallbackValue");
+    const auto* type = runtime.getTypeByName("TypedCallbackValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    const auto emptyId = runtime.registerStruct("TypedCallbackEmpty");
+    const auto* emptyType = runtime.getTypeByName("TypedCallbackEmpty");
+    runtime.finalizeCompositeFieldLayout(valueId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    BOOST_REQUIRE(runtime.registerNativeStructConstructor(valueId, {
+        .parameters = {},
+        .function = [](VirtualMachine* active) {
+            active->getStorageParameter(0, 0).setIntegerValue(7);
+            active->getStorageParameter(0, 1).setStringValue("callback");
+        }
+    }).isValid());
+    BOOST_REQUIRE(runtime.registerNativeStructConstructor(emptyId, {
+        .parameters = {}, .function = [](VirtualMachine*) {}
+    }).isValid());
+    std::vector<std::unique_ptr<Closure>> callbacks;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.keepTypedCallback",
+        [&](VirtualMachine* active) {
+            callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({type, emptyType, runtime.getIntegerType()}, type), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.keepEmptyCallback",
+        [&](VirtualMachine* active) {
+            callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({emptyType}, emptyType), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.keepVoidCallback",
+        [&](VirtualMachine* active) {
+            callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({type}, runtime.getVoidType()), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction(
+        "main",
+        "captured = new TypedCallbackValue\nempty = new TypedCallbackEmpty\n"
+        "test.keepTypedCallback fun value emptyArgument delta\n"
+        "value.number = value.number + captured.number + delta\n"
+        "value.text = \"returned\"\ncaptured.number = 99\nreturn value\nend\n"
+        "test.keepEmptyCallback fun value\ncopy = empty\nreturn value\nend\n"
+        "test.keepVoidCallback fun value\nvalue.number = 99\ncopy = captured\nend\n"
+        "captured.number = 123\nreturn 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            std::optional<InterpreterValue> retained;
+            {
+                const auto outcome = fixture.execute("main");
+                BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+                BOOST_REQUIRE(callbacks.size() == 3U);
+                auto machine = runtime.createVirtualMachine();
+                const Interpreter interpreter(*machine);
+                const auto input = interpreter.construct(type->asCompositeType()->getConstructors()[0]->getId(), {});
+                const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
+                const InterpreterValue delta(runtime.getIntegerType(), RuntimeValue{NomadInteger{3}});
+                const std::array arguments{input, empty, delta};
+                machine->pushInteger(1234);
+                machine->setIntegerResult(41);
+                machine->setIntegerIntermediate(43);
+                retained = interpreter.runFunction(*callbacks[0], arguments);
+                BOOST_TEST(retained->getStorage()[0].getIntegerValue() == 17);
+                BOOST_TEST(retained->getStorage()[1].getStringValue() == "returned");
+                BOOST_TEST(retained->getStorage().data() != input.getStorage().data());
+                BOOST_TEST(input.getStorage()[0].getIntegerValue() == 7);
+                BOOST_TEST(input.getStorage()[1].getStringValue() == "callback");
+                BOOST_TEST(callbacks[0]->getCaptureStorage(0)[0].getIntegerValue() == 7);
+                const auto repeated = interpreter.runFunction(*callbacks[0], arguments);
+                BOOST_TEST(repeated.getStorage()[0].getIntegerValue() == 17);
+                const auto emptyResult = interpreter.runFunction(*callbacks[1], {&empty, 1});
+                BOOST_TEST(emptyResult.getType() == emptyType);
+                BOOST_TEST(emptyResult.getStorage().data() == nullptr);
+                BOOST_TEST(interpreter.runFunction(*callbacks[2], {&input, 1}).getType()->isVoid());
+                BOOST_TEST(input.getStorage()[0].getIntegerValue() == 7);
+                BOOST_CHECK_THROW(static_cast<void>(interpreter.runFunction(*callbacks[0], {})), std::invalid_argument);
+                const std::array wrongArguments{input, delta, delta};
+                BOOST_CHECK_THROW(
+                    static_cast<void>(interpreter.runFunction(*callbacks[0], wrongArguments)),
+                    std::invalid_argument
+                );
+                Runtime foreignRuntime;
+                auto foreignMachine = foreignRuntime.createVirtualMachine();
+                BOOST_CHECK_THROW(
+                    static_cast<void>(Interpreter{*foreignMachine}.runFunction(*callbacks[0], arguments)),
+                    std::invalid_argument
+                );
+                RuntimeValue rawResult{NomadInteger{71}};
+                BOOST_CHECK_THROW(runtime.executeFunction(callbacks[0].get(), {}, rawResult), std::invalid_argument);
+                BOOST_TEST(rawResult.getIntegerValue() == 71);
+                BOOST_CHECK_THROW(
+                    runtime.executeFunction(callbacks[2].get(), {RuntimeValue{NomadInteger{3}}}),
+                    std::invalid_argument
+                );
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                machine->pop1();
+            }
+
+            callbacks.clear();
+            BOOST_TEST(retained->getStorage()[0].getIntegerValue() == 17);
+            BOOST_TEST(retained->getStorage()[1].getStringValue() == "returned");
+            BOOST_TEST(retained->getStorage()[1].getObjectValue()->getReferenceCount() == 2U);
+        }
+
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(aggregate_callbacks_are_synchronous_while_scalar_callbacks_preserve_suspension) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::vector<std::unique_ptr<Closure>> callbacks;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.keepSuspendingCallback",
+        [&](VirtualMachine* active) {
+            callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.pauseCallback",
+        [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction(
+        "main",
+        "struct SuspendedCaptureEmpty\nend\nempty = new SuspendedCaptureEmpty\n"
+        "test.keepSuspendingCallback fun\ncopy = empty\nreturn 17\nend\n"
+        "test.keepSuspendingCallback fun\ncopy = empty\ntest.pauseCallback\nreturn 17\nend\n"
+        "test.keepSuspendingCallback fun\ntest.pauseCallback\nreturn 17\nend\n"
+        "return 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_REQUIRE(callbacks.size() == 3U);
+    for (const auto previouslyYielded : {false, true}) {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        machine->pushInteger(1234);
+        machine->setIntegerResult(41);
+        machine->setIntegerIntermediate(43);
+        if (previouslyYielded) {
+            machine->yield(RuntimeValue{NomadInteger{41}});
+        }
+
+        const auto before = machine->captureExecutionState();
+        BOOST_TEST(interpreter.runFunction(*callbacks[0], {}).getValue().getIntegerValue() == 17);
+        BOOST_CHECK_EXCEPTION(
+            static_cast<void>(interpreter.runFunction(*callbacks[1], {})),
+            VirtualMachineException,
+            [](const auto& error) { return NomadString{error.what()} == "Aggregate closure calls cannot yield"; }
+        );
+        const auto after = machine->captureExecutionState();
+        BOOST_TEST(after.stackIndex == before.stackIndex);
+        BOOST_TEST(after.parameterIndex == before.parameterIndex);
+        BOOST_TEST(after.variableIndex == before.variableIndex);
+        BOOST_TEST(after.instructionIndex == before.instructionIndex);
+        BOOST_TEST(after.running == before.running);
+        BOOST_TEST(after.yielded == before.yielded);
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+        machine->pop1();
+    }
+
+    {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        machine->setIntegerResult(41);
+        machine->setIntegerIntermediate(43);
+        const auto before = machine->captureExecutionState();
+        const auto result = interpreter.runFunction(*callbacks[2], {});
+        BOOST_TEST(result.getValue().getIntegerValue() == 37);
+        BOOST_TEST(machine->hasYielded());
+        BOOST_TEST(!machine->isRunning());
+        BOOST_TEST(machine->captureExecutionState().stackIndex > before.stackIndex);
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+    }
+
+    RuntimeValue rawResult{NomadInteger{71}};
+    BOOST_CHECK_EXCEPTION(
+        runtime.executeFunction(callbacks[1].get(), {}, rawResult),
+        VirtualMachineException,
+        [](const auto& error) { return NomadString{error.what()} == "Aggregate closure calls cannot yield"; }
+    );
+    BOOST_TEST(rawResult.getIntegerValue() == 71);
+}
+
+BOOST_AUTO_TEST_CASE(event_callback_adapters_copy_struct_captures_and_release_them_after_failures) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    CallbackStore store;
+    registerCallbackNativeFunctions(runtime, store);
+    auto failCallback = false;
+    std::vector<NomadInteger> observed;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.observeStructEvent",
+        [&](VirtualMachine* active) {
+            observed.push_back(active->getIntegerParameter(0));
+            if (failCallback) {
+                throw NomadException("Captured event callback failed");
+            }
+
+        },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction(
+        "main",
+        "event StructSnapshotEvent value:int\n"
+        "struct EventCaptureValue\nnumber = 7\ntext = \"event\"\nend\n"
+        "captured = new EventCaptureValue\n"
+        "test.on StructSnapshotEvent fun value\n"
+        "captured.number = captured.number + value\ntest.observeStructEvent captured.number\nend\n"
+        "captured.number = 99\nreturn 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_REQUIRE(store.closure != nullptr);
+        BOOST_TEST(store.eventId.isValid());
+        observed.clear();
+        const auto live = RuntimeValue::getLiveStringCount();
+        runtime.executeFunction(store.closure.get(), {RuntimeValue{NomadInteger{2}}});
+        runtime.executeFunction(store.closure.get(), {RuntimeValue{NomadInteger{2}}});
+        failCallback = true;
+        BOOST_CHECK_THROW(
+            runtime.executeFunction(store.closure.get(), {RuntimeValue{NomadInteger{2}}}),
+            NomadException
+        );
+        failCallback = false;
+        BOOST_TEST(observed.size() == 3U);
+        for (const auto value : observed) {
+            BOOST_TEST(value == 9);
+        }
+
+        BOOST_TEST(store.closure->getCaptureStorage(0)[0].getIntegerValue() == 7);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+        store.closure.reset();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
 BOOST_AUTO_TEST_CASE(closure_storage_adopts_complete_slots_and_preserves_logical_empty_and_struct_captures) {
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("ClosureStorageEmpty");

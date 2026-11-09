@@ -2224,10 +2224,6 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     if (captureType == nullptr) {
         return false;
     }
-    if (captureType->isStruct()) {
-        compiler->reportError("Struct captures are not yet supported");
-    }
-
     // We've found the capture. Walk back up and ensure the capture is propagated through all intermediate functions.
     for (const auto intermediateFunction : std::ranges::reverse_view(intermediateFunctions)) {
         const auto parentId = intermediateFunction->getParentId();

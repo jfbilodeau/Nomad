@@ -4,6 +4,8 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/EnumType.hpp>
@@ -22,6 +24,7 @@
 #include <boost/json/array.hpp>
 
 #include <algorithm>
+#include <stdexcept>
 #include <utility>
 
 namespace nomad {
@@ -2855,7 +2858,10 @@ void Runtime::executeFunction(const CallableId functionId) {
     executeFunction(functionId, {});
 }
 
-const ScriptFunction* Runtime::runClosure(const Closure* closure, const std::vector<RuntimeValue>& args) {
+const ScriptFunction* Runtime::runClosure(
+    const Closure* closure, 
+    const std::vector<RuntimeValue>& args
+) {
     validateScriptExecution();
     if (m_virtualMachine == nullptr) {
         m_virtualMachine = std::make_unique<VirtualMachine>(this);
@@ -2868,8 +2874,49 @@ const ScriptFunction* Runtime::runClosure(const Closure* closure, const std::vec
         return nullptr;
     }
 
-    // New design: Pass captured parameters as closures vector, explicit parameters separately
-    // TODO: retrieve const ref to captures from `closure` instead of creating a new `std::vector`
+    const auto hasStructCaptures = std::ranges::any_of(
+        function->getCaptures(),
+        [](const auto& capture) {
+            return capture.type->isStruct();
+        }
+    );
+
+    if (hasStructCaptures) {
+        const auto* returnType = function->getReturnType();
+
+        if (returnType == nullptr || returnType->isStruct()) {
+            throw std::invalid_argument("Raw closure calls require a scalar, reference, or void result");
+        }
+
+        const auto explicitCount = function->getParameterCount() - function->getCaptureCount();
+
+        if (args.size() != explicitCount) {
+            throw std::invalid_argument("Incorrect explicit argument count for raw closure call");
+        }
+
+        std::vector<InterpreterValue> arguments;
+
+        arguments.reserve(args.size());
+
+        for (auto index = NomadIndex{0}; index < args.size(); ++index) {
+            const auto* type = function->getParameterType(toNomadId(index));
+            if (type == nullptr || type->isStruct() || type->getSize() != 1) {
+                throw std::invalid_argument("Raw closure arguments require scalar or reference storage");
+            }
+
+            arguments.emplace_back(type, args[index]);
+        }
+
+        const Interpreter interpreter(*m_virtualMachine);
+        const auto result = interpreter.runFunction(*closure, arguments);
+        m_virtualMachine->setResult(RuntimeValue{});
+        if (!returnType->isVoid()) {
+            returnType->copyValue(result.getStorage().data(), &m_virtualMachine->getResult());
+        }
+
+        return function;
+    }
+
     std::vector<RuntimeValue> captures;
     for (NomadIndex i = 0; i < closure->getCaptureCount(); ++i) {
         captures.push_back(closure->getCaptureValue(i));

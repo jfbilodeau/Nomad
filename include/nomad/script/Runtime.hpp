@@ -622,6 +622,7 @@ public:
     std::unique_ptr<VirtualMachine> createVirtualMachine();
     // Overloads taking `returnValue` hand the caller an owned copy of the result; the caller must free it
     // through the function's return type. Overloads without `returnValue` discard (and free) the result.
+    // Closure adapters accept struct captures, but explicit arguments/results remain scalar-only.
     void executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args);
     void executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
     void executeFunction(CallableId functionId);
