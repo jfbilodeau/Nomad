@@ -369,6 +369,33 @@ BOOST_AUTO_TEST_CASE(resolved_bindings_are_shared_and_keep_stable_slots_without_
     BOOST_TEST(wrappedAfterExtension.getActive() == first.getActive());
 }
 
+BOOST_AUTO_TEST_CASE(struct_fields_are_rejected_without_poisoning_scalar_binding_contracts) {
+    for (const auto* fields : {"", "number = 1\n", "number = 1\ntext = \"value\"\n"}) {
+        Runtime runtime;
+        ScriptBindings bindings(runtime);
+        auto compiler = runtime.createCompiler();
+        const auto source = NomadString{"struct Value\n"} + fields +
+            "end\nclass Settings\nvalue = new Value\nend\nclass ScalarSettings\ncount = 3\nend\n";
+        const auto result = compileSources({{{"settings", {"settings.nomad", source}}}, {}}, *compiler);
+        BOOST_REQUIRE(result.succeeded());
+        const BindingClass unsupported{"Settings", {{"value", "Value"}}, {}};
+        BOOST_CHECK_EXCEPTION(
+            (void)bindings.getClassBinding(unsupported),
+            NomadException,
+            [](const NomadException& exception) {
+                return NomadString{exception.what()}.find("unsupported field type for 'value'") != NomadString::npos;
+            }
+        );
+        VirtualMachine machine(&runtime);
+        const BindingClass supported{"ScalarSettings", {{"count", "int"}}, {}};
+        auto settings = ScriptBindingObject::construct(bindings, machine, supported);
+        BOOST_TEST(settings.getInteger(0) == 3);
+        settings.setInteger(0, 7);
+        BOOST_TEST(settings.getInteger(0) == 7);
+        BOOST_TEST(&settings.getBinding() == &bindings.getClassBinding(supported));
+    }
+}
+
 BOOST_AUTO_TEST_CASE(helper_owns_contract_snapshots_and_failed_bindings_do_not_poison_the_cache) {
     Runtime runtime;
     ScriptBindings bindings(runtime);

@@ -1,6 +1,9 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
+Current review stop: Step 5J host-parity assessment and binding regressions are
+implemented and validated. Step 5 is ready for completion review within its
+agreed scope; Step 6 NRVO eligibility has not been approved or implemented.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4313,6 +4316,70 @@ Validation:
 Next, after review: assess remaining host parity and approve Step 5 completion;
 then agree conservative NRVO eligibility for Step 6. Step 7 final
 tooling/documentation and integration checks remain pending.
+
+### Step 5J: Remaining host parity and completion assessment
+
+Scope:
+
+- Assess the remaining Step 5 public host surfaces against the agreed contracts.
+- Add focused coverage for unsupported generated/bound struct shapes without
+  introducing new restrictions, generated struct wrappers, or native mappings.
+- Validate the integrated Step 5 behavior, record remaining limitations, and
+  stop for review before NRVO.
+
+Assessment:
+
+| Surface | Result and regression evidence |
+| --- | --- |
+| Owned values, construction, and function calls | Complete typed storage and independent results, including empty structs, are supported through `Interpreter`. `InterpreterStructCallTest.cpp` covers construction, native/script calls, partial copies, nested native reentry, and frame register/result ownership. |
+| Struct and class methods | Snapshot struct calls return explicit updated receiver/result values; borrowed calls mutate live slots. Object receivers remain retained. `InterpreterStructMethodTest.cpp` and `InterpreterStructCallTest.cpp` cover receiver/result combinations, aggregate class methods, nested calls, and synchronous aggregate execution. |
+| Stored and method-backed properties | Stored fields expose complete typed values; live writes target selected storage, while getter results are snapshots without automatic setter writeback. `InterpreterStructPropertyTest.cpp`, `InterpreterStructAssignmentTest.cpp`, and `InterpreterReceiverTest.cpp` cover named/frame/object/temporary roots, lifetime, and native accessors. |
+| Captures and callbacks | Complete owned captures and typed closure arguments/results preserve struct copy semantics and empty types. `LanguageCallbackEventTest.cpp` and call-frame regressions cover repeated/nested invocation, copied struct receivers, event adapters, native reentry, and result lifetime after VM/closure destruction. |
+| Formatting | Compiled placeholders execute through VM lookups/callables; dynamic templates use interpreter evaluation. Format regressions cover complete multi-slot conversion, empty values, captured receivers, copy counts, and conversion failure cleanup. |
+| Low-level host calls | Prepared VM calls use the callable's physical argument/result layout; `Interpreter` supplies the typed host invocation API. Existing raw `RuntimeValue` vector adapters remain scalar/reference/void-only for explicit arguments/results, rejecting structs rather than treating a first slot as a complete value. Closure adapters support complete struct captures. This existing boundary is unchanged. |
+| Generated bindings | Existing scalar/enum class wrappers remain supported and retain their logical-field-index access through `ScriptObject`'s physical-offset mapping. Struct wrappers and struct-valued binding fields remain explicitly unsupported, including zero/one-slot structs; there is no scalar fallback or silent omission. |
+| Object storage | `ScriptObjectTest.cpp` covers scalar fields after inline multi-slot and empty fields, complete field storage, and explicit rejection of scalar access to empty/one-slot structs. |
+
+New regression coverage:
+
+- Binding generation explicitly rejects selected empty, one-slot, and multi-slot
+  struct declarations without creating output files.
+- Dependency structs do not prevent generating an otherwise supported scalar
+  class. Exporting a struct-valued field fails with the stored-field diagnostic
+  and preserves every previously generated output byte-for-byte.
+- Runtime binding contracts reject struct-valued fields at all three widths.
+  A rejected binding does not poison subsequent supported scalar binding
+  construction, reads/writes, or cache reuse.
+- No production behavior, host API, or export restriction changed in this slice.
+
+Validation:
+
+- The development build succeeded.
+- All six CTest unit groups passed: cleanup contracts, bindings, audio, language,
+  tooling, and remaining tests.
+- Script staging, compiler exports, LSP process, and module-runtime integration
+  checks passed.
+- Generated log bindings remain current through the binding freshness regression.
+- Gameplay, performance, sanitizer execution, distribution/package integration,
+  and graphical smoke tests were not run for this assessment.
+
+Completion recommendation:
+
+- No additional Step 5 production gap was found within the assessed, agreed
+  scope. Step 5 is ready for explicit completion review, not automatically
+  marked approved by this assessment.
+- Preserve the existing deferrals: generated C++ struct wrappers/native mapping,
+  struct generic arguments, automatic equality, open structs, and fatal VM fault
+  recovery. Richer formatted representations remain separate.
+- Step 7 must reconcile stale milestone statements in the embedding guide,
+  including the old claims that struct closure captures are unsupported and
+  that already-implemented interpreter/compiled operations remain separate.
+  Published documentation completion is not claimed here.
+
+Next, after Step 5 approval: present and agree a conservative named-local NRVO
+eligibility rule before implementing Step 6. Verify eligible operation removal
+and ineligible fallback/copy semantics. Step 7 then completes tooling,
+documentation, and final integration checks. No commit or push in this slice.
 
 ### Step 6: Conservative named return-value optimization
 
