@@ -1785,4 +1785,56 @@ BOOST_AUTO_TEST_CASE(synchronous_script_function_calls_restore_prior_yield_state
     machine->pop1();
 }
 
+BOOST_AUTO_TEST_CASE(tail_return_initializers_keep_partial_results_separate_from_inspected_locals) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto valueId = runtime.registerStruct("NrvoInspectionValue");
+    const auto* type = runtime.getTypeByName("NrvoInspectionValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    auto visits = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeInspectedNrvoValue", [&](VirtualMachine* active) {
+        auto* destination = active->getParameter(0).getStorageAddress();
+        destination[0].setIntegerValue(17);
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("partial result");
+        const auto* callable = active->getCurrentCallable();
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(callable->getName() == "makeInspectedNrvoPair");
+        const Interpreter interpreter(*active);
+        InterpreterContext frame(interpreter, *callable);
+        const auto local = frame.getVariableStorage("candidate");
+        BOOST_REQUIRE_EQUAL(local.size(), 2U);
+        BOOST_TEST(local.data() != destination);
+        BOOST_TEST(local[0].getIntegerValue() == 0);
+        BOOST_TEST(NomadString{local[1].getStringValue()}.empty());
+        BOOST_REQUIRE(interpreter.execute(
+            "candidate.number = 91\ncandidate.text = \"frame mutation\"", frame));
+        BOOST_TEST(frame.getVariableStorage("candidate")[0].getIntegerValue() == 91);
+        BOOST_TEST(frame.getVariableStorage("candidate")[1].getStringValue() == "frame mutation");
+        BOOST_TEST(destination[0].getIntegerValue() == 17);
+        BOOST_TEST(destination[1].getStringValue() == "partial result");
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("completed result");
+        ++visits;
+    }, {}, type, "").isValid());
+    fixture.addFunction("makeInspectedNrvoPair",
+        "candidate = makeInspectedNrvoValue\nreturn candidate");
+    fixture.addFunction("main",
+        "value = makeInspectedNrvoPair\n"
+        "assert value.number == 17\nassert value.text == \"completed result\"\nreturn value.number");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 17);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(visits == 3);
+}
+
 BOOST_AUTO_TEST_SUITE_END()

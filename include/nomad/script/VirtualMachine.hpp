@@ -60,6 +60,9 @@ public:
 
     void setFunctionVariableValue(VariableId variableId, const RuntimeValue& value);
     [[nodiscard]] const RuntimeValue& getFunctionVariableValue(VariableId variableId) const;
+    // Borrows complete local slots from the active script frame; zero-sized locals use an empty view.
+    [[nodiscard]] std::span<RuntimeValue> getFunctionVariableStorage(VariableId variableId);
+    [[nodiscard]] std::span<const RuntimeValue> getFunctionVariableStorage(VariableId variableId) const;
     // Trusted physical ranges; nonempty views require valid storage in the intended frame.
     [[nodiscard]] std::span<RuntimeValue> getLocalStorage(NomadIndex offset, NomadIndex count);
     [[nodiscard]] std::span<const RuntimeValue> getLocalStorage(NomadIndex offset, NomadIndex count) const;

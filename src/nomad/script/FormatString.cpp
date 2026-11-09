@@ -120,10 +120,7 @@ NomadString FormatString::format(VirtualMachine* machine) const {
                             machine->fault("Format variable requires an active script frame");
                         }
 
-                        storage = machine->getLocalStorage(
-                            function->getVariableOffset(VariableId{segment.variableId}),
-                            size
-                        ).data();
+                        storage = machine->getFunctionVariableStorage(VariableId{segment.variableId}).data();
                         break;
 
                     case IdentifierType::Parameter:

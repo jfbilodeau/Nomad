@@ -765,6 +765,21 @@ temporaries. Local bytecode uses compiler-computed physical offsets for load, st
 cleanup, and frames reserve/pop physical slot totals. Logical IDs remain stable
 when sizes change. VM host-facing local APIs and frame-backed interpreter access
 resolve those IDs through callable metadata; instruction execution does not.
+`VirtualMachine::getFunctionVariableStorage(id)` borrows the complete local value
+from the active script frame. The mutable overload returns
+`std::span<RuntimeValue>`; the const overload returns
+`std::span<const RuntimeValue>`. Both use the local's logical `VariableId` and
+return exactly its type's slot count. Empty structs return an empty view with a
+null data pointer. Native callbacks access their enclosing active script
+frame's locals, not their native argument slots.
+
+The caller supplies a valid local ID belonging to the active compiled callable
+and keeps its frame alive while using the view. Lookup does not copy values,
+retain references, or transfer ownership. Mutating borrowed slots changes the
+live local; use the type's assignment operations when replacing owned values.
+The existing scalar value accessors remain for scalar/reference locals.
+`getLocalStorage(offset, count)` remains the physical-range API.
+
 Local instruction operands use full-width `Index` values, and instruction dumps
 show numeric offsets. Parameter load/store/cleanup bytecode also uses full-width
 physical offsets computed with `getParameterOffset(parameterId)`. Scalar accesses

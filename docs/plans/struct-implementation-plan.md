@@ -2,9 +2,11 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Current review stop: Step 5 is approved within its agreed scope. Step 6A's
-conservative initialization/return-pair NRVO rule is approved and recorded;
-compiler implementation and validation remain the next separately reviewable
-slice.
+conservative initialization/return-pair NRVO shape is approved. Step 6B1's
+VM logical-local lookup is implemented and validated, awaiting review.
+Initializer-time frame observation needs a separate decision before enabling
+NRVO; compiler optimization remains unimplemented. Interpreter evaluation keeps
+ordinary copies and does not need NRVO.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4485,6 +4487,73 @@ Validation of this slice:
 Next: implement and validate the approved pair as Step 6B, then stop for review.
 Broader mutable-local NRVO is not automatically included. Step 7 follows Step 6
 sign-off with tooling, documentation reconciliation, and final integration checks.
+
+### Step 6B1: VM logical-local storage lookup without NRVO
+
+Approved scope:
+
+- Implement full-width VM logical-local lookup only, preserving current behavior.
+- Keep interpreter-owned copies simple. Do not enable NRVO, add return-backed
+  local metadata, change initializer-time frame visibility, or add shadow storage.
+
+Implementation:
+
+- Added mutable and const `VirtualMachine::getFunctionVariableStorage(VariableId)`
+  overloads. They borrow the complete active script local using its logical ID,
+  returning its physical slot count and a null/empty view for zero-sized locals.
+- Routed scalar local value access/freeing, interpreter frame reads/writes,
+  compiled frame captures, closure capture creation, and compiled format-local
+  lookup through that shared VM entry point.
+- Left physical bytecode operands, raw local-range APIs, argument/result layouts,
+  local allocation/cleanup, and interpreter snapshot ownership unchanged.
+- Updated the public embedding contract with borrowed storage, active-frame
+  lifetime, const/mutable overloads, and native callback behavior.
+
+Regression evidence:
+
+- A new VM storage test covers scalar, empty, one-slot struct, and nested
+  multi-slot struct locals containing strings and an object reference.
+- Const/mutable views have identical addresses and exact complete sizes.
+  Repeated lookups retain no additional string/object references. Mutations
+  affect the live local while an owned interpreter snapshot remains independent.
+- Frame reads/mutable views and whole-value frame assignment use the same local
+  storage. Native argument slots do not displace enclosing script-local lookup.
+- Nested typed host calls select their own logical locals and restore the
+  enclosing callable, storage addresses, values, and native argument bindings.
+  A frame containing only empty locals requires zero physical local slots.
+- A separate tail-return regression preserves the initializer-time observation
+  identified during Step 6B investigation: a native initializer partially fills
+  its result while reading and mutating the caller's separate default local.
+  Completing assignment replaces that frame mutation, and the final returned
+  value remains the initializer's completed result.
+- Both scenarios repeat three times and restore live string/object counts.
+
+Validation:
+
+- The initial development build exposed MSVC's string-literal limit when
+  Boost.Test stringified a large native registration expression. Moving that
+  registration outside the assertion corrected the test; the development
+  rebuild succeeded.
+- Language and remaining CTest unit groups passed, including frame access,
+  closure/capture, compiled/dynamic formatting, and the initializer-observation
+  regression.
+- Four documentation preparation tests, regenerated API documentation, and the
+  strict MkDocs build passed.
+- No gameplay, performance, sanitizer, or NRVO operation-removal claims are made.
+
+Remaining decision and next slice:
+
+- The approved syntactic pair alone does not establish that aliasing a local to
+  return storage preserves initializer-time frame inspection/mutation.
+- Before enabling compiled NRVO, agree whether optimized frame observation may
+  see in-progress return storage or whether such initializers must retain the
+  existing separate-storage fallback. This slice deliberately makes neither
+  choice and introduces no observation restrictions.
+- After that decision, implement the approved compiler eligibility/storage/
+  forwarding/cleanup changes and verify exact emission and fallback behavior.
+  Interpreter evaluation continues copying; no interpreter NRVO is required.
+- Step 7 follows Step 6 sign-off with tooling, documentation reconciliation, and
+  final integration checks. Stop for review without committing or pushing.
 
 ### Step 7: Tooling, documentation, and completion checks
 

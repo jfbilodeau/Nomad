@@ -2,6 +2,8 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -147,6 +149,127 @@ BOOST_AUTO_TEST_CASE(empty_views_do_not_require_storage_or_address_arithmetic) {
     BOOST_TEST(machine.getParameterStorage(0, 1)[0].getIntegerValue() == 1);
     machine.returnFunction(0);
     machine.pop1();
+}
+
+BOOST_AUTO_TEST_CASE(logical_local_views_preserve_complete_values_ownership_and_native_reentry) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto visits = 0;
+    auto nestedVisits = 0;
+    auto emptyVisits = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("inspectNestedLogicalLocal", [&](VirtualMachine* active) {
+        const auto* callable = active->getCurrentCallable();
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(callable->getName() == "nestedLogicalLocal");
+        const auto id = callable->getVariableId("prefix");
+        const auto storage = active->getFunctionVariableStorage(id);
+        BOOST_REQUIRE_EQUAL(storage.size(), 1U);
+        BOOST_TEST(storage[0].getIntegerValue() == 19);
+        BOOST_TEST(std::as_const(*active).getFunctionVariableStorage(id).data() == storage.data());
+        active->setFunctionVariableValue(id, RuntimeValue{NomadInteger{20}});
+        BOOST_TEST(active->getFunctionVariableValue(id).getIntegerValue() == 20);
+        ++nestedVisits;
+    }, {}, runtime.getVoidType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("inspectEmptyLogicalLocal", [&](VirtualMachine* active) {
+        const auto* callable = active->getCurrentCallable();
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(callable->getName() == "emptyLogicalLocal");
+        BOOST_TEST(callable->getVariableStorageSize() == 0U);
+        const auto id = callable->getVariableId("empty");
+        BOOST_TEST(active->getFunctionVariableStorage(id).empty());
+        BOOST_TEST(active->getFunctionVariableStorage(id).data() == nullptr);
+        BOOST_TEST(std::as_const(*active).getFunctionVariableStorage(id).empty());
+        BOOST_TEST(std::as_const(*active).getFunctionVariableStorage(id).data() == nullptr);
+        ++emptyVisits;
+    }, {}, runtime.getVoidType(), "").isValid());
+    const auto inspectId = runtime.registerNativeFunction("inspectLogicalLocals", [&](VirtualMachine* active) {
+        const auto* callable = active->getCurrentCallable();
+        BOOST_REQUIRE(callable != nullptr);
+        BOOST_TEST(active->getIntegerParameter(0) == 123);
+        const auto prefixId = callable->getVariableId("prefix");
+        const auto emptyId = callable->getVariableId("empty");
+        const auto singleId = callable->getVariableId("single");
+        const auto outerId = callable->getVariableId("outer");
+        const auto suffixId = callable->getVariableId("suffix");
+        const auto prefix = active->getFunctionVariableStorage(prefixId);
+        const auto empty = active->getFunctionVariableStorage(emptyId);
+        const auto single = active->getFunctionVariableStorage(singleId);
+        const auto outer = active->getFunctionVariableStorage(outerId);
+        const auto suffix = active->getFunctionVariableStorage(suffixId);
+        BOOST_REQUIRE_EQUAL(prefix.size(), 1U);
+        BOOST_REQUIRE_EQUAL(single.size(), 1U);
+        BOOST_REQUIRE_EQUAL(outer.size(), 3U);
+        BOOST_REQUIRE_EQUAL(suffix.size(), 1U);
+        BOOST_TEST(prefix[0].getIntegerValue() == 5);
+        BOOST_TEST(empty.empty());
+        BOOST_TEST(empty.data() == nullptr);
+        BOOST_TEST(single[0].getIntegerValue() == 7);
+        BOOST_TEST(outer[0].getIntegerValue() == 11);
+        BOOST_TEST(outer[1].getStringValue() == "logical local");
+        BOOST_REQUIRE(outer[2].getObjectValue() != nullptr);
+        BOOST_TEST(suffix[0].getIntegerValue() == 9);
+        const auto stringReferences = outer[1].getObjectValue()->getReferenceCount();
+        const auto objectReferences = outer[2].getObjectValue()->getReferenceCount();
+        for (const auto id : {prefixId, emptyId, singleId, outerId, suffixId}) {
+            const auto storage = active->getFunctionVariableStorage(id);
+            const auto constant = std::as_const(*active).getFunctionVariableStorage(id);
+            BOOST_TEST(storage.size() == callable->getVariableType(id)->getSize());
+            BOOST_TEST(constant.size() == storage.size());
+            BOOST_TEST(constant.data() == storage.data());
+            BOOST_TEST(storage.data() == active->getLocalStorage(
+                callable->getVariableOffset(id), callable->getVariableType(id)->getSize()).data());
+        }
+        BOOST_TEST(outer[1].getObjectValue()->getReferenceCount() == stringReferences);
+        BOOST_TEST(outer[2].getObjectValue()->getReferenceCount() == objectReferences);
+        const Interpreter interpreter(*active);
+        InterpreterContext frame(interpreter, *callable);
+        BOOST_TEST(frame.getVariableStorage("outer").data() == outer.data());
+        BOOST_TEST(frame.getMutableVariableStorageById(outerId).data() == outer.data());
+        const InterpreterValue snapshot(callable->getVariableType(outerId), outer);
+        single[0].setIntegerValue(13);
+        outer[0].setIntegerValue(23);
+        frame.setVariable("suffix", runtime.getIntegerType(), RuntimeValue{NomadInteger{42}});
+        BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 11);
+        BOOST_TEST(suffix[0].getIntegerValue() == 42);
+        const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{19}});
+        const auto nested = interpreter.runFunction(runtime.getFunctionId("nestedLogicalLocal"), {&argument, 1});
+        BOOST_TEST(nested.getValue().getIntegerValue() == 20);
+        BOOST_TEST(interpreter.runFunction(runtime.getFunctionId("emptyLogicalLocal"), {}).getValue().getIntegerValue() == 0);
+        BOOST_TEST(active->getCurrentCallable() == callable);
+        BOOST_TEST(active->getIntegerParameter(0) == 123);
+        BOOST_TEST(active->getFunctionVariableStorage(outerId).data() == outer.data());
+        BOOST_TEST(frame.getVariableStorage("outer")[0].getIntegerValue() == 23);
+        BOOST_TEST(active->getFunctionVariableValue(prefixId).getIntegerValue() == 5);
+        ++visits;
+    }, {defParameter("marker", runtime.getIntegerType(), "")}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(inspectId.isValid());
+    fixture.addFunction("logicalLocalTypes",
+        "class LogicalLocalOwner\nnumber = 3\nend\n"
+        "struct LogicalLocalEmpty\nend\n"
+        "struct LogicalLocalSingle\nnumber = 7\nend\n"
+        "struct LogicalLocalInner\nnumber = 11\ntext = \"logical local\"\nend\n"
+        "struct LogicalLocalOuter\ninner = new LogicalLocalInner\nowner = new LogicalLocalOwner\nend\nreturn 0");
+    fixture.addFunction("nestedLogicalLocal", "params expected:int\nprefix = expected\ninspectNestedLogicalLocal\nreturn prefix");
+    fixture.addFunction("emptyLogicalLocal", "empty = new LogicalLocalEmpty\ninspectEmptyLogicalLocal\nreturn 0");
+    fixture.addFunction("main",
+        "prefix = 5\nempty = new LogicalLocalEmpty\nsingle = new LogicalLocalSingle\n"
+        "outer = new LogicalLocalOuter\nsuffix = 9\ninspectLogicalLocals 123\n"
+        "assert prefix == 5\nassert single.number == 13\n"
+        "assert outer.inner.number == 23\nassert outer.inner.text == \"logical local\"\n"
+        "assert outer.owner.number == 3\nreturn suffix");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 42);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(visits == 3);
+    BOOST_TEST(nestedVisits == 3);
+    BOOST_TEST(emptyVisits == 3);
 }
 
 BOOST_AUTO_TEST_CASE(address_opcodes_use_full_width_offsets_and_folded_parameter_distances) {

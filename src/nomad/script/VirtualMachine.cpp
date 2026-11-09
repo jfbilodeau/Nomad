@@ -42,13 +42,21 @@ VirtualMachine::VirtualMachine(Runtime* runtime, NomadIndex stack_size):
 VirtualMachine::~VirtualMachine() = default;
 
 void VirtualMachine::setFunctionVariableValue(const VariableId variableId, const RuntimeValue& value) {
-    const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-    getLocalStorage(offset, 1)[0] = value;
+    getFunctionVariableStorage(variableId)[0] = value;
 }
 
 const RuntimeValue& VirtualMachine::getFunctionVariableValue(const VariableId variableId) const {
-    const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-    return getLocalStorage(offset, 1)[0];
+    return getFunctionVariableStorage(variableId)[0];
+}
+
+std::span<RuntimeValue> VirtualMachine::getFunctionVariableStorage(const VariableId variableId) {
+    const auto* callable = getCurrentCallable();
+    return getLocalStorage(callable->getVariableOffset(variableId), callable->getVariableType(variableId)->getSize());
+}
+
+std::span<const RuntimeValue> VirtualMachine::getFunctionVariableStorage(const VariableId variableId) const {
+    const auto* callable = getCurrentCallable();
+    return getLocalStorage(callable->getVariableOffset(variableId), callable->getVariableType(variableId)->getSize());
 }
 
 std::span<RuntimeValue> VirtualMachine::getLocalStorage(const NomadIndex offset, const NomadIndex count) {
@@ -830,7 +838,7 @@ std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(
 
                 values.emplace_back(
                     capture.type,
-                    getLocalStorage(parent->getVariableOffset(capture.variableId), size)
+                    getFunctionVariableStorage(capture.variableId)
                 );
                 break;
             }
@@ -931,10 +939,7 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(
                         fault("Invalid variable for closure capture");
                     }
 
-                    source = getLocalStorage(
-                        parent->getVariableOffset(capture.variableId),
-                        size
-                    );
+                    source = getFunctionVariableStorage(capture.variableId);
                     break;
                 }
 
@@ -1077,8 +1082,7 @@ void VirtualMachine::moveObjectResultToStack() {
 }
 
 void VirtualMachine::freeObjectVariable(const VariableId variableId) {
-    const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-    getLocalStorage(offset, 1)[0].freeObjectValue();
+    getFunctionVariableStorage(variableId)[0].freeObjectValue();
 }
 
 void VirtualMachine::freeObjectStack(const NomadIndex index) {

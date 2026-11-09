@@ -32,7 +32,7 @@ InterpreterCallFrame::InterpreterCallFrame(
             case CaptureSource::Variable:
                 copyArgument(
                     *capture.type,
-                    machine.getLocalStorage(parent->getVariableOffset(capture.variableId), size)
+                    machine.getFunctionVariableStorage(capture.variableId)
                 );
                 break;
 

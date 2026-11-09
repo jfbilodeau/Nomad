@@ -77,8 +77,7 @@ void InterpreterContext::setVariable(
             throw std::invalid_argument("Frame variables cannot change type");
         }
         auto scratch = type->getSize() > 1 ? std::make_unique<RuntimeValue[]>(type->getSize()) : nullptr;
-        const auto destination = getVirtualMachine()->getLocalStorage(
-            m_frameCallable->getVariableOffset(frameId), type->getSize());
+        const auto destination = getVirtualMachine()->getFunctionVariableStorage(frameId);
         type->assignValue(storage.data(), destination.data(), scratch.get());
         return;
     }
@@ -236,8 +235,7 @@ const RuntimeValue* InterpreterContext::getVariableValueById(const VariableId va
 std::span<const RuntimeValue> InterpreterContext::getVariableStorageById(const VariableId variableId) const {
     if (isFrameVariable(variableId)) {
         validateFrame();
-        return getVirtualMachine()->getLocalStorage(m_frameCallable->getVariableOffset(variableId),
-            m_frameCallable->getVariableType(variableId)->getSize());
+        return getVirtualMachine()->getFunctionVariableStorage(variableId);
     }
     if (variableId.isInvalid()) {
         return {};
@@ -255,8 +253,7 @@ std::span<const RuntimeValue> InterpreterContext::getVariableStorageById(const V
 std::span<RuntimeValue> InterpreterContext::getMutableVariableStorageById(const VariableId variableId) {
     if (isFrameVariable(variableId)) {
         validateFrame();
-        return getVirtualMachine()->getLocalStorage(m_frameCallable->getVariableOffset(variableId),
-            m_frameCallable->getVariableType(variableId)->getSize());
+        return getVirtualMachine()->getFunctionVariableStorage(variableId);
     }
     if (variableId.isInvalid()) {
         return {};
