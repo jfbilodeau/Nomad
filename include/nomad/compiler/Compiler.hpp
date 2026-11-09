@@ -226,6 +226,14 @@ public:
         const ArgumentList* arguments,
         Expression& receiver
     );
+    // Calls a void class method with one value; struct arguments use reserved staging storage.
+    void addObjectSetterCall(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        Expression& receiver,
+        Expression& value,
+        VariableId stagingId = VariableId::INVALID
+    );
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     NomadIndex addScriptObjectCreation(
         CallableId constructorId,

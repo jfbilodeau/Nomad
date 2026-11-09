@@ -836,12 +836,20 @@ bool NativeMemberExpression::resolveAssignmentTarget(
         reportError(context, function, "Native property '" + m_qualifiedName + "' is read-only");
         return false;
     }
-    if (context->getMode() == CompilerMode::Script &&
-        (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
-        reportError(context, function, "Method-backed native properties are not supported by compiled source yet");
-        return false;
-    }
     setType(info->valueType);
+    if (info->setterMethodId.isValid()) {
+        m_method = runtime->getMethod(info->setterMethodId);
+        if (
+            context->getMode() == CompilerMode::Script &&
+            getType()->isStruct() && 
+            m_stagingVariable.isInvalid()
+        ) {
+            m_stagingVariable = function->registerVariable(
+                "$property" + std::to_string(function->getVariableCount()), getType()
+            );
+        }
+    }
+
     return true;
 }
 
@@ -869,13 +877,19 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             reportError(context, function, "Native property '" + m_qualifiedName + "' is write-only");
             return;
         }
-        if (context->getMode() == CompilerMode::Script &&
-            (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
-            reportError(context, function, "Method-backed native properties are not supported by compiled source yet");
-            return;
+
+        if (info->getterMethodId.isValid()) {
+            if (!m_arguments.getArguments().empty()) {
+                reportError(context, function, "Native property '" + m_qualifiedName + "' does not take arguments");
+
+                return;
+            }
+
+            m_method = runtime->getMethod(info->getterMethodId);
         }
 
         setType(info->valueType);
+
         return;
     }
 
@@ -886,26 +900,37 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
         for (const auto& argument : arguments) {
             argumentTypes.push_back(argument->resolveOverloadType(context, function));
         }
+
         const auto resolution = runtime->resolveMethod(m_receiver->getType(), m_memberName, argumentTypes);
         if (resolution.status != ResolveStatus::Resolved) {
             reportError(context, function, runtime->describeResolveFailure(m_qualifiedName, resolution));
             return;
         }
+
         m_method = runtime->getMethod(resolution.id);
         m_memberId = resolution.id;
         const auto* script = m_method->asScriptCallable();
         const auto* returnType = m_method->getReturnType();
         auto* compiler = context->getCompiler();
-        if (script != nullptr && context->getMode() == CompilerMode::Script && function != nullptr) {
+        if (
+            script != nullptr && 
+            context->getMode() == CompilerMode::Script && 
+            function != nullptr
+        ) {
             compiler->addFunctionCallDependency(function->getId(), script->getId());
         }
+        
         if (returnType == nullptr) {
             const auto recursive = script != nullptr && function != nullptr &&
                 compiler->isRecursiveFunctionCall(function->getId(), script->getId());
-            reportError(context, function, recursive
-                ? "Cannot infer return type of recursive method '" + m_qualifiedName +
-                    "': it needs a `return` whose type does not depend on a recursive call"
-                : "Cannot determine return type of method '" + m_qualifiedName + "'");
+            reportError(
+                context, 
+                function, 
+                recursive ? 
+                    "Cannot infer return type of recursive method '" + m_qualifiedName + "': it needs a `return` whose type does not depend on a recursive call" : 
+                    "Cannot determine return type of method '" + m_qualifiedName + "'"
+            );
+
             return;
         }
         if (script != nullptr && context->getMode() != CompilerMode::Script &&
@@ -981,12 +1006,12 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
         return;
     }
 
-    if (m_memberType != MemberType::Property) {
+    if (m_memberType != MemberType::Property || m_method != nullptr) {
         compiler->addOpCode(OpCodes::op_push_this);
     }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
-    if (m_memberType == MemberType::Property) {
+    if (m_memberType == MemberType::Property && m_method == nullptr) {
         compiler->addLoadProperty(std::get<PropertyId>(m_memberId));
         receiverType->emitFreeIntermediate(*compiler);
         compiler->addMoveResult(getType(), target);
@@ -995,9 +1020,9 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
 
     m_arguments.setReceiverType(receiverType);
     if (m_method->asScriptMethod() != nullptr) {
-        compiler->addScriptMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
+        compiler->addScriptMethodCall(m_method->getId(), function, &m_arguments);
     } else {
-        compiler->addNativeMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
+        compiler->addNativeMethodCall(m_method->getId(), function, &m_arguments);
     }
 
     if (!m_method->getReturnType()->isVoid()) {
@@ -1018,7 +1043,7 @@ void NativeMemberExpression::onCompileIntoLocal(
         m_storage->emitCopyToLocal(*compiler, function, destination);
         return;
     }
-    if (m_memberType == MemberType::Method && m_receiver->getType()->isClass()) {
+    if (m_method != nullptr && m_receiver->getType()->isClass()) {
         m_arguments.setReceiverType(nullptr);
         compiler->addObjectMethodCallIntoLocal(m_method->getId(), function, &m_arguments, *m_receiver, destination);
         return;
@@ -1036,7 +1061,7 @@ void NativeMemberExpression::onCompileIntoLocal(
 }
 
 bool NativeMemberExpression::supportsReturnDestination() const {
-    return m_memberType == MemberType::Method &&
+    return m_method != nullptr && m_method->getReturnType() == getType() &&
         (m_structReceiver.has_value() || (m_receiver->getType() != nullptr && m_receiver->getType()->isClass())) &&
         getType() != nullptr && getType()->isStruct();
 }
@@ -1093,6 +1118,10 @@ void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallabl
     const auto* propertyType = getType();
     if (m_storage.has_value()) {
         m_storage->emitAssignment(*compiler, function, *expression, m_stagingVariable);
+        return;
+    }
+    if (m_method != nullptr) {
+        compiler->addObjectSetterCall(m_method->getId(), function, *m_receiver, *expression, m_stagingVariable);
         return;
     }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);

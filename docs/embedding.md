@@ -1671,12 +1671,32 @@ This remains allowed for getter-only properties. Contained class references
 retain their ordinary shared reference semantics. To persist a field update,
 read the snapshot, produce a replacement, and assign the complete property.
 
-Failures propagate as exceptions to host callers and as diagnostics from source
-execution. Argument/result cleanup still occurs, but accessor side effects,
+Failures propagate as exceptions to typed host callers and as diagnostics from
+interpreter source execution. Argument/result cleanup still occurs, but accessor side effects,
 including setter changes before an exception, are not rolled back.
-Compiled source and the VM's raw property APIs do not yet support method-backed
-properties; they report explicit unsupported-access errors. Existing scalar
-callback properties are unchanged.
+Compiled source supports method-backed reads and whole-property writes using
+ordinary native method calls. Getter results can initialize locals/fields, serve
+as copied arguments, be discarded, or provide temporary-rooted field access.
+A direct `return owner.point` can forward a struct getter into the caller's
+return storage without an intermediate return local/copy. Whole-struct writes
+stage the RHS before invoking the setter with an independent argument copy.
+The receiver is evaluated and retained before the RHS; replacing its original
+variable during the RHS does not redirect the setter. Empty getters/setters
+still execute without value slots. Getter-only temporary mutation remains
+allowed without automatic writeback.
+
+`Compiler::addObjectSetterCall(methodId, caller, receiver, value, stagingId)`
+emits a resolved one-value, void class-method call. `receiver` and `value` are
+resolved expressions matching the method signature and physical parameter
+storage. Struct values require a same-type reserved staging local disjoint from
+the source; scalar/reference values need no staging ID. The emitter retains the
+receiver across RHS evaluation, releases copied argument storage after the call,
+and restores the enclosing object receiver.
+
+The VM's raw property APIs still reject method-backed properties; use typed
+receiver APIs or compiled source instead. Existing scalar callback properties
+are unchanged. Compiled fatal-fault recovery and failure-path cleanup remain
+unsupported.
 
 For low-level integration, `Runtime::canRegisterNativeMember` checks registered
 class ownership, collisions, and shared native-member parameter signatures,
@@ -2810,8 +2830,8 @@ context's result; source assignment
 statements separately publish their owned assignment snapshots.
 
 Method-backed native struct-valued properties support typed interpreter/host
-receiver access. Their compiled integration remains pending, along with
-aggregate captures and field-aware struct formatting.
+receiver access and compiled getter/setter calls. Aggregate captures and
+field-aware struct formatting remain pending.
 
 ## Parameterized types
 

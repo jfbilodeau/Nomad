@@ -8,6 +8,8 @@
 #include <nomad/interpreter/InterpreterStructReceiver.hpp>
 
 #include <nomad/script/ClassType.hpp>
+#include <nomad/script/InstructionDump.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -17,6 +19,7 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -761,7 +764,7 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
     }
 }
 
-BOOST_AUTO_TEST_CASE(method_backed_properties_report_compiled_access_as_unsupported_until_the_next_slice) {
+BOOST_AUTO_TEST_CASE(method_backed_properties_compile_as_native_method_calls_without_stored_field_slots) {
     for (const auto* source : {"owner.value", "owner.value = argument"}) {
         nomad::test::LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
@@ -784,11 +787,53 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_report_compiled_access_as_unsuppor
         }).isValid());
         fixture.addFunction("main", NomadString{"params owner:PendingAccessorOwner argument:PendingAccessorValue\n"} +
             source + "\nreturn 0");
-        BOOST_TEST(!fixture.compile());
-        BOOST_TEST(fixture.getDiagnostics().find("Method-backed native properties are not supported by compiled source yet") !=
-            NomadString::npos);
-        BOOST_TEST(fixture.getDiagnostics().find("Internal error") == NomadString::npos);
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId("main"));
+        std::ostringstream dump;
+        dumpInstructions(runtime, *function, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_call_native_method) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_native_property_get) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_native_property_set) == NomadString::npos);
         BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_keep_read_write_and_value_type_diagnostics) {
+    const std::array cases{
+        std::pair{"owner.readOnly = argument", "read-only"},
+        std::pair{"owner.writeOnly", "write-only"},
+        std::pair{"owner.value = 3", "Cannot assign value of type"}
+    };
+    for (const auto& [source, expectedError] : cases) {
+        nomad::test::LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        const auto valueId = runtime.registerStruct("RestrictedAccessorValue");
+        const auto* type = runtime.getTypeByName("RestrictedAccessorValue");
+        BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+        const auto ownerId = runtime.registerClass("RestrictedAccessorOwner", ClassMode::Closed);
+        runtime.finalizeCompositeFieldLayout(valueId);
+        const auto getter = runtime.addMethod(ownerId, {
+            .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = [](VirtualMachine*) {}
+        });
+        const auto setter = runtime.addMethod(ownerId, {
+            .name = "setValue", .parameters = {{valueId, "value", ""}},
+            .returnTypeId = runtime.getVoidType()->getId(), .function = [](VirtualMachine*) {}
+        });
+        BOOST_REQUIRE(getter.isValid() && setter.isValid());
+        BOOST_REQUIRE(runtime.addProperty(ownerId, {
+            .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
+        }).isValid());
+        BOOST_REQUIRE(runtime.addProperty(ownerId, {
+            .valueType = type, .name = "readOnly", .getterMethodId = getter
+        }).isValid());
+        BOOST_REQUIRE(runtime.addProperty(ownerId, {
+            .valueType = type, .name = "writeOnly", .setterMethodId = setter
+        }).isValid());
+        fixture.addFunction("main", NomadString{"params owner:RestrictedAccessorOwner argument:RestrictedAccessorValue\n"} +
+            source + "\nreturn 0");
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.getDiagnostics().find(expectedError) != NomadString::npos);
+        BOOST_TEST(fixture.getDiagnostics().find("Internal error") == NomadString::npos);
     }
 }
 

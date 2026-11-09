@@ -45,6 +45,9 @@ Method-backed native properties are implemented for registration and typed
 interpreter/host receiver access. Getter results are owned snapshots; nested
 mutations do not automatically invoke setters. Compiled integration is separate.
 This slice is implemented and validated, awaiting review.
+Compiled method-backed getter reads and whole-property setter calls are
+implemented, preserving snapshot/no-automatic-writeback behavior. Validation
+of this compiled accessor slice passed; it is awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -3910,6 +3913,62 @@ writes using ordinary native method calls; then captures/callbacks, field-aware
 formatting, remaining host parity, and NRVO after Step 5 approval. Getter results
 remain temporaries rather than addressable stored properties. Fatal VM fault
 cleanup remains deferred.
+
+### Step 5G2: Compiled method-backed getter/setter access
+
+Approved scope:
+
+- Lower getter reads through existing method-call emitters and whole-property
+  writes through one specialized setter emitter. Add no opcodes or callback APIs;
+  keep raw VM property API restrictions unchanged.
+- Cover scalar/reference and empty/one/multi-slot values, forwarded getter
+  returns, field initialization, argument/discarded reads, temporary mutation
+  without writeback, and receiver replacement during the RHS.
+- Retain evaluated setter receivers before the RHS and stage struct input before
+  invoking the registered one-argument void method. Preserve read-only/write-only
+  and assignment type diagnostics.
+- Verify emitted operations, execution, getter evaluation counts, parameter
+  isolation, native reentry, and ownership. Update documentation, build/test,
+  then stop for review without committing.
+
+Implementation:
+
+- Native member resolution retains the selected accessor method while preserving
+  property identity. Getter reads reuse ordinary method emission and existing
+  local/forwarded return destinations; getters still expose no stored location.
+- `Compiler::addObjectSetterCall` accepts a complete value matching a one-argument
+  void class method. Struct inputs use reserved staging; copied argument slots and
+  retained receivers are released after successful calls. The enclosing receiver
+  is restored.
+- Setter input remains independent even when the callback modifies its parameters,
+  including strings. Replacing the receiver variable during the RHS does not
+  redirect the invocation or destroy the original receiver prematurely.
+- Tests cover scalar/string and empty/one/multi-slot accessors, local/forwarded
+  getter destinations, shared references and independent snapshots, self-assignment,
+  stored-field initialization, discarded/temporary reads, getter-only temporary
+  mutation without writeback, native reentry, receiver replacement, preserved
+  read/write/type diagnostics, and ordinary native-method opcode emission.
+
+Validation:
+
+- The automatic build and language group passed on the initial targeted run.
+  The remaining group exposed a test-only native-function lookup error; using the
+  registered native ID corrected it, and the remaining group passed on retry.
+- After adding compilation diagnostic coverage, all six CTest unit groups,
+  script staging, and compiler-export integration checks passed with automatic build.
+- Instruction dumps verify forwarded getter destinations and ordinary method
+  calls without raw native-property opcodes. Setter staging, getter evaluation
+  counts, parameter isolation, temporary mutation, receiver replacement, and
+  repeated string/object ownership cleanup passed.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting capture/callback work.
+
+Next, after review: struct capture copies and callback layouts, then field-aware
+static/dynamic formatting and remaining host parity. Conservative NRVO follows
+Step 5 approval, then final tooling/documentation and integration checks. Getter
+results remain temporaries; raw VM property dispatch and fatal-fault cleanup remain
+separate.
 
 ### Step 6: Conservative named return-value optimization
 

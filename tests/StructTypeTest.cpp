@@ -2633,6 +2633,249 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     }
 }
 
+BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter_staging_and_return_forwarding) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto sharedId = runtime.registerClass("CompiledAccessorShared", ClassMode::Closed);
+    const auto* shared = runtime.getTypeByName("CompiledAccessorShared")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(sharedId, "number", runtime.getIntegerType()).isValid());
+    const auto valueId = runtime.registerStruct("CompiledAccessorValue");
+    const auto* type = runtime.getTypeByName("CompiledAccessorValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "shared", shared).isValid());
+    const auto singleId = runtime.registerStruct("CompiledAccessorSingle");
+    const auto* single = runtime.getTypeByName("CompiledAccessorSingle");
+    BOOST_REQUIRE(runtime.registerProperty(singleId, "number", runtime.getIntegerType()).isValid());
+    const auto emptyId = runtime.registerStruct("CompiledAccessorEmpty");
+    const auto* empty = runtime.getTypeByName("CompiledAccessorEmpty");
+    const auto ownerId = runtime.registerClass("CompiledAccessorOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("CompiledAccessorOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "backing", type).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "singleBacking", single).isValid());
+    runtime.finalizeCompositeFieldLayout(sharedId);
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    auto getters = 0;
+    auto setters = 0;
+    auto emptyGetters = 0;
+    auto emptySetters = 0;
+    NomadObject* expectedSetterReceiver = nullptr;
+    const auto readNumber = runtime.addMethod(ownerId, {
+        .name = "getNumber", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->setIntegerResult(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[0].getIntegerValue());
+        }
+    });
+    const auto writeNumber = runtime.addMethod(ownerId, {
+        .name = "setNumber", .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [](VirtualMachine* active) {
+            static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[0].setIntegerValue(active->getIntegerParameter(0));
+        }
+    });
+    const auto readValue = runtime.addMethod(ownerId, {
+        .name = "getValue", .parameters = {}, .returnTypeId = valueId,
+        .function = [&](VirtualMachine* active) {
+            ++getters;
+            auto* object = static_cast<ScriptObject*>(active->getThis());
+            auto* destination = &active->getStorageParameter(0, 0);
+            const auto* caller = active->getCurrentCallable();
+            if (caller != nullptr && caller->getName() == "readCompiledAccessor") {
+                BOOST_TEST(active->getEnclosingParameterStorage(*caller->getCallStorageLayout().returnOffset, 1)[0]
+                    .getStorageAddress() == destination);
+            }
+            const Interpreter nested(*active);
+            const auto number = nested.runObjectMethod(*owner, object, readNumber, {});
+            BOOST_TEST(number.getValue().getIntegerValue() == object->getFieldStorage(0)[0].getIntegerValue());
+            BOOST_TEST(active->getThis() == object);
+            BOOST_TEST(&active->getStorageParameter(0, 0) == destination);
+            std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+            type->assignValue(object->getFieldStorage(0).data(), destination, scratch.data());
+        }
+    });
+    const auto writeValue = runtime.addMethod(ownerId, {
+        .name = "setValue", .parameters = {{valueId, "value", ""}}, .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            ++setters;
+            auto* object = static_cast<ScriptObject*>(active->getThis());
+            if (expectedSetterReceiver != nullptr) {
+                BOOST_TEST(object == expectedSetterReceiver);
+                BOOST_TEST(object->getFieldStorage(0)[0].getIntegerValue() == 23);
+                expectedSetterReceiver = nullptr;
+            }
+            const auto argument = active->getParameterStorage(0, type->getSize());
+            BOOST_TEST(argument.data() != object->getFieldStorage(0).data());
+            const Interpreter nested(*active);
+            static_cast<void>(nested.runObjectMethod(*owner, object, readNumber, {}));
+            BOOST_TEST(active->getThis() == object);
+            BOOST_TEST(active->getParameterStorage(0, type->getSize()).data() == argument.data());
+            std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+            object->setFieldStorage(0, argument, scratch);
+            argument[0].setIntegerValue(99);
+            argument[1].freeObjectValue();
+            argument[1].setStringValue("setter parameter copy");
+        }
+    });
+    const auto readText = runtime.addMethod(ownerId, {
+        .name = "getText", .parameters = {}, .returnTypeId = runtime.getStringType()->getId(),
+        .function = [](VirtualMachine* active) {
+            active->getResult().copyObjectValue(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[1]);
+        }
+    });
+    const auto writeText = runtime.addMethod(ownerId, {
+        .name = "setText", .parameters = {{runtime.getStringType()->getId(), "text", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            auto* object = static_cast<ScriptObject*>(active->getThis());
+            const auto argument = active->getParameterStorage(0, 1);
+            runtime.getStringType()->assignValue(argument.data(), object->getFieldStorage(0).data() + 1);
+            argument[0].freeObjectValue();
+            argument[0].setStringValue("private text");
+        }
+    });
+    const auto readSingle = runtime.addMethod(ownerId, {
+        .name = "getSingle", .parameters = {}, .returnTypeId = singleId,
+        .function = [](VirtualMachine* active) {
+            active->getStorageParameter(0, 0).setIntegerValue(
+                static_cast<ScriptObject*>(active->getThis())->getFieldStorage(1)[0].getIntegerValue());
+        }
+    });
+    const auto writeSingle = runtime.addMethod(ownerId, {
+        .name = "setSingle", .parameters = {{singleId, "single", ""}}, .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [](VirtualMachine* active) {
+            static_cast<ScriptObject*>(active->getThis())->getFieldStorage(1)[0].setIntegerValue(active->getIntegerParameter(0));
+        }
+    });
+    const auto readEmpty = runtime.addMethod(ownerId, {
+        .name = "getEmpty", .parameters = {}, .returnTypeId = emptyId,
+        .function = [&](VirtualMachine* active) { ++emptyGetters; BOOST_TEST(active->getThis() != nullptr); }
+    });
+    const auto writeEmpty = runtime.addMethod(ownerId, {
+        .name = "setEmpty", .parameters = {{emptyId, "empty", ""}}, .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* active) { ++emptySetters; BOOST_TEST(active->getThis() != nullptr); }
+    });
+    BOOST_REQUIRE(readNumber.isValid() && writeNumber.isValid() && readValue.isValid() && writeValue.isValid() &&
+        readText.isValid() && writeText.isValid() && readSingle.isValid() && writeSingle.isValid() &&
+        readEmpty.isValid() && writeEmpty.isValid());
+    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+        .valueType = type, .name = "value", .getterMethodId = readValue, .setterMethodId = writeValue
+    }).isValid());
+    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+        .valueType = type, .name = "readOnly", .getterMethodId = readValue
+    }).isValid());
+    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+        .valueType = type, .name = "writeOnly", .setterMethodId = writeValue
+    }).isValid());
+    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+        .valueType = runtime.getIntegerType(), .name = "number", .getterMethodId = readNumber, .setterMethodId = writeNumber
+    }).isValid());
+    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+        .valueType = runtime.getStringType(), .name = "text", .getterMethodId = readText, .setterMethodId = writeText
+    }).isValid());
+    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+        .valueType = single, .name = "single", .getterMethodId = readSingle, .setterMethodId = writeSingle
+    }).isValid());
+    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+        .valueType = empty, .name = "empty", .getterMethodId = readEmpty, .setterMethodId = writeEmpty
+    }).isValid());
+    BOOST_REQUIRE(runtime.addMethod(valueId, {
+        .name = "bump", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) {
+            auto& number = active->getStorageParameter(0, 0);
+            number.setIntegerValue(number.getIntegerValue() + 1);
+            active->setIntegerResult(number.getIntegerValue());
+        }
+    }).isValid());
+    const auto makeOwnerId = runtime.registerNativeFunction("makeCompiledAccessorOwner", [&](VirtualMachine* active) {
+        auto* object = new ScriptObject(owner);
+        std::array<RuntimeValue, 3> values{RuntimeValue{NomadInteger{5}}, RuntimeValue{NomadString{"initial"}}, RuntimeValue{}};
+        values[2].setObjectValue(new ScriptObject(shared));
+        std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+        object->setFieldStorage(0, values, scratch);
+        type->freeValue(values.data());
+        object->getFieldStorage(1)[0].setIntegerValue(3);
+        active->getResult().setObjectValue(object);
+    }, {}, owner, "");
+    BOOST_REQUIRE(makeOwnerId.isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("makeCompiledAccessorEmpty", [](VirtualMachine*) {},
+        {}, empty, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("replaceCompiledAccessorReceiver", [&](VirtualMachine* active) {
+        const Interpreter nested(*active);
+        InterpreterContext context(nested, *active->getCurrentCallable());
+        auto* previous = static_cast<ScriptObject*>(context.getVariableValue("owner")->getObjectValue());
+        expectedSetterReceiver = previous;
+        const auto replacement = nested.runFunction(makeOwnerId, {});
+        context.setVariable("owner", owner, replacement.getStorage());
+        std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+        type->assignValue(previous->getFieldStorage(0).data(), &active->getStorageParameter(0, 0), scratch.data());
+    }, {}, type, "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("accessorSetterCount", [&](VirtualMachine* active) {
+        active->setIntegerResult(setters);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("accessorGetterCount", [&](VirtualMachine* active) {
+        active->setIntegerResult(getters);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    fixture.addFunction("main",
+        "class CompiledAccessorHolder\nvalue = (makeCompiledAccessorOwner).value\nmarker = 42\nend\n"
+        "fun readCompiledAccessor owner:CompiledAccessorOwner\nreturn owner.value\nend\n"
+        "fun readSingleAccessor owner:CompiledAccessorOwner\nreturn owner.single\nend\n"
+        "fun readEmptyAccessor owner:CompiledAccessorOwner\nreturn owner.empty\nend\n"
+        "fun writeCompiledAccessor owner:CompiledAccessorOwner value:CompiledAccessorValue\nowner.value = value\nreturn 0\nend\n"
+        "owner = makeCompiledAccessorOwner\nsource = owner.value\nsource.number = 17\n"
+        "writeCompiledAccessor owner source\nassert source.number == 17\nassert owner.number == 17\n"
+        "copy = readCompiledAccessor owner\nassert copy.number == 17\nassert copy.text == \"initial\"\n"
+        "before = accessorSetterCount\ngettersBefore = accessorGetterCount\n"
+        "owner.value.number = 31\nowner.readOnly.number = 53\nowner.value.bump\nowner.value\n"
+        "assert (accessorGetterCount) == gettersBefore + 4\nassert (accessorSetterCount) == before\n"
+        "assert owner.number == 17\nsource.shared.number = 29\nassert owner.value.shared.number == 29\n"
+        "owner.value = owner.value\nassert owner.number == 17\n"
+        "owner.writeOnly = source\nassert source.text == \"initial\"\n"
+        "owner.number = 23\nlabel = \"updated\"\nowner.text = label\n"
+        "assert label == \"updated\"\nassert owner.text == \"updated\"\n"
+        "assert copy.number == 17\nassert copy.text == \"initial\"\n"
+        "single = readSingleAccessor owner\nassert single.number == 3\nsingle.number = 11\n"
+        "owner.single = single\nassert (readSingleAccessor owner).number == 11\n"
+        "owner.empty = makeCompiledAccessorEmpty\nreadEmptyAccessor owner\n"
+        "(makeCompiledAccessorOwner).empty = makeCompiledAccessorEmpty\n"
+        "(makeCompiledAccessorOwner).value = source\n"
+        "holder = new CompiledAccessorHolder\nassert holder.marker == 42\nassert holder.value.number == 5\n"
+        "temporary = (makeCompiledAccessorOwner).value.text\nassert temporary == \"initial\"\n"
+        "numberBeforeReplacement = owner.number\nowner.value = replaceCompiledAccessorReceiver\n"
+        "assert owner.number == 5\nreturn numberBeforeReplacement + single.number + copy.number");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    for (const auto* name : {"readCompiledAccessor", "readSingleAccessor", "readEmptyAccessor"}) {
+        const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+        BOOST_REQUIRE(function != nullptr);
+        BOOST_TEST(function->getVariableCount() == 0U);
+        std::ostringstream dump;
+        dumpInstructions(runtime, *function, dump);
+        BOOST_TEST(dump.str().find(OpCodes::op_call_native_method) != NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+        BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+        BOOST_TEST((dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos) ==
+            (NomadStringView{name} != "readEmptyAccessor"));
+    }
+    const auto* writer = runtime.getScriptFunction(runtime.getFunctionId("writeCompiledAccessor"));
+    BOOST_REQUIRE(writer != nullptr);
+    BOOST_TEST(writer->getVariableCount() == 1U);
+    BOOST_TEST(writer->getVariableStorageSize() == type->getSize());
+    BOOST_TEST(writer->getVariableName(VariableId{0}).starts_with("$property"));
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 51);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(emptyGetters == 3);
+    BOOST_TEST(emptySetters == 6);
+    BOOST_TEST(expectedSetterReceiver == nullptr);
+}
+
 BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_reentry_and_staged_targets) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();

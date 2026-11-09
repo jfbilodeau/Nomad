@@ -1344,6 +1344,63 @@ void Compiler::addObjectMethodCallIntoReturn(
     addOpCode(OpCodes::op_pop_this);
 }
 
+void Compiler::addObjectSetterCall(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    Expression& receiver,
+    Expression& value,
+    const VariableId stagingId
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    const auto* receiverType = receiver.getType();
+    const auto* valueType = value.getType();
+    if (method == nullptr || function == nullptr || receiverType == nullptr ||
+        !receiverType->isClass() || valueType == nullptr || method->getClassType() == nullptr ||
+        !method->getClassType()->acceptsArgument(receiverType) || method->getParameterCount() != 1 ||
+        method->getParameters()[0].type == nullptr ||
+        !method->getParameters()[0].type->acceptsArgument(valueType) ||
+        method->getReturnType() == nullptr || !method->getReturnType()->isVoid()) {
+        reportInternalError("Object setter call requires a matching class receiver and one-argument void method");
+    }
+    if (method->getParameterStorageSize() != valueType->getSize()) {
+        reportInternalError("Object setter call requires a complete value argument matching the parameter storage");
+    }
+    if (valueType->isStruct() &&
+        (stagingId.isInvalid() || function->getVariableType(stagingId) != valueType)) {
+        reportInternalError("Object setter call requires a matching reserved struct staging local");
+    }
+    addOpCode(OpCodes::op_push_this);
+    receiver.compile(this, function, ExpressionTarget::Intermediate);
+    addPushIntermediate(receiverType);
+    if (valueType->isStruct()) {
+        value.compileIntoLocal(this, function, stagingId);
+        const auto offset = function->getVariableOffset(stagingId);
+        valueType->emitPushFunctionVariable(*this, offset);
+        valueType->emitFreeFunctionVariable(*this, offset);
+    } else {
+        value.compile(this, function, ExpressionTarget::Stack);
+    }
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(method->getParameterStorageSize());
+    if (method->asScriptMethod() != nullptr) {
+        addOpCode(OpCodes::op_call_script_method);
+        addFunctionLink(methodId, m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_method);
+        addId(methodId.id);
+    }
+    valueType->emitFreeStackValue(*this, 0);
+    const auto size = valueType->getSize();
+    if (size != 0) {
+        addOpCode(OpCodes::op_pop_n);
+        addIndex(size);
+    }
+    receiverType->emitFreeStackValue(*this, 0);
+    addOpCode(OpCodes::op_pop_1);
+    addOpCode(OpCodes::op_pop_this);
+}
+
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
     const auto stackCount = arguments->getStackCount();
 
