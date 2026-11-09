@@ -6,6 +6,7 @@
 
 #include <nomad/script/RuntimeValue.hpp>
 
+#include <span>
 #include <vector>
 
 namespace nomad {
@@ -17,8 +18,13 @@ class Type;
 // A closure references function and type metadata owned by its Runtime and must not outlive that Runtime.
 class Closure {
 public:
-    explicit Closure(const ScriptFunction* function, std::vector<RuntimeValue> captures = {});
+    // Adopts complete, owned capture slots only after validating their layout.
+    explicit Closure(
+        const ScriptFunction* function,
+        std::vector<RuntimeValue>&& captures = {}
+    );
     Closure(const Closure& other) = delete;
+    Closure& operator=(const Closure&) = delete;
     ~Closure();
 
     [[nodiscard]]
@@ -30,12 +36,18 @@ public:
     [[nodiscard]]
     const RuntimeValue& getCaptureValue(NomadIndex captureIndex) const;
 
+    // Borrows complete owned slots; empty struct captures have no storage pointer.
+    [[nodiscard]] std::span<const RuntimeValue> getCaptureStorage(
+        NomadIndex captureIndex
+    ) const;
+
     [[nodiscard]]
     const Type* getCaptureType(NomadIndex captureIndex) const;
 
 private:
     const ScriptFunction* m_function;
-    std::vector<RuntimeValue> m_capturedParameters;
+    NomadIndex m_captureCount = 0;
+    std::vector<RuntimeValue> m_captureStorage;
 };
 
 } // namespace nomad

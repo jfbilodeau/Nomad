@@ -2833,6 +2833,50 @@ Method-backed native struct-valued properties support typed interpreter/host
 receiver access and compiled getter/setter calls. Aggregate captures and
 field-aware struct formatting remain pending.
 
+### Closure capture storage
+
+`Closure` owns one flat buffer containing complete captures in logical capture
+order. Scalars/references occupy their normal slots, structs occupy all their
+field slots, and empty structs remain logical captures without physical slots.
+Struct snapshots have independent storage; contained class references retain
+their ordinary shared semantics. A copied struct receiver is a value snapshot,
+whereas a captured class receiver retains the same object.
+
+`Closure(function, std::move(storage))` adopts a
+`std::vector<RuntimeValue>` containing exactly the declared capture slots, with
+valid owned values for those types. Ownership transfer is explicit: the
+constructor now accepts an rvalue vector rather than copying an lvalue vector.
+On successful construction, it takes the buffer without copying its slot values.
+Null functions, unresolved/void capture types, and mismatched storage widths throw
+`std::invalid_argument` before moving the buffer. A caller passing a named buffer
+retains responsibility for its owned values if validation fails. The closure is
+noncopyable; the function/type metadata and its owning runtime must outlive it.
+
+- `getCaptureCount()` reports logical captures, not slots or parameter count.
+- `getCaptureType(index)` returns the declared capture type.
+- `getCaptureStorage(index)` borrows that capture's complete immutable slots.
+  Empty captures return an empty span with no slot pointer.
+- `getCaptureValue(index)` retains scalar/reference access. Any struct capture,
+  including a one-slot or empty struct, requires `getCaptureStorage` and throws
+  `std::invalid_argument` through the scalar accessor.
+- Invalid capture indices throw `std::out_of_range`; they no longer return a
+  placeholder value or null type.
+
+`VirtualMachine::createClosure(runtime, functionId)` copies captures from the
+enclosing active script frame using the declared physical local/parameter
+offsets and borrowed receiver layout. The runtime must match the VM, the ID must
+identify a script function, and captures must belong to that active parent.
+Invalid requests fault explicitly rather than returning an empty closure.
+`captureCurrentFrame(function)` returns owned `InterpreterValue` snapshots from
+the current script frame, not an enclosing native-call parameter frame.
+Both paths copy full struct values, preserve zero-slot capture positions, and
+release completed/partial copies when copying throws.
+
+This storage support does not yet enable source-level struct captures or
+aggregate callback invocation. The compiler's existing struct-capture diagnostic
+remains in place. Scalar closure execution remains available; typed callback
+invocation and field-aware formatting are subsequent slices.
+
 ## Parameterized types
 
 `TypeManager::registerParameterizedType(name, argumentCount, factory, initializer = {})`

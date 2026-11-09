@@ -668,13 +668,19 @@ void VirtualMachine::runNativeIndexer(
     releaseArguments();
 }
 
-std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(const ScriptFunction* function) const {
+std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(
+    const ScriptFunction* function
+) const {
     if (function == nullptr || function->getParentId() == CallableId{}) {
         fault("Invalid function for current-frame capture");
     }
+
     const auto* parent = m_runtime->getScriptCallable(function->getParentId());
-    if (parent == nullptr || m_instructionIndex < parent->getFunctionStart() ||
-        m_instructionIndex >= parent->getFunctionEnd()) {
+    if (
+        parent == nullptr ||
+        m_instructionIndex < parent->getFunctionStart() ||
+        m_instructionIndex >= parent->getFunctionEnd()
+    ) {
         fault("Format expression does not belong to the current script frame");
     }
 
@@ -684,72 +690,187 @@ std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(const ScriptFu
         if (capture.type == nullptr || capture.type->isVoid()) {
             fault("Invalid value type for current-frame capture");
         }
-        if (capture.source == CaptureSource::Parameter) {
-            if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
-                fault("Invalid parameter for current-frame capture");
+
+        const auto size = capture.type->getSize();
+        switch (capture.source) {
+            case CaptureSource::Parameter: {
+                if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
+                    fault("Invalid parameter for current-frame capture");
+                }
+
+                values.emplace_back(
+                    capture.type,
+                    getParameterStorage(parent->getParameterOffset(capture.parameterId), size)
+                );
+                break;
             }
-            values.emplace_back(capture.type, getParameter(capture.parameterId));
-        } else if (capture.source == CaptureSource::Variable) {
-            if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
-                fault("Invalid variable for current-frame capture");
+
+            case CaptureSource::Variable: {
+                if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
+                    fault("Invalid variable for current-frame capture");
+                }
+
+                values.emplace_back(
+                    capture.type,
+                    getLocalStorage(parent->getVariableOffset(capture.variableId), size)
+                );
+                break;
             }
-            values.emplace_back(capture.type, getFunctionVariableValue(capture.variableId));
-        } else if (capture.source == CaptureSource::Receiver) {
-            (void)getThis();
-            values.emplace_back(capture.type, m_this);
-        } else {
-            fault("Invalid source for current-frame capture");
+
+            case CaptureSource::Receiver: {
+                if (capture.type->isStruct()) {
+                    std::span<const RuntimeValue> storage;
+                    if (size != 0) {
+                        const auto layout = parent->getCallStorageLayout();
+                        if (!layout.receiverOffset.has_value()) {
+                            fault("Struct receiver capture has no borrowed receiver storage");
+                        }
+
+                        const auto pointer = getParameterStorage(*layout.receiverOffset, 1);
+                        storage = {pointer[0].getStorageAddress(), size};
+                    }
+
+                    values.emplace_back(capture.type, storage);
+                    break;
+                }
+
+                (void)getThis();
+                values.emplace_back(capture.type, m_this);
+                break;
+            }
+
+            default:
+                fault("Invalid source for current-frame capture");
         }
+
     }
+
     return values;
 }
 
-std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, const CallableId functionId) const {
-    const auto function = runtime->getScriptFunction(functionId);
-
-    if (function == nullptr) {
-        return nullptr;
+std::unique_ptr<Closure> VirtualMachine::createClosure(
+    const Runtime* runtime,
+    const CallableId functionId
+) const {
+    if (runtime == nullptr || runtime != m_runtime) {
+        fault("Closure capture requires the virtual machine's runtime");
     }
 
-    if (function->getCaptureCount() != 0 && m_variableIndex <= s_scriptFrameSlotCount) {
-        fault("Cannot capture without an active script frame");
+    const auto* function = runtime->getScriptFunction(functionId);
+    if (function == nullptr) {
+        fault("Invalid script function for closure capture");
+    }
+
+    const auto* parent = runtime->getScriptCallable(function->getParentId());
+    if (function->getCaptureCount() != 0) {
+        if (m_variableIndex <= s_scriptFrameSlotCount) {
+            fault("Cannot capture without an active script frame");
+        }
+
+        if (parent == nullptr || getCurrentCallable() != parent) {
+            fault("Closure captures do not belong to the active script frame");
+        }
+
     }
 
     const auto& captures = function->getCaptures();
-    std::vector<RuntimeValue> captureValues;
-
+    std::vector<RuntimeValue> storage;
+    auto storageSize = NomadIndex{0};
     for (const auto& capture : captures) {
-        const auto captureType = capture.type;
-        const auto captureSource = capture.source;
-
-        RuntimeValue captureValue;
-
-        if (captureSource == CaptureSource::Parameter) {
-            // Capture from the enclosing function's parameter frame
-            const auto& value = getEnclosingParameter(capture.parameterId);
-
-            captureType->copyValue(&value, &captureValue);
-        } else if (captureSource == CaptureSource::Variable) {
-            // Capture from the enclosing function's variable frame
-            const auto* parent = runtime->getScriptCallable(function->getParentId());
-            const auto& value = getLocalStorage(parent->getVariableOffset(capture.variableId), 1)[0];
-
-            captureType->copyValue(&value, &captureValue);
-        } else if (captureSource == CaptureSource::Receiver) {
-            // Receiver captures originate in a method or constructor's script frame.
-            const auto& receiver = m_stack[m_variableIndex - 1];
-            if (receiver.getObjectValue() == nullptr) {
-                fault("Cannot capture a missing enclosing receiver");
-            }
-            captureType->copyValue(&receiver, &captureValue);
-        } else {
-            fault("Invalid capture type");
+        if (capture.type == nullptr || capture.type->isVoid()) {
+            fault("Invalid value type for closure capture");
         }
 
-        captureValues.emplace_back(captureValue);
+        const auto size = capture.type->getSize();
+        if (size > storage.max_size() - storageSize) {
+            fault("Closure capture storage exceeds the maximum slot count");
+        }
+
+        storageSize += size;
     }
 
-    return std::make_unique<Closure>(function, captureValues);
+    storage.resize(storageSize);
+    try {
+        auto offset = NomadIndex{0};
+        for (const auto& capture : captures) {
+            const auto size = capture.type->getSize();
+            std::span<const RuntimeValue> source;
+            switch (capture.source) {
+                case CaptureSource::Parameter: {
+                    if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
+                        fault("Invalid parameter for closure capture");
+                    }
+
+                    source = getEnclosingParameterStorage(
+                        parent->getParameterOffset(capture.parameterId),
+                        size
+                    );
+                    break;
+                }
+
+                case CaptureSource::Variable: {
+                    if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
+                        fault("Invalid variable for closure capture");
+                    }
+
+                    source = getLocalStorage(
+                        parent->getVariableOffset(capture.variableId),
+                        size
+                    );
+                    break;
+                }
+
+                case CaptureSource::Receiver: {
+                    if (capture.type->isStruct()) {
+                        if (size != 0) {
+                            const auto layout = parent->getCallStorageLayout();
+                            if (!layout.receiverOffset.has_value()) {
+                                fault("Struct receiver capture has no borrowed receiver storage");
+                            }
+
+                            const auto pointer = getEnclosingParameterStorage(*layout.receiverOffset, 1);
+                            source = {pointer[0].getStorageAddress(), size};
+                        }
+
+                        break;
+                    }
+
+                    const auto& receiver = m_stack[m_variableIndex - 1];
+                    if (receiver.getObjectValue() == nullptr) {
+                        fault("Cannot capture a missing enclosing receiver");
+                    }
+
+                    source = {&receiver, 1};
+                    break;
+                }
+
+                default:
+                    fault("Invalid source for closure capture");
+            }
+
+            if (size != 0) {
+                capture.type->copyValue(source.data(), storage.data() + offset);
+            }
+
+            offset += size;
+        }
+
+        return std::make_unique<Closure>(function, std::move(storage));
+    } catch (...) {
+        auto offset = NomadIndex{0};
+        
+        for (const auto& capture : captures) {
+            const auto size = capture.type->getSize();
+            if (size != 0) {
+                capture.type->freeValue(storage.data() + offset);
+            }
+
+            offset += size;
+        }
+
+        throw;
+    }
+
 }
 
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {

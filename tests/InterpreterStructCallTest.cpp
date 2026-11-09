@@ -6,6 +6,7 @@
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
 #include <nomad/interpreter/InterpreterValue.hpp>
 
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -1084,6 +1085,137 @@ BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
     }
+}
+
+BOOST_AUTO_TEST_CASE(closure_capture_copy_failures_release_completed_and_partial_capture_slots) {
+    Runtime runtime;
+    FailingCallCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
+        "ClosureCopyField",
+        ClassMode::Closed,
+        field
+    );
+    const auto valueId = runtime.registerStruct("ClosureCopyValue");
+    const auto* type = runtime.getTypeByName("ClosureCopyValue");
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    const auto parentId = runtime.registerScriptFunction("closureCopyParent", "captures.nomad", "");
+    auto* parent = runtime.getScriptFunction(parentId);
+    parent->addParameter("value", type, "");
+    const auto variable = parent->registerVariable("local", type);
+    parent->setReturnType(runtime.getVoidType());
+    const auto descriptorId = runtime.registerScriptFunction(
+        "closureCopyDescriptor",
+        "captures.nomad",
+        ""
+    );
+    auto* descriptor = runtime.getScriptFunction(descriptorId);
+    descriptor->setParentId(parentId);
+    descriptor->createCapture(variable, "local", type);
+    descriptor->createCapture(NomadId{0}, "value", type);
+    std::span<const RuntimeValue> source;
+    auto currentFrame = true;
+    const auto probeId = runtime.registerNativeFunction(
+        "test.closureCopyProbe",
+        [&](VirtualMachine* active) {
+            field->failCopyAt = 0;
+            if (currentFrame) {
+                std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+                type->assignValue(
+                    source.data(),
+                    active->getLocalStorage(parent->getVariableOffset(variable), type->getSize()).data(),
+                    scratch.data()
+                );
+            }
+
+            const auto live = RuntimeValue::getLiveStringCount();
+            for (auto failure = NomadIndex{1}; failure <= 4; ++failure) {
+                field->copyCount = 0;
+                field->failCopyAt = failure;
+                if (currentFrame) {
+                    BOOST_CHECK_THROW(static_cast<void>(active->captureCurrentFrame(descriptor)), NomadException);
+                }
+
+                if (!currentFrame) {
+                    BOOST_CHECK_THROW(static_cast<void>(active->createClosure(&runtime, descriptorId)), NomadException);
+                }
+
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(source[0].getObjectValue()->getReferenceCount() == 3U);
+                BOOST_TEST(source[1].getObjectValue()->getReferenceCount() == 3U);
+            }
+
+            field->failCopyAt = 0;
+            field->copyCount = 0;
+            if (currentFrame) {
+                const auto snapshots = active->captureCurrentFrame(descriptor);
+                BOOST_TEST(snapshots.size() == 2U);
+                BOOST_TEST(field->copyCount == 4U);
+                currentFrame = false;
+
+                return;
+            }
+
+            {
+                const auto closure = active->createClosure(&runtime, descriptorId);
+                BOOST_TEST(closure->getCaptureCount() == 2U);
+                BOOST_TEST(closure->getCaptureStorage(0).size() == 2U);
+                BOOST_TEST(closure->getCaptureStorage(1).size() == 2U);
+                BOOST_TEST(field->copyCount == 4U);
+            }
+
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+            BOOST_TEST(source[0].getObjectValue()->getReferenceCount() == 3U);
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(probeId.isValid());
+    const auto probe = runtime.registerInstruction(
+        "test.currentClosureCopy",
+        [](VirtualMachine* active) {
+            const auto* function = active->getRuntime()->getFunction(
+                active->getRuntime()->getCallableId("test.closureCopyProbe")
+            )->asNativeFunction();
+            function->getFn()(active);
+        },
+        "",
+        {}
+    );
+    auto compiler = runtime.createCompiler();
+    parent->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(parent);
+    compiler->addOpCode(probe);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(probeId.id);
+    compiler->addFunctionReturn(parent);
+    parent->setFunctionEnd(runtime.getInstructions().size());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            std::array<RuntimeValue, 2> values{
+                RuntimeValue{NomadString{"first capture"}},
+                RuntimeValue{NomadString{"second capture"}}
+            };
+            const InterpreterValue argument(type, values);
+            type->freeValue(values.data());
+            source = argument.getStorage();
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            currentFrame = true;
+            BOOST_TEST(interpreter.runFunction(parentId, {&argument, 1}).getType()->isVoid());
+            BOOST_TEST(argument.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(argument.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+        }
+
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
 }
 
 BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_every_owned_snapshot) {

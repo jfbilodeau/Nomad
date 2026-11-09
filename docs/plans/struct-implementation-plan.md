@@ -48,6 +48,10 @@ This slice is implemented and validated, awaiting review.
 Compiled method-backed getter reads and whole-property setter calls are
 implemented, preserving snapshot/no-automatic-writeback behavior. Validation
 of this compiled accessor slice passed; it is awaiting review.
+Flat closure capture storage and full-width current/enclosing frame snapshots
+are implemented, including empty captures and copied struct receivers. This
+storage slice does not enable source-level struct capture or callback execution;
+it is implemented and validated, awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -3969,6 +3973,62 @@ static/dynamic formatting and remaining host parity. Conservative NRVO follows
 Step 5 approval, then final tooling/documentation and integration checks. Getter
 results remain temporaries; raw VM property dispatch and fatal-fault cleanup remain
 separate.
+
+### Step 5H1: Complete closure capture storage and frame snapshots
+
+Approved scope:
+
+- Give closures flat, full-width owned capture storage while preserving logical
+  capture counts, including empty structs and copied struct receivers.
+- Read frame captures through physical local/parameter offsets and receiver
+  layouts. Cover both current-script and enclosing-script frame paths.
+- Add complete capture-storage spans, retain scalar access, and make raw-buffer
+  ownership transfer explicit in construction. Preserve class-reference
+  identity, independent struct snapshots, and failure cleanup.
+- Keep the compiler's struct-capture gate and existing callback execution
+  restrictions until the subsequent invocation slice. Add no production opcodes,
+  per-struct boxes, or new callback API in this foundation step.
+- Add regression coverage/documentation, build/test, then stop for review.
+
+Implementation:
+
+- `Closure` adopts a validated rvalue slot vector and records logical capture
+  count separately from its physical storage size. It is noncopyable; complete
+  field-wise cleanup includes zero/one/many-slot captures.
+- `getCaptureStorage` borrows complete immutable capture slots. Scalar access
+  rejects all struct captures; invalid indices throw instead of returning
+  placeholder values or null types. Buffer validation fails before ownership
+  transfer, leaving a named caller buffer available for cleanup.
+- `createClosure` copies complete local/parameter ranges and borrowed struct
+  receivers, retaining class receivers normally. It validates runtime/parent
+  identity and cleans partial copies if copying or closure construction fails.
+- `captureCurrentFrame` uses the current script frame's physical ranges and
+  returns owned typed snapshots, including empty/struct receivers.
+- Tests cover logical versus physical counts, buffer adoption and rejection,
+  one-slot scalar-access rejection, nested structs, empty positions, mixed-width
+  parameter/local offsets, shared class fields, independent snapshots,
+  class/struct/empty receivers, and completed/partial capture-copy failures.
+- Source capture diagnostics and callback invocation paths remain unchanged.
+
+Validation:
+
+- The automatic build and targeted language/remaining groups passed on the first
+  run. After adding nested-struct and invalid-buffer coverage, all six CTest unit
+  groups, script staging, and compiler-export integration checks passed.
+- Mixed logical/physical layouts, complete local/parameter/receiver snapshots,
+  empty positions, explicit storage adoption, invalid selector/type/width errors,
+  scalar callback regressions, and class-reference identity passed.
+- New ownership/failure scenarios repeat three times and restore live string/object
+  counts, including failures during completed and partial capture copies.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting callback invocation changes.
+
+Next, after review: migrate callback invocation to the typed call ABI and enable
+source-level struct captures, including value-semantic struct `this`; then
+field-aware formatting and remaining host parity. NRVO follows Step 5 approval,
+then final tooling/documentation and integration checks. Fatal VM fault cleanup
+remains deferred.
 
 ### Step 6: Conservative named return-value optimization
 

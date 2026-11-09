@@ -138,10 +138,15 @@ public:
     [[nodiscard]] Object* getThisAs() const;
 
     [[nodiscard]]
-    std::unique_ptr<Closure> createClosure(const Runtime* runtime, CallableId functionId) const;
+    std::unique_ptr<Closure> createClosure(
+        const Runtime* runtime,
+        CallableId functionId
+    ) const;
 
     // Copies captures from the active script frame, not an enclosing native-call parameter frame.
-    [[nodiscard]] std::vector<InterpreterValue> captureCurrentFrame(const ScriptFunction* function) const;
+    [[nodiscard]] std::vector<InterpreterValue> captureCurrentFrame(
+        const ScriptFunction* function
+    ) const;
 
     void setResult(const RuntimeValue& result) { m_result = result; }
     void setIntegerResult(NomadInteger result) { m_result.setIntegerValue(result); }

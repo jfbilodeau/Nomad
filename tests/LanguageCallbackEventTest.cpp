@@ -2,18 +2,29 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/compiler/Compiler.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/NativeFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/ScriptObject.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <memory>
+#include <span>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace nomad;
@@ -28,6 +39,8 @@ static_assert(!std::is_convertible_v<CallableId, EventId>);
 static_assert(!std::is_convertible_v<EventId, CallableId>);
 static_assert(!std::is_convertible_v<ConstantId, EventId>);
 static_assert(!std::is_convertible_v<EventId, ConstantId>);
+static_assert(!std::is_copy_constructible_v<Closure>);
+static_assert(!std::is_copy_assignable_v<Closure>);
 static_assert(!std::is_convertible_v<TypeId, EventId>);
 static_assert(!std::is_invocable_v<decltype(&Runtime::getEventDefinition), Runtime&, NomadId>);
 
@@ -147,6 +160,410 @@ FunctionOutcome invokeStoredClosure(Runtime& runtime, const CallbackStore& store
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(language_callbacks)
+
+BOOST_AUTO_TEST_CASE(closure_storage_adopts_complete_slots_and_preserves_logical_empty_and_struct_captures) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("ClosureStorageEmpty");
+    const auto* empty = runtime.getTypeByName("ClosureStorageEmpty");
+    const auto singleId = runtime.registerStruct("ClosureStorageSingle");
+    const auto* single = runtime.getTypeByName("ClosureStorageSingle");
+    BOOST_REQUIRE(runtime.registerProperty(singleId, "number", runtime.getIntegerType()).isValid());
+    const auto valueId = runtime.registerStruct("ClosureStorageValue");
+    const auto* type = runtime.getTypeByName("ClosureStorageValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.finalizeCompositeFieldLayout(singleId);
+    runtime.finalizeCompositeFieldLayout(valueId);
+    ScriptFunction function(CallableId{}, "captureStorage", "", "");
+    function.addParameter("explicit", runtime.getIntegerType(), "");
+    function.createCapture(VariableId{0}, "empty", empty);
+    function.createCapture(VariableId{1}, "value", type);
+    function.createCapture(VariableId{2}, "single", single);
+    function.createCapture(VariableId{3}, "scalar", runtime.getIntegerType());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        {
+            std::vector<RuntimeValue> storage{
+                RuntimeValue{NomadInteger{17}},
+                RuntimeValue{NomadString{"owned capture"}},
+                RuntimeValue{NomadInteger{23}},
+                RuntimeValue{NomadInteger{29}}
+            };
+            const auto* address = storage.data();
+            const Closure closure(&function, std::move(storage));
+            BOOST_TEST(storage.empty());
+            BOOST_TEST(closure.getCaptureCount() == 4U);
+            BOOST_TEST(closure.getCaptureType(0) == empty);
+            BOOST_TEST(closure.getCaptureStorage(0).data() == nullptr);
+            BOOST_TEST(closure.getCaptureStorage(1).data() == address);
+            BOOST_TEST(closure.getCaptureStorage(1).size() == 2U);
+            BOOST_TEST(closure.getCaptureStorage(1)[0].getIntegerValue() == 17);
+            BOOST_TEST(closure.getCaptureStorage(1)[1].getStringValue() == "owned capture");
+            BOOST_TEST(closure.getCaptureStorage(2).size() == 1U);
+            BOOST_TEST(closure.getCaptureStorage(2)[0].getIntegerValue() == 23);
+            BOOST_TEST(closure.getCaptureType(2) == single);
+            BOOST_TEST(closure.getCaptureValue(3).getIntegerValue() == 29);
+            for (auto capture = NomadIndex{0}; capture < 3; ++capture) {
+                BOOST_CHECK_THROW(static_cast<void>(closure.getCaptureValue(capture)), std::invalid_argument);
+            }
+
+            BOOST_CHECK_THROW(static_cast<void>(closure.getCaptureStorage(4)), std::out_of_range);
+            BOOST_CHECK_THROW(static_cast<void>(closure.getCaptureValue(4)), std::out_of_range);
+            BOOST_CHECK_THROW(static_cast<void>(closure.getCaptureType(4)), std::out_of_range);
+        }
+
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+    ScriptFunction emptyFunction(CallableId{}, "emptyCaptureStorage", "", "");
+    emptyFunction.createCapture(VariableId{0}, "empty", empty);
+    const Closure emptyClosure(&emptyFunction);
+    BOOST_TEST(emptyClosure.getCaptureCount() == 1U);
+    BOOST_TEST(emptyClosure.getCaptureType(0) == empty);
+    BOOST_TEST(emptyClosure.getCaptureStorage(0).data() == nullptr);
+    std::vector<RuntimeValue> rejected{RuntimeValue{NomadString{"still caller owned"}}};
+    BOOST_CHECK_THROW((Closure{nullptr, std::move(rejected)}), std::invalid_argument);
+    BOOST_TEST(rejected.size() == 1U);
+    BOOST_CHECK_THROW((Closure{&function, std::move(rejected)}), std::invalid_argument);
+    BOOST_TEST(rejected.size() == 1U);
+    BOOST_CHECK_THROW((Closure{&emptyFunction, std::move(rejected)}), std::invalid_argument);
+    ScriptFunction invalidTypeFunction(CallableId{}, "invalidCaptureStorage", "", "");
+    invalidTypeFunction.createCapture(VariableId{0}, "unresolved", nullptr);
+    BOOST_CHECK_THROW((Closure{&invalidTypeFunction, std::move(rejected)}), std::invalid_argument);
+    ScriptFunction voidTypeFunction(CallableId{}, "voidCaptureStorage", "", "");
+    voidTypeFunction.createCapture(VariableId{0}, "invalid", runtime.getVoidType());
+    BOOST_CHECK_THROW((Closure{&voidTypeFunction, std::move(rejected)}), std::invalid_argument);
+    BOOST_TEST(rejected.size() == 1U);
+    BOOST_TEST(rejected[0].getObjectValue()->getReferenceCount() == 1U);
+    rejected[0].freeObjectValue();
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_keep_empty_capture_positions) {
+    Runtime runtime;
+    const auto sharedId = runtime.registerClass("FrameCaptureShared", ClassMode::Closed);
+    const auto* shared = runtime.getTypeByName("FrameCaptureShared")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(sharedId, "number", runtime.getIntegerType()).isValid());
+    const auto leafId = runtime.registerStruct("FrameCaptureLeaf");
+    const auto* leaf = runtime.getTypeByName("FrameCaptureLeaf");
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(leafId, "shared", shared).isValid());
+    const auto valueId = runtime.registerStruct("FrameCaptureValue");
+    const auto* type = runtime.getTypeByName("FrameCaptureValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "leaf", leaf).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "suffix", runtime.getIntegerType()).isValid());
+    const auto emptyId = runtime.registerStruct("FrameCaptureEmpty");
+    const auto* empty = runtime.getTypeByName("FrameCaptureEmpty");
+    runtime.finalizeCompositeFieldLayout(sharedId);
+    runtime.finalizeCompositeFieldLayout(valueId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    const auto parentId = runtime.registerScriptFunction(
+        "captureStorageParent",
+        "captures.nomad",
+        ""
+    );
+    auto* parent = runtime.getScriptFunction(parentId);
+    parent->addParameter("head", runtime.getIntegerType(), "");
+    parent->addParameter("value", type, "");
+    parent->addParameter("empty", empty, "");
+    parent->addParameter("tail", runtime.getIntegerType(), "");
+    const auto emptyVariable = parent->registerVariable("localEmpty", empty);
+    const auto valueVariable = parent->registerVariable("localValue", type);
+    const auto tailVariable = parent->registerVariable("localTail", runtime.getIntegerType());
+    parent->setReturnType(runtime.getVoidType());
+    const auto descriptorId = runtime.registerScriptFunction(
+        "captureStorageDescriptor",
+        "captures.nomad",
+        ""
+    );
+    auto* descriptor = runtime.getScriptFunction(descriptorId);
+    descriptor->setParentId(parentId);
+    descriptor->createCapture(NomadId{3}, "tail", runtime.getIntegerType());
+    descriptor->createCapture(emptyVariable, "localEmpty", empty);
+    descriptor->createCapture(valueVariable, "localValue", type);
+    descriptor->createCapture(NomadId{2}, "empty", empty);
+    descriptor->createCapture(NomadId{1}, "value", type);
+    descriptor->createCapture(tailVariable, "localTail", runtime.getIntegerType());
+    auto currentFrame = true;
+    std::span<const RuntimeValue> localSource;
+    std::vector<InterpreterValue> snapshots;
+    std::unique_ptr<Closure> closure;
+    const auto probeId = runtime.registerNativeFunction(
+        "test.captureStorageProbe",
+        [&](VirtualMachine* active) {
+            const auto savedResult = active->getResult();
+            const auto savedIntermediate = active->getIntermediate();
+            if (currentFrame) {
+                std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+                type->assignValue(
+                    localSource.data(),
+                    active->getLocalStorage(parent->getVariableOffset(valueVariable), type->getSize()).data(),
+                    scratch.data()
+                );
+                active->getLocalStorage(parent->getVariableOffset(tailVariable), 1)[0].setIntegerValue(79);
+                snapshots = active->captureCurrentFrame(descriptor);
+                currentFrame = false;
+
+                return;
+            }
+
+            closure = active->createClosure(&runtime, descriptorId);
+            active->getLocalStorage(parent->getVariableOffset(valueVariable), type->getSize())[0].setIntegerValue(99);
+            active->getEnclosingParameterStorage(parent->getParameterOffset(1), type->getSize())[0].setIntegerValue(101);
+            auto* object = static_cast<ScriptObject*>(closure->getCaptureStorage(2)[2].getObjectValue());
+            object->getFieldStorage(0)[0].setIntegerValue(123);
+            BOOST_TEST(active->getResult().getIntegerValue() == savedResult.getIntegerValue());
+            BOOST_TEST(active->getIntermediate().getIntegerValue() == savedIntermediate.getIntegerValue());
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(probeId.isValid());
+    const auto probe = runtime.registerInstruction(
+        "test.captureCurrentStorage",
+        [](VirtualMachine* active) {
+            const auto* function = active->getRuntime()->getFunction(
+                active->getRuntime()->getCallableId("test.captureStorageProbe")
+            )->asNativeFunction();
+            function->getFn()(active);
+        },
+        "",
+        {}
+    );
+    auto compiler = runtime.createCompiler();
+    parent->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(parent);
+    compiler->addOpCode(probe);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(probeId.id);
+    compiler->addFunctionReturn(parent);
+    parent->setFunctionEnd(runtime.getInstructions().size());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            RuntimeValue object;
+            object.setObjectValue(new ScriptObject(shared));
+            std::array<RuntimeValue, 4> parameterValues{
+                RuntimeValue{NomadInteger{17}},
+                RuntimeValue{NomadString{"parameter owned"}},
+                RuntimeValue{},
+                RuntimeValue{NomadInteger{43}}
+            };
+            std::array<RuntimeValue, 4> localValues{
+                RuntimeValue{NomadInteger{31}},
+                RuntimeValue{NomadString{"local owned"}},
+                RuntimeValue{},
+                RuntimeValue{NomadInteger{47}}
+            };
+            parameterValues[2].copyObjectValue(object);
+            localValues[2].copyObjectValue(object);
+            const InterpreterValue parameter(type, parameterValues);
+            const InterpreterValue local(type, localValues);
+            type->freeValue(parameterValues.data());
+            type->freeValue(localValues.data());
+            object.freeObjectValue();
+            localSource = local.getStorage();
+            const std::array arguments{
+                InterpreterValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{19}}),
+                parameter,
+                InterpreterValue(empty, std::span<const RuntimeValue>{}),
+                InterpreterValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{23}})
+            };
+            auto machine = runtime.createVirtualMachine();
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            const Interpreter interpreter(*machine);
+            currentFrame = true;
+            BOOST_TEST(interpreter.runFunction(parentId, arguments).getType()->isVoid());
+            BOOST_TEST(machine->getIntegerResult() == 41);
+            BOOST_TEST(machine->getIntegerIntermediate() == 43);
+            BOOST_REQUIRE(closure != nullptr);
+            BOOST_TEST(closure->getCaptureCount() == 6U);
+            BOOST_REQUIRE(snapshots.size() == 6U);
+            BOOST_TEST(closure->getCaptureValue(0).getIntegerValue() == 23);
+            BOOST_TEST(closure->getCaptureType(1) == empty);
+            BOOST_TEST(closure->getCaptureStorage(1).data() == nullptr);
+            BOOST_TEST(closure->getCaptureStorage(2)[0].getIntegerValue() == 31);
+            BOOST_TEST(closure->getCaptureStorage(2).size() == 4U);
+            BOOST_TEST(closure->getCaptureStorage(2)[1].getStringValue() == "local owned");
+            BOOST_TEST(closure->getCaptureStorage(2)[3].getIntegerValue() == 47);
+            BOOST_TEST(closure->getCaptureStorage(3).data() == nullptr);
+            BOOST_TEST(closure->getCaptureStorage(4)[0].getIntegerValue() == 17);
+            BOOST_TEST(closure->getCaptureStorage(4)[1].getStringValue() == "parameter owned");
+            BOOST_TEST(closure->getCaptureStorage(4)[3].getIntegerValue() == 43);
+            BOOST_TEST(closure->getCaptureValue(5).getIntegerValue() == 79);
+            BOOST_TEST(snapshots[2].getStorage()[0].getIntegerValue() == 31);
+            BOOST_TEST(snapshots[4].getStorage()[0].getIntegerValue() == 17);
+            BOOST_TEST(snapshots[2].getStorage().data() != closure->getCaptureStorage(2).data());
+            BOOST_TEST(snapshots[2].getStorage()[2].getObjectValue() == closure->getCaptureStorage(2)[2].getObjectValue());
+            BOOST_TEST(static_cast<ScriptObject*>(snapshots[2].getStorage()[2].getObjectValue())
+                ->getFieldStorage(0)[0].getIntegerValue() == 123);
+        }
+
+        BOOST_TEST(closure->getCaptureStorage(2)[1].getStringValue() == "local owned");
+        snapshots.clear();
+        BOOST_TEST(closure->getCaptureStorage(2)[1].getObjectValue()->getReferenceCount() == 1U);
+        closure.reset();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve_class_reference_identity) {
+    Runtime runtime;
+    const auto valueId = runtime.registerStruct("ReceiverCaptureValue");
+    const auto* type = runtime.getTypeByName("ReceiverCaptureValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    const auto emptyId = runtime.registerStruct("ReceiverCaptureEmpty");
+    const auto* empty = runtime.getTypeByName("ReceiverCaptureEmpty");
+    const auto ownerId = runtime.registerClass("ReceiverCaptureOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("ReceiverCaptureOwner")->asClassType();
+    BOOST_REQUIRE(runtime.registerProperty(ownerId, "number", runtime.getIntegerType()).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.finalizeCompositeFieldLayout(ownerId);
+    std::unique_ptr<Closure> closure;
+    std::vector<InterpreterValue> snapshots;
+    CallableId descriptorId;
+    auto currentFrame = true;
+    const auto probeId = runtime.registerNativeFunction(
+        "test.captureReceiverProbe",
+        [&](VirtualMachine* active) {
+            const auto* descriptor = runtime.getScriptFunction(descriptorId);
+            if (currentFrame) {
+                snapshots = active->captureCurrentFrame(descriptor);
+                currentFrame = false;
+
+                return;
+            }
+
+            closure = active->createClosure(&runtime, descriptorId);
+            if (closure->getCaptureType(0) == type) {
+                const auto* parent = active->getCurrentCallable();
+                const auto pointer = active->getEnclosingParameterStorage(
+                    *parent->getCallStorageLayout().receiverOffset,
+                    1
+                );
+                pointer[0].getStorageAddress()[0].setIntegerValue(99);
+            }
+
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(probeId.isValid());
+    const auto probe = runtime.registerInstruction(
+        "test.captureCurrentReceiver",
+        [](VirtualMachine* active) {
+            const auto* function = active->getRuntime()->getFunction(
+                active->getRuntime()->getCallableId("test.captureReceiverProbe")
+            )->asNativeFunction();
+            function->getFn()(active);
+        },
+        "",
+        {}
+    );
+    auto compiler = runtime.createCompiler();
+    std::vector<CallableId> methods;
+    std::vector<CallableId> descriptors;
+    for (const auto* receiverType : std::array<const Type*, 3>{type, empty, owner}) {
+        const auto methodId = runtime.registerScriptMethod(
+            receiverType->getId(),
+            "capture",
+            {},
+            "receiver-capture.nomad",
+            ""
+        );
+        BOOST_REQUIRE(methodId.isValid());
+        auto* method = runtime.getScriptCallable(methodId);
+        method->setReturnType(runtime.getVoidType());
+        method->setFunctionStart(runtime.getInstructions().size());
+        compiler->addFunctionEntry(method);
+        compiler->addOpCode(probe);
+        compiler->addOpCode(OpCodes::op_call_native_function);
+        compiler->addId(probeId.id);
+        compiler->addFunctionReturn(method);
+        method->setFunctionEnd(runtime.getInstructions().size());
+        methods.push_back(methodId);
+        const auto id = runtime.registerScriptFunction(
+            "receiverDescriptor" + receiverType->getTypeName(),
+            "receiver-capture.nomad",
+            ""
+        );
+        auto* descriptor = runtime.getScriptFunction(id);
+        descriptor->setParentId(methodId);
+        descriptor->createReceiverCapture(receiverType);
+        descriptors.push_back(id);
+    }
+
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        {
+            std::array<RuntimeValue, 2> source{
+                RuntimeValue{NomadInteger{43}}, RuntimeValue{NomadString{"receiver owned"}}
+            };
+            const InterpreterValue receiver(type, source);
+            type->freeValue(source.data());
+            descriptorId = descriptors[0];
+            currentFrame = true;
+            const auto result = interpreter.runStructMethod(receiver, methods[0], {});
+            BOOST_TEST(result.receiver.getStorage()[0].getIntegerValue() == 99);
+            BOOST_TEST(receiver.getStorage()[0].getIntegerValue() == 43);
+            BOOST_REQUIRE(closure != nullptr);
+            BOOST_TEST(closure->getCaptureCount() == 1U);
+            BOOST_TEST(closure->getCaptureType(0) == type);
+            BOOST_TEST(closure->getCaptureStorage(0)[0].getIntegerValue() == 43);
+            BOOST_TEST(closure->getCaptureStorage(0)[1].getStringValue() == "receiver owned");
+            BOOST_TEST(snapshots[0].getStorage()[0].getIntegerValue() == 43);
+        }
+
+        snapshots.clear();
+        closure.reset();
+        descriptorId = descriptors[1];
+        currentFrame = true;
+        const InterpreterValue emptyReceiver(empty, std::span<const RuntimeValue>{});
+        const auto emptyResult = interpreter.runStructMethod(emptyReceiver, methods[1], {});
+        BOOST_TEST(emptyResult.receiver.getStorage().data() == nullptr);
+        BOOST_TEST(closure->getCaptureCount() == 1U);
+        BOOST_TEST(closure->getCaptureType(0) == empty);
+        BOOST_TEST(closure->getCaptureStorage(0).data() == nullptr);
+        BOOST_TEST(snapshots[0].getType() == empty);
+        BOOST_TEST(snapshots[0].getStorage().data() == nullptr);
+        snapshots.clear();
+        closure.reset();
+        {
+            RuntimeValue object;
+            object.setObjectValue(new ScriptObject(owner));
+            const InterpreterValue receiver(owner, object);
+            object.freeObjectValue();
+            descriptorId = descriptors[2];
+            currentFrame = true;
+            BOOST_TEST(interpreter.runObjectMethod(receiver, methods[2], {}).getType()->isVoid());
+            BOOST_TEST(closure->getCaptureValue(0).getObjectValue() == receiver.getValue().getObjectValue());
+            BOOST_TEST(snapshots[0].getValue().getObjectValue() == receiver.getValue().getObjectValue());
+        }
+
+        snapshots.clear();
+        BOOST_TEST(closure->getCaptureValue(0).getObjectValue()->getReferenceCount() == 1U);
+        closure.reset();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
 
 BOOST_AUTO_TEST_CASE(loop_callbacks_capture_each_iteration_value)
 {
