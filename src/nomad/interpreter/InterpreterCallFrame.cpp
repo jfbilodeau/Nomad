@@ -200,6 +200,11 @@ NomadIndex InterpreterCallFrame::getResultSize() const {
     return m_resultType->getSize();
 }
 
+InterpreterValue InterpreterCallFrame::getResultValue() const {
+
+    return InterpreterValue(m_resultType, std::span<const RuntimeValue>{getResult(), getResultSize()});
+}
+
 RuntimeValue InterpreterCallFrame::releaseResult() {
     if (m_resultType->isStruct()) {
         throw std::invalid_argument("Raw call results require scalar or reference storage");

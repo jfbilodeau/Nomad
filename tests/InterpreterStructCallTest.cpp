@@ -132,10 +132,8 @@ BOOST_AUTO_TEST_CASE(call_frame_results_borrow_writable_complete_storage_and_pre
             BOOST_TEST(scalarObject->getReferenceCount() == 1U);
             BOOST_TEST(scalar.getResult()->getObjectValue() == scalarObject);
             BOOST_TEST(scalarObject->getReferenceCount() == 1U);
-            scalarSnapshot.emplace(
-                runtime.getStringType(),
-                std::span<const RuntimeValue>{scalar.getResult(), scalar.getResultSize()}
-            );
+            scalarSnapshot.emplace(scalar.getResultValue());
+            BOOST_TEST(scalarSnapshot->getType() == runtime.getStringType());
             BOOST_TEST(scalarObject->getReferenceCount() == 2U);
             {
                 const InterpreterCallFrame aggregate(*machine, *runtime.getFunction(aggregateId), {}, valueType);
@@ -146,9 +144,8 @@ BOOST_AUTO_TEST_CASE(call_frame_results_borrow_writable_complete_storage_and_pre
                 BOOST_TEST(machine->getStackAddress(0)->getStorageAddress() == storage);
                 storage[0].setIntegerValue(17);
                 storage[1].setStringValue("aggregate result");
-                aggregateSnapshot.emplace(
-                    valueType, std::span<const RuntimeValue>{storage, aggregate.getResultSize()}
-                );
+                aggregateSnapshot.emplace(aggregate.getResultValue());
+                BOOST_TEST(aggregateSnapshot->getType() == valueType);
                 BOOST_TEST(aggregateSnapshot->getStorage().data() != storage);
                 storage[0].setIntegerValue(29);
                 BOOST_TEST(aggregate.getResult() == storage);
@@ -157,19 +154,16 @@ BOOST_AUTO_TEST_CASE(call_frame_results_borrow_writable_complete_storage_and_pre
                     const InterpreterCallFrame empty(*machine, *runtime.getFunction(emptyFunctionId), {}, emptyType);
                     BOOST_TEST(empty.getResultSize() == 0U);
                     BOOST_TEST(empty.getResult() == nullptr);
-                    const InterpreterValue snapshot(
-                        emptyType, std::span<const RuntimeValue>{empty.getResult(), empty.getResultSize()}
-                    );
+                    const auto snapshot = empty.getResultValue();
+                    BOOST_TEST(snapshot.getType() == emptyType);
                     BOOST_TEST(snapshot.getStorage().empty());
                 }
                 {
                     const InterpreterCallFrame noResult(*machine, *runtime.getFunction(voidId), {}, runtime.getVoidType());
                     BOOST_TEST(noResult.getResultSize() == 0U);
                     BOOST_TEST(noResult.getResult() == nullptr);
-                    const InterpreterValue snapshot(
-                        runtime.getVoidType(),
-                        std::span<const RuntimeValue>{noResult.getResult(), noResult.getResultSize()}
-                    );
+                    const auto snapshot = noResult.getResultValue();
+                    BOOST_TEST(snapshot.getType() == runtime.getVoidType());
                     BOOST_TEST(snapshot.getStorage().empty());
                 }
                 BOOST_TEST(aggregate.getResult() == storage);

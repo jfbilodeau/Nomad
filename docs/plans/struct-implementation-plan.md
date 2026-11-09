@@ -4292,8 +4292,10 @@ Result contract:
 - Void and empty structs return `nullptr` and zero slots.
 - Access does not copy values, retain references, or transfer ownership.
   Borrowed slots must not outlive their frame.
-- Interpreter calls explicitly create owned snapshots before frame destruction.
-  Compiled formatting converts the borrowed result directly.
+- `getResultValue() const` returns an independent owned `InterpreterValue`
+  snapshot of the complete result, including its type. Interpreter calls use
+  this accessor before frame destruction. Compiled formatting converts the
+  borrowed result directly.
 
 Validation:
 

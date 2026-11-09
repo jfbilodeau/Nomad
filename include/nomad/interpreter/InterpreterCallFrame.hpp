@@ -42,6 +42,8 @@ public:
     // Borrows writable result slots until frame destruction; zero-sized results use nullptr.
     [[nodiscard]] RuntimeValue* getResult() const;
     [[nodiscard]] NomadIndex getResultSize() const;
+    // Copies the complete result into an independent owned value.
+    [[nodiscard]] InterpreterValue getResultValue() const;
     // Transfers a scalar result without copying or retaining it.
     [[nodiscard]] RuntimeValue releaseResult();
     // A suspended scalar call keeps its owned arguments on the VM stack.
