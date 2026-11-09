@@ -1,9 +1,10 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Current review stop: Step 5J host-parity assessment and binding regressions are
-implemented and validated. Step 5 is ready for completion review within its
-agreed scope; Step 6 NRVO eligibility has not been approved or implemented.
+Current review stop: Step 5 is approved within its agreed scope. Step 6A's
+conservative initialization/return-pair NRVO rule is approved and recorded;
+compiler implementation and validation remain the next separately reviewable
+slice.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4383,7 +4384,7 @@ documentation, and final integration checks. No commit or push in this slice.
 
 ### Step 6: Conservative named return-value optimization
 
-Prerequisite: step 5 approved.
+Prerequisite: step 5 approved. Satisfied following the Step 5J review.
 
 - Present a small, explicit NRVO eligibility rule before implementation.
 - Reuse caller-provided storage for eligible named locals, avoiding redundant
@@ -4399,6 +4400,91 @@ Prerequisite: step 5 approved.
 
 Review stop: approved eligible cases, eliminated operations, and semantic
 regression tests. Do not claim a runtime speedup without measurements.
+
+### Step 6A: Approved initial NRVO eligibility
+
+Review decision:
+
+- Step 5 is signed off within the agreed milestone scope.
+- Start with the conservative initialization/return pair, rather than a broader
+  mutable-local optimization. This slice records the rule only; it does not
+  change compiler behavior or claim operation removal.
+
+Eligible shape:
+
+```nomad
+fun makePoint
+    result = new Point 3 4
+    return result
+end
+```
+
+- The callable returns a nonempty struct. The named local has exactly that type.
+- The final two top-level executable statements first initialize that local and
+  then return that same bare local identifier, with no intervening statements.
+- This is the local's first initialization; it is not used earlier or within its
+  own initializer and is not subsequently reassigned.
+- The initializer already supports direct return-destination forwarding, such as
+  a supported constructor or struct-returning call. Do not add syntax-specific
+  forwarding rules or expand supported expression shapes for this optimization.
+- The local is not a parameter, receiver, or capture and is not captured by a
+  nested callable. There are no competing returns or conditional/loop-local
+  candidate paths.
+- Earlier ordinary statements and other locals do not become return candidates.
+  Their evaluation order, ownership, and cleanup remain unchanged.
+
+Fallback:
+
+- Keep the existing field-wise copy path for parameter/receiver returns,
+  captured locals, empty structs, earlier-used or reassigned candidates,
+  non-forwardable initializers, competing returns, branches, and loops.
+- A named local mutated or read between initialization and return is not
+  eligible in this first slice, even if a future analysis could prove it safe.
+- Eligibility is an optimization decision, not a new language restriction:
+  ineligible programs retain their existing behavior and diagnostics.
+
+Implementation boundaries for the next slice:
+
+- Reuse the caller's existing return destination for the eligible initializer.
+  Eliminate the candidate's redundant physical local storage, assignment/return
+  staging storage attributable to the pair, and field-wise return copies.
+- Preserve logical local identity and type information, including correct
+  frame-backed inspection and native reentry. Do not leave an optimized local
+  pointing at a removed stack offset or silently expose partially assigned
+  values. If an observation cannot be preserved, retain the fallback or stop
+  for a design decision rather than hiding the local.
+- Retain the existing destination-isolation/staged-assignment contracts; no
+  premature changes to an existing caller target may become observable.
+- Cleanup must not free the returned fields as callee-owned locals. The caller
+  continues owning the result; argument copies and unrelated cleanup remain.
+- Reuse existing return-destination emission and opcodes. Do not add a general
+  optimizer, broad alias analysis, new VM instructions, or public host-facing
+  restrictions without another design discussion.
+
+Required evidence:
+
+- Compare emitted operations and physical local slot counts for eligible
+  constructor and call initializers; assert the specific eliminated storage,
+  staging copies, and callee cleanup rather than only matching numeric output.
+- Verify independent parameter copies, retained reference fields, repeated
+  ownership cleanup, nested calls/native reentry, and staged assignment into
+  existing caller targets.
+- Verify fallback emission and behavior for empty values, parameter/receiver
+  returns, captured/earlier-used locals, intervening statements, reassignment,
+  alternate returns, and control flow.
+- Test frame-backed local inspection for optimized candidates, including
+  initializer-time observation where supported.
+
+Validation of this slice:
+
+- Reviewed current return staging, expression destination forwarding, local
+  allocation/cleanup, storage-location access, and frame-inspection consumers.
+- Documentation/design only: no C++ build or runtime tests were run or needed.
+  No compiler changes, performance measurements, or NRVO completion are claimed.
+
+Next: implement and validate the approved pair as Step 6B, then stop for review.
+Broader mutable-local NRVO is not automatically included. Step 7 follows Step 6
+sign-off with tooling, documentation reconciliation, and final integration checks.
 
 ### Step 7: Tooling, documentation, and completion checks
 
