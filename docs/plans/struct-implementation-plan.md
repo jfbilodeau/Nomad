@@ -2,11 +2,12 @@
 
 Status: implementation proceeds only in separately approved, reviewable slices.
 Current review stop: Step 5 is approved within its agreed scope. Step 6A's
-conservative initialization/return-pair NRVO shape is approved. Step 6B1's
-VM logical-local lookup is implemented and validated, awaiting review.
-Initializer-time frame observation needs a separate decision before enabling
-NRVO; compiler optimization remains unimplemented. Interpreter evaluation keeps
-ordinary copies and does not need NRVO.
+conservative initialization/return-pair NRVO shape and Step 6B1's VM logical-local
+lookup are approved. Step 6B2 approves exposing actual return-backed storage to
+frame inspection for optimized compiled locals, including during initialization.
+Compiler optimization remains unimplemented. Interpreter evaluation keeps
+ordinary copies and does not need NRVO. The next slice is Step 6B3 implementation
+and validation.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4452,9 +4453,10 @@ Implementation boundaries for the next slice:
   staging storage attributable to the pair, and field-wise return copies.
 - Preserve logical local identity and type information, including correct
   frame-backed inspection and native reentry. Do not leave an optimized local
-  pointing at a removed stack offset or silently expose partially assigned
-  values. If an observation cannot be preserved, retain the fallback or stop
-  for a design decision rather than hiding the local.
+  pointing at a removed stack offset or hide the local. Step 6B2 explicitly
+  approves inspection of its actual in-progress return storage; preserving a
+  separate default local during initialization is no longer required for an
+  eligible optimized candidate.
 - Retain the existing destination-isolation/staged-assignment contracts; no
   premature changes to an existing caller target may become observable.
 - Cleanup must not free the returned fields as callee-owned locals. The caller
@@ -4554,6 +4556,67 @@ Remaining decision and next slice:
   Interpreter evaluation continues copying; no interpreter NRVO is required.
 - Step 7 follows Step 6 sign-off with tooling, documentation reconciliation, and
   final integration checks. Stop for review without committing or pushing.
+
+### Step 6B2: Approved optimized-local frame-observation contract
+
+Review decision:
+
+- Step 6B1's VM logical-local lookup is signed off.
+- For an NRVO-optimized compiled local, frame inspection may expose the actual
+  return-destination storage, including partially initialized contents.
+- This is an explicit observable difference from an unoptimized local, not a
+  requirement to preserve separate default storage during initialization.
+
+Contract:
+
+- The local retains its logical name, `VariableId`, and struct type. Mutable and
+  const logical-local views identify the same complete return-storage range.
+- An observer during initialization sees the storage as the initializer has
+  written it so far; it must not assume an independent default-initialized local
+  or an atomic whole-local assignment. Native frame writes affect that same
+  in-progress result and may affect the value eventually returned.
+- Ordinary, ineligible locals continue using their existing independent local
+  and assignment-staging storage, including today's initializer-time behavior.
+- Interpreter-owned values and results continue copying. An interpreter context
+  explicitly attached to a compiled frame accesses that frame's live storage;
+  that borrowing contract does not add NRVO to interpreter evaluation.
+- Add no shadow locals, observation flags, or purity/reentry analysis merely to
+  reproduce the former initializer-time state of an optimized candidate.
+- Preserve existing ownership/assignment contracts for borrowed slots and the
+  existing caller-side staging of assignment into alias-observable targets.
+  Ordinary struct parameters remain independent copies.
+
+Scope:
+
+- The Step 6A nonempty initialization/final-return-pair eligibility rule is
+  unchanged. This decision does not approve broader mutable-local NRVO.
+- This decision supersedes Step 6A's initializer-observation preservation
+  requirement for optimized candidates and resolves Step 6B1's open decision.
+- This slice records the approved contract only. There are no compiler, VM,
+  interpreter, opcode, or published API behavior changes yet.
+
+Required implementation evidence:
+
+- An eligible native-initializer regression must demonstrate that result writes
+  are visible through the logical local and that frame mutation changes the same
+  result storage. This is the newly approved optimized behavior.
+- Retain separate fallback coverage showing that an ineligible local still sees
+  its independent default storage while its initializer result is being built.
+  Do not simply remove the earlier initializer-observation regression.
+- Verify const/mutable view identity, correct logical names/types, ownership,
+  nested native reentry, and lack of stale physical local offsets.
+- Verify actual elimination of candidate/staging slots and copies, alongside
+  the remaining Step 6A eligibility, fallback, and staged-assignment tests.
+
+Validation:
+
+- Documentation/design only. No C++ build or runtime tests were run or needed;
+  no optimization, operation removal, or runtime speedup is claimed.
+
+Next: Step 6B3 implements the approved compiled tail-pair NRVO and validates its
+emission, ownership, frame inspection, and fallback behavior, then stops for
+review. Step 7 follows Step 6 sign-off with final tooling, documentation
+reconciliation, and integration checks. No commit or push in this slice.
 
 ### Step 7: Tooling, documentation, and completion checks
 
