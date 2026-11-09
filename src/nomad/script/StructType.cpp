@@ -106,7 +106,7 @@ void StructType::freeValue(RuntimeValue* value) const noexcept {
     }
 }
 
-void StructType::toString(const RuntimeValue&, NomadString& string) const {
+void StructType::toString(const RuntimeValue*, NomadString& string) const {
     string = getTypeName();
 }
 

@@ -814,6 +814,11 @@ parentheses, native and script function calls with arguments, and object members
 Each expression must return a non-void value. Placeholders are evaluated from left
 to right using current values; expression results are converted to text.
 
+`$"..."` uses compiled lookups and callable bodies, not interpreter evaluation
+or runtime parsing of its placeholders. `$template` uses the interpreter to
+evaluate the template's `{...}` segments at runtime. A compiled placeholder can
+still explicitly invoke the dynamic format operator.
+
 Format literals also work in the debug console: `$"{1+2}"` evaluates to `"3"`.
 
 Empty placeholders and missing closing braces are compilation errors. A closing
@@ -844,6 +849,24 @@ use the simple-placeholder rules; use a call with arguments or a parenthesized
 expression to select expression parsing. Object members such as `{name.toUpper}`
 and `{name.length}` do not require parentheses. An exact qualified identifier takes
 precedence over object member access.
+
+Struct values use the same default representation as class objects: their type
+name, without a field dump. For a `Point` struct, `{point}` produces `Point`;
+`{point.x}` formats the selected field. Empty structs also produce their type
+name. Nested fields, temporary construction/function results, parameters, and
+struct `this` are supported in both compiled and dynamic format strings.
+
+Compiled expression placeholders copy captured struct values for each
+placeholder. A mutating method called through that capture changes only its
+copy; contained class objects remain shared. Dynamic placeholders evaluate
+against live interpreter/frame storage instead. For example, if `counter.next`
+increments and returns a struct field initially equal to zero:
+
+```nomad
+compiled = $"{counter.next} {counter.value}" # "1 0"; counter.value remains 0
+template = "{counter.next} {counter.value}"
+live = $template # "1 1"; counter.value becomes 1
+```
 
 ### Format string operator
 

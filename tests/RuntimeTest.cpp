@@ -425,7 +425,8 @@ BOOST_AUTO_TEST_CASE(runtime_creates_class_types_with_explicit_modes_and_owned_d
     BOOST_TEST((opened->getStorage() == TypeStorage::Object));
     BOOST_TEST(runtime.getTypeId("OpenedObject") == openedId);
     BOOST_TEST(runtime.getTypeByName("ClosedObject") == closed);
-    BOOST_TEST(opened->toString(RuntimeValue{}) == "OpenedObject");
+    const RuntimeValue objectValue;
+    BOOST_TEST(opened->toString(&objectValue) == "OpenedObject");
 
     for (auto index = 0; index < 64; ++index) {
         BOOST_REQUIRE(runtime.registerClass("AdditionalObject" + std::to_string(index), ClassMode::Closed).isValid());
@@ -536,8 +537,10 @@ BOOST_AUTO_TEST_CASE(runtime_creates_strongly_typed_enums_with_explicit_values)
     BOOST_TEST(bodyType->getValueCount() == 3U);
     BOOST_TEST(bodyType->getValue(0).name == "static");
     BOOST_TEST(bodyType->getValue(0).value == 3);
-    BOOST_TEST(bodyType->toString(RuntimeValue{NomadInteger{7}}) == "dynamic");
-    BOOST_TEST(bodyType->toString(RuntimeValue{NomadInteger{99}}) == "<invalid body value>");
+    const RuntimeValue dynamicValue{NomadInteger{7}};
+    const RuntimeValue invalidValue{NomadInteger{99}};
+    BOOST_TEST(bodyType->toString(&dynamicValue) == "dynamic");
+    BOOST_TEST(bodyType->toString(&invalidValue) == "<invalid body value>");
 
     NomadInteger value = 0;
     BOOST_TEST(bodyType->getValueByName("kinematic", value));
@@ -701,7 +704,7 @@ BOOST_AUTO_TEST_CASE(runtime_registers_nominal_opaque_id_types)
     soundType->copyValue(&source, &destination);
 
     BOOST_TEST(destination.getIdValue() == 42);
-    BOOST_TEST(soundType->toString(destination) == "sound(42)");
+    BOOST_TEST(soundType->toString(&destination) == "sound(42)");
 }
 
 BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_opaque_id_types)

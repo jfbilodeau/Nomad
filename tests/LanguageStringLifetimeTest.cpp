@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(null_string_converts_to_empty_text)
     RuntimeValue value;
     fixture.getRuntime().getStringType()->initValue(&value);
 
-    BOOST_TEST(fixture.getRuntime().getStringType()->toString(value) == "");
+    BOOST_TEST(fixture.getRuntime().getStringType()->toString(&value) == "");
 
     fixture.getRuntime().getStringType()->freeValue(&value);
 }

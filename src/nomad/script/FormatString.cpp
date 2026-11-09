@@ -2,7 +2,7 @@
 
 #include <nomad/script/FormatString.hpp>
 
-#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -11,11 +11,6 @@
 #include <nomad/system/String.hpp>
 
 namespace nomad {
-
-DynamicFormatResult formatDynamicString(const NomadStringView format, InterpreterContext& context,
-    const NomadStringView sourceName, const NomadIndex line, const NomadIndex column) {
-    return context.getInterpreter().formatString(format, context, sourceName, line, column);
-}
 
 FormatString::FormatString(const NomadString& formatString, CallableId functionId):
     m_formatString(formatString),
@@ -68,43 +63,35 @@ void FormatString::addExpression(const Type* valueType, const CallableId functio
     });
 }
 
-NomadString FormatString::format(VirtualMachine *interpreter) const {
+NomadString FormatString::format(VirtualMachine* machine) const {
     NomadString string;
 
-    const auto appendFunction = [&](const Segment& segment, const bool captureFrame) {
-        const auto* function = interpreter->getRuntime()->getScriptFunction(segment.functionId);
-        if (function == nullptr || segment.valueType == nullptr || segment.valueType->isVoid() ||
-            function->getReturnType() != segment.valueType) {
-            interpreter->fault("Internal error: Invalid function in format string segment");
+    const auto appendFunction = [&](const Segment& segment) {
+        const auto* function = machine->getRuntime()->getScriptFunction(segment.functionId);
+        if (
+            function == nullptr ||
+            segment.valueType == nullptr ||
+            segment.valueType->isVoid() ||
+            function->getReturnType() != segment.valueType ||
+            function->getFunctionStart() == NOMAD_INVALID_INDEX ||
+            function->getFunctionStart() >= function->getFunctionEnd()
+        ) {
+            machine->fault("Internal error: Invalid function in format string segment");
         }
 
-        const auto captures = captureFrame ? interpreter->captureCurrentFrame(function) : std::vector<InterpreterValue>{};
-        std::vector<RuntimeValue> values;
-        values.reserve(captures.size());
-        for (const auto& capture : captures) {
-            values.push_back(capture.getValue());
-        }
-
-        // Nested execution must not discard operands held by the enclosing expression.
-        const auto savedResult = interpreter->getResult();
-        const auto savedIntermediate = interpreter->getIntermediate();
+        InterpreterCallFrame frame(*machine, *function);
+        const auto state = machine->captureExecutionState();
         try {
-            interpreter->run(function, {}, values);
-            auto value = interpreter->getResult();
-            try {
-                string += segment.valueType->toString(value);
-            } catch (...) {
-                segment.valueType->freeValue(&value);
-                throw;
+            if (!machine->executeFunction(*function)) {
+                machine->fault("Format expression calls cannot yield");
             }
-            segment.valueType->freeValue(&value);
         } catch (...) {
-            interpreter->setResult(savedResult);
-            interpreter->setIntermediate(savedIntermediate);
+            machine->restoreExecutionState(state);
             throw;
         }
-        interpreter->setResult(savedResult);
-        interpreter->setIntermediate(savedIntermediate);
+
+        machine->restoreExecutionState(state);
+        string += segment.valueType->toString(frame.getResultStorage().data());
     };
 
     for (auto const& segment: m_segments) {
@@ -116,27 +103,79 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
             case SegmentType::Variable: {
                 RuntimeValue value;
                 if (segment.valueType == nullptr || segment.valueType->isVoid()) {
-                    interpreter->fault("Internal error: Invalid value type in format string segment");
+                    machine->fault("Internal error: Invalid value type in format string segment");
                 }
 
                 if (segment.variableType == IdentifierType::ScriptFunction) {
-                    appendFunction(segment, false);
+                    appendFunction(segment);
                     break;
                 }
 
-                const auto result = interpreter->getVariableValue(
-                    segment.variableType,
-                    segment.variableId,
-                    value
-                );
+                const auto* function = machine->getCurrentCallable();
+                const auto size = segment.valueType->getSize();
+                const RuntimeValue* storage = nullptr;
+                switch (segment.variableType) {
+                    case IdentifierType::FunctionVariable:
+                        if (function == nullptr) {
+                            machine->fault("Format variable requires an active script frame");
+                        }
 
-                if (!result) {
-                    interpreter->fault(
-                        "Failed to get variable value for format string segment"
-                    );
+                        storage = machine->getLocalStorage(
+                            function->getVariableOffset(VariableId{segment.variableId}),
+                            size
+                        ).data();
+                        break;
+
+                    case IdentifierType::Parameter:
+                        if (function == nullptr) {
+                            machine->fault("Format parameter requires an active script frame");
+                        }
+
+                        storage = machine->getParameterStorage(
+                            function->getParameterOffset(segment.variableId),
+                            size
+                        ).data();
+                        break;
+
+                    case IdentifierType::Receiver:
+                        if (function == nullptr) {
+                            machine->fault("Format receiver requires an active script frame");
+                        }
+
+                        if (segment.valueType->isStruct()) {
+                            if (size != 0) {
+                                const auto layout = function->getCallStorageLayout();
+                                storage = machine->getParameterStorage(*layout.receiverOffset, 1)[0].getStorageAddress();
+                            }
+                        } else {
+                            value.setObjectValue(machine->getScriptReceiver());
+                            storage = &value;
+                        }
+
+                        break;
+
+                    default:
+                        if (size > 1) {
+                            machine->fault("Format lookup does not provide complete value storage");
+                        }
+
+                        if (!machine->getVariableValue(segment.variableType, segment.variableId, value)) {
+                            machine->fault("Failed to get variable value for format string segment");
+                        }
+
+                        storage = size == 0 ? nullptr : &value;
+                        break;
                 }
 
-                string += segment.valueType->toString(value);
+                try {
+                    string += segment.valueType->toString(storage);
+                } catch (...) {
+                    if (segment.variableType == IdentifierType::DynamicVariable) {
+                        segment.valueType->freeValue(&value);
+                    }
+
+                    throw;
+                }
 
                 // Dynamic getters hand over an owned value; other variables are shared.
                 if (segment.variableType == IdentifierType::DynamicVariable) {
@@ -146,11 +185,11 @@ NomadString FormatString::format(VirtualMachine *interpreter) const {
                 break;
             }
             case SegmentType::Expression: {
-                appendFunction(segment, true);
+                appendFunction(segment);
                 break;
             }
             default:
-                interpreter->fault(
+                machine->fault(
                     "Internal error: Invalid format string segment type: " + toString((int) segment.type)
                 );
         }

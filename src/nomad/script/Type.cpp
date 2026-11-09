@@ -427,7 +427,7 @@ bool Type::isInternal() const {
     return getTypeName().starts_with(FUNCTION_INTERNAL_NAME_PREFIX);
 }
 
-NomadString Type::toString(const RuntimeValue& value) const {
+NomadString Type::toString(const RuntimeValue* value) const {
     NomadString text_value;
 
     toString(value, text_value);

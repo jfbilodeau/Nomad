@@ -210,7 +210,7 @@ BOOST_AUTO_TEST_CASE(binary_operands_evaluate_left_first_in_compiled_and_interpr
             const Interpreter contextEvaluator(*machine);
             InterpreterContext context(contextEvaluator);
             BOOST_REQUIRE(context.getInterpreter().execute(expression, context));
-            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
+            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getStorage().data()) == expected);
             BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
         }
     }

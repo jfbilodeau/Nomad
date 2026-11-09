@@ -32,8 +32,8 @@ void EnumType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinat
     destinationValue->setIntegerValue(sourceValue->getIntegerValue());
 }
 
-void EnumType::toString(const RuntimeValue& value, NomadString& string) const {
-    if (!getNameByValue(value.getIntegerValue(), string)) {
+void EnumType::toString(const RuntimeValue* value, NomadString& string) const {
+    if (!getNameByValue(value->getIntegerValue(), string)) {
         string = "<invalid " + m_name + " value>";
     }
 }

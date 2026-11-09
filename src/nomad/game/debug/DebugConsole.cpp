@@ -198,7 +198,7 @@ NomadString valueToDisplayString(const Type* type, const RuntimeValue& value) {
         return "<null>";
     }
 
-    auto displayValue = type->toString(value);
+    auto displayValue = type->toString(&value);
     if (type->getTypeName() == FLOAT_TYPE_NAME) {
         const auto floatValue = value.getFloatValue();
         if (std::isfinite(floatValue) && std::trunc(floatValue) == floatValue) {
@@ -1672,7 +1672,7 @@ void DebugConsole::executeNativeFunction() {
         if (!result->getType()->isVoid()) {
             m_consoleEntries.push_back({
                 false,
-                result->getType()->toString(result->getValue())
+                result->getType()->toString(result->getStorage().data())
             });
         }
     }

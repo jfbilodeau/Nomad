@@ -117,7 +117,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
     }
 
     outcome.returnTypeName = returnType->getTypeName();
-    outcome.text = returnType->toString(result);
+    outcome.text = returnType->toString(&result);
 
     if (returnType == m_runtime.getIntegerType()) {
         outcome.integerValue = result.getIntegerValue();

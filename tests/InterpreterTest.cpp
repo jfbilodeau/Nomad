@@ -80,7 +80,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
         const auto diagnostic = context.getError() ? *context.getError() : source;
         BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
         BOOST_REQUIRE(context.getResult() != nullptr);
-        BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
+        BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getStorage().data()) == expected);
     }
     BOOST_REQUIRE(context.getInterpreter().execute("$\"{value}\"", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "40");

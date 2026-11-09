@@ -54,9 +54,9 @@ public:
         RuntimeValue* destinationValue,
         RuntimeValue* scratch = nullptr
     ) const;
-    // Convert value to string.
-    virtual void toString(const RuntimeValue& value, NomadString& string) const = 0;
-    [[nodiscard]] NomadString toString(const RuntimeValue& value) const;
+    // Borrows getSize() contiguous slots; nullptr is valid only for a zero-sized value.
+    virtual void toString(const RuntimeValue* value, NomadString& string) const = 0;
+    [[nodiscard]] NomadString toString(const RuntimeValue* value) const;
 
     [[nodiscard]] virtual bool needsFree() const;
     virtual void emitInitResult(OpCodeEmitter& emitter) const;

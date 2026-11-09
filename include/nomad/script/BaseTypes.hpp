@@ -18,7 +18,7 @@ public:
     [[nodiscard]] TypeStorage getStorage() const override;
     [[nodiscard]] NomadIndex getSize() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 
     [[nodiscard]] bool isVoid() const override;
     void emitFreeParameter(OpCodeEmitter& emitter, NomadIndex offset) const override;
@@ -31,7 +31,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 };
 
 class OpaqueIdType final : public ValueType {
@@ -43,7 +43,7 @@ public:
 
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
 
 private:
@@ -57,7 +57,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 };
 
 const NomadString FLOAT_TYPE_NAME = "float";
@@ -67,7 +67,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 };
 
 const NomadString BOOLEAN_TYPE_NAME = "bool";
@@ -79,7 +79,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 };
 
 class BaseStringType : public ClassType {
@@ -91,7 +91,7 @@ public:
     void emitInitResult(OpCodeEmitter& emitter) const override;
     void emitInitIntermediate(OpCodeEmitter& emitter) const override;
     void emitInitFunctionVariable(OpCodeEmitter& emitter, NomadIndex offset) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
     [[nodiscard]]
     bool isString() const final;
@@ -129,7 +129,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 };
 
 const NomadString FUNCTION_TYPE_NAME = "callback";
@@ -145,7 +145,7 @@ public:
 
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
 
     [[nodiscard]] NomadIndex getParameterCount() const;
@@ -167,7 +167,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 };
 
 const NomadString EVENT_DISPATCH_TYPE_NAME = "eventDispatch";
@@ -177,7 +177,7 @@ public:
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 };
 
 } // nomad

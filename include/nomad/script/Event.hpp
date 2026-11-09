@@ -37,7 +37,7 @@ public:
 
     [[nodiscard]] NomadString getTypeName() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
 
     [[nodiscard]] const NomadString& getEventName() const;

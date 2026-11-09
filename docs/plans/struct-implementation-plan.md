@@ -56,6 +56,13 @@ Typed closure invocation and source-level struct captures are implemented,
 including copied struct `this`, nested propagation, empty captures, and existing
 Runtime callback adapters. Aggregate calls remain synchronous; scalar callback
 suspension is unchanged. This slice is implemented and validated, awaiting review.
+Struct-aware static/dynamic formatting is implemented and validated. Whole
+structs display their type name like class objects; explicit fields use their
+ordinary conversions. Compiled placeholders use VM lookup/callable execution
+with direct frame capture binding; dynamic templates use the interpreter.
+String conversion borrows complete `const RuntimeValue*` storage, not a dummy
+value or first-slot copy. The reviewed correction is implemented and validated,
+awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -4146,6 +4153,121 @@ Validation:
 
 Next, after review: field-aware formatting and remaining host parity, then
 conservative NRVO after Step 5 approval. Fatal VM fault cleanup remains deferred.
+
+### Step 5I: Struct-aware compiled and dynamic formatting
+
+Approved scope:
+
+- Reuse existing VM callable execution for compiled literals, interpreter
+  evaluation for dynamic templates, and shared storage/conversion machinery.
+- Format whole structs like ordinary class objects: the type name only, including
+  empty structs. Explicit field expressions use their normal conversions.
+- Bind compiled placeholder captures directly from complete current-frame
+  storage, with no capture/argument value-vector conversions.
+- Preserve compiled capture snapshots versus live dynamic evaluation, placeholder
+  order, diagnostics, receiver semantics, and temporary ownership.
+- Verify locals, mixed-width parameters, `this`, nested fields, temporary results,
+  empty/whole values, copy counts, failures, and compiled/interpreted behavior.
+  Update directly related documentation, build/test, then stop for review.
+
+Implementation:
+
+- The initial implementation introduced a frame-context interpreter overload for
+  compiled placeholders. Review clarified the required boundary; the correction
+  below removes that overload and executes compiled functions directly on the VM.
+- The shared call-frame owner copies current VM frame storage directly into
+  reserved invocation slots. Compiled conversion reads complete result storage
+  without an extra interpreter-value result snapshot.
+- Dynamic formatting retains its existing interpreter expression evaluator.
+  Text conversion accepts complete or empty struct results without scalar value
+  access; whole-struct output follows the existing type-name conversion.
+- Bare scalar parameter placeholders now resolve logical parameter IDs through
+  physical offsets, including after multi-slot and empty struct parameters.
+- Tests cover static/dynamic whole and field values, nested/temporary results,
+  empty receivers and results, mixed parameter widths, source names/diagnostics,
+  register preservation, snapshot-versus-live mutation, and repeated ownership.
+- Copy-count/source-address tests demonstrate direct frame capture copies with
+  no intermediate typed capture snapshots, including partial-copy/result cleanup.
+
+Validation:
+
+- The automatic build succeeded. Initial targeted tests exposed an unsupported
+  string-concatenation operator in a new regression; rewriting it using format
+  syntax corrected the test, and language/remaining groups passed.
+- All six CTest unit groups, script staging, compiler exports, LSP process, and
+  module-runtime integration checks passed after adding class-returned struct
+  and captured struct-`this` callback coverage.
+- Static/dynamic type-name and field output, mixed-width parameter offsets,
+  temporary/empty values, snapshot/live mutation, diagnostic locations, direct
+  capture copy counts/addresses, and partial-copy/result cleanup passed.
+  Ownership scenarios repeat three times and restore live string/object counts.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting the host-parity assessment.
+
+Next, after review: assess remaining host parity and approve Step 5 completion;
+then agree conservative NRVO eligibility for Step 6. Final tooling/documentation
+and integration completion checks follow. Richer object/struct display and fatal
+VM fault cleanup remain separate.
+
+### Step 5I follow-up: Complete conversion pointers and distinct execution paths
+
+Approved scope:
+
+- Change `Type::toString` to accept complete `const RuntimeValue*` storage, with
+  `nullptr` only for genuinely zero-sized values. Migrate overrides and callers;
+  preserve type-name defaults without throwing away the supplied value.
+- Compiled `$"..."` must use compiled lookups/callable functions and direct VM
+  execution, not interpreter dispatch or contexts. Dynamic `$text` continues to
+  use interpreter evaluation of `{...}`. Share only storage/ownership/conversion
+  mechanisms.
+- Remove the interim interpreter/frame-context invocation API and preserve
+  snapshot/live semantics, field behavior, diagnostics, and lifetime contracts.
+- Verify value-dependent converters reading beyond the first slot, null storage
+  for empty values, the compiled/dynamic boundary, and failures. Update docs,
+  build/test, then stop for review without committing.
+
+Implementation:
+
+- Migrated `Type::toString`, built-in/custom test overrides, host callers, debug
+  output, and documentation examples to the const-pointer contract. Dynamic
+  formatting passes owned complete storage directly.
+- Compiled lookup passes actual local/parameter/receiver storage; no placeholder
+  struct value is synthesized. Scalar raw lookup sources retain their ownership
+  contracts and reject unavailable multi-slot storage explicitly.
+- Compiled callable placeholders share direct frame storage ownership and invoke
+  `VirtualMachine::executeFunction`. Closure dispatch shares that prepared
+  function execution mechanism. Compiled formatting constructs no interpreter
+  context, parses no expressions, and reads return storage without an extra copy.
+- Moved the existing dynamic formatting wrapper to interpreter implementation;
+  it continues delegating to `Interpreter::formatString`.
+- Tests use custom converters that read two slots and require null zero-slot
+  storage, verify static formatting creates no runtime compiler while dynamic
+  templates do, and check getter-result cleanup when conversion throws.
+- Existing copied frame-capture regressions now require four counted field
+  copies rather than five because compiled conversion no longer snapshots the
+  callable result into an `InterpreterValue`.
+
+Validation:
+
+- The automatic build and targeted language/remaining groups passed on the first
+  run. After moving the dynamic wrapper into interpreter implementation and adding
+  incomplete-storage rejection coverage, all six CTest unit groups, script
+  staging, compiler exports, LSP process, and module-runtime integration passed.
+- Value-dependent converters read both slots of a complete value in compiled
+  and dynamic formatting. Zero-slot converters require null pointers. Raw lookup
+  sources without complete multi-slot storage fail before invoking their getter.
+- Compiled formatting creates no runtime compiler, while dynamic templates create
+  one per placeholder. Direct VM execution, snapshot/live behavior, captured
+  receivers, real result storage, and converter-failure cleanup regressions passed.
+- Four documentation preparation tests, generated strict MkDocs build, obsolete
+  signature/caller checks, and whitespace checks passed. Gameplay and performance
+  were not validated.
+- Stop for review without committing or starting another plan slice.
+
+Next, after review: remaining host parity and Step 5 completion review, then
+conservative NRVO and final integration/tooling/documentation checks. Richer
+format representations and fatal VM fault cleanup remain deferred.
 
 ### Step 6: Conservative named return-value optimization
 

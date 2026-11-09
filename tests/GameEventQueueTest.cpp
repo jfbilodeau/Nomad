@@ -41,7 +41,7 @@ public:
         *destinationValue = *sourceValue;
     }
 
-    void toString(const RuntimeValue& /*value*/, NomadString& string) const override {
+    void toString(const RuntimeValue* /*value*/, NomadString& string) const override {
         string = "tracking";
     }
 

@@ -281,9 +281,13 @@ void VirtualMachine::run(
 }
 
 bool VirtualMachine::executeClosure(const Closure& closure) {
-    const auto* function = closure.getFunction();
-    const auto synchronous = function->getReturnType()->isStruct() || std::ranges::any_of(
-        function->getParameters(),
+
+    return executeFunction(*closure.getFunction());
+}
+
+bool VirtualMachine::executeFunction(const ScriptFunction& function) {
+    const auto synchronous = function.getReturnType()->isStruct() || std::ranges::any_of(
+        function.getParameters(),
         [](const auto& parameter) {
 
             return parameter.type->isStruct();
@@ -291,7 +295,7 @@ bool VirtualMachine::executeClosure(const Closure& closure) {
     );
     const auto state = beginScriptRun();
     try {
-        callScriptFunction(function->getFunctionStart());
+        callScriptFunction(function.getFunctionStart());
         executeScript();
         if (m_yielded && synchronous) {
             fault("Aggregate closure calls cannot yield");
@@ -1288,9 +1292,16 @@ bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId var
         getFunctionVariableValue(VariableId{variableId}, value);
         return true;
 
-    case IdentifierType::Parameter:
-        value = getParameter(variableId);
+    case IdentifierType::Parameter: {
+        const auto* function = getCurrentCallable();
+        if (function == nullptr) {
+            fault("Parameter formatting requires an active script callable");
+        }
+
+        value = getParameter(function->getParameterOffset(variableId));
+
         return true;
+    }
 
     default:
         log::warning("Unexpected identifier type: " + toString(static_cast<int>(identifierType)));

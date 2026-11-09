@@ -21,7 +21,7 @@ void EventType::copyValue(const RuntimeValue *sourceValue, RuntimeValue *destina
     destinationValue->setIdValue(sourceValue->getIdValue());
 }
 
-void EventType::toString(const RuntimeValue & /*value*/, NomadString &string) const {
+void EventType::toString(const RuntimeValue* /*value*/, NomadString &string) const {
     string = m_event.name;
 
     if (m_event.parameters.empty() == false) {

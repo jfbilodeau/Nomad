@@ -20,7 +20,7 @@ public:
     void freeValue(RuntimeValue* value) const noexcept override;
     void emitFreeParameter(OpCodeEmitter& emitter, NomadIndex offset) const override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 
 private:
     [[noreturn]] void reportUnresolved() const;

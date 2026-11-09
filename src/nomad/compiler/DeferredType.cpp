@@ -45,7 +45,7 @@ void DeferredType::copyValue(const RuntimeValue*, RuntimeValue*) const {
     reportUnresolved();
 }
 
-void DeferredType::toString(const RuntimeValue&, NomadString&) const {
+void DeferredType::toString(const RuntimeValue*, NomadString&) const {
     reportUnresolved();
 }
 

@@ -4,13 +4,21 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
+#include <nomad/script/ClassType.hpp>
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/NativeFunction.hpp>
+#include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
+#include <nomad/script/ValueType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <array>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -75,6 +83,399 @@ void registerTestNativeFunctions(Runtime& runtime, std::vector<NomadInteger>& re
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(language_format_strings)
+
+BOOST_AUTO_TEST_CASE(compiled_and_dynamic_converters_receive_complete_storage_not_dummy_values) {
+    class WideFormatType : public ValueType {
+    public:
+        using ValueType::ValueType;
+        using Type::toString;
+
+        [[nodiscard]] NomadString getTypeName() const override {
+
+            return "WideFormatValue";
+        }
+
+        [[nodiscard]] NomadIndex getSize() const override {
+
+            return 2;
+        }
+
+        void initValue(RuntimeValue* value) const override {
+            std::fill_n(value, 2, RuntimeValue{});
+        }
+
+        void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
+            std::copy_n(source, 2, destination);
+        }
+
+        void toString(const RuntimeValue* value, NomadString& text) const override {
+            BOOST_REQUIRE(value != nullptr);
+            text = std::to_string(value[0].getIntegerValue()) + ":" +
+                std::to_string(value[1].getIntegerValue());
+        }
+    };
+
+    class EmptyFormatType final : public WideFormatType {
+    public:
+        using WideFormatType::WideFormatType;
+
+        [[nodiscard]] NomadString getTypeName() const override {
+
+            return "EmptyFormatValue";
+        }
+
+        [[nodiscard]] NomadIndex getSize() const override {
+
+            return 0;
+        }
+
+        void initValue(RuntimeValue*) const override {}
+        void copyValue(const RuntimeValue*, RuntimeValue*) const override {}
+
+        void toString(const RuntimeValue* value, NomadString& text) const override {
+            BOOST_TEST(value == nullptr);
+            text = "empty";
+        }
+    };
+
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto wideId = manager.reserveTypeId();
+    manager.registerType(std::make_unique<WideFormatType>(&runtime, wideId));
+    const auto emptyId = manager.reserveTypeId();
+    manager.registerType(std::make_unique<EmptyFormatType>(&runtime, emptyId));
+    const auto* wide = runtime.getType(wideId).value();
+    const auto* empty = runtime.getType(emptyId).value();
+    auto rawGetterCalls = 0;
+    const auto rawVariable = runtime.registerDynamicVariable(
+        "unavailableWideFormatValue",
+        {},
+        [&](VirtualMachine*, RuntimeValue&) { ++rawGetterCalls; },
+        wide,
+        ""
+    );
+    BOOST_REQUIRE(rawVariable.isValid());
+    FormatString incomplete("", CallableId{});
+    incomplete.addVariable(IdentifierType::DynamicVariable, wide, rawVariable.id);
+    const auto functionId = runtime.registerScriptFunction("formatCompleteStorage", "storage.nomad", "");
+    auto* function = runtime.getScriptFunction(functionId);
+    function->addParameter("head", runtime.getIntegerType(), "");
+    function->addParameter("wide", wide, "");
+    function->addParameter("empty", empty, "");
+    function->addParameter("tail", runtime.getIntegerType(), "");
+    const auto localId = function->registerVariable("local", wide);
+    const auto emptyLocalId = function->registerVariable("emptyLocal", empty);
+    function->setReturnType(runtime.getStringType());
+    const auto formatId = runtime.registerFormatString("complete-storage", functionId);
+    auto* format = runtime.getFormatString(formatId);
+    format->addVariable(IdentifierType::Parameter, wide, 1);
+    format->addLiteral("|");
+    format->addVariable(IdentifierType::FunctionVariable, wide, localId.id);
+    format->addLiteral("|");
+    format->addVariable(IdentifierType::Parameter, empty, 2);
+    format->addLiteral("|");
+    format->addVariable(IdentifierType::FunctionVariable, empty, emptyLocalId.id);
+    format->addLiteral("|");
+    format->addVariable(IdentifierType::Parameter, runtime.getIntegerType(), 0);
+    format->addLiteral("|");
+    format->addVariable(IdentifierType::Parameter, runtime.getIntegerType(), 3);
+    const auto initialize = runtime.registerInstruction(
+        "test.initializeFormatStorage",
+        [](VirtualMachine* machine) {
+            const auto* callable = machine->getCurrentCallable();
+            const auto storage = machine->getLocalStorage(
+                callable->getVariableOffset(callable->getVariableId("local")),
+                2
+            );
+            storage[0].setIntegerValue(31);
+            storage[1].setIntegerValue(64);
+        },
+        "",
+        {}
+    );
+    auto compiler = runtime.createCompiler();
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addOpCode(initialize);
+    compiler->addOpCode(OpCodes::op_format_string_execute);
+    compiler->addId(formatId.id);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            auto machine = runtime.createVirtualMachine();
+            const std::array values{RuntimeValue{NomadInteger{11}}, RuntimeValue{NomadInteger{42}}};
+            machine->pushInteger(77);
+            machine->pushStorage(values);
+            machine->pushInteger(3);
+            machine->enterScriptFrame(function->getFunctionStart());
+            machine->executeScript();
+            BOOST_TEST(machine->getResult().getStringValue() == "11:42|31:64|empty|empty|3|77");
+            runtime.getStringType()->freeValue(&machine->getResult());
+            machine->popN(4);
+            const Interpreter interpreter(*machine);
+            InterpreterContext context(interpreter);
+            context.setVariable("wide", wide, values);
+            context.setVariable("empty", empty, std::span<const RuntimeValue>{});
+            const auto dynamic = interpreter.formatString("{wide}|{empty}", context, "dynamic.nomad", 1, 1);
+            BOOST_TEST(dynamic.text == "11:42|empty");
+            BOOST_TEST(dynamic.diagnostics.empty());
+            BOOST_CHECK_EXCEPTION(
+                static_cast<void>(incomplete.format(machine.get())),
+                VirtualMachineException,
+                [](const auto& error) {
+
+                    return NomadString{error.what()} == "Format lookup does not provide complete value storage";
+                }
+            );
+            BOOST_TEST(rawGetterCalls == 0);
+        }
+
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(compiled_literals_do_not_create_runtime_compilers_but_dynamic_templates_do) {
+    LanguageTestFixture fixture;
+    fixture.addFunction(
+        "compiledFormat",
+        "struct ExecutionFormatPoint\nx = 7\nend\n"
+        "point = new ExecutionFormatPoint\nreturn $\"{point} {point.x + 1}\""
+    );
+    fixture.addFunction(
+        "dynamicFormat",
+        "point = new ExecutionFormatPoint\ntemplate = \"{point} {point.x + 1}\"\nreturn $template"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto compilersCreated = 0;
+    fixture.getRuntime().registerCompilerSetup([&](Compiler*) { ++compilersCreated; });
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        compilersCreated = 0;
+        const auto compiled = fixture.execute("compiledFormat");
+        BOOST_REQUIRE_MESSAGE(!compiled.fault.has_value(), compiled.fault.value_or(""));
+        BOOST_TEST(compiled.text == "ExecutionFormatPoint 8");
+        BOOST_TEST(compilersCreated == 0);
+        const auto dynamic = fixture.execute("dynamicFormat");
+        BOOST_REQUIRE_MESSAGE(!dynamic.fault.has_value(), dynamic.fault.value_or(""));
+        BOOST_TEST(dynamic.text == compiled.text);
+        BOOST_TEST(compilersCreated == 2);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(conversion_failures_release_owned_dynamic_getter_values_in_both_modes) {
+    class ThrowingFormatType final : public ClassType {
+    public:
+        using ClassType::ClassType;
+
+        void toString(const RuntimeValue* value, NomadString&) const override {
+            BOOST_REQUIRE(value != nullptr);
+            BOOST_TEST(value->getStringValue() == "owned converter input");
+            throw NomadException("Formatting conversion failed");
+        }
+    };
+
+    Runtime runtime;
+    const auto typeId = runtime.registerClass<ThrowingFormatType>("ThrowingFormatValue", ClassMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value();
+    const auto variableId = runtime.registerDynamicVariable(
+        "throwingFormatValue",
+        {},
+        [](VirtualMachine*, RuntimeValue& value) { value.setStringValue("owned converter input"); },
+        type,
+        ""
+    );
+    BOOST_REQUIRE(variableId.isValid());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    FormatString compiled("", CallableId{});
+    compiled.addVariable(IdentifierType::DynamicVariable, type, variableId.id);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        BOOST_CHECK_THROW(static_cast<void>(compiled.format(machine.get())), NomadException);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_CHECK_THROW(
+            static_cast<void>(interpreter.formatString("{throwingFormatValue}", context, "conversion.nomad", 1, 1)),
+            NomadException
+        );
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(struct_formatting_uses_type_names_and_complete_field_captures_in_both_modes) {
+    const NomadString declarations =
+        "struct FormatEmpty\nend\n"
+        "class FormatObject\nnumber = 5\nend\n"
+        "struct FormatPoint\nx = 7\nname = \"point\"\nempty = new FormatEmpty\nobject = new FormatObject\n"
+        "fun next\nthis.x = this.x + 1\nreturn this.x\nend\n"
+        "fun render\nreturn $\"{this} {this.x + 1} {this.name}\"\nend\nend\n"
+        "struct FormatOuter\npoint = new FormatPoint\nlabel = \"outer\"\nend\n"
+        "class FormatHolder\npoint = new FormatPoint\n"
+        "fun copy\nreturn this.point\nend\nend\n"
+        "fun makeFormatPoint\nreturn new FormatPoint\nend\n"
+        "fun renderFormatParams head:int point:FormatPoint empty:FormatEmpty tail:int\n"
+        "return $\"{head} {point} {empty} {tail} {point.x + tail}\"\nend\n"
+        "fun renderDynamicFormatParams head:int point:FormatPoint empty:FormatEmpty tail:int\n"
+        "template = \"{head} {point} {empty} {tail} {point.x + tail}\"\nreturn $template\nend\n";
+    const std::vector<std::pair<NomadString, NomadString>> cases{
+        {"point = new FormatPoint\nreturn $\"{point} {point.x} {point.name} {point.empty} {point.object}\"",
+            "FormatPoint 7 point FormatEmpty FormatObject"},
+        {"point = new FormatPoint\ntemplate = \"{point} {point.x} {point.name} {point.empty} {point.object}\"\nreturn $template",
+            "FormatPoint 7 point FormatEmpty FormatObject"},
+        {"outer = new FormatOuter\nreturn $\"{outer} {outer.point} {outer.point.x + 2} {outer.point.name}\"",
+            "FormatOuter FormatPoint 9 point"},
+        {"outer = new FormatOuter\ntemplate = \"{outer} {outer.point} {outer.point.x + 2} {outer.point.name}\"\nreturn $template",
+            "FormatOuter FormatPoint 9 point"},
+        {"return $\"{makeFormatPoint} {(makeFormatPoint).x} {(new FormatPoint).name} {new FormatEmpty}\"",
+            "FormatPoint 7 point FormatEmpty"},
+        {"template = \"{makeFormatPoint} {(makeFormatPoint).x} {(new FormatPoint).name} {new FormatEmpty}\"\nreturn $template",
+            "FormatPoint 7 point FormatEmpty"},
+        {"return renderFormatParams 11 (new FormatPoint) (new FormatEmpty) 13",
+            "11 FormatPoint FormatEmpty 13 20"},
+        {"return renderDynamicFormatParams 11 (new FormatPoint) (new FormatEmpty) 13",
+            "11 FormatPoint FormatEmpty 13 20"},
+        {"point = new FormatPoint\nreturn point.render", "FormatPoint 8 point"},
+        {"holder = new FormatHolder\nreturn $\"{holder} {holder.point.x} {holder.copy} {(holder.copy).name}\"",
+            "FormatHolder 7 FormatPoint point"},
+        {"holder = new FormatHolder\ntemplate = \"{holder} {holder.point.x} {holder.copy} {(holder.copy).name}\"\nreturn $template",
+            "FormatHolder 7 FormatPoint point"},
+        {"struct FormatEmptyReceiver\nfun render\nreturn $\"{this} {new FormatEmpty}\"\nend\nend\n"
+            "return (new FormatEmptyReceiver).render", "FormatEmptyReceiver FormatEmpty"}
+    };
+    for (const auto& [body, expected] : cases) {
+        BOOST_TEST_CONTEXT(body) {
+            LanguageTestFixture fixture;
+            fixture.addFunction("main", declarations + body);
+            BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+            const auto stringsBefore = RuntimeValue::getLiveStringCount();
+            const auto objectsBefore = NomadObject::getLiveObjectCount();
+            for (auto iteration = 0; iteration < 3; ++iteration) {
+                const auto outcome = fixture.execute("main");
+                BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+                BOOST_TEST(outcome.text == expected);
+                BOOST_TEST(outcome.leakedStrings == 0);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+                BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+            }
+
+        }
+
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(struct_formatting_preserves_compiled_capture_snapshots_and_live_dynamic_evaluation) {
+    LanguageTestFixture fixture;
+    fixture.addFunction(
+        "main",
+        "struct FormatCounter\nvalue = 0\ntext = \"owned\"\n"
+        "fun next\nthis.value = this.value + 1\nreturn this.value\nend\nend\n"
+        "counter = new FormatCounter\n"
+        "compiled = $\"{counter.next} {counter.value} {counter.next}\"\n"
+        "assert compiled == \"1 0 1\"\nassert counter.value == 0\n"
+        "template = \"{counter.next} {counter.value} {counter.next}\"\n"
+        "formatted = $template\nassert formatted == \"1 1 2\"\nassert counter.value == 2\n"
+        "return $\"{compiled} / {formatted}\""
+    );
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.text == "1 0 1 / 1 1 2");
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_struct_formatting_handles_empty_values_and_retains_error_locations) {
+    LanguageTestFixture fixture;
+    fixture.addFunction(
+        "types",
+        "struct InterpreterFormatEmpty\nend\n"
+        "struct InterpreterFormatValue\nnumber = 7\ntext = \"value\"\nend\nreturn 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    BOOST_REQUIRE(interpreter.execute(
+        "value = new InterpreterFormatValue\nempty = new InterpreterFormatEmpty",
+        context
+    ));
+    machine->setIntegerResult(41);
+    machine->setIntegerIntermediate(43);
+    const auto instructionsBefore = runtime.getInstructions().size();
+    const auto result = interpreter.formatString(
+        "{value} {empty} {value.number + 1} {value.missing} {value.text}",
+        context,
+        "struct-format.nomad",
+        3,
+        5
+    );
+    BOOST_TEST(result.text.starts_with("InterpreterFormatValue InterpreterFormatEmpty 8 {"));
+    BOOST_TEST(result.text.ends_with("} value"));
+    BOOST_REQUIRE(result.diagnostics.size() == 1U);
+    BOOST_TEST(result.diagnostics[0].sourceName == "struct-format.nomad");
+    BOOST_TEST(result.diagnostics[0].line == 3U);
+    BOOST_TEST(result.diagnostics[0].column == 5U);
+    BOOST_TEST(!context.hasError());
+    BOOST_TEST(machine->getIntegerResult() == 41);
+    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+    BOOST_TEST(runtime.getInstructions().size() == instructionsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(format_expressions_read_complete_struct_receiver_captures_in_callbacks) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    std::unique_ptr<Closure> callback;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "test.keepFormatCallback",
+        [&](VirtualMachine* active) {
+            callback = active->createClosure(&runtime, active->getCallableIdParameter(0));
+        },
+        {defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction(
+        "main",
+        "struct FormatCapturedPoint\nx = 7\ntext = \"owned\"\n"
+        "fun keep\n"
+        "test.keepFormatCallback fun\nreturn $\"{this} {this.x + 1} {this.text}\"\nend\n"
+        "this.x = 99\nend\nend\n"
+        "point = new FormatCapturedPoint\npoint.keep\nreturn 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_REQUIRE(callback != nullptr);
+        for (auto invocation = 0; invocation < 2; ++invocation) {
+            RuntimeValue result;
+            runtime.executeFunction(callback.get(), {}, result);
+            BOOST_TEST(result.getStringValue() == "FormatCapturedPoint 8 owned");
+            runtime.getStringType()->freeValue(&result);
+        }
+
+        callback.reset();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
 
 BOOST_AUTO_TEST_CASE(dynamic_format_operator_uses_live_expression_context)
 {

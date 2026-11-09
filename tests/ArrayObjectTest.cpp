@@ -78,7 +78,7 @@ public:
     explicit FailingElementType(Runtime* runtime, TypeId id): ClassType(runtime, id, "FailingElement", ClassMode::Closed) {}
 
     [[nodiscard]] NomadString getTypeName() const override;
-    void toString(const RuntimeValue& value, NomadString& text) const override;
+    void toString(const RuntimeValue* value, NomadString& text) const override;
     void initValue(RuntimeValue* value) const override;
     void freeValue(RuntimeValue* value) const noexcept override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
@@ -94,7 +94,7 @@ NomadString FailingElementType::getTypeName() const {
     return "FailingElement";
 }
 
-void FailingElementType::toString(const RuntimeValue&, NomadString& text) const {
+void FailingElementType::toString(const RuntimeValue*, NomadString& text) const {
     text = getTypeName();
 }
 
@@ -337,15 +337,18 @@ BOOST_AUTO_TEST_CASE(default_values_include_zero_primitives_and_empty_strings) {
         for (auto index = NomadInteger{0}; index < 2; ++index) {
             BOOST_TEST(ArrayValue(floatArray, index).getFloatValue() == 0.0f);
             BOOST_TEST(!ArrayValue(booleanArray, index).getBooleanValue());
-            BOOST_TEST(strings.toString(ArrayValue(stringArray, index)) == "");
+            const ArrayValue stringValue(stringArray, index);
+            BOOST_TEST(strings.toString(&stringValue) == "");
         }
         RuntimeValue text(NomadString{"hello"});
         stringArray.setValue(0, text);
         BOOST_TEST(text.getObjectValue()->getReferenceCount() == 2u);
         strings.freeValue(&text);
         stringArray.setValue(0, ArrayValue(stringArray, 0));
-        BOOST_TEST(strings.toString(ArrayValue(stringArray, 0)) == "hello");
-        BOOST_TEST(strings.toString(ArrayValue(stringArray, 1)) == "");
+        const ArrayValue firstValue(stringArray, 0);
+        const ArrayValue secondValue(stringArray, 1);
+        BOOST_TEST(strings.toString(&firstValue) == "hello");
+        BOOST_TEST(strings.toString(&secondValue) == "");
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }

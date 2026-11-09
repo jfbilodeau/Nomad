@@ -1243,7 +1243,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
         BOOST_TEST(grid->getDimensionSize(1) == 3u);
         RuntimeValue element;
         grid->getValue(1, 2, element);
-        BOOST_TEST(runtime.getStringType()->toString(element) == "");
+        BOOST_TEST(runtime.getStringType()->toString(&element) == "");
         runtime.getStringType()->freeValue(&element);
         evaluation.getVariableValue("volume")->asObject<Array3dObject>()->getValue(1, 2, 3, element);
         BOOST_TEST(element.getFloatValue() == 0.0f);
@@ -1910,7 +1910,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entrie
         explicit MapValueType(Runtime* runtime, TypeId id): ClassType(runtime, id, "MapValue", ClassMode::Closed) {}
 
         [[nodiscard]] NomadString getTypeName() const override { return "MapValue"; }
-        void toString(const RuntimeValue&, NomadString& text) const override { text = getTypeName(); }
+        void toString(const RuntimeValue*, NomadString& text) const override { text = getTypeName(); }
         void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (failCopy) {

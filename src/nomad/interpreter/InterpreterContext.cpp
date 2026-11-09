@@ -283,8 +283,7 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
         variables.push_back({
             m_function->getVariableName(variableId),
             variable->getType(),
-            variable->getType()->isStruct() ? variable->getType()->getTypeName() :
-                variable->getType()->toString(variable->getStorage().front())
+            variable->getType()->toString(variable->getStorage().data())
         });
     }
 

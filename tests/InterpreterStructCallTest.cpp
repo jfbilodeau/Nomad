@@ -1261,6 +1261,73 @@ BOOST_AUTO_TEST_CASE(closure_arguments_and_captures_are_copied_once_directly_int
     BOOST_TEST(probes == 24);
 }
 
+BOOST_AUTO_TEST_CASE(compiled_formatting_reuses_direct_frame_captures_and_cleans_partial_struct_copies) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    FailingCallCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
+        "FormattingCopyField",
+        ClassMode::Closed,
+        field
+    );
+    const auto valueId = runtime.registerStruct("FormattingCopyPair");
+    const auto* type = runtime.getTypeByName("FormattingCopyPair");
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    fixture.addFunction("renderCopyPair", "params value:FormattingCopyPair\nreturn $\"{value.first}\"");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            std::array<RuntimeValue, 2> source{
+                RuntimeValue{NomadString{"first formatted"}},
+                RuntimeValue{NomadString{"second formatted"}}
+            };
+            const InterpreterValue argument(type, source);
+            type->freeValue(source.data());
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            machine->pushInteger(1234);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            field->copyCount = 0;
+            {
+                const auto result = interpreter.runFunction(runtime.getFunctionId("renderCopyPair"), {&argument, 1});
+                BOOST_TEST(result.getValue().getStringValue() == "FormattingCopyField");
+                BOOST_TEST(field->copyCount == 4U);
+                BOOST_TEST(field->copySources[2] == field->copyDestinations[0]);
+                BOOST_TEST(field->copySources[3] == field->copyDestinations[1]);
+            }
+
+            const auto live = RuntimeValue::getLiveStringCount();
+            for (const auto failure : {NomadIndex{3}, NomadIndex{4}}) {
+                field->copyCount = 0;
+                field->failCopyAt = failure;
+                BOOST_CHECK_THROW(
+                    static_cast<void>(interpreter.runFunction(runtime.getFunctionId("renderCopyPair"), {&argument, 1})),
+                    NomadException
+                );
+                BOOST_TEST(argument.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(argument.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+            }
+
+            field->failCopyAt = 0;
+            machine->pop1();
+        }
+
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+}
+
 BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_result_snapshots) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();

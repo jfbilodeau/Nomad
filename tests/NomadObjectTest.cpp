@@ -58,7 +58,7 @@ public:
     explicit FailingCopyType(Runtime* runtime, TypeId id): ClassType(runtime, id, "FailingCopy", ClassMode::Closed) {}
 
     NomadString getTypeName() const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
 };
 
@@ -67,7 +67,7 @@ public:
     using ValueType::ValueType;
     void initValue(RuntimeValue* value) const override;
     NomadString getTypeName() const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
     void freeValue(RuntimeValue* value) const noexcept override;
 
@@ -82,7 +82,7 @@ NomadString UnmanagedType::getTypeName() const {
     return "Unmanaged";
 }
 
-void UnmanagedType::toString(const RuntimeValue&, NomadString& string) const {
+void UnmanagedType::toString(const RuntimeValue*, NomadString& string) const {
     string = getTypeName();
 }
 
@@ -98,7 +98,7 @@ NomadString FailingCopyType::getTypeName() const {
     return "FailingCopy";
 }
 
-void FailingCopyType::toString(const RuntimeValue&, NomadString& string) const {
+void FailingCopyType::toString(const RuntimeValue*, NomadString& string) const {
     string = getTypeName();
 }
 
@@ -153,7 +153,7 @@ public:
         }
     }
 
-    void toString(const RuntimeValue&, NomadString& string) const override {
+    void toString(const RuntimeValue*, NomadString& string) const override {
         string = getTypeName();
     }
 
@@ -693,7 +693,7 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
         explicit ConditionalCopyType(Runtime* runtime, TypeId id): ClassType(runtime, id, "ConditionalCopy", ClassMode::Closed) {}
 
         NomadString getTypeName() const override { return "ConditionalCopy"; }
-        void toString(const RuntimeValue&, NomadString& string) const override { string = getTypeName(); }
+        void toString(const RuntimeValue*, NomadString& string) const override { string = getTypeName(); }
         void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (failCopy) {

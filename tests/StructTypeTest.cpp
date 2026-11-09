@@ -4444,8 +4444,7 @@ BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_with
     BOOST_CHECK_THROW(type->emitStoreDynamicVariable(compiler, 0), NomadException);
     BOOST_CHECK_THROW(type->emitStoreContextVariable(compiler, 0), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
-    RuntimeValue unused;
-    BOOST_TEST(type->toString(unused) == "Empty");
+    BOOST_TEST(type->toString(nullptr) == "Empty");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

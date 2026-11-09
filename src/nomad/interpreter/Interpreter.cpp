@@ -715,6 +715,17 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     }
 }
 
+DynamicFormatResult formatDynamicString(
+    const NomadStringView format,
+    InterpreterContext& context,
+    const NomadStringView sourceName,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+
+    return context.getInterpreter().formatString(format, context, sourceName, line, column);
+}
+
 DynamicFormatResult Interpreter::formatString(
     const NomadStringView format,
     InterpreterContext& context,
@@ -744,7 +755,7 @@ DynamicFormatResult Interpreter::formatString(
         } else if (const auto value = evaluateFormatExpression(
             SourceText{NomadString{sourceName}, segment.text}, context, line
         )) {
-            result.text += value->getType()->toString(value->getValue());
+            result.text += value->getType()->toString(value->getStorage().data());
         } else {
             const auto diagnostics = context.getDiagnostics();
             const auto error = std::ranges::find_if(diagnostics, [](const Diagnostic& diagnostic) {

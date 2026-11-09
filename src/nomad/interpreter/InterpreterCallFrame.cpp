@@ -12,6 +12,65 @@ namespace nomad {
 
 InterpreterCallFrame::InterpreterCallFrame(
     VirtualMachine& machine,
+    const ScriptFunction& function
+):
+    InterpreterCallFrame(machine, function, function.getReturnType(), nullptr)
+{
+    const auto& captures = function.getCaptures();
+    const auto* parent = machine.getCurrentCallable();
+    if (
+        function.getParameterCount() != captures.size() ||
+        (!captures.empty() && (parent == nullptr || function.getParentId() != parent->getId()))
+    ) {
+        throw NomadBug("Compiled frame invocation requires captures from the active parent and no explicit arguments");
+    }
+
+    for (auto index = captures.size(); index > 0; --index) {
+        const auto& capture = captures[index - 1];
+        const auto size = capture.type->getSize();
+        switch (capture.source) {
+            case CaptureSource::Variable:
+                copyArgument(
+                    *capture.type,
+                    machine.getLocalStorage(parent->getVariableOffset(capture.variableId), size)
+                );
+                break;
+
+            case CaptureSource::Parameter:
+                copyArgument(
+                    *capture.type,
+                    machine.getParameterStorage(parent->getParameterOffset(capture.parameterId), size)
+                );
+                break;
+
+            case CaptureSource::Receiver:
+                if (capture.type->isStruct()) {
+                    std::span<const RuntimeValue> storage;
+                    if (size != 0) {
+                        const auto layout = parent->getCallStorageLayout();
+                        const auto pointer = machine.getParameterStorage(*layout.receiverOffset, 1);
+                        storage = {pointer[0].getStorageAddress(), size};
+                    }
+
+                    copyArgument(*capture.type, storage);
+                } else {
+                    RuntimeValue receiver;
+                    receiver.setObjectValue(machine.getScriptReceiver());
+                    copyArgument(*capture.type, std::span<const RuntimeValue>{&receiver, 1});
+                }
+
+                break;
+
+            default:
+                throw NomadBug("Invalid frame capture source");
+        }
+
+    }
+
+}
+
+InterpreterCallFrame::InterpreterCallFrame(
+    VirtualMachine& machine,
     const Callable& callable,
     const std::span<const InterpreterValue> arguments,
     const Type* resultType,

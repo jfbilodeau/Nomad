@@ -11,6 +11,7 @@ namespace nomad {
 
 class Callable;
 class Closure;
+class ScriptFunction;
 class Type;
 class VirtualMachine;
 
@@ -30,12 +31,17 @@ public:
         const Closure& closure,
         std::span<const RuntimeValue> arguments
     );
+    InterpreterCallFrame(
+        VirtualMachine& machine,
+        const ScriptFunction& function
+    );
     InterpreterCallFrame(const InterpreterCallFrame&) = delete;
     InterpreterCallFrame& operator=(const InterpreterCallFrame&) = delete;
     ~InterpreterCallFrame();
 
     [[nodiscard]] RuntimeValue* getDestination();
     [[nodiscard]] InterpreterValue getResult() const;
+    [[nodiscard]] std::span<const RuntimeValue> getResultStorage() const;
     // Transfers a scalar result without copying or retaining it.
     [[nodiscard]] RuntimeValue releaseResult();
     // A suspended scalar call keeps its owned arguments on the VM stack.
@@ -58,7 +64,6 @@ private:
     void copyArgument(const Type& type, std::span<const RuntimeValue> storage);
     void copyCaptures(const Closure& closure);
     void releaseArguments() noexcept;
-    [[nodiscard]] std::span<const RuntimeValue> getResultStorage() const;
 
     VirtualMachine& m_machine;
     const Type* m_resultType;

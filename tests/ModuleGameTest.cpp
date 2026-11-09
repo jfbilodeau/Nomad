@@ -198,7 +198,7 @@ BOOST_AUTO_TEST_CASE(debug_console_interprets_format_literal_arithmetic)
         BOOST_REQUIRE(context.getInterpreter().execute(source, context));
         BOOST_REQUIRE(context.getResult() != nullptr);
         if (!context.getResult()->getType()->isVoid()) {
-            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == "3");
+            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getStorage().data()) == "3");
         }
     }
 }

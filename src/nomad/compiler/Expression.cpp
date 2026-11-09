@@ -340,7 +340,7 @@ void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptCallableBase* 
 
 InterpreterValue DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
     const auto value = m_expression->evaluate(context);
-    const auto format = value.getType()->toString(value.getValue());
+    const auto format = value.getType()->toString(value.getStorage().data());
     const auto result = formatDynamicString(format, context, context.getCallable()->getPath(), getLine(), getColumn());
     RuntimeValue formatted;
     formatted.setStringValue(result.text);

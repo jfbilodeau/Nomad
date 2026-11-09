@@ -33,7 +33,7 @@ public:
     [[nodiscard]] NomadIndex getSize() const override;
     [[nodiscard]] const std::vector<const Type*>& getTypeArguments() const;
     [[nodiscard]] const ClassType* asClassType() const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
 
     void initValue(RuntimeValue* value) const override;
     void freeValue(RuntimeValue* value) const noexcept override;

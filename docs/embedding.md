@@ -1383,6 +1383,19 @@ use `assignValue` with disjoint scratch for overlapping replacement.
 Zero-slot lifecycle operations accept null pointers and access no slots.
 Formatting currently returns the type name without inspecting its fields.
 
+`Type::toString(const RuntimeValue* value, NomadString& text)` and the
+string-returning overload borrow the actual complete value storage:
+`getSize()` contiguous slots, with `nullptr` permitted only for a zero-sized
+value. For scalars/references, pass the address of their slot; for structs,
+pass the beginning of their complete storage. Do not pass a default value or
+copy just the first slot of a struct. The caller must keep storage and referenced
+objects alive throughout conversion. Conversion does not consume ownership.
+
+Custom type overrides must use the pointer signature rather than the previous
+`const RuntimeValue&` signature. Existing class/struct defaults still print
+the type name, but value-dependent overrides can inspect every slot. Rebuild
+custom native types/modules against the updated headers.
+
 This descriptor supports host-owned slot storage only. Every struct bytecode
 emission operation raises `NomadException`, including empty structs. Struct
 declarations, compiled/interpreted aggregate execution, native struct accessors,
@@ -2324,7 +2337,7 @@ void interpretInput() {
         return;
     }
     const auto* result = context.getResult();
-    std::cout << result->getType()->toString(result->getValue()) << '\n';
+    std::cout << result->getType()->toString(result->getStorage().data()) << '\n';
 }
 ```
 
@@ -2831,8 +2844,8 @@ context's result; source assignment
 statements separately publish their owned assignment snapshots.
 
 Method-backed native struct-valued properties support typed interpreter/host
-receiver access and compiled getter/setter calls. Struct captures and typed
-callback invocation are supported; field-aware struct formatting remains pending.
+receiver access and compiled getter/setter calls. Struct captures, typed callback
+invocation, and struct-aware format expressions are supported.
 
 ### Closure capture storage
 
@@ -2909,8 +2922,7 @@ also accept struct captures, so existing event/game callback adapters can invoke
 them without reading captures as scalars. These adapters retain their scalar/
 reference explicit-argument and scalar/reference/void result limits. Use the typed
 interpreter overload for aggregate explicit arguments or results. Scalar-only
-callbacks retain their suspension behavior. Field-aware formatting remains a
-subsequent slice.
+callbacks retain their suspension behavior.
 
 `VirtualMachine::run(closure, rawArgumentSpan)` provides the raw closure-call
 contract on a caller-owned VM. It borrows the explicit arguments and the closure's
@@ -2923,7 +2935,8 @@ The raw VM overload accepts only scalar/reference explicit arguments and
 scalar/reference/void results. Its completed result is owned by the VM result
 register; hosts copy or release it through the declared result type.
 
-For already prepared calls, `VirtualMachine::executeClosure(closure)` requires
+For already prepared calls, `VirtualMachine::executeFunction(function)` and
+`executeClosure(closure)` require
 the complete copied arguments and any hidden return pointer to be on the stack
 in the callable's physical layout. It executes the body without copying values.
 The caller owns argument/result cleanup. A `false` return denotes scalar
@@ -2931,6 +2944,21 @@ suspension, in which case argument slots must remain owned by the suspended VM.
 Synchronous completion and exceptions restore the enclosing execution frame;
 aggregate calls also preserve the prior yield state. This low-level entry point
 does not validate host arguments or allocate call storage.
+
+Compiled format literals use compiler-resolved lookups or generated compiled
+functions, executed directly by the VM. They do not construct an `Interpreter`
+or `InterpreterContext`. Their shared call-storage owner copies captures directly
+from the current VM frame into invocation slots, supplies complete return
+storage, and releases owned values after conversion. No capture-value vectors
+or intermediate result snapshots are required. Empty values pass a null storage
+pointer to conversion. Raw single-slot lookup APIs cannot provide multi-slot
+values and report an explicit storage error rather than supplying a dummy value.
+
+Dynamic templates and interpreted format literals use
+`Interpreter::formatString` to evaluate placeholder expressions. Both execution
+paths share type conversion and storage/lifetime machinery, not expression
+evaluation. The interim frame-context `Interpreter::runFunction` overload has
+been removed.
 
 ## Parameterized types
 
@@ -3728,6 +3756,18 @@ Its `DynamicFormatResult` contains partial text plus structured diagnostics for
 that template. Each diagnostic includes a message, source location, and zero-based
 byte offset and length in the template. Diagnostics are also logged; nested
 templates emit their own diagnostics.
+
+Whole structs format as their type name, matching ordinary class objects; fields
+are not enumerated, including for empty structs. Explicit fields such as
+`{point.x}` and `{player.location.name}` use ordinary expression evaluation and
+the field type's existing string conversion. Complete struct intermediates and
+returns never require scalar `InterpreterValue::getValue()` access.
+
+Compiled expression placeholders own captured struct copies. Mutating such a
+copy does not write back to the original struct, while contained class objects
+retain shared identity. Dynamic templates use live context/frame receivers.
+Both preserve left-to-right placeholder evaluation, existing diagnostics, and
+ownership of extracted strings and temporary results.
 
 Placeholders require exactly one non-void expression. Assignments, statements,
 and multiline input are rejected before execution. Placeholder evaluation retains

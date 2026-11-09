@@ -334,7 +334,7 @@ const std::vector<const Type*>& ClassType::getTypeArguments() const {
     return m_typeArguments;
 }
 
-void ClassType::toString(const RuntimeValue&, NomadString& string) const {
+void ClassType::toString(const RuntimeValue*, NomadString& string) const {
     string = CompositeType::getTypeName();
 }
 

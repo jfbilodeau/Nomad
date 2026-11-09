@@ -145,7 +145,7 @@ FunctionOutcome invokeStoredClosure(Runtime& runtime, const CallbackStore& store
 
     if (returnType != nullptr && !returnType->isVoid()) {
         outcome.returnTypeName = returnType->getTypeName();
-        outcome.text = returnType->toString(result);
+        outcome.text = returnType->toString(&result);
 
         if (returnType == runtime.getIntegerType()) {
             outcome.integerValue = result.getIntegerValue();
