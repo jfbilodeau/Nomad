@@ -91,6 +91,9 @@ public:
     }
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
+    void run(const Closure& closure, std::span<const RuntimeValue> arguments);
+    // Caller owns prepared argument/result slots; false means scalar suspension, so arguments must stay live.
+    [[nodiscard]] bool executeClosure(const Closure& closure);
     // Compiler-verified constructor and body; arguments are owned stack copies the caller frees/pops.
     [[nodiscard]] NomadObject* createNativeObject(CallableId constructorId);
     [[nodiscard]] NomadObject* createScriptObject(CallableId constructorId);

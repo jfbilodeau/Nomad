@@ -4056,16 +4056,15 @@ Approved scope:
 Implementation:
 
 - The typed overload validates the registered compiled target and explicit count,
-  combines explicit values with complete typed capture snapshots, and reuses
-  existing signature validation and call frames. Scalar-only calls use the
-  existing script suspension path; aggregate calls restore enclosing execution
-  state and reject yielding.
+  validates explicit arguments and capture spans separately, and reuses existing
+  signature validation and call frames. Scalar-only calls preserve script
+  suspension; aggregate calls restore enclosing execution state and reject yielding.
 - Removed the compiler's struct-capture rejection. Existing capture propagation
   and complete frame snapshots support locals, parameters, zero/one/many-slot
   captures, nested structs, and value-semantic struct receivers.
-- Runtime raw closure adapters dispatch struct captures through the typed API.
-  Raw explicit argument/result restrictions are checked before execution; scalar
-  callback consumers retain their existing path.
+- Runtime raw closure adapters delegate to VM closure dispatch without converting
+  their arguments into typed value collections. Raw explicit argument/result
+  restrictions are checked before execution; scalar callbacks retain suspension.
 - Tests cover independent captured/source/parameter values, repeated invocation,
   nested propagation, shared class fields, copied and empty struct `this`, owned
   aggregate/empty/void results, VM/closure-independent result lifetime, native
@@ -4092,6 +4091,61 @@ Validation:
 Next, after review: field-aware static/dynamic formatting and remaining host
 parity, then conservative NRVO after Step 5 approval. Final tooling/documentation
 and integration checks follow. Fatal VM fault cleanup remains deferred.
+
+### Step 5H2 follow-up: Direct invocation copies from capture storage
+
+Approved scope:
+
+- Remove repeated argument-vector construction from Runtime and typed closure
+  invocation. Read explicit arguments and existing closure capture spans
+  separately, copying each value once directly into reserved invocation slots.
+- Preserve captured snapshots, independent parameters, ownership cleanup,
+  scalar suspension, synchronous aggregate calls, and the existing raw host
+  argument/result limits. Do not start formatting work or add opcodes.
+- Add exact copy-count and source/destination-address regressions, update related
+  documentation, build/test, and stop for review without committing.
+
+Implementation:
+
+- Runtime's closure adapter delegates directly to `VirtualMachine::run(closure,
+  rawArguments)`; the raw-to-typed argument vector and scalar capture vector are
+  removed. The raw result is transferred without an intermediate typed snapshot.
+- Typed closure invocation validates borrowed explicit/capture spans independently
+  instead of building combined value vectors or converting them to raw vectors.
+- The existing call-frame owner reserves cleared VM argument slots before copying
+  and records cleanup metadata, not another argument value buffer. Explicit
+  values and captures copy directly to those slots. Partial construction releases
+  completed/partial copies and restores the original registers/stack.
+- Prepared closure execution is shared by raw and typed entry points. Suspended
+  scalar calls retain their argument slots; synchronous completion/failure
+  releases them normally and preserves enclosing execution state.
+- Tests verify exactly one copy per argument/captured field, with original
+  argument/capture addresses as sources and actual VM slot addresses as
+  destinations. They cover scalar and struct captures, raw and typed callers,
+  repeated calls, mutation isolation, raw/typed partial-copy failures, and zero
+  argument copies when the full physical argument range will not fit.
+- A two-field captured struct returned by value now requires four field-copy
+  operations (two invocation copies and two result copies), with no intermediate
+  capture snapshots. This is copy-count evidence, not a measured runtime speedup.
+
+Validation:
+
+- The automatic build and targeted language/remaining groups passed on the first
+  run. All six CTest unit groups, script staging, compiler exports, LSP process,
+  and module-runtime integration checks then passed.
+- Exact copy counts and direct source/VM-destination address assertions passed
+  for scalar and struct captures through raw and typed entry points. Two-field
+  captured struct results require exactly four field-copy operations.
+- Repeated invocation, argument/capture isolation, partial-copy failures, zero
+  copies on argument stack overflow, scalar suspension through typed/raw/Runtime
+  entry points, and existing aggregate yield restrictions passed. Repeated
+  ownership scenarios restore live string/object counts.
+- Four documentation preparation tests, generated strict MkDocs build, and
+  whitespace checks passed. Gameplay and performance were not validated.
+- Stop for review without committing or starting the next plan slice.
+
+Next, after review: field-aware formatting and remaining host parity, then
+conservative NRVO after Step 5 approval. Fatal VM fault cleanup remains deferred.
 
 ### Step 6: Conservative named return-value optimization
 

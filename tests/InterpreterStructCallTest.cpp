@@ -71,6 +71,11 @@ public:
     }
 
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
+        if (copyCount < copySources.size()) {
+            copySources[copyCount] = source;
+            copyDestinations[copyCount] = destination;
+        }
+
         ClassType::copyValue(source, destination);
         if (++copyCount == failCopyAt) {
             throw NomadException("Call copy failed");
@@ -78,6 +83,8 @@ public:
     }
 
     mutable NomadIndex copyCount = 0;
+    mutable std::array<const RuntimeValue*, 8> copySources{};
+    mutable std::array<RuntimeValue*, 8> copyDestinations{};
     NomadIndex failCopyAt = 0;
     bool failInitialization = false;
 };
@@ -1087,6 +1094,173 @@ BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_
     }
 }
 
+BOOST_AUTO_TEST_CASE(closure_arguments_and_captures_are_copied_once_directly_into_vm_storage) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    FailingCallCopyType* field = nullptr;
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
+        "DirectClosureField",
+        ClassMode::Closed,
+        field
+    );
+    const auto valueId = runtime.registerStruct("DirectClosurePair");
+    const auto* type = runtime.getTypeByName("DirectClosurePair");
+    BOOST_REQUIRE(fieldId.isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeDirectClosurePair",
+        [](VirtualMachine* active) {
+            active->getStorageParameter(0, 0).setStringValue("first capture");
+            active->getStorageParameter(0, 1).setStringValue("second capture");
+        },
+        {},
+        type,
+        ""
+    ).isValid());
+    std::vector<std::unique_ptr<Closure>> callbacks;
+    const Closure* activeClosure = nullptr;
+    const RuntimeValue* explicitSource = nullptr;
+    auto probes = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "keepDirectClosure",
+        [&](VirtualMachine* active) {
+            callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
+        },
+        {defParameter("callback", runtime.getCallbackType({field}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "inspectDirectClosureCopies",
+        [&](VirtualMachine* active) {
+            ++probes;
+            const auto* function = activeClosure->getFunction();
+            const auto capture = activeClosure->getCaptureStorage(0);
+            const auto destination = active->getEnclosingParameterStorage(
+                function->getParameterOffset(1),
+                capture.size()
+            );
+            BOOST_TEST(field->copyCount == capture.size() + 1);
+            for (auto index = NomadIndex{0}; index < capture.size(); ++index) {
+                BOOST_TEST(field->copySources[index] == capture.data() + index);
+                BOOST_TEST(field->copyDestinations[index] == destination.data() + index);
+            }
+
+            BOOST_TEST(field->copySources[capture.size()] == explicitSource);
+            BOOST_TEST(field->copyDestinations[capture.size()] ==
+                active->getEnclosingParameterStorage(function->getParameterOffset(0), 1).data());
+            BOOST_TEST(destination.data() != capture.data());
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction(
+        "main",
+        "captured = makeDirectClosurePair\n"
+        "keepDirectClosure fun value\ninspectDirectClosureCopies\n"
+        "captured.first = value\nvalue = captured.second\nreturn 17\nend\n"
+        "scalar = captured.first\n"
+        "keepDirectClosure fun value\ninspectDirectClosureCopies\nvalue = scalar\nreturn 17\nend\n"
+        "return 0"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        {
+            const auto outcome = fixture.execute("main");
+            BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+            BOOST_REQUIRE(callbacks.size() == 2U);
+            RuntimeValue source{NomadString{"explicit argument"}};
+            const InterpreterValue argument(field, source);
+            source.freeObjectValue();
+            const std::vector<RuntimeValue> rawArguments{argument.getValue()};
+            auto machine = runtime.createVirtualMachine();
+            const Interpreter interpreter(*machine);
+            machine->pushInteger(1234);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            for (const auto& callback : callbacks) {
+                activeClosure = callback.get();
+                const auto expectedCopies = callback->getCaptureStorage(0).size() + 1;
+                for (auto invocation = 0; invocation < 2; ++invocation) {
+                    field->copyCount = 0;
+                    explicitSource = argument.getStorage().data();
+                    BOOST_TEST(interpreter.runFunction(*callback, {&argument, 1}).getValue().getIntegerValue() == 17);
+                    BOOST_TEST(field->copyCount == expectedCopies);
+                    field->copyCount = 0;
+                    explicitSource = rawArguments.data();
+                    RuntimeValue result;
+                    runtime.executeFunction(callback.get(), rawArguments, result);
+                    BOOST_TEST(result.getIntegerValue() == 17);
+                    BOOST_TEST(field->copyCount == expectedCopies);
+                    BOOST_TEST(argument.getValue().getStringValue() == "explicit argument");
+                    BOOST_TEST(argument.getValue().getObjectValue()->getReferenceCount() == 1U);
+                    BOOST_TEST(callback->getCaptureStorage(0)[0].getStringValue() == "first capture");
+                    BOOST_TEST(machine->getIntegerResult() == 41);
+                    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                    BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                }
+
+                const auto live = RuntimeValue::getLiveStringCount();
+                for (auto failure = NomadIndex{1}; failure <= expectedCopies; ++failure) {
+                    field->copyCount = 0;
+                    field->failCopyAt = failure;
+                    BOOST_CHECK_THROW(
+                        static_cast<void>(interpreter.runFunction(*callback, {&argument, 1})),
+                        NomadException
+                    );
+                    field->copyCount = 0;
+                    RuntimeValue result{NomadInteger{71}};
+                    BOOST_CHECK_THROW(runtime.executeFunction(callback.get(), rawArguments, result), NomadException);
+                    BOOST_TEST(result.getIntegerValue() == 71);
+                    BOOST_TEST(argument.getValue().getObjectValue()->getReferenceCount() == 1U);
+                    BOOST_TEST(RuntimeValue::getLiveStringCount() == live);
+                    BOOST_TEST(machine->getIntegerResult() == 41);
+                    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                    BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                }
+
+                field->failCopyAt = 0;
+            }
+
+            {
+                VirtualMachine smallMachine(&runtime, 3);
+                const Interpreter smallInterpreter(smallMachine);
+                smallMachine.pushInteger(4321);
+                field->copyCount = 0;
+                BOOST_CHECK_EXCEPTION(
+                    static_cast<void>(smallInterpreter.runFunction(*callbacks[0], {&argument, 1})),
+                    VirtualMachineException,
+                    [](const auto& error) { return NomadString{error.what()} == "Stack overflow"; }
+                );
+                BOOST_TEST(field->copyCount == 0U);
+                BOOST_TEST(smallMachine.peekStack(0).getIntegerValue() == 4321);
+                field->copyCount = 0;
+                BOOST_CHECK_EXCEPTION(
+                    smallMachine.run(*callbacks[0], rawArguments),
+                    VirtualMachineException,
+                    [](const auto& error) { return NomadString{error.what()} == "Stack overflow"; }
+                );
+                BOOST_TEST(field->copyCount == 0U);
+                BOOST_TEST(smallMachine.peekStack(0).getIntegerValue() == 4321);
+                smallMachine.pop1();
+            }
+
+            machine->pop1();
+        }
+
+        callbacks.clear();
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+    BOOST_TEST(probes == 24);
+}
+
 BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_result_snapshots) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
@@ -1148,7 +1322,7 @@ BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_r
             }
 
             const auto copyStages = field->copyCount;
-            BOOST_REQUIRE(copyStages > 0U);
+            BOOST_TEST(copyStages == 4U);
             const auto live = RuntimeValue::getLiveStringCount();
             for (auto failure = NomadIndex{1}; failure <= copyStages; ++failure) {
                 field->copyCount = 0;

@@ -34,6 +34,34 @@ namespace nomad {
 
 namespace {
 
+void validateCallArgument(
+    const Runtime& runtime,
+    const Callable& callable,
+    const Parameter& parameter,
+    const Type* argumentType,
+    const std::span<const RuntimeValue> storage
+) {
+    if (parameter.type == nullptr) {
+        throw std::invalid_argument(
+            "Callable '" + callable.getName() + "' has an unresolved parameter type"
+        );
+    }
+
+    if (
+        argumentType == nullptr ||
+        argumentType->getRuntime() != &runtime ||
+        parameter.type->getRuntime() != &runtime ||
+        !parameter.type->acceptsArgument(argumentType)
+    ) {
+        throw std::invalid_argument("Argument type mismatch for parameter '" + parameter.name + "'");
+    }
+
+    if (storage.size() != parameter.getStackValueCount()) {
+        throw std::invalid_argument("Argument storage mismatch for parameter '" + parameter.name + "'");
+    }
+
+}
+
 void validateCallArguments(
     const Runtime& runtime,
     const Callable& callable,
@@ -46,19 +74,15 @@ void validateCallArguments(
         throw std::invalid_argument("Incorrect argument count for callable '" + callable.getName() + "'");
     }
     for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
-        const auto& parameter = callable.getParameters()[index];
-        const auto* argumentType = arguments[index].getType();
-        if (parameter.type == nullptr) {
-            throw std::invalid_argument("Callable '" + callable.getName() + "' has an unresolved parameter type");
-        }
-        if (argumentType == nullptr || argumentType->getRuntime() != &runtime ||
-            parameter.type->getRuntime() != &runtime || !parameter.type->acceptsArgument(argumentType)) {
-            throw std::invalid_argument("Argument type mismatch for parameter '" + parameter.name + "'");
-        }
-        if (arguments[index].getStorage().size() != parameter.getStackValueCount()) {
-            throw std::invalid_argument("Argument storage mismatch for parameter '" + parameter.name + "'");
-        }
+        validateCallArgument(
+            runtime,
+            callable,
+            callable.getParameters()[index],
+            arguments[index].getType(),
+            arguments[index].getStorage()
+        );
     }
+
 }
 
 const Type* validateMethodReceiver(
@@ -316,52 +340,34 @@ InterpreterValue Interpreter::runFunction(
         throw std::invalid_argument("Incorrect explicit argument or capture count for closure");
     }
 
-    std::vector<InterpreterValue> values(arguments.begin(), arguments.end());
-    values.reserve(function->getParameterCount());
-    for (auto index = NomadIndex{0}; index < captureCount; ++index) {
-        values.emplace_back(closure.getCaptureType(index), closure.getCaptureStorage(index));
-    }
-
-    validateCallArguments(*machine.getRuntime(), *function, values);
     const auto* type = function->getReturnType();
-    if (
-        !type->isStruct() &&
-        std::ranges::none_of(values, [](const auto& value) {
-
-            return value.getType()->isStruct();
-        })
-    ) {
-        std::vector<RuntimeValue> explicitValues;
-        std::vector<RuntimeValue> captures;
-        explicitValues.reserve(arguments.size());
-        captures.reserve(captureCount);
-        for (auto index = NomadIndex{0}; index < values.size(); ++index) {
-            if (index < arguments.size()) {
-                explicitValues.push_back(values[index].getValue());
-            } else {
-                captures.push_back(values[index].getValue());
-            }
-
-        }
-
-        const RegisterRestoration registers(machine);
-        machine.setResult(RuntimeValue{});
-        machine.run(function, explicitValues, captures);
-        try {
-            InterpreterValue result(type, machine.getResult());
-            type->freeValue(&machine.getResult());
-
-            return result;
-        } catch (...) {
-            type->freeValue(&machine.getResult());
-            throw;
-        }
-
+    if (type == nullptr) {
+        throw std::invalid_argument("Closure has an unresolved return type");
     }
 
-    InterpreterCallFrame frame(machine, *function, values, type);
-    if (!runScriptCallable(*function)) {
-        machine.fault("Aggregate closure calls cannot yield");
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        validateCallArgument(
+            *machine.getRuntime(),
+            *function,
+            function->getParameters()[index],
+            arguments[index].getType(),
+            arguments[index].getStorage()
+        );
+    }
+
+    for (auto index = NomadIndex{0}; index < captureCount; ++index) {
+        validateCallArgument(
+            *machine.getRuntime(),
+            *function,
+            function->getParameters()[arguments.size() + index],
+            closure.getCaptureType(index),
+            closure.getCaptureStorage(index)
+        );
+    }
+
+    InterpreterCallFrame frame(machine, *function, arguments, type, nullptr, &closure);
+    if (!machine.executeClosure(closure)) {
+        frame.releaseArgumentsToVirtualMachine();
     }
 
     return frame.getResult();

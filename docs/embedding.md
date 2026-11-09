@@ -2908,9 +2908,29 @@ not rolled back. Fatal VM fault recovery remains unsupported.
 also accept struct captures, so existing event/game callback adapters can invoke
 them without reading captures as scalars. These adapters retain their scalar/
 reference explicit-argument and scalar/reference/void result limits. Use the typed
-interpreter overload for aggregate explicit arguments or results. The legacy
-scalar-only callback dispatch path is unchanged. Field-aware formatting remains
-a subsequent slice.
+interpreter overload for aggregate explicit arguments or results. Scalar-only
+callbacks retain their suspension behavior. Field-aware formatting remains a
+subsequent slice.
+
+`VirtualMachine::run(closure, rawArgumentSpan)` provides the raw closure-call
+contract on a caller-owned VM. It borrows the explicit arguments and the closure's
+capture spans, copying each value directly into its invocation stack storage.
+Typed closure calls follow the same ownership rule: each explicit argument and
+capture receives one owned invocation copy, not an intermediate value snapshot.
+Argument mutation cannot alter the closure's storage. Empty captures contribute
+no slots, and insufficient argument stack capacity is reported before copying.
+The raw VM overload accepts only scalar/reference explicit arguments and
+scalar/reference/void results. Its completed result is owned by the VM result
+register; hosts copy or release it through the declared result type.
+
+For already prepared calls, `VirtualMachine::executeClosure(closure)` requires
+the complete copied arguments and any hidden return pointer to be on the stack
+in the callable's physical layout. It executes the body without copying values.
+The caller owns argument/result cleanup. A `false` return denotes scalar
+suspension, in which case argument slots must remain owned by the suspended VM.
+Synchronous completion and exceptions restore the enclosing execution frame;
+aggregate calls also preserve the prior yield state. This low-level entry point
+does not validate host arguments or allocate call storage.
 
 ## Parameterized types
 

@@ -5,6 +5,7 @@
 #include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include <stdexcept>
 #include <utility>
 
 #ifdef NOMAD_DEBUG
@@ -209,6 +211,118 @@ void VirtualMachine::run(
     } else {
         m_running = false;
     }
+}
+
+void VirtualMachine::run(
+    const Closure& closure,
+    const std::span<const RuntimeValue> arguments
+) {
+    const auto* function = closure.getFunction();
+    if (
+        m_runtime->getScriptFunction(function->getId()) != function ||
+        function->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        function->getFunctionStart() >= function->getFunctionEnd()
+    ) {
+        throw std::invalid_argument(
+            "Closure requires a compiled script function in the virtual machine's runtime"
+        );
+    }
+
+    const auto captureCount = closure.getCaptureCount();
+    if (
+        captureCount != function->getCaptureCount() ||
+        captureCount > function->getParameterCount() ||
+        arguments.size() != function->getParameterCount() - captureCount
+    ) {
+        throw std::invalid_argument("Incorrect explicit argument or capture count for closure");
+    }
+
+    const auto* returnType = function->getReturnType();
+    if (returnType == nullptr || returnType->isStruct()) {
+        throw std::invalid_argument("Raw closure calls require a scalar, reference, or void result");
+    }
+
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        const auto& parameter = function->getParameters()[index];
+        const auto* type = parameter.type;
+        if (
+            type == nullptr ||
+            type->isStruct() ||
+            type->getSize() != 1 ||
+            parameter.getStackValueCount() != 1
+        ) {
+            throw std::invalid_argument("Raw closure arguments require scalar or reference storage");
+        }
+
+    }
+
+    for (auto index = NomadIndex{0}; index < captureCount; ++index) {
+        const auto& parameter = function->getParameters()[arguments.size() + index];
+        if (
+            parameter.type != closure.getCaptureType(index) ||
+            parameter.getStackValueCount() != closure.getCaptureStorage(index).size()
+        ) {
+            throw std::invalid_argument("Closure capture storage does not match the callable");
+        }
+
+    }
+
+    RuntimeValue result;
+    {
+        InterpreterCallFrame frame(*this, closure, arguments);
+        if (!executeClosure(closure)) {
+            frame.releaseArgumentsToVirtualMachine();
+        }
+
+        result = frame.releaseResult();
+    }
+
+    m_result = result;
+}
+
+bool VirtualMachine::executeClosure(const Closure& closure) {
+    const auto* function = closure.getFunction();
+    const auto synchronous = function->getReturnType()->isStruct() || std::ranges::any_of(
+        function->getParameters(),
+        [](const auto& parameter) {
+
+            return parameter.type->isStruct();
+        }
+    );
+    const auto state = beginScriptRun();
+    try {
+        callScriptFunction(function->getFunctionStart());
+        executeScript();
+        if (m_yielded && synchronous) {
+            fault("Aggregate closure calls cannot yield");
+        }
+
+        if (m_yielded && m_this.getObjectValue() != nullptr) {
+            fault("Class initialization or construction cannot yield");
+        }
+    } catch (...) {
+        if (synchronous) {
+            restoreExecutionState(state);
+        } else {
+            m_yielded = false;
+            restoreScriptRun(state);
+        }
+
+        throw;
+    }
+
+    const auto completed = !m_yielded;
+    if (completed) {
+        if (synchronous) {
+            restoreExecutionState(state);
+        } else {
+            restoreScriptRun(state);
+        }
+    } else {
+        m_running = false;
+    }
+
+    return completed;
 }
 
 VirtualMachine::ExecutionState VirtualMachine::beginScriptRun() {

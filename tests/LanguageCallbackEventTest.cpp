@@ -547,6 +547,18 @@ BOOST_AUTO_TEST_CASE(aggregate_callbacks_are_synchronous_while_scalar_callbacks_
         [](const auto& error) { return NomadString{error.what()} == "Aggregate closure calls cannot yield"; }
     );
     BOOST_TEST(rawResult.getIntegerValue() == 71);
+    {
+        auto machine = runtime.createVirtualMachine();
+        const auto before = machine->captureExecutionState();
+        machine->run(*callbacks[2], std::span<const RuntimeValue>{});
+        BOOST_TEST(machine->getIntegerResult() == 37);
+        BOOST_TEST(machine->hasYielded());
+        BOOST_TEST(!machine->isRunning());
+        BOOST_TEST(machine->captureExecutionState().stackIndex > before.stackIndex);
+    }
+
+    runtime.executeFunction(callbacks[2].get(), {}, rawResult);
+    BOOST_TEST(rawResult.getIntegerValue() == 37);
 }
 
 BOOST_AUTO_TEST_CASE(event_callback_adapters_copy_struct_captures_and_release_them_after_failures) {

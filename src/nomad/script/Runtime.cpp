@@ -4,8 +4,6 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
-#include <nomad/interpreter/Interpreter.hpp>
-
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/EnumType.hpp>
@@ -24,7 +22,6 @@
 #include <boost/json/array.hpp>
 
 #include <algorithm>
-#include <stdexcept>
 #include <utility>
 
 namespace nomad {
@@ -2874,55 +2871,7 @@ const ScriptFunction* Runtime::runClosure(
         return nullptr;
     }
 
-    const auto hasStructCaptures = std::ranges::any_of(
-        function->getCaptures(),
-        [](const auto& capture) {
-            return capture.type->isStruct();
-        }
-    );
-
-    if (hasStructCaptures) {
-        const auto* returnType = function->getReturnType();
-
-        if (returnType == nullptr || returnType->isStruct()) {
-            throw std::invalid_argument("Raw closure calls require a scalar, reference, or void result");
-        }
-
-        const auto explicitCount = function->getParameterCount() - function->getCaptureCount();
-
-        if (args.size() != explicitCount) {
-            throw std::invalid_argument("Incorrect explicit argument count for raw closure call");
-        }
-
-        std::vector<InterpreterValue> arguments;
-
-        arguments.reserve(args.size());
-
-        for (auto index = NomadIndex{0}; index < args.size(); ++index) {
-            const auto* type = function->getParameterType(toNomadId(index));
-            if (type == nullptr || type->isStruct() || type->getSize() != 1) {
-                throw std::invalid_argument("Raw closure arguments require scalar or reference storage");
-            }
-
-            arguments.emplace_back(type, args[index]);
-        }
-
-        const Interpreter interpreter(*m_virtualMachine);
-        const auto result = interpreter.runFunction(*closure, arguments);
-        m_virtualMachine->setResult(RuntimeValue{});
-        if (!returnType->isVoid()) {
-            returnType->copyValue(result.getStorage().data(), &m_virtualMachine->getResult());
-        }
-
-        return function;
-    }
-
-    std::vector<RuntimeValue> captures;
-    for (NomadIndex i = 0; i < closure->getCaptureCount(); ++i) {
-        captures.push_back(closure->getCaptureValue(i));
-    }
-
-    m_virtualMachine->run(function, args, captures);
+    m_virtualMachine->run(*closure, args);
 
     return function;
 }
