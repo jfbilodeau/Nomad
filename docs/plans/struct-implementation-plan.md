@@ -63,6 +63,11 @@ with direct frame capture binding; dynamic templates use the interpreter.
 String conversion borrows complete `const RuntimeValue*` storage, not a dummy
 value or first-slot copy. The reviewed correction is implemented and validated,
 awaiting review.
+Call-frame result access now exposes borrowed writable slots through
+`RuntimeValue* getResult() const` and their count through
+`NomadIndex getResultSize() const`. Void and empty struct results use null/zero;
+interpreter host calls continue returning independent owned values. This API
+cleanup is implemented and validated, awaiting review.
 Architecture choices not explicitly approved remain proposals; stop for review
 after each slice.
 
@@ -4268,6 +4273,44 @@ Validation:
 Next, after review: remaining host parity and Step 5 completion review, then
 conservative NRVO and final integration/tooling/documentation checks. Richer
 format representations and fatal VM fault cleanup remain deferred.
+
+### Step 5I follow-up: Unified call-frame result access
+
+Approved scope:
+
+- Replace call-frame result snapshots and storage views with
+  `RuntimeValue* getResult() const` and `NomadIndex getResultSize() const`.
+- Remove `getDestination()` and use the same result pointer for construction,
+  return destinations, and reading completed results.
+- Preserve owned interpreter results, compiled formatting behavior, and cleanup;
+  build/test and stop for review without committing.
+
+Result contract:
+
+- Scalar/reference results borrow one writable VM result-register slot.
+  Struct results borrow their complete frame-owned writable storage.
+- Void and empty structs return `nullptr` and zero slots.
+- Access does not copy values, retain references, or transfer ownership.
+  Borrowed slots must not outlive their frame.
+- Interpreter calls explicitly create owned snapshots before frame destruction.
+  Compiled formatting converts the borrowed result directly.
+
+Validation:
+
+- The development build and final test-target rebuild succeeded.
+- Language and remaining CTest unit groups passed. The new direct-frame
+  regression covers const-frame writable access, scalar register identity,
+  complete struct storage and return-destination identity, empty/void values,
+  stable struct addresses, nested register restoration, independent snapshots,
+  reference counts, and string cleanup.
+- Initial regression assertions incorrectly assumed an active native parameter
+  frame and a stack return slot for an empty struct. Correcting those test
+  assumptions produced a passing remaining group; no production fix was needed.
+- Gameplay and performance were not validated.
+
+Next, after review: assess remaining host parity and approve Step 5 completion;
+then agree conservative NRVO eligibility for Step 6. Step 7 final
+tooling/documentation and integration checks remain pending.
 
 ### Step 6: Conservative named return-value optimization
 

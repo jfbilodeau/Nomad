@@ -91,7 +91,7 @@ NomadString FormatString::format(VirtualMachine* machine) const {
         }
 
         machine->restoreExecutionState(state);
-        string += segment.valueType->toString(frame.getResultStorage().data());
+        string += segment.valueType->toString(frame.getResult());
     };
 
     for (auto const& segment: m_segments) {

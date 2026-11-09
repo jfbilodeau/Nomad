@@ -277,7 +277,7 @@ InterpreterValue Interpreter::runFunction(
     if (native != nullptr) {
         InterpreterCallFrame frame(machine, *function, arguments, type);
         runNativeCallable(native->getFn());
-        return frame.getResult();
+        return InterpreterValue(type, std::span<const RuntimeValue>{frame.getResult(), frame.getResultSize()});
     }
 
     const auto* script = function->asScriptFunction();
@@ -312,7 +312,7 @@ InterpreterValue Interpreter::runFunction(
     if (!runScriptCallable(*script)) {
         machine.fault("Aggregate script calls cannot yield");
     }
-    return frame.getResult();
+    return InterpreterValue(type, std::span<const RuntimeValue>{frame.getResult(), frame.getResultSize()});
 }
 
 InterpreterValue Interpreter::runFunction(
@@ -370,7 +370,7 @@ InterpreterValue Interpreter::runFunction(
         frame.releaseArgumentsToVirtualMachine();
     }
 
-    return frame.getResult();
+    return InterpreterValue(type, std::span<const RuntimeValue>{frame.getResult(), frame.getResultSize()});
 }
 
 bool Interpreter::runScriptCallable(
@@ -493,7 +493,10 @@ InterpreterValue Interpreter::runObjectMethod(
     } else {
         runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
     }
-    return frame.getResult();
+    return InterpreterValue(
+        method.getReturnType(),
+        std::span<const RuntimeValue>{frame.getResult(), frame.getResultSize()}
+    );
 }
 
 StructMethodResult Interpreter::runStructMethod(
@@ -506,7 +509,10 @@ StructMethodResult Interpreter::runStructMethod(
     InterpreterStorage storage(receiver.getType(), receiver.getStorage());
     InterpreterCallFrame frame(machine, method, arguments, method.getReturnType(), storage.getMutableStorage().data());
     runStructMethod(method);
-    return {InterpreterValue(receiver.getType(), storage.getStorage()), frame.getResult()};
+    return {
+        InterpreterValue(receiver.getType(), storage.getStorage()),
+        InterpreterValue(method.getReturnType(), std::span<const RuntimeValue>{frame.getResult(), frame.getResultSize()})
+    };
 }
 
 InterpreterValue Interpreter::runStructMethod(
@@ -521,7 +527,10 @@ InterpreterValue Interpreter::runStructMethod(
     }
     InterpreterCallFrame frame(m_virtualMachine, method, arguments, method.getReturnType(), receiverStorage.data());
     runStructMethod(method);
-    return frame.getResult();
+    return InterpreterValue(
+        method.getReturnType(),
+        std::span<const RuntimeValue>{frame.getResult(), frame.getResultSize()}
+    );
 }
 
 InterpreterValue Interpreter::construct(
@@ -547,11 +556,11 @@ InterpreterValue Interpreter::construct(
     InterpreterCallFrame frame(machine, *constructor, arguments, type);
     if (type->isStruct()) {
         if (constructor->asNativeConstructor() != nullptr) {
-            machine.createNativeStruct(frame.getDestination(), constructorId);
+            machine.createNativeStruct(frame.getResult(), constructorId);
         } else {
-            machine.createScriptStruct(frame.getDestination(), constructorId);
+            machine.createScriptStruct(frame.getResult(), constructorId);
         }
-        return frame.getResult();
+        return InterpreterValue(type, std::span<const RuntimeValue>{frame.getResult(), frame.getResultSize()});
     }
     auto* created = constructor->asNativeConstructor() != nullptr
         ? machine.createNativeObject(constructorId)

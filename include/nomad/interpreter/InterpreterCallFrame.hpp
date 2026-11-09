@@ -39,9 +39,9 @@ public:
     InterpreterCallFrame& operator=(const InterpreterCallFrame&) = delete;
     ~InterpreterCallFrame();
 
-    [[nodiscard]] RuntimeValue* getDestination();
-    [[nodiscard]] InterpreterValue getResult() const;
-    [[nodiscard]] std::span<const RuntimeValue> getResultStorage() const;
+    // Borrows writable result slots until frame destruction; zero-sized results use nullptr.
+    [[nodiscard]] RuntimeValue* getResult() const;
+    [[nodiscard]] NomadIndex getResultSize() const;
     // Transfers a scalar result without copying or retaining it.
     [[nodiscard]] RuntimeValue releaseResult();
     // A suspended scalar call keeps its owned arguments on the VM stack.
@@ -69,7 +69,7 @@ private:
     const Type* m_resultType;
     RuntimeValue m_savedResult;
     RuntimeValue m_savedIntermediate;
-    std::vector<RuntimeValue> m_resultStorage;
+    mutable std::vector<RuntimeValue> m_resultStorage;
     std::span<RuntimeValue> m_argumentStorage;
     std::vector<ArgumentStorage> m_arguments;
     NomadIndex m_argumentOffset = 0;

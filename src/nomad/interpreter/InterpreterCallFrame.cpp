@@ -158,13 +158,13 @@ InterpreterCallFrame::InterpreterCallFrame(
 
     if (layout.returnOffset.has_value()) {
         m_argumentStorage[layout.stackSlotCount - 1 - *layout.returnOffset].setStorageAddress(
-            getDestination()
+            getResult()
         );
     }
 
     if (layout.receiverOffset.has_value()) {
         m_argumentStorage[layout.stackSlotCount - 1 - *layout.receiverOffset].setStorageAddress(
-            receiverStorage != nullptr ? receiverStorage : getDestination()
+            receiverStorage != nullptr ? receiverStorage : getResult()
         );
     }
 
@@ -187,14 +187,17 @@ InterpreterCallFrame::~InterpreterCallFrame() {
     m_machine.setIntermediate(m_savedIntermediate);
 }
 
-RuntimeValue* InterpreterCallFrame::getDestination() {
+RuntimeValue* InterpreterCallFrame::getResult() const {
+    if (getResultSize() == 0) {
+        return nullptr;
+    }
 
-    return m_resultStorage.empty() ? nullptr : m_resultStorage.data();
+    return m_resultType->isStruct() ? m_resultStorage.data() : &m_machine.getResult();
 }
 
-InterpreterValue InterpreterCallFrame::getResult() const {
+NomadIndex InterpreterCallFrame::getResultSize() const {
 
-    return InterpreterValue(m_resultType, getResultStorage());
+    return m_resultType->getSize();
 }
 
 RuntimeValue InterpreterCallFrame::releaseResult() {
@@ -210,20 +213,6 @@ RuntimeValue InterpreterCallFrame::releaseResult() {
 
 void InterpreterCallFrame::releaseArgumentsToVirtualMachine() {
     m_onStack = false;
-}
-
-std::span<const RuntimeValue> InterpreterCallFrame::getResultStorage() const {
-    if (m_resultType->isVoid()) {
-
-        return {};
-    }
-
-    if (m_resultType->isStruct()) {
-
-        return m_resultStorage.empty() ? std::span<const RuntimeValue>{} : m_resultStorage;
-    }
-
-    return {&m_machine.getResult(), 1};
 }
 
 void InterpreterCallFrame::copyArgument(

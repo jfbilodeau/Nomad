@@ -93,6 +93,101 @@ public:
 
 BOOST_AUTO_TEST_SUITE(interpreter_struct_calls)
 
+BOOST_AUTO_TEST_CASE(call_frame_results_borrow_writable_complete_storage_and_preserve_owned_snapshots) {
+    Runtime runtime;
+    const auto valueId = runtime.registerStruct("FrameResult");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    const auto emptyId = runtime.registerStruct("FrameEmpty");
+    runtime.finalizeCompositeFieldLayout(emptyId);
+    const auto* valueType = runtime.getType(valueId).value();
+    const auto* emptyType = runtime.getType(emptyId).value();
+    const auto scalarId = runtime.registerNativeFunction(
+        "frameScalar", [](VirtualMachine*) {}, {}, runtime.getStringType(), ""
+    );
+    const auto aggregateId = runtime.registerNativeFunction(
+        "frameAggregate", [](VirtualMachine*) {}, {}, valueType, ""
+    );
+    const auto emptyFunctionId = runtime.registerNativeFunction(
+        "frameEmpty", [](VirtualMachine*) {}, {}, emptyType, ""
+    );
+    const auto voidId = runtime.registerNativeFunction(
+        "frameVoid", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    );
+    BOOST_REQUIRE(scalarId.isValid() && aggregateId.isValid() && emptyFunctionId.isValid() && voidId.isValid());
+    auto machine = runtime.createVirtualMachine();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    machine->setIntegerResult(71);
+    machine->setIntegerIntermediate(83);
+    {
+        std::optional<InterpreterValue> scalarSnapshot;
+        std::optional<InterpreterValue> aggregateSnapshot;
+        {
+            const InterpreterCallFrame scalar(*machine, *runtime.getFunction(scalarId), {}, runtime.getStringType());
+            BOOST_TEST(scalar.getResultSize() == 1U);
+            BOOST_TEST(scalar.getResult() == &machine->getResult());
+            scalar.getResult()->setStringValue("scalar result");
+            auto* scalarObject = scalar.getResult()->getObjectValue();
+            BOOST_TEST(scalarObject->getReferenceCount() == 1U);
+            BOOST_TEST(scalar.getResult()->getObjectValue() == scalarObject);
+            BOOST_TEST(scalarObject->getReferenceCount() == 1U);
+            scalarSnapshot.emplace(
+                runtime.getStringType(),
+                std::span<const RuntimeValue>{scalar.getResult(), scalar.getResultSize()}
+            );
+            BOOST_TEST(scalarObject->getReferenceCount() == 2U);
+            {
+                const InterpreterCallFrame aggregate(*machine, *runtime.getFunction(aggregateId), {}, valueType);
+                BOOST_TEST(aggregate.getResultSize() == 2U);
+                auto* storage = aggregate.getResult();
+                BOOST_REQUIRE(storage != nullptr);
+                BOOST_TEST(storage != &machine->getResult());
+                BOOST_TEST(machine->getStackAddress(0)->getStorageAddress() == storage);
+                storage[0].setIntegerValue(17);
+                storage[1].setStringValue("aggregate result");
+                aggregateSnapshot.emplace(
+                    valueType, std::span<const RuntimeValue>{storage, aggregate.getResultSize()}
+                );
+                BOOST_TEST(aggregateSnapshot->getStorage().data() != storage);
+                storage[0].setIntegerValue(29);
+                BOOST_TEST(aggregate.getResult() == storage);
+                BOOST_TEST(aggregateSnapshot->getStorage()[0].getIntegerValue() == 17);
+                {
+                    const InterpreterCallFrame empty(*machine, *runtime.getFunction(emptyFunctionId), {}, emptyType);
+                    BOOST_TEST(empty.getResultSize() == 0U);
+                    BOOST_TEST(empty.getResult() == nullptr);
+                    const InterpreterValue snapshot(
+                        emptyType, std::span<const RuntimeValue>{empty.getResult(), empty.getResultSize()}
+                    );
+                    BOOST_TEST(snapshot.getStorage().empty());
+                }
+                {
+                    const InterpreterCallFrame noResult(*machine, *runtime.getFunction(voidId), {}, runtime.getVoidType());
+                    BOOST_TEST(noResult.getResultSize() == 0U);
+                    BOOST_TEST(noResult.getResult() == nullptr);
+                    const InterpreterValue snapshot(
+                        runtime.getVoidType(),
+                        std::span<const RuntimeValue>{noResult.getResult(), noResult.getResultSize()}
+                    );
+                    BOOST_TEST(snapshot.getStorage().empty());
+                }
+                BOOST_TEST(aggregate.getResult() == storage);
+                BOOST_TEST(storage[0].getIntegerValue() == 29);
+            }
+            BOOST_TEST(scalar.getResult()->getObjectValue() == scalarObject);
+            BOOST_TEST(scalar.getResult()->getStringValue() == "scalar result");
+        }
+        BOOST_TEST(scalarSnapshot->getValue().getStringValue() == "scalar result");
+        BOOST_TEST(scalarSnapshot->getValue().getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(aggregateSnapshot->getStorage()[1].getStringValue() == "aggregate result");
+        BOOST_TEST(aggregateSnapshot->getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(machine->getIntegerResult() == 71);
+        BOOST_TEST(machine->getIntermediate().getIntegerValue() == 83);
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
 BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownership) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
