@@ -48,7 +48,7 @@ void registerLoggerClass(
         throw NomadException("Failed to register log.Logger");
     }
 
-    const auto levelId = runtime->addProperty(typeId, {
+    const auto levelId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = types.level,
         .name = "level",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -74,7 +74,7 @@ void registerLoggerClass(
         throw NomadException("Failed to register log.Logger.level");
     }
 
-    const auto deliveryId = runtime->addProperty(typeId, {
+    const auto deliveryId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = types.deliveryMode,
         .name = "deliveryMode",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -115,7 +115,7 @@ void registerSinkClass(
             throw NomadException("Failed to register log." + NomadString(name));
         }
 
-        const auto levelId = runtime->addProperty(typeId, {
+        const auto levelId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = types.level,
             .name = "level",
             .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -143,7 +143,7 @@ void registerSinkClass(
             throw NomadException("Failed to register log." + NomadString(name) + ".level");
         }
 
-        const auto activeId = runtime->addProperty(typeId, {
+        const auto activeId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = runtime->getBooleanType(),
             .name = "active",
             .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -173,7 +173,7 @@ void registerSinkClass(
     }
 
     const auto typeId = runtime->getTypeByName("log.FileSink")->getId();
-    const auto rotationId = runtime->addProperty(typeId, {
+    const auto rotationId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = types.fileRotationMode,
         .name = "rotationMode",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -201,7 +201,7 @@ void registerSinkClass(
         throw NomadException("Failed to register log.FileSink.rotationMode");
     }
 
-    const auto startupId = runtime->addProperty(typeId, {
+    const auto startupId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime->getBooleanType(),
         .name = "rotateAtStartup",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -229,7 +229,7 @@ void registerSinkClass(
         throw NomadException("Failed to register log.FileSink.rotateAtStartup");
     }
 
-    const auto sizeId = runtime->addProperty(typeId, {
+    const auto sizeId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime->getIntegerType(),
         .name = "maxSizeBytes",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -247,7 +247,7 @@ void registerSinkClass(
         throw NomadException("Failed to register log.FileSink.maxSizeBytes");
     }
 
-    const auto filesId = runtime->addProperty(typeId, {
+    const auto filesId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime->getIntegerType(),
         .name = "maxFiles",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {

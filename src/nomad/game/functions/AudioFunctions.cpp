@@ -156,7 +156,7 @@ void Game::initAudioFunctions() {
         NomadDoc("Stops every playing or paused sound effect.")
     );
 
-    const auto volumeId = m_runtime->addProperty(audioTypeId, {
+    const auto volumeId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getFloatType(),
         .name = "volume",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -170,7 +170,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("The sound-effect instance volume from 0.0 to 1.0.")
     });
 
-    const auto playingId = m_runtime->addProperty(audioTypeId, {
+    const auto playingId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "playing",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -180,7 +180,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Whether the sound effect is currently playing.")
     });
 
-    const auto pausedId = m_runtime->addProperty(audioTypeId, {
+    const auto pausedId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "paused",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -190,7 +190,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Whether the sound effect is currently paused.")
     });
 
-    const auto loopingId = m_runtime->addProperty(audioTypeId, {
+    const auto loopingId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "looping",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {

@@ -152,7 +152,7 @@ BOOST_AUTO_TEST_CASE(manager_finalizes_nested_composites_and_validates_mutable_o
     Runtime other;
     BOOST_TEST(manager.getMutableClassType(other.getStringType()) == nullptr);
     BOOST_TEST(manager.getMutableClassType(nullptr) == nullptr);
-    runtime.finalizeCompositeFieldLayout(classId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(classId);
     BOOST_TEST(classType->isFieldLayoutFinalized());
 }
 
@@ -251,7 +251,7 @@ BOOST_AUTO_TEST_CASE(script_fields_reject_native_and_script_member_collisions) {
     const auto classId = runtime.registerClass("Members", ClassMode::Opened);
     BOOST_REQUIRE(classId.isValid());
     const auto* owner = manager.getTypeByName("Members")->asClassType();
-    const auto nativeProperty = runtime.addProperty(classId, {
+    const auto nativeProperty = runtime.getTypeManager().registerNativeClassProperty(classId, {
         .valueType = runtime.getIntegerType(),
         .name = "nativeProperty",
         .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -273,7 +273,7 @@ BOOST_AUTO_TEST_CASE(script_fields_reject_native_and_script_member_collisions) {
     BOOST_TEST(runtime.getNativeProperty(nativeProperty) != nullptr);
     const auto fieldId = manager.registerScriptClassProperty(classId, "stored", runtime.getIntegerType());
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_TEST(runtime.addProperty(classId, {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(classId, {
         .valueType = runtime.getIntegerType(),
         .name = "stored",
         .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -297,7 +297,7 @@ BOOST_AUTO_TEST_CASE(native_member_registration_does_not_validate_identifier_syn
         BOOST_TEST(methodRuntime.getNativeMethod(methodId)->getName() == name);
         Runtime propertyRuntime;
         const auto propertyOwner = propertyRuntime.registerClass("Properties", ClassMode::Closed);
-        const auto propertyId = propertyRuntime.addProperty(propertyOwner, {
+        const auto propertyId = propertyRuntime.getTypeManager().registerNativeClassProperty(propertyOwner, {
             .valueType = propertyRuntime.getIntegerType(),
             .name = name,
             .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -629,8 +629,8 @@ BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destinat
     const auto* type = runtime.getTypeByName("ConstructedStruct");
     BOOST_REQUIRE(runtime.registerProperty(structId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(structId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(structId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(structId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto calls = 0;
     const auto definition = NativeConstructorDefinition{
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},

@@ -53,7 +53,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
     if (indexerId.isInvalid()) {
         throw NomadException("Failed to register string indexer");
     }
-    const auto lengthId = runtime->addProperty(stringTypeId, {
+    const auto lengthId = runtime->getTypeManager().registerNativeClassProperty(stringTypeId, {
         .valueType = runtime->getIntegerType(),
         .name = "length",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -71,7 +71,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("The number of characters (Unicode code points) in the string.")
     });
 
-    const auto byteLengthId = runtime->addProperty(stringTypeId, {
+    const auto byteLengthId = runtime->getTypeManager().registerNativeClassProperty(stringTypeId, {
         .valueType = runtime->getIntegerType(),
         .name = "byteLength",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -81,7 +81,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
     });
 
-    const auto isEmptyId = runtime->addProperty(stringTypeId, {
+    const auto isEmptyId = runtime->getTypeManager().registerNativeClassProperty(stringTypeId, {
         .valueType = runtime->getBooleanType(),
         .name = "isEmpty",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {

@@ -343,8 +343,8 @@ BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_s
     BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
     const auto emptyId = runtime.registerStruct("TypedCallbackEmpty");
     const auto* emptyType = runtime.getTypeByName("TypedCallbackEmpty");
-    runtime.finalizeCompositeFieldLayout(valueId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     BOOST_REQUIRE(runtime.registerNativeStructConstructor(valueId, {
         .parameters = {},
         .function = [](VirtualMachine* active) {
@@ -633,9 +633,9 @@ BOOST_AUTO_TEST_CASE(closure_storage_adopts_complete_slots_and_preserves_logical
     const auto* type = runtime.getTypeByName("ClosureStorageValue");
     BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(emptyId);
-    runtime.finalizeCompositeFieldLayout(singleId);
-    runtime.finalizeCompositeFieldLayout(valueId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(singleId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     ScriptFunction function(CallableId{}, "captureStorage", "", "");
     function.addParameter("explicit", runtime.getIntegerType(), "");
     function.createCapture(VariableId{0}, "empty", empty);
@@ -720,9 +720,9 @@ BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_k
     BOOST_REQUIRE(runtime.registerProperty(valueId, "suffix", runtime.getIntegerType()).isValid());
     const auto emptyId = runtime.registerStruct("FrameCaptureEmpty");
     const auto* empty = runtime.getTypeByName("FrameCaptureEmpty");
-    runtime.finalizeCompositeFieldLayout(sharedId);
-    runtime.finalizeCompositeFieldLayout(valueId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(sharedId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto parentId = runtime.registerScriptFunction(
         "captureStorageParent",
         "captures.nomad",
@@ -889,9 +889,9 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
     const auto ownerId = runtime.registerClass("ReceiverCaptureOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("ReceiverCaptureOwner")->asClassType();
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "number", runtime.getIntegerType()).isValid());
-    runtime.finalizeCompositeFieldLayout(valueId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     std::unique_ptr<Closure> closure;
     std::vector<InterpreterValue> snapshots;
     CallableId descriptorId;

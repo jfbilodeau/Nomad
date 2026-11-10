@@ -71,7 +71,7 @@ Runtime::Runtime():
                 },
                 .documentation = NomadDoc("Advances the iterator. Returns false at the end.")
             });
-            const auto currentId = runtime->addProperty(id, {
+            const auto currentId = runtime->getTypeManager().registerNativeClassProperty(id, {
                 .valueType = valueType,
                 .name = "current",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
@@ -1459,10 +1459,6 @@ void Runtime::setPropertyHasExplicitInitializer(
     m_properties[toNomadIndex(id.id)]->setHasExplicitInitializer(hasExplicitInitializer);
 }
 
-void Runtime::finalizeCompositeFieldLayout(const TypeId id) {
-    m_typeManager.finalizeCompositeFieldLayout(id);
-}
-
 PropertyId Runtime::catalogProperty(Property* property) {
     if (property == nullptr || property->getId().isValid() || !ownsType(property->getOwnerType()) ||
         property->getOwnerType()->getProperty(property->getName()) != property ||
@@ -1498,14 +1494,6 @@ void Runtime::validateNativePropertyTypes() {
             getMutableNativeProperty(property->getId())->completeTypeResolution();
         }
     }
-}
-
-PropertyId Runtime::addProperty(const TypeId id, NativePropertyDefinition definition) {
-    return registerNativeClassProperty(id, std::move(definition));
-}
-
-PropertyId Runtime::registerNativeClassProperty(const TypeId id, NativePropertyDefinition definition) {
-    return m_typeManager.registerNativeClassProperty(id, std::move(definition));
 }
 
 void Runtime::catalogNativeProperty(const PropertyId id) {

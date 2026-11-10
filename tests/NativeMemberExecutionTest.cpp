@@ -36,7 +36,7 @@ const ClassType* registerTestObject(Runtime& runtime) {
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new TestObject); },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -936,7 +936,7 @@ BOOST_AUTO_TEST_CASE(host_method_validation_precedes_stack_changes_and_execution
     const auto functionId = runtime.registerNativeFunction("notAMethod", [](VirtualMachine*) {},
         {}, runtime.getVoidType(), "");
     const auto emptyId = runtime.registerStruct("HostMethodEmpty");
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto unsupportedCalls = 0;
     const auto structMethodId = runtime.addMethod(emptyId, {
         .name = "emptyMethod", .parameters = {}, .returnTypeId = runtime.getVoidType()->getId(),

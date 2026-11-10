@@ -78,7 +78,7 @@ BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_rele
     const auto* type = runtime.getType(id).value();
     BOOST_REQUIRE(runtime.registerProperty(id, "value", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(id, "label", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(id);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter);
@@ -136,7 +136,7 @@ BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_chan
     const auto* type = runtime.getType(id).value();
     const auto field = runtime.registerProperty(id, "text", runtime.getStringType());
     BOOST_REQUIRE(field.isValid());
-    runtime.finalizeCompositeFieldLayout(id);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter);
@@ -243,7 +243,7 @@ BOOST_AUTO_TEST_CASE(object_storage_retains_shared_identity_without_copying_the_
     Runtime runtime;
     const auto ownerId = runtime.registerClass("StorageObject", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     RuntimeValue source;
     source.setObjectValue(new ScriptObject(owner));
@@ -266,7 +266,7 @@ BOOST_AUTO_TEST_CASE(struct_storage_supports_live_receiver_mutation_and_independ
     const auto numberProperty = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberProperty.isValid());
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
@@ -297,7 +297,7 @@ BOOST_AUTO_TEST_CASE(zero_sized_storage_preserves_type_and_accepts_empty_assignm
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("MutableStorageEmpty");
     const auto* empty = runtime.getType(emptyId).value()->asStructType();
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     InterpreterStorage storage(empty, {});
     BOOST_TEST(storage.getType() == empty);
     BOOST_TEST(storage.getStorage().empty());
@@ -336,7 +336,7 @@ BOOST_AUTO_TEST_CASE(failed_copies_release_partial_ownership_and_preserve_assign
     const auto* pair = runtime.getType(pairId).value();
     BOOST_REQUIRE(runtime.registerProperty(pairId, "first", field).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "second", field).isValid());
-    runtime.finalizeCompositeFieldLayout(pairId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     std::array<RuntimeValue, 2> original{
         RuntimeValue{NomadString{"old first"}}, RuntimeValue{NomadString{"old second"}}
@@ -387,10 +387,10 @@ BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_wit
     const auto ownerId = runtime.registerStruct("ContextStorageStruct");
     const auto* owner = runtime.getType(ownerId).value();
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "number", runtime.getIntegerType()).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto emptyId = runtime.registerStruct("ContextStorageEmpty");
     const auto* empty = runtime.getType(emptyId).value();
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter);

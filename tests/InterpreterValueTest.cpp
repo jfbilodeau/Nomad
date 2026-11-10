@@ -83,7 +83,7 @@ BOOST_AUTO_TEST_CASE(scalars_copy_and_move_owned_references_in_single_slot_stora
 BOOST_AUTO_TEST_CASE(empty_and_moved_values_have_no_scalar_slot) {
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("EmptyScalarSlot");
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto* empty = runtime.getTypeByName("EmptyScalarSlot");
     InterpreterValue value(runtime.getVoidType(), RuntimeValue{});
     BOOST_TEST(value.getType()->isVoid());
@@ -114,8 +114,8 @@ BOOST_AUTO_TEST_CASE(storage_transitions_preserve_empty_types_and_single_slot_st
     const auto* single = runtime.getTypeByName("SingleSlot");
     const auto* empty = runtime.getTypeByName("EmptySlots");
     BOOST_REQUIRE(runtime.registerProperty(singleId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(singleId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(singleId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
@@ -176,7 +176,7 @@ BOOST_AUTO_TEST_CASE(failed_scalar_and_array_copies_release_partial_ownership) {
     const auto aggregateId = runtime.registerStruct("FailingAggregateCopy");
     BOOST_REQUIRE(runtime.registerProperty(aggregateId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(aggregateId, "failing", field).isValid());
-    runtime.finalizeCompositeFieldLayout(aggregateId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(aggregateId);
     const auto* aggregate = runtime.getTypeByName("FailingAggregateCopy");
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
@@ -211,7 +211,7 @@ BOOST_AUTO_TEST_CASE(stored_property_replacements_preserve_inputs_and_validate_t
     const auto leafPropertyId = runtime.registerProperty(rootId, "leaf", leaf);
     BOOST_REQUIRE(numberId.isValid() && textId.isValid() &&
         emptyPropertyId.isValid() && leafPropertyId.isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     {
         std::array<RuntimeValue, 2> source{
@@ -275,7 +275,7 @@ BOOST_AUTO_TEST_CASE(stored_property_replacements_preserve_inputs_and_validate_t
 BOOST_AUTO_TEST_CASE(returned_replacements_outlive_the_interpreter_and_inputs) {
     Runtime runtime;
     const auto ownerId = runtime.registerClass("ValueOwner", ClassMode::Closed);
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto* owner = runtime.getTypeByName("ValueOwner")->asClassType();
     const auto rootId = runtime.registerStruct("ReturnedValue");
     const auto* root = runtime.getTypeByName("ReturnedValue");
@@ -283,7 +283,7 @@ BOOST_AUTO_TEST_CASE(returned_replacements_outlive_the_interpreter_and_inputs) {
     BOOST_REQUIRE(numberId.isValid());
     BOOST_REQUIRE(runtime.registerProperty(rootId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(rootId, "owner", owner).isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
@@ -316,7 +316,7 @@ BOOST_AUTO_TEST_CASE(property_reads_outlive_their_struct_and_preserve_reference_
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
     const auto ownerId = runtime.registerClass("ReadValueOwner", ClassMode::Closed);
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto* owner = runtime.getTypeByName("ReadValueOwner")->asClassType();
     const auto leafId = runtime.registerStruct("ReadValueLeaf");
     const auto rootId = runtime.registerStruct("ReadValueRoot");
@@ -326,7 +326,7 @@ BOOST_AUTO_TEST_CASE(property_reads_outlive_their_struct_and_preserve_reference_
     const auto ownerPropertyId = runtime.registerProperty(leafId, "owner", owner);
     const auto leafPropertyId = runtime.registerProperty(rootId, "leaf", leaf);
     BOOST_REQUIRE(textId.isValid() && ownerPropertyId.isValid() && leafPropertyId.isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
@@ -361,7 +361,7 @@ BOOST_AUTO_TEST_CASE(empty_root_property_operations_preserve_types_without_slot_
     const auto* root = runtime.getTypeByName("EmptyPropertyRoot");
     const auto propertyId = runtime.registerProperty(rootId, "empty", empty);
     BOOST_REQUIRE(propertyId.isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     const InterpreterValue value(root, std::span<const RuntimeValue>{});
     const InterpreterValue emptyValue(empty, std::span<const RuntimeValue>{});
     const Interpreter interpreter(*machine);
@@ -388,7 +388,7 @@ BOOST_AUTO_TEST_CASE(context_property_selectors_update_bindings_without_overwrit
     BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
     const auto leafPropertyId = runtime.registerProperty(rootId, "leaf", leaf);
     BOOST_REQUIRE(leafPropertyId.isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto machine = runtime.createVirtualMachine();
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator);

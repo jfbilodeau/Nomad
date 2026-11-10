@@ -390,7 +390,6 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-`addProperty(TypeId, NativePropertyDefinition)`,
 `addMethod(TypeId, NativeMethodDefinition)`,
 `addConstructor(TypeId, NativeConstructorDefinition)`, and
 `addIndexer(TypeId, NativeIndexerDefinition)` remain Runtime compatibility APIs
@@ -399,6 +398,8 @@ registration APIs, including `registerNativeClassIndexer` and
 `registerNativeClassIterable`. The latter registers a native factory method
 and its iterable association. Include `<nomad/script/NativeMember.hpp>` for
 the native member creation definitions.
+Register native class accessors through
+`runtime.getTypeManager().registerNativeClassProperty(ownerId, definition)`.
 Their metadata structures are now named `NativePropertyInfo`,
 `NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
 `getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
@@ -445,16 +446,18 @@ clearing its existing entries. `getTypeCount()` counts all reserved IDs,
 including IDs that do not yet have a descriptor. `ownsType(type)` checks both
 runtime ownership and catalog identity.
 
-The existing Runtime lookup and finalization methods remain available with
-the same behavior. Declare stored fields with
+The existing Runtime lookup methods remain available with the same behavior.
+Finalize layouts through `runtime.getTypeManager().finalizeCompositeFieldLayout(id)`.
+Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
 Register native class accessors with `TypeManager::registerNativeClassProperty`.
 Register class methods and constructors with the explicit
 native/script class APIs on TypeManager or Runtime. Both also expose
 `registerNativeStructMethod`, `registerScriptStructMethod`,
 `registerScriptClassProperty`, and `registerScriptStructProperty`.
-Native property accessors remain class-only. Existing generic Runtime registration
-entry points remain compatibility delegates.
+Native property accessors remain class-only and are registered through TypeManager.
+Generic Runtime stored-field, method, and constructor registration entry points
+remain compatibility delegates.
 Register struct constructors with
 `TypeManager::registerNativeStructConstructor(ownerId, definition)` or
 `registerScriptStructConstructor(ownerId, parameters, path, source)`.
@@ -1386,7 +1389,7 @@ valid results rather than invalid-ID sentinels. These metadata queries do not
 allocate or resize object storage; use physical offsets or complete field views
 rather than assuming one slot per stored field.
 
-`Runtime::finalizeCompositeFieldLayout(typeId)` explicitly finalizes the stored-field
+`TypeManager::finalizeCompositeFieldLayout(typeId)` explicitly finalizes the stored-field
 layout using an ID from the owning runtime. Invalid IDs and non-composite types
 raise `NomadException`. Type descriptors remain available through const pointers;
 `isFieldLayoutFinalized()` reports whether finalization succeeded. It recursively
@@ -1682,7 +1685,6 @@ same runtime, or a placeholder obtained from its configured compiler's
 `deferType(reference)`. The resolved value type must be public and non-void.
 Host registration is permitted on both open and closed types.
 Include `<nomad/script/NativeMember.hpp>` for `NativePropertyDefinition`.
-`Runtime::addProperty` remains a compatibility entry point with identical behavior.
 Properties require class owners; struct owner IDs are rejected. Struct-valued
 properties can use registered native accessor methods, described below.
 
@@ -1732,7 +1734,7 @@ Invalid methods, owners, or signatures are logged and rejected without
 publishing the property or executing a callback.
 
 ```cpp
-const auto propertyId = runtime.addProperty(ownerTypeId, {
+const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(ownerTypeId, {
     .valueType = pointType,
     .name = "point",
     .documentation = "A point snapshot.",
@@ -1922,7 +1924,7 @@ do not implicitly convert to integers or other ID categories.
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-`addProperty` returns a `PropertyId`; `addMethod` returns
+`TypeManager::registerNativeClassProperty` returns a `PropertyId`; `addMethod` returns
 the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
 `CallableId::INVALID`, respectively.
 `getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
@@ -3703,7 +3705,7 @@ overload queries continue to return only concrete members.
 
 ## Native object properties
 
-Use `addProperty(typeId, NativePropertyDefinition{...})`.
+Use `runtime.getTypeManager().registerNativeClassProperty(typeId, NativePropertyDefinition{...})`.
 Either callback may be empty for a write-only or read-only property. Both
 callbacks access the borrowed instance through `getThisAs<T>()`.
 
@@ -3714,7 +3716,7 @@ assign that local to `result`; this retains object references without reading th
 output's previous contents.
 
 ```cpp
-const auto propertyId = runtime.addProperty(typeId, {
+const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
     .valueType = runtime.getFloatType(),
     .name = "value",
     .getter = [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {

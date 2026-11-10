@@ -328,7 +328,6 @@ public:
     );
     [[nodiscard]] PropertyId registerScriptClassProperty(TypeId id, const NomadString& name, const Type* valueType);
     [[nodiscard]] PropertyId registerScriptStructProperty(TypeId id, const NomadString& name, const Type* valueType);
-    [[nodiscard]] PropertyId registerNativeClassProperty(TypeId id, NativePropertyDefinition definition);
     [[nodiscard]] IndexerId addIndexer(TypeId id, NativeIndexerDefinition definition);
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* classType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
@@ -351,12 +350,10 @@ public:
     );
     PropertyId registerProperty(TypeId ownerId, const NomadString& name, const Type* valueType);
     void setPropertyHasExplicitInitializer(PropertyId id, bool hasExplicitInitializer);
-    void finalizeCompositeFieldLayout(TypeId id);
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;
     [[nodiscard]] NativeProperty* getMutableNativeProperty(PropertyId id);
-    [[nodiscard]] PropertyId addProperty(TypeId id, NativePropertyDefinition definition);
     // Indexes an already registered native property for native-member lookup.
     void catalogNativeProperty(PropertyId id);
     void catalogNativeMethod(CallableId id);

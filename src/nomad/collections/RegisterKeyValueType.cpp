@@ -39,7 +39,7 @@ void registerKeyValueType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Creates a pair with read-only key and value properties.")
             });
-            const auto keyId = runtime->addProperty(id, {
+            const auto keyId = runtime->getTypeManager().registerNativeClassProperty(id, {
                 .valueType = keyType,
                 .name = "key",
                 .getter = [keyType](VirtualMachine* machine, RuntimeValue& result) {
@@ -52,7 +52,7 @@ void registerKeyValueType(Runtime* runtime) {
                 .setter = {},
                 .documentation = NomadDoc("The read-only key. Object keys share their referenced object.")
             });
-            const auto valueId = runtime->addProperty(id, {
+            const auto valueId = runtime->getTypeManager().registerNativeClassProperty(id, {
                 .valueType = valueType,
                 .name = "value",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {

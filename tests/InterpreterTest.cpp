@@ -208,8 +208,8 @@ BOOST_AUTO_TEST_CASE(interpreter_typed_values_own_complete_nested_storage_and_ke
     BOOST_REQUIRE(runtime.registerProperty(outerId, "leaf", leaf).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "suffix", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
@@ -285,8 +285,8 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
     const auto* empty = runtime.getTypeByName("ConsoleEmpty");
     BOOST_REQUIRE(runtime.registerProperty(pairId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(pairId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto machine = runtime.createVirtualMachine();
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();

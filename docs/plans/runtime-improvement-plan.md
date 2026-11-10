@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Steps 1 and 2 are implemented and validated. Step 2 awaits review;
-Step 3A has not started and is not approved for implementation.
+Status: Step 3A1 is implemented and validated, awaiting review.
+Steps 3A2 and 3B have not started and are not approved for implementation.
 
 Approved planning decisions:
 
@@ -171,13 +171,40 @@ Completion evidence (2026-11-10, Windows Debug):
 
 ### Step 3A: Make property registration and layout finalization manager-only
 
-- Migrate generic and explicit stored-field registration to the existing
-  class/struct manager APIs.
-- Migrate native accessor registration to `registerNativeClassProperty`.
-- Migrate layout finalization to the manager.
-- Remove the corresponding runtime registration aliases and forwarders.
+Approved split: the caller inventory spans approximately 40 C++ files. Perform
+the mechanical native-accessor/layout migration separately from stored-field
+category specialization, stopping for review between them.
+
+#### Step 3A1: Native accessors and layout finalization
+
+- Migrate native accessor registration to the existing manager
+  `registerNativeClassProperty` API and layout finalization to the manager.
+- Remove runtime `addProperty`, `registerNativeClassProperty`, and
+  `finalizeCompositeFieldLayout`.
 - Retain runtime property IDs, lookup, initializer metadata, and catalog
   coordination. Native accessors must not become stored fields.
+
+Completion evidence (2026-11-10, Windows Debug):
+
+- Migrated 104 native accessor calls and 187 layout-finalization calls to
+  existing manager APIs, including compiler, modules, collections, and tests.
+- Removed three runtime entry points without replacement wrappers; production
+  code decreased by 15 lines. Migrated compile-time invocation/type-safety
+  assertions and updated the embedding examples and API contracts.
+- The `nomad-development` build and language, remaining-unit, tooling, and
+  binding CTest groups passed. The first build identified three assertions
+  naming the retired runtime method; those now check the manager method.
+- All four documentation preparation tests, built-tool reference generation,
+  strict MkDocs, retired-API searches, and whitespace checks passed.
+- Stored-field registration remains unchanged for Step 3A2. Other platforms,
+  full packaging integration, and manual gameplay were not validated.
+
+#### Step 3A2: Stored-field registration
+
+- Migrate generic and explicit stored-field registration to the existing
+  class/struct manager APIs, specializing callers by owner category.
+- Remove runtime `registerProperty`, `registerScriptClassProperty`, and
+  `registerScriptStructProperty`. Do not replace them with a generic wrapper.
 
 Acceptance: preserve field inference, redeclaration, layout freezing,
 nested/empty structs, offsets, native accessors, and deferred type resolution.
@@ -363,5 +390,5 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 2 review: Step 3A, manager-only property registration
-and field-layout finalization.
+Next slice after Step 3A1 review: Step 3A2, manager-only stored-field registration.
+Method registration follows in Step 3B.

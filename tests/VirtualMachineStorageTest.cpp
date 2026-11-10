@@ -426,7 +426,7 @@ BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_own
     const auto* type = runtime.getTypeByName("CallStorage")->asStructType();
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "label", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     const auto callerId = runtime.registerScriptFunction("storageCaller", "storage.nomad", "");
     const auto calleeId = runtime.registerScriptFunction("storageCallee", "storage.nomad", "");
     auto* caller = runtime.getScriptFunction(callerId);
@@ -529,7 +529,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocat
     const auto* type = runtime.getTypeByName("AllocationFreeStruct");
     BOOST_REQUIRE(runtime.registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     const auto nativeId = runtime.registerNativeStructConstructor(typeId, {
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
         .function = [](VirtualMachine* active) {
@@ -587,7 +587,7 @@ BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) 
     auto& runtime = fixture.getRuntime();
     const auto nativeTypeId = runtime.registerClass("CountedNative", ClassMode::Closed);
     const auto* nativeType = runtime.getTypeByName("CountedNative")->asClassType();
-    runtime.finalizeCompositeFieldLayout(nativeTypeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(nativeTypeId);
     const auto nativeId = runtime.registerNativeClassConstructor(nativeTypeId, {
         .parameters = {},
         .function = [nativeType](VirtualMachine* active) {

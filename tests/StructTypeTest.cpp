@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(finalized_cleanup_uses_cached_nested_layouts_without_field_
     BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
 
     const auto fields = outer->getFieldLayouts();
     BOOST_REQUIRE(fields.size() == 4U);
@@ -160,7 +160,7 @@ BOOST_AUTO_TEST_CASE(finalized_cleanup_uses_cached_nested_layouts_without_field_
     BOOST_TEST(empty->getFieldLayouts().empty());
     BOOST_TEST(empty->getLayoutSize() == 0U);
     empty->freeValue(nullptr);
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     BOOST_TEST(outer->getFieldLayouts().data() == fields.data());
 
     for (auto index = 0; index < 3; ++index) {
@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(type_category_predicates_distinguish_structs_classes_and_ot
         BOOST_TEST(type->isComposite());
         BOOST_TEST(!type->isVoid());
         BOOST_TEST(!type->asCompositeType()->isFieldLayoutFinalized());
-        runtime.finalizeCompositeFieldLayout(type->getId());
+        runtime.getTypeManager().finalizeCompositeFieldLayout(type->getId());
         BOOST_TEST(type->isStruct());
         BOOST_TEST(!type->isClass());
         BOOST_TEST(type->isComposite());
@@ -330,7 +330,7 @@ BOOST_AUTO_TEST_CASE(empty_and_nested_scalar_layouts_remain_distinct_from_void) 
     BOOST_REQUIRE(x.isValid() && marker.isValid() && y.isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "first", point).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "second", point).isValid());
-    runtime.finalizeCompositeFieldLayout(pairId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
     BOOST_TEST(empty->isFieldLayoutFinalized());
     BOOST_TEST(empty->getSize() == 0U);
     BOOST_TEST(!empty->needsFree());
@@ -372,7 +372,7 @@ BOOST_AUTO_TEST_CASE(nested_owned_fields_copy_and_release_references_without_con
     BOOST_REQUIRE(runtime.registerProperty(payloadId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(wrapperId, "payload", payload).isValid());
     BOOST_REQUIRE(runtime.registerProperty(wrapperId, "label", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(wrapperId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(wrapperId);
     BOOST_TEST(wrapper->needsFree());
     BOOST_TEST(wrapper->getSize() == 3U);
     std::array<RuntimeValue, 3> source{};
@@ -413,7 +413,7 @@ BOOST_AUTO_TEST_CASE(partially_initialized_and_copied_nested_storage_remains_rel
     BOOST_REQUIRE(runtime.registerProperty(innerId, "second", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "before", field).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     std::array<RuntimeValue, 3> source{};
     std::array<RuntimeValue, 3> destination{};
     std::array<RuntimeValue, 3> scratch{};
@@ -447,7 +447,7 @@ BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {
     const auto* second = runtime.getTypeByName("Second")->asStructType();
     BOOST_REQUIRE(runtime.registerProperty(firstId, "second", second).isValid());
     BOOST_REQUIRE(runtime.registerProperty(secondId, "first", first).isValid());
-    BOOST_CHECK_THROW(runtime.finalizeCompositeFieldLayout(firstId), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(firstId), NomadException);
     BOOST_TEST(!first->isFieldLayoutFinalized());
     BOOST_TEST(!second->isFieldLayoutFinalized());
     const auto recordId = runtime.registerStruct("Record");
@@ -456,7 +456,7 @@ BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {
     const auto* owner = runtime.getTypeByName("Owner");
     BOOST_REQUIRE(runtime.registerProperty(recordId, "owner", owner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "record", record).isValid());
-    runtime.finalizeCompositeFieldLayout(recordId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(recordId);
     BOOST_TEST(record->getSize() == 1U);
     BOOST_TEST(record->needsFree());
     BOOST_TEST(!owner->asCompositeType()->isFieldLayoutFinalized());
@@ -480,7 +480,7 @@ BOOST_AUTO_TEST_CASE(stored_property_address_opcode_borrows_nested_storage_from_
     const auto propertyId = runtime.registerProperty(ownerId, "payload", payload);
     BOOST_REQUIRE(propertyId.isValid());
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "suffix", runtime.getIntegerType()).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto firstOffset = ownerType->getFieldOffset(propertyId) +
         payload->asCompositeType()->getFieldOffset(nestedId);
     const auto lastOffset = firstOffset + inner->getSize() - 1;
@@ -590,14 +590,14 @@ BOOST_AUTO_TEST_CASE(stored_property_address_opcode_rejects_missing_ranges_and_n
     const auto* emptyOwnerType = runtime.getTypeByName("EmptyAddressOwner")->asClassType();
     BOOST_REQUIRE(runtime.registerProperty(pairId, "first", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "last", runtime.getIntegerType()).isValid());
-    runtime.finalizeCompositeFieldLayout(pairId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "prefix", runtime.getIntegerType()).isValid());
     ScriptObject oldObject(ownerType);
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "pair", pair).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     ScriptObject newObject(ownerType);
     BOOST_REQUIRE(runtime.registerProperty(emptyOwnerId, "empty", empty).isValid());
-    runtime.finalizeCompositeFieldLayout(emptyOwnerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyOwnerId);
     ScriptObject emptyObject(emptyOwnerType);
     BOOST_TEST(oldObject.getStorageSize() == 1U);
     BOOST_TEST(newObject.getStorageSize() == 3U);
@@ -692,8 +692,8 @@ BOOST_AUTO_TEST_CASE(local_cleanup_emits_only_owned_fields_at_full_width_nested_
     BOOST_CHECK_THROW(outer->emitInitFunctionVariable(compiler, 0), NomadException);
     BOOST_CHECK_THROW(outer->emitFreeFunctionVariable(compiler, 0), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
-    runtime.finalizeCompositeFieldLayout(outerId);
-    runtime.finalizeCompositeFieldLayout(scalarId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(scalarId);
     const auto offset = toNomadIndex(NOMAD_ID_MAX) + 1;
     empty->emitInitFunctionVariable(compiler, offset);
     scalar->emitInitFunctionVariable(compiler, offset);
@@ -735,7 +735,7 @@ BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves
     BOOST_REQUIRE(runtime.registerProperty(innerId, "name", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "payload", inner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     const auto id = runtime.registerScriptFunction("cleanupLocals", "cleanup.nomad", "");
     auto* function = runtime.getScriptFunction(id);
     BOOST_REQUIRE(function != nullptr);
@@ -807,7 +807,7 @@ BOOST_AUTO_TEST_CASE(local_copy_emission_preserves_full_width_offsets_and_empty_
     BOOST_CHECK_THROW(outer->emitAssignFunctionVariable(compiler, 0, 3, 6), NomadException);
     BOOST_CHECK_THROW(outer->emitCopyFunctionVariable(compiler, 0, 0), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     const auto source = toNomadIndex(NOMAD_ID_MAX) + 1;
     const auto destination = source + 3;
     const auto scratch = source + 6;
@@ -862,7 +862,7 @@ BOOST_AUTO_TEST_CASE(local_copy_and_assignment_preserve_nested_values_and_refere
     BOOST_REQUIRE(runtime.registerProperty(outerId, "marker", empty).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "owner", owner).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     const auto id = runtime.registerScriptFunction("copyLocalStorage", "copy.nomad", "");
     auto* function = runtime.getScriptFunction(id);
     BOOST_REQUIRE(function != nullptr);
@@ -952,8 +952,8 @@ BOOST_AUTO_TEST_CASE(local_assignment_stages_overlapping_reference_ranges_in_bot
     for (const auto* name : {"first", "second", "third"}) {
         BOOST_REQUIRE(runtime.registerProperty(backingId, name, runtime.getStringType()).isValid());
     }
-    runtime.finalizeCompositeFieldLayout(pairId);
-    runtime.finalizeCompositeFieldLayout(backingId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(backingId);
     const auto id = runtime.registerScriptFunction("overlapLocalStorage", "overlap.nomad", "");
     auto* function = runtime.getScriptFunction(id);
     BOOST_REQUIRE(function != nullptr);
@@ -1025,7 +1025,7 @@ BOOST_AUTO_TEST_CASE(expressions_compile_into_local_storage_without_aggregate_re
     BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "payload", inner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     const auto id = runtime.registerScriptFunction("expressionDestinations", "expressions.nomad", "");
     auto* function = runtime.getScriptFunction(id);
     BOOST_REQUIRE(function != nullptr);
@@ -1094,7 +1094,7 @@ BOOST_AUTO_TEST_CASE(local_expression_destinations_handle_empty_structs_and_reje
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("EmptyExpression");
     const auto* empty = runtime.getTypeByName("EmptyExpression")->asStructType();
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     ScriptFunction function(CallableId{}, "destinationChecks", "checks.nomad", "");
     const auto source = function.registerVariable("source", empty);
     const auto destination = function.registerVariable("destination", empty);
@@ -1165,7 +1165,7 @@ BOOST_AUTO_TEST_CASE(struct_local_assignments_allocate_staging_before_entry_and_
     BOOST_TEST(function->getVisibleVariableName(firstStaging).empty());
     BOOST_TEST(function->getVisibleVariableName(secondStaging).empty());
     BOOST_TEST(!outer->isFieldLayoutFinalized());
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     BOOST_TEST(function->getVariableStorageSize() == 13U);
     BOOST_TEST(function->getVariableOffset(firstStaging) == 7U);
     BOOST_TEST(function->getVariableOffset(secondStaging) == 10U);
@@ -1234,7 +1234,7 @@ BOOST_AUTO_TEST_CASE(empty_struct_assignment_staging_occupies_no_physical_slots)
     Runtime runtime;
     const auto id = runtime.registerStruct("EmptyAssignment");
     const auto* empty = runtime.getTypeByName("EmptyAssignment")->asStructType();
-    runtime.finalizeCompositeFieldLayout(id);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     ScriptFunction function(CallableId{}, "emptyAssignment", "empty.nomad", "");
     function.registerVariable("source", empty);
     function.registerVariable("destination", empty);
@@ -1272,7 +1272,7 @@ BOOST_AUTO_TEST_CASE(scalar_parameter_bytecode_uses_offsets_after_wide_parameter
     for (const auto* name : {"x", "y", "z"}) {
         BOOST_REQUIRE(runtime.registerProperty(paddingId, name, runtime.getIntegerType()).isValid());
     }
-    runtime.finalizeCompositeFieldLayout(paddingId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(paddingId);
     const auto innerId = runtime.registerScriptFunction("offsetParameters", "parameters.nomad", "");
     auto* inner = runtime.getScriptFunction(innerId);
     BOOST_REQUIRE(inner != nullptr);
@@ -1382,7 +1382,7 @@ BOOST_AUTO_TEST_CASE(parameter_copy_and_cleanup_use_reversed_nested_field_offset
     BOOST_CHECK_THROW(outer->emitPushFunctionVariable(compiler, 0), NomadException);
     BOOST_CHECK_THROW(outer->emitFreeStackValue(compiler, 0), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     const auto offset = toNomadIndex(NOMAD_ID_MAX) + 1;
     empty->emitCopyParameterToFunctionVariable(compiler, offset, offset);
     empty->emitCopyFunctionVariableToParameter(compiler, offset, offset);
@@ -1463,7 +1463,7 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     BOOST_REQUIRE(runtime.registerProperty(innerTypeId, "owner", owner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerTypeId, "inner", innerType).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerTypeId, "label", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(outerTypeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerTypeId);
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     const auto calleeId = runtime.registerScriptFunction("copyParameter", "parameter.nomad", "");
@@ -1641,8 +1641,8 @@ BOOST_AUTO_TEST_CASE(mixed_struct_and_empty_arguments_keep_right_to_left_evaluat
     const auto* pair = runtime.getTypeByName("PairArgument")->asStructType();
     BOOST_REQUIRE(runtime.registerProperty(pairId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(emptyId);
-    runtime.finalizeCompositeFieldLayout(pairId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
     const auto id = runtime.registerScriptFunction("mixedArguments", "arguments.nomad", "");
     auto* function = runtime.getScriptFunction(id);
     BOOST_REQUIRE(function != nullptr);
@@ -1743,7 +1743,7 @@ BOOST_AUTO_TEST_CASE(borrowed_storage_emission_resolves_nested_offsets_and_owner
     BOOST_CHECK_THROW(outer->emitFreeStorageParameter(compiler, 0, 0), NomadException);
     BOOST_CHECK_THROW(outer->emitLoadStorageParameter(compiler, 0, 0, ExpressionTarget::Stack), NomadException);
     BOOST_TEST(instructions.size() == initialSize);
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     const auto wide = toNomadIndex(NOMAD_ID_MAX) + 1;
     empty->emitCopyFunctionVariableToStorageParameter(compiler, wide, wide, wide);
     empty->emitCopyParameterToStorageParameter(compiler, wide, wide, wide);
@@ -1835,8 +1835,8 @@ BOOST_AUTO_TEST_CASE(borrowed_destination_copies_preserve_nested_values_and_rele
     BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "empty", empty).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "label", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     BOOST_REQUIRE(outer->getSize() == 5U);
     std::array<RuntimeValue, 5> parameters;
     parameters[0].setIntegerValue(11);
@@ -1945,8 +1945,8 @@ BOOST_AUTO_TEST_CASE(compiler_destination_calls_emit_only_required_hidden_pointe
     const auto* empty = runtime.getTypeByName("DestinationEmpty");
     BOOST_REQUIRE(runtime.registerProperty(pointId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pointId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(pointId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pointId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto callerId = runtime.registerScriptFunction("destinationCaller", "destination.nomad", "");
     const auto calleeId = runtime.registerScriptFunction("destinationCallee", "destination.nomad", "");
     auto* caller = runtime.getScriptFunction(callerId);
@@ -2071,7 +2071,7 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_borrow_locals_parameters_and_e
     const auto* type = runtime.getTypeByName("BorrowedPoint");
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     auto* owner = runtime.getTypeManager().getMutableCompositeType(typeId);
     const auto parameters = std::vector<Parameter>{
         defParameter("snapshot", type, ""), defParameter("delta", runtime.getIntegerType(), "")};
@@ -2245,8 +2245,8 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_omit_empty_storage_and_preserv
     const auto* empty = runtime.getTypeByName("BorrowedEmpty");
     const auto* text = runtime.getTypeByName("BorrowedText");
     BOOST_REQUIRE(runtime.registerProperty(textId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(emptyId);
-    runtime.finalizeCompositeFieldLayout(textId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(textId);
     auto* emptyOwner = runtime.getTypeManager().getMutableCompositeType(emptyId);
     auto* textOwner = runtime.getTypeManager().getMutableCompositeType(textId);
     auto emptyCalls = 0;
@@ -2349,8 +2349,8 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     BOOST_REQUIRE(runtime.registerProperty(nestedId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "nested", nested).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto calls = 0;
     auto emptyCalls = 0;
     const auto factoryId = runtime.registerNativeFunction("makePayload", [&](VirtualMachine* active) {
@@ -2548,11 +2548,11 @@ BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_orde
     const auto* type = runtime.getTypeByName("ForwardedPayload");
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     const auto ownerId = runtime.registerClass("ForwardingOwner", ClassMode::Closed);
     const auto* ownerType = runtime.getTypeByName("ForwardingOwner")->asClassType();
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", type).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "makeForwardingOwner",
         [ownerType](VirtualMachine* active) {
@@ -2651,11 +2651,11 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     const auto* type = runtime.getTypeByName("ConstructedReturn");
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     const auto ownerId = runtime.registerClass("ConstructionOwner", ClassMode::Closed);
     const auto* ownerType = runtime.getTypeByName("ConstructionOwner")->asClassType();
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", type).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "makeConstructionOwner",
         [ownerType](VirtualMachine* active) {
@@ -2706,7 +2706,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
         }
     }).isValid());
     const auto emptyId = runtime.registerStruct("EmptyConstructionReturn");
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     BOOST_REQUIRE(runtime.registerNativeStructConstructor(emptyId, {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
         .function = [&](VirtualMachine* active) {
@@ -2792,9 +2792,9 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
     const auto* owner = runtime.getTypeByName("CompiledAccessorOwner")->asClassType();
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "backing", type).isValid());
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "singleBacking", single).isValid());
-    runtime.finalizeCompositeFieldLayout(sharedId);
-    runtime.finalizeCompositeFieldLayout(ownerId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(sharedId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto getters = 0;
     auto setters = 0;
     auto emptyGetters = 0;
@@ -2897,25 +2897,25 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
     BOOST_REQUIRE(readNumber.isValid() && writeNumber.isValid() && readValue.isValid() && writeValue.isValid() &&
         readText.isValid() && writeText.isValid() && readSingle.isValid() && writeSingle.isValid() &&
         readEmpty.isValid() && writeEmpty.isValid());
-    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = type, .name = "value", .getterMethodId = readValue, .setterMethodId = writeValue
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = type, .name = "readOnly", .getterMethodId = readValue
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = type, .name = "writeOnly", .setterMethodId = writeValue
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = runtime.getIntegerType(), .name = "number", .getterMethodId = readNumber, .setterMethodId = writeNumber
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = runtime.getStringType(), .name = "text", .getterMethodId = readText, .setterMethodId = writeText
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = single, .name = "single", .getterMethodId = readSingle, .setterMethodId = writeSingle
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = empty, .name = "empty", .getterMethodId = readEmpty, .setterMethodId = writeEmpty
     }).isValid());
     BOOST_REQUIRE(runtime.addMethod(valueId, {
@@ -3029,9 +3029,9 @@ BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_re
     const auto ownerId = runtime.registerClass("NativeClassReturnOwner", ClassMode::Closed);
     const auto* ownerType = runtime.getTypeByName("NativeClassReturnOwner")->asClassType();
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", payload).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
-    runtime.finalizeCompositeFieldLayout(singleId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(singleId);
     std::vector<NomadInteger> calls;
     BOOST_REQUIRE(runtime.registerNativeFunction("makeNativeClassReturnOwner", [ownerType](VirtualMachine* active) {
         active->getResult().setObjectValue(new ScriptObject(ownerType));
@@ -3177,11 +3177,11 @@ BOOST_AUTO_TEST_CASE(native_method_return_forwarding_preserves_borrowed_storage_
     const auto* type = runtime.getTypeByName("MethodReturnPayload");
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     const auto ownerId = runtime.registerClass("MethodReturnOwner", ClassMode::Closed);
     const auto* ownerType = runtime.getTypeByName("MethodReturnOwner")->asClassType();
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "payload", type).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "makeMethodOwner",
         [ownerType](VirtualMachine* active) {
@@ -3288,8 +3288,8 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
     const auto* empty = runtime.getTypeByName("SourceEmpty");
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     BOOST_REQUIRE(runtime.registerNativeFunction("makeSourcePoint", [](VirtualMachine* active) {
         auto* destination = active->getParameter(1).getStorageAddress();
         destination[0] = active->getParameter(0);
@@ -3438,7 +3438,7 @@ BOOST_AUTO_TEST_CASE(native_methods_borrow_temporary_receivers_and_preserve_owne
     const auto* type = runtime.getTypeByName("NativeTemporary");
     BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     auto factories = 0;
     auto touches = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction(
@@ -3529,7 +3529,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_and_interpreter_rece
     auto& runtime = fixture.getRuntime();
     const auto typeId = runtime.registerStruct("ReceiverChecks");
     const auto* type = runtime.getTypeByName("ReceiverChecks");
-    runtime.finalizeCompositeFieldLayout(typeId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     auto calls = 0;
     BOOST_REQUIRE(runtime.addMethod(typeId, {
         .name = "readReceiverCheck",
@@ -3611,7 +3611,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_share_nested_local_parameter_and_b
     BOOST_REQUIRE(runtime.registerProperty(pairId, "right", leaf).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "empty", empty).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pairId, "suffix", runtime.getIntegerType()).isValid());
-    runtime.finalizeCompositeFieldLayout(pairId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
     BOOST_REQUIRE(pair->getSize() == 7U);
     BOOST_REQUIRE(runtime.registerNativeFunction("makePropertyPair", [](VirtualMachine* active) {
         auto* destination = active->getParameter(0).getStorageAddress();
@@ -3736,7 +3736,7 @@ BOOST_AUTO_TEST_CASE(struct_property_storage_resolves_parameter_subvalue_anchor_
     BOOST_REQUIRE(leftId.isValid());
     BOOST_REQUIRE(rightId.isValid());
     BOOST_REQUIRE(runtime.registerProperty(rootId, "suffix", runtime.getIntegerType()).isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     ScriptFunction caller(CallableId{}, "offsets", "offsets.nomad", "");
     caller.setReturnType(runtime.getVoidType());
     caller.addParameter("value", root, "");
@@ -3779,8 +3779,8 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics
     const auto* holder = runtime.getTypeByName("PropertyHolder");
     BOOST_REQUIRE(runtime.registerProperty(actorId, "value", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(holderId, "actor", actor).isValid());
-    runtime.finalizeCompositeFieldLayout(actorId);
-    runtime.finalizeCompositeFieldLayout(holderId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(actorId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(holderId);
     BOOST_REQUIRE(runtime.registerNativeFunction("makePropertyActor", [actor](VirtualMachine* active) {
         active->getResult().setObjectValue(new ScriptObject(actor));
     }, {}, actor, "").isValid());
@@ -3857,8 +3857,8 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "empty", empty).isValid());
     BOOST_REQUIRE(runtime.registerProperty(ownerId, "suffix", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(emptyOwnerId, "empty", empty).isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
-    runtime.finalizeCompositeFieldLayout(emptyOwnerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyOwnerId);
     const auto createOwner = [&](const NomadInteger number) {
         auto* object = new ScriptObject(owner);
         object->getStorageValue(0).setIntegerValue(101);
@@ -4193,7 +4193,7 @@ BOOST_AUTO_TEST_CASE(native_temporary_property_paths_preserve_receiver_storage_a
     BOOST_REQUIRE(runtime.registerProperty(innerId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
     BOOST_REQUIRE(runtime.registerProperty(outerId, "unrelated", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(outerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
     auto roots = 0;
     auto stringsBeforeRoot = RuntimeValue::getLiveStringCount();
     BOOST_REQUIRE(runtime.registerNativeFunction(
@@ -4309,7 +4309,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_reject_unknown_properties_and_type
         const auto* owner = runtime.getTypeByName("BoundaryOwner");
         BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
         BOOST_REQUIRE(runtime.registerProperty(ownerId, "value", leaf).isValid());
-        runtime.finalizeCompositeFieldLayout(ownerId);
+        runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
         auto calls = 0;
         BOOST_REQUIRE(runtime.registerNativeFunction("makeBoundaryLeaf", [&](VirtualMachine*) {
             ++calls;
@@ -4332,7 +4332,7 @@ BOOST_AUTO_TEST_CASE(registered_native_struct_constructors_create_nonempty_and_e
         if (!empty) {
             BOOST_REQUIRE(runtime.registerProperty(id, "number", runtime.getIntegerType()).isValid());
         }
-        runtime.finalizeCompositeFieldLayout(id);
+        runtime.getTypeManager().finalizeCompositeFieldLayout(id);
         auto calls = 0;
         BOOST_REQUIRE(runtime.registerNativeStructConstructor(id, {
             .parameters = {},
@@ -4351,7 +4351,7 @@ BOOST_AUTO_TEST_CASE(registered_empty_script_struct_constructor_bodies_create_va
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     const auto id = runtime.registerStruct("PendingBody");
-    runtime.finalizeCompositeFieldLayout(id);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     const auto constructorId = runtime.registerScriptStructConstructor(id, {}, "pending.nomad", "");
     BOOST_REQUIRE(constructorId.isValid());
     fixture.addFunction("main", "value = new PendingBody");
@@ -4386,8 +4386,8 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
     BOOST_REQUIRE(runtime.registerScriptStructProperty(scriptId, "nested", nativeType).isValid());
     runtime.setPropertyHasExplicitInitializer(nativeNumber, true);
     runtime.setPropertyHasExplicitInitializer(scriptNumber, true);
-    runtime.finalizeCompositeFieldLayout(scriptId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(scriptId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto initializers = 0;
     auto nativeCalls = 0;
     auto emptyCalls = 0;
@@ -4548,7 +4548,7 @@ BOOST_AUTO_TEST_CASE(unsupported_emission_operations_reject_scalar_fallback_with
     Runtime runtime;
     const auto id = runtime.registerStruct("Empty");
     const Type* type = runtime.getTypeByName("Empty");
-    runtime.finalizeCompositeFieldLayout(id);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     std::vector<Instruction> instructions;
     Compiler compiler(&runtime, instructions);
     const auto initialSize = instructions.size();

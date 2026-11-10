@@ -166,8 +166,8 @@ BOOST_AUTO_TEST_CASE(local_layout_metadata_is_shared_across_script_callable_cate
     for (const auto* name : {"x", "y", "z"}) {
         BOOST_REQUIRE(runtime.registerProperty(pointId, name, runtime.getFloatType()).isValid());
     }
-    runtime.finalizeCompositeFieldLayout(emptyId);
-    runtime.finalizeCompositeFieldLayout(pointId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pointId);
     const auto ownerId = runtime.registerClass("LocalOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("LocalOwner")->asClassType();
     BOOST_REQUIRE(ownerId.isValid());
@@ -218,7 +218,7 @@ BOOST_AUTO_TEST_CASE(local_layout_metadata_reports_unresolved_sizes_and_overflow
     const auto structId = runtime.registerStruct("PendingLocal");
     function.setVariableType(inferred, runtime.getTypeByName("PendingLocal"));
     BOOST_CHECK_THROW((void)function.getVariableOffset(following), NomadException);
-    runtime.finalizeCompositeFieldLayout(structId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(structId);
     BOOST_TEST(function.getVariableOffset(following) == 0U);
     ClassType* maximumType = nullptr;
     const auto maximum = std::numeric_limits<NomadIndex>::max();
@@ -313,8 +313,8 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_param
     const auto* empty = runtime.getTypeByName("HiddenEmpty");
     BOOST_REQUIRE(runtime.registerProperty(pointId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerProperty(pointId, "text", runtime.getStringType()).isValid());
-    runtime.finalizeCompositeFieldLayout(pointId);
-    runtime.finalizeCompositeFieldLayout(emptyId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pointId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const std::vector<Parameter> parameters{
         defParameter("point", point, ""),
         defParameter("handler", runtime.getEventCallbackType(), ""),
@@ -1553,7 +1553,7 @@ BOOST_AUTO_TEST_CASE(member_method_lookup_distinguishes_member_and_callable_ids)
     for (NomadIndex index = 0; index < 32; ++index) {
         BOOST_REQUIRE(registerVoidNativeFunction(runtime, "padding" + std::to_string(index)).isValid());
     }
-    const auto propertyId = runtime.addProperty(type->getId(), {
+    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue&) {},

@@ -113,7 +113,7 @@ BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
     const auto* unrelated = createTestType(runtime, "Unrelated");
     BOOST_REQUIRE(runtime.registerProperty(unrelated->getId(), "other", runtime.getIntegerType()).isValid());
     const auto* type = createTestType(runtime, "Fields");
-    const auto nativeId = runtime.addProperty(type->getId(), {
+    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
@@ -424,7 +424,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
         const auto* type = createTestType(runtime, "Stored");
         BOOST_REQUIRE(runtime.registerProperty(type->getId(), "text", runtime.getStringType()).isValid());
         BOOST_REQUIRE(runtime.registerProperty(type->getId(), "next", type).isValid());
-        BOOST_REQUIRE(runtime.addProperty(type->getId(), {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
             .valueType = runtime.getIntegerType(),
             .name = "nativeLength",
             .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -745,7 +745,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     const auto initializerId = runtime.registerScriptMethod(type->getId(), "Receiver$init", {}, "", "");
     BOOST_REQUIRE(initializerId.isValid());
     auto* initializer = runtime.getScriptCallable(initializerId);
-    const auto propertyId = runtime.addProperty(type->getId(), {
+    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -869,7 +869,7 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
         const auto id = runtime.registerStruct(name);
         BOOST_REQUIRE(runtime.registerProperty(id, "left", prefix).isValid());
         BOOST_REQUIRE(runtime.registerProperty(id, "right", prefix).isValid());
-        runtime.finalizeCompositeFieldLayout(id);
+        runtime.getTypeManager().finalizeCompositeFieldLayout(id);
         prefix = runtime.getTypeByName(name);
     }
     const auto ownerId = runtime.registerClass("PhysicalFields", ClassMode::Closed);
@@ -877,7 +877,7 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
     const auto numberId = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
     const auto textId = runtime.registerProperty(ownerId, "text", runtime.getStringType());
     auto accessorCalls = 0;
-    const auto accessorId = runtime.addProperty(ownerId, {
+    const auto accessorId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = runtime.getIntegerType(),
         .name = "accessor",
         .getter = [&](VirtualMachine*, RuntimeValue& result) {
@@ -889,7 +889,7 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
     BOOST_REQUIRE(numberId.isValid());
     BOOST_REQUIRE(textId.isValid());
     BOOST_REQUIRE(accessorId.isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto* owner = runtime.getTypeByName("PhysicalFields")->asClassType();
     const auto wide = prefix->getSize();
     BOOST_TEST(wide > NOMAD_ID_MAX);

@@ -32,7 +32,7 @@ int main(int argumentCount, char* arguments[]) {
                 }
                 auto failed = false;
                 try {
-                    runtime.finalizeCompositeFieldLayout(id);
+                    runtime.getTypeManager().finalizeCompositeFieldLayout(id);
                 } catch (const nomad::NomadException&) {
                     failed = true;
                 }

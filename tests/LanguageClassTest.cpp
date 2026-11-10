@@ -651,7 +651,7 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     BOOST_REQUIRE(runtime.registerProperty(first->getId(), "later", runtime.getBooleanType()).isValid());
     BOOST_TEST(first->getFieldIndex(firstId) == 0u);
     BOOST_TEST(first->getFieldIndex(first->getProperty("later")->getId()) == 2u);
-    const auto nativeId = runtime.addProperty(first->getId(), {
+    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(first->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
@@ -692,7 +692,7 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
     registerCallbackTestFunctions(runtime);
     const auto otherId = runtime.registerClass("Other", ClassMode::Closed);
     BOOST_REQUIRE(otherId.isValid());
-    BOOST_REQUIRE(runtime.addProperty(otherId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(otherId, {
         .valueType = runtime.getFloatType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadFloat{1.0}}; },
@@ -902,7 +902,7 @@ BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_nati
     auto& runtime = fixture.getRuntime();
     const auto id = runtime.registerClass("Host", ClassMode::Opened);
     BOOST_REQUIRE(id.isValid());
-    BOOST_REQUIRE(runtime.addProperty(id, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(id, {
         .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },

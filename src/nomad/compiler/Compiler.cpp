@@ -2494,7 +2494,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
             continue;
         }
         try {
-            m_runtime->finalizeCompositeFieldLayout(owner->getId());
+            m_runtime->getTypeManager().finalizeCompositeFieldLayout(owner->getId());
         } catch (const NomadBug&) {
             throw;
         } catch (const NomadException& exception) {

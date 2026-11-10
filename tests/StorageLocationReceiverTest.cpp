@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(named_and_nested_struct_receivers_borrow_storage_without_co
         }
     });
     BOOST_REQUIRE(incrementId.isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto compiler = runtime.createCompiler();
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(temporary_struct_field_operations_release_backing_storage_a
     const auto rootId = runtime.registerStruct("EvaluationTemporaryRoot");
     const auto* root = runtime.getType(rootId).value();
     BOOST_REQUIRE(runtime.registerProperty(rootId, "leaf", leaf).isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto calls = 0;
     const auto makeId = runtime.registerNativeFunction("makeEvaluationTemporary", [&](VirtualMachine* active) {
         ++calls;
@@ -191,7 +191,7 @@ BOOST_AUTO_TEST_CASE(object_field_scopes_retain_the_owner_after_its_variable_is_
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
     const auto leafProperty = runtime.registerProperty(ownerId, "leaf", leaf);
     BOOST_REQUIRE(leafProperty.isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto compiler = runtime.createCompiler();
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
@@ -246,7 +246,7 @@ BOOST_AUTO_TEST_CASE(zero_sized_nested_receivers_borrow_no_slots_and_keep_their_
     const auto rootId = runtime.registerStruct("EvaluationEmptyRoot");
     const auto* root = runtime.getType(rootId).value();
     BOOST_REQUIRE(runtime.registerProperty(rootId, "empty", empty).isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto compiler = runtime.createCompiler();
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
@@ -275,7 +275,7 @@ BOOST_AUTO_TEST_CASE(native_property_failures_release_temporary_object_receivers
     Runtime runtime;
     const auto ownerId = runtime.registerClass("EvaluationFailureOwner", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
-    const auto propertyId = runtime.addProperty(ownerId, {
+    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = runtime.getStringType(), .name = "fail",
         .getter = [](VirtualMachine*, RuntimeValue& result) {
             result.setStringValue("partial result");
@@ -283,7 +283,7 @@ BOOST_AUTO_TEST_CASE(native_property_failures_release_temporary_object_receivers
         }
     });
     BOOST_REQUIRE(propertyId.isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto makeId = runtime.registerNativeFunction("makeEvaluationFailure", [owner](VirtualMachine* active) {
         active->getResult().setObjectValue(new ScriptObject(owner));
     }, {}, owner, "");

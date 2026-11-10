@@ -33,9 +33,9 @@ static_assert(!noexcept(std::declval<const CompositeType&>().getFieldStorageSize
 static_assert(std::is_base_of_v<Type, CompositeType>);
 static_assert(std::is_base_of_v<CompositeType, ClassType>);
 static_assert(!std::is_invocable_v<decltype(&CompositeType::finalizeFieldLayout), const CompositeType&>);
-static_assert(std::is_invocable_v<decltype(&Runtime::finalizeCompositeFieldLayout), Runtime&, TypeId>);
-static_assert(!std::is_invocable_v<decltype(&Runtime::finalizeCompositeFieldLayout), const Runtime&, TypeId>);
-static_assert(!std::is_invocable_v<decltype(&Runtime::finalizeCompositeFieldLayout), Runtime&, NomadId>);
+static_assert(std::is_invocable_v<decltype(&TypeManager::finalizeCompositeFieldLayout), TypeManager&, TypeId>);
+static_assert(!std::is_invocable_v<decltype(&TypeManager::finalizeCompositeFieldLayout), const TypeManager&, TypeId>);
+static_assert(!std::is_invocable_v<decltype(&TypeManager::finalizeCompositeFieldLayout), TypeManager&, NomadId>);
 static_assert(!std::is_default_constructible_v<IntegerType>);
 static_assert(!std::is_constructible_v<ClassType, NomadString, ClassMode>);
 static_assert(!std::is_constructible_v<ClassType, Runtime*, NomadString>);
@@ -130,10 +130,10 @@ BOOST_AUTO_TEST_CASE(runtime_finalization_rejects_invalid_and_non_composite_type
     BOOST_REQUIRE(enumId.isValid());
     for (const auto id : {TypeId::INVALID, TypeId{-2}, TypeId{NOMAD_ID_MAX},
         runtime.getVoidType()->getId(), runtime.getIntegerType()->getId(), enumId}) {
-        BOOST_CHECK_THROW(runtime.finalizeCompositeFieldLayout(id), NomadException);
+        BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(id), NomadException);
         BOOST_TEST(!owner->isFieldLayoutFinalized());
     }
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(owner->getFieldStorageSize() == 1U);
 }
@@ -149,7 +149,7 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
     BOOST_TEST(owner->getFieldStorageSize() == 2U);
     BOOST_TEST(!owner->isFieldLayoutFinalized());
 
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(owner->getFieldStorageSize() == 2U);
     BOOST_TEST(owner->getFieldOffset(first) == 0U);
@@ -163,7 +163,7 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
     BOOST_TEST(fields[1].type == runtime.getStringType());
     BOOST_TEST(fields[1].offset == 1U);
     BOOST_TEST(fields[1].size == 1U);
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(runtime.registerProperty(owner->getId(), "first", runtime.getFloatType()) == first);
     BOOST_TEST(runtime.registerProperty(owner->getId(), "extra", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(owner->getProperty("extra") == nullptr);
@@ -177,7 +177,7 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
     BOOST_TEST(object.getField(owner->getFieldIndex(first)).getFloatValue() == 7.0);
 
     auto callbackCalls = 0;
-    const auto native = runtime.addProperty(owner->getId(), {
+    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
@@ -228,7 +228,7 @@ BOOST_AUTO_TEST_CASE(finalization_distinguishes_empty_inline_layouts_from_unreso
     BOOST_CHECK_THROW((void)empty->getSize(), NomadException);
     BOOST_CHECK_THROW((void)owner->getFieldStorageSize(), NomadException);
 
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(empty->isFieldLayoutFinalized());
     BOOST_TEST(!empty->isVoid());
@@ -239,7 +239,7 @@ BOOST_AUTO_TEST_CASE(finalization_distinguishes_empty_inline_layouts_from_unreso
     BOOST_TEST(owner->getFieldOffset(middle) == 1U);
     BOOST_TEST(owner->getFieldOffset(last) == 1U);
     BOOST_TEST(owner->getFieldIndex(last) == 3U);
-    runtime.finalizeCompositeFieldLayout(empty->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(empty->getId());
     BOOST_TEST(empty->getSize() == 0U);
 }
 
@@ -268,7 +268,7 @@ BOOST_AUTO_TEST_CASE(finalization_resolves_nested_inline_dependencies_before_con
     BOOST_REQUIRE(name.isValid());
     BOOST_REQUIRE(location.isValid());
 
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(point->isFieldLayoutFinalized());
     BOOST_TEST(pair->isFieldLayoutFinalized());
     BOOST_TEST(point->getSize() == 3U);
@@ -280,7 +280,7 @@ BOOST_AUTO_TEST_CASE(finalization_resolves_nested_inline_dependencies_before_con
     BOOST_TEST(owner->getFieldStorageSize() == 8U);
     BOOST_TEST(owner->getSize() == 1U);
     BOOST_TEST(runtime.registerProperty(point->getId(), "extra", runtime.getIntegerType()).isInvalid());
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->getFieldStorageSize() == 8U);
 }
 
@@ -300,14 +300,14 @@ BOOST_AUTO_TEST_CASE(finalization_rejects_direct_and_indirect_inline_cycles_with
         if (indirect) {
             BOOST_REQUIRE(runtime.registerProperty(second->getId(), "next", first).isValid());
         }
-        BOOST_CHECK_EXCEPTION(runtime.finalizeCompositeFieldLayout(first->getId()), NomadException, [](const NomadException& error) {
+        BOOST_CHECK_EXCEPTION(runtime.getTypeManager().finalizeCompositeFieldLayout(first->getId()), NomadException, [](const NomadException& error) {
             const auto message = std::string(error.what());
             return message.find("cycle") != std::string::npos && message.find("FirstInline") != std::string::npos;
         });
         BOOST_TEST(!first->isFieldLayoutFinalized());
         BOOST_TEST(!second->isFieldLayoutFinalized());
         BOOST_CHECK_THROW((void)first->getSize(), NomadException);
-        BOOST_CHECK_THROW(runtime.finalizeCompositeFieldLayout(first->getId()), NomadException);
+        BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(first->getId()), NomadException);
         BOOST_TEST(!first->isFieldLayoutFinalized());
         BOOST_REQUIRE(runtime.registerProperty(first->getId(), "extra", runtime.getIntegerType()).isValid());
     }
@@ -327,13 +327,13 @@ BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline
     BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "location", point).isValid());
     BOOST_REQUIRE(runtime.registerProperty(point->getId(), "player", owner).isValid());
     auto getterCalls = 0;
-    BOOST_REQUIRE(runtime.addProperty(point->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(point->getId(), {
         .valueType = nativeOnly,
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++getterCalls; }
     }).isValid());
 
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(point->isFieldLayoutFinalized());
     BOOST_TEST(point->getSize() == 1U);
@@ -347,7 +347,7 @@ BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline
     ).isValid());
     const auto* referencedClass = createTestType(runtime, "Referenced", ClassMode::Closed);
     BOOST_REQUIRE(runtime.registerProperty(referenceOnly->getId(), "reference", referencedClass).isValid());
-    runtime.finalizeCompositeFieldLayout(referenceOnly->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(referenceOnly->getId());
     BOOST_TEST(referenceOnly->getSize() == 1U);
     BOOST_TEST(!referencedClass->isFieldLayoutFinalized());
 }
@@ -365,7 +365,7 @@ BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_bac
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
     BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "empty", empty).isValid());
     BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "pending", pending).isValid());
-    BOOST_CHECK_THROW(runtime.finalizeCompositeFieldLayout(owner->getId()), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId()), NomadException);
     BOOST_TEST(!owner->isFieldLayoutFinalized());
     BOOST_TEST(empty->isFieldLayoutFinalized());
     BOOST_TEST(empty->getSize() == 0U);
@@ -373,7 +373,7 @@ BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_bac
     BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "extra", runtime.getIntegerType()).isValid());
 
     pending->setSize(3);
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(owner->getFieldStorageSize() == 4U);
     BOOST_TEST(pending->getSizeQueryCount() == 2U);
@@ -390,7 +390,7 @@ BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_bac
     BOOST_TEST(fields[2].size == 1U);
     BOOST_TEST(owner->getLayoutSize() == 4U);
     BOOST_TEST(pending->getSizeQueryCount() == 2U);
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->getFieldStorageSize() == 4U);
     BOOST_TEST(owner->getFieldLayouts().data() == fields.data());
     BOOST_TEST(pending->getSizeQueryCount() == 2U);
@@ -411,7 +411,7 @@ BOOST_AUTO_TEST_CASE(finalization_checks_overflow_without_rejecting_maximum_offs
     BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "maximum", maximum).isValid());
     const auto emptyField = runtime.registerProperty(owner->getId(), "empty", empty);
     BOOST_REQUIRE(emptyField.isValid());
-    runtime.finalizeCompositeFieldLayout(owner->getId());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->isFieldLayoutFinalized());
     BOOST_TEST(owner->getFieldStorageSize() == maximumSize);
     BOOST_TEST(owner->getFieldOffset(emptyField) == maximumSize);
@@ -419,9 +419,9 @@ BOOST_AUTO_TEST_CASE(finalization_checks_overflow_without_rejecting_maximum_offs
     const auto* overflow = createTestType(runtime, "Overflow", ClassMode::Closed);
     BOOST_REQUIRE(runtime.registerProperty(overflow->getId(), "maximum", maximum).isValid());
     BOOST_REQUIRE(runtime.registerProperty(overflow->getId(), "extra", runtime.getIntegerType()).isValid());
-    BOOST_CHECK_THROW(runtime.finalizeCompositeFieldLayout(overflow->getId()), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(overflow->getId()), NomadException);
     BOOST_TEST(!overflow->isFieldLayoutFinalized());
-    BOOST_CHECK_THROW(runtime.finalizeCompositeFieldLayout(overflow->getId()), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(overflow->getId()), NomadException);
     BOOST_TEST(!overflow->isFieldLayoutFinalized());
 }
 
@@ -461,7 +461,7 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
         std::make_unique<Property>(composite, "stored", runtime.getStringType()));
     BOOST_REQUIRE(stored.isValid());
     auto callbackCalls = 0;
-    const auto native = runtime.addProperty(owner->getId(), {
+    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
@@ -520,7 +520,7 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Opened);
     auto callbackCalls = 0;
-    const auto nativeBefore = runtime.addProperty(owner->getId(), {
+    const auto nativeBefore = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = pointType,
         .name = "nativeBefore",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; },
@@ -528,7 +528,7 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     });
     const auto first = runtime.registerProperty(owner->getId(), "first", emptyType);
     const auto point = runtime.registerProperty(owner->getId(), "point", pointType);
-    const auto nativeBetween = runtime.addProperty(owner->getId(), {
+    const auto nativeBetween = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "nativeBetween",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
@@ -537,7 +537,7 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     const auto middle = runtime.registerProperty(owner->getId(), "middle", emptyType);
     const auto number = runtime.registerProperty(owner->getId(), "number", runtime.getIntegerType());
     const auto last = runtime.registerProperty(owner->getId(), "last", emptyType);
-    const auto nativeAfter = runtime.addProperty(owner->getId(), {
+    const auto nativeAfter = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = emptyType,
         .name = "nativeAfter",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
@@ -581,7 +581,7 @@ BOOST_AUTO_TEST_CASE(empty_and_native_only_field_layouts_use_no_storage) {
     BOOST_TEST(owner->getFieldStorageSize() == 0U);
     BOOST_TEST(owner->getSize() == 1U);
     auto getterCalls = 0;
-    const auto native = runtime.addProperty(owner->getId(), {
+    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++getterCalls; }
@@ -604,7 +604,7 @@ BOOST_AUTO_TEST_CASE(field_layout_queries_follow_size_resolution) {
     const auto first = runtime.registerProperty(owner->getId(), "first", runtime.getIntegerType());
     const auto pending = runtime.registerProperty(owner->getId(), "pending", pendingType);
     const auto following = runtime.registerProperty(owner->getId(), "following", runtime.getFloatType());
-    const auto native = runtime.addProperty(owner->getId(), {
+    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = pendingType,
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -762,7 +762,7 @@ BOOST_AUTO_TEST_CASE(explicit_initializer_metadata_is_owned_by_each_stored_prope
     runtime.setPropertyHasExplicitInitializer(firstId, false);
     BOOST_TEST(!first->hasExplicitInitializer());
 
-    const auto nativeId = runtime.addProperty(type->getId(), {
+    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
@@ -797,7 +797,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     const auto* first = createTestType(runtime, "First", ClassMode::Opened);
     const auto* second = createTestType(runtime, "Second", ClassMode::Opened);
     const auto scriptId = runtime.registerProperty(first->getId(), "value", runtime.getFloatType());
-    const auto nativeId = runtime.addProperty(second->getId(), {
+    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(second->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); },
@@ -865,14 +865,14 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
         .documentation = ""
     }).isInvalid());
     const auto typeId = type->getId();
-    BOOST_TEST(runtime.addProperty(typeId, {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime.getIntegerType(),
         .name = "x",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    const auto nativeId = runtime.addProperty(typeId, {
+    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
@@ -898,7 +898,7 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
             delete value;
         });
         observer = probe;
-        const auto id = runtime.addProperty(type->getId(), {
+        const auto id = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
             .valueType = runtime.getIntegerType(),
             .name = "value",
             .getter = [probe](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(*probe); },

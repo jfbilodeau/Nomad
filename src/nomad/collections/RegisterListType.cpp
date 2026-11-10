@@ -31,7 +31,7 @@ void registerListReaders(Runtime* runtime, const ClassType* classType, const boo
             .documentation = NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
         }
     });
-    const auto countId = runtime->addProperty(classType->getId(), {
+    const auto countId = runtime->getTypeManager().registerNativeClassProperty(classType->getId(), {
         .valueType = runtime->getIntegerType(),
         .name = "count",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {

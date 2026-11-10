@@ -2786,7 +2786,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     BOOST_TEST(runtime.getKeywordId("new").isValid());
     const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
-    BOOST_REQUIRE(runtime.addProperty(listType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(listType->getId(), {
         .valueType = runtime.getBooleanType(),
         .name = "testPresent",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {

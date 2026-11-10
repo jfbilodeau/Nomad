@@ -277,7 +277,7 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
     const auto rootId = runtime.registerStruct("AssignmentCopyRoot");
     const auto* root = runtime.getTypeByName("AssignmentCopyRoot");
     BOOST_REQUIRE(runtime.registerProperty(rootId, "pair", pair).isValid());
-    runtime.finalizeCompositeFieldLayout(rootId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto machine = runtime.createVirtualMachine();
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
@@ -344,7 +344,7 @@ BOOST_AUTO_TEST_CASE(stored_field_writes_do_not_copy_unrelated_fields) {
     const auto* owner = runtime.getTypeByName("AssignmentLiveOwner")->asClassType();
     const auto rootPropertyId = runtime.registerProperty(ownerId, "value", root);
     BOOST_REQUIRE(rootPropertyId.isValid());
-    runtime.finalizeCompositeFieldLayout(ownerId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
