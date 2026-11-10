@@ -1046,6 +1046,41 @@ BOOST_AUTO_TEST_CASE(explicit_hubs_adopt_existing_qualified_native_registrations
     BOOST_TEST(std::get<ConstantId>(*child->getMember("value")) == constantId);
 }
 
+BOOST_AUTO_TEST_CASE(failed_hub_rebuild_rolls_back_without_changing_existing_catalogs)
+{
+    Runtime runtime;
+    const auto stableId = runtime.registerHub("stable", HubMode::Opened);
+    BOOST_REQUIRE(stableId.isValid());
+    const auto* stable = runtime.getHub(stableId);
+    const auto retainedId = runtime.registerHubConstant(
+        stableId, "retained", RuntimeValue{NomadInteger{7}}, runtime.getIntegerType()
+    );
+    BOOST_REQUIRE(retainedId.isValid());
+    const auto constantId = runtime.registerConstant(
+        "example.child.conflict", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
+    );
+    const auto dynamicId = runtime.registerDynamicVariable(
+        "example.child.conflict", nullptr,
+        [](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(43); },
+        runtime.getIntegerType(), ""
+    );
+    BOOST_REQUIRE(constantId.isValid());
+    BOOST_REQUIRE(dynamicId.isValid());
+
+    BOOST_TEST(runtime.registerHub("example.child", HubMode::Opened).isInvalid());
+    BOOST_TEST(runtime.getHubId("example.child").isInvalid());
+    BOOST_TEST(runtime.getHub(stableId) == stable);
+    BOOST_REQUIRE(stable->getMember("retained") != nullptr);
+    BOOST_TEST(std::get<ConstantId>(*stable->getMember("retained")) == retainedId);
+    BOOST_TEST(stable->getMembers().size() == 1U);
+    BOOST_TEST(runtime.getConstantId("example.child.conflict") == constantId);
+    BOOST_TEST(runtime.getDynamicVariableId("example.child.conflict") == dynamicId);
+    RuntimeValue retained;
+    runtime.getConstantValue(constantId, retained);
+    BOOST_TEST(retained.getIntegerValue() == 42);
+    BOOST_TEST(runtime.registerHub("valid", HubMode::Opened).id == stableId.id + 1);
+}
+
 BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overloads)
 {
     Runtime runtime;

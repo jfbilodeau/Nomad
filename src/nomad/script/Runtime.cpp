@@ -19,8 +19,6 @@
 
 #include <nomad/system/String.hpp>
 
-#include <boost/json/array.hpp>
-
 #include <algorithm>
 #include <utility>
 
@@ -154,7 +152,6 @@ Runtime::Runtime():
 
     registerCoreNativeFunctions(this);
 
-//    register_keyword("stringId" NomadDoc("Load the string id of the given string"));
     registerKeyword("fun", NomadDoc("Function declaration"));
     registerKeyword("class", NomadDoc("Declares a closed class type"));
     registerKeyword("struct", NomadDoc("Declares a closed struct"));
@@ -204,16 +201,6 @@ bool Runtime::isDebug() const {
 
 const std::vector<Instruction>& Runtime::getInstructions() const {
     return m_instructions;
-}
-
-CallableId Runtime::registerNativeFunction(
-    const NomadString& name,
-    NativeFunctionFn nativeFunction_fn,
-    const std::vector<Parameter>& parameters,
-    const Type* returnType,
-    NomadDocArg
-) {
-    return registerNativeCallable(name, std::move(nativeFunction_fn), parameters, returnType, doc);
 }
 
 std::optional<NomadString> Runtime::qualifyHubMemberName(const HubId hubId, const NomadString& name) const {
@@ -556,14 +543,12 @@ HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
     }
     const auto previousCount = m_hubs.size();
     m_hubs.push_back(std::make_unique<Hub>(name, mode));
-    if (previousCount != m_hubs.size()) {
-        try {
-            rebuildHubMembers();
-        } catch (const NomadException& exception) {
-            m_hubs.resize(previousCount);
-            log::error("Cannot register hub '" + name + "': " + exception.what());
-            return HubId::INVALID;
-        }
+    try {
+        rebuildHubMembers();
+    } catch (const NomadException& exception) {
+        m_hubs.resize(previousCount);
+        log::error("Cannot register hub '" + name + "': " + exception.what());
+        return HubId::INVALID;
     }
     return getHubId(name);
 }
@@ -582,7 +567,7 @@ void Runtime::validateScriptExecution() const {
     }
 }
 
-CallableId Runtime::registerNativeCallable(
+CallableId Runtime::registerNativeFunction(
     const NomadString& name,
     NativeFunctionFn fn,
     const std::vector<Parameter>& parameters,
@@ -1226,20 +1211,12 @@ const Type* Runtime::getCallbackType(const std::vector<const Type*>& parameterTy
     return m_typeManager.getCallbackType(parameterTypes, returnType);
 }
 
-const Type * Runtime::getEventType(const NomadString &name) const {
-    return m_typeManager.getTypeByName(name);
-}
-
 const Type* Runtime::getPredicateType() {
     return m_typeManager.getPredicateType();
 }
 
 bool Runtime::ownsType(const Type* type) const {
     return m_typeManager.ownsType(type);
-}
-
-ClassType* Runtime::getMutableClassType(const ClassType* type) {
-    return m_typeManager.getMutableClassType(type);
 }
 
 bool Runtime::canRegisterNativeMember(const Type* classType, const NomadString& name, const MemberType type,
@@ -1780,10 +1757,6 @@ OpCodeId Runtime::registerInstruction(const NomadString& name, const Instruction
 const Type* Runtime::getVoidType() const {
     return getTypeByName(VOID_TYPE_NAME);
 }
-//
-//const Type* Runtime::get_id_type() const {
-//    return get_type(ID_TYPE_NAME);
-//}
 
 const Type* Runtime::getBooleanType() const {
     return getTypeByName(BOOLEAN_TYPE_NAME);
@@ -1995,34 +1968,6 @@ NativeFunctionFn Runtime::getNativeFunctionFn(const CallableId id) const {
     return getNativeFunction(id)->getFn();
 }
 
-//NomadId Runtime::register_statement(const String& name, ParseStatementFn fn) {
-//    auto id = to_nomad_id(m_statements.size());
-//
-//    ParseStatementFnRegistration registration;
-//
-//    registration.id = id;
-//    registration.name = name;
-//    registration.fn = fn;
-//
-//    m_statements.push_back(registration);
-//
-//    return id;
-//}
-
-//CompilerStatementFn Runtime::get_statement(const String& name) const {
-//    for (const auto& statement: m_statements) {
-//        if (statement.name == name) {
-//            return statement.fn;
-//        }
-//    }
-//
-//    return nullptr;
-//}
-//
-//void Runtime::get_statements(std::vector<CompilerStatementFnRegistration>& statements) const {
-//    statements = m_statements;
-//}
-//
 const NativeFunction* Runtime::getNativeFunction(const NomadString& name) const {
     const auto id = getNativeFunctionId(name);
 

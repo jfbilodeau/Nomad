@@ -31,7 +31,6 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -255,7 +254,6 @@ public:
         NomadString documentation = {}
     );
     [[nodiscard]] const Type* getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType);
-    [[nodiscard]] const Type* getEventType(const NomadString& name) const;
     [[nodiscard]] const Type* getPredicateType();
     void registerEnumOperators(const EnumType* type);
 
@@ -671,13 +669,6 @@ private:
     };
 
     // Callable registration and resolution
-    CallableId registerNativeCallable(
-        const NomadString& name,
-        NativeFunctionFn fn,
-        const std::vector<Parameter>& parameters,
-        const Type* returnType,
-        const NomadString& doc
-    );
     CallableId addCallableToTable(std::unique_ptr<Function> function);
     [[nodiscard]] bool canOverloadCallable(
         const NomadString& name,
@@ -694,7 +685,6 @@ private:
     [[nodiscard]] TypeId reserveTypeId();
     void registerType(std::unique_ptr<Type>&& type);
     [[nodiscard]] bool ownsType(const Type* type) const;
-    [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
     // Hub registration
     [[nodiscard]] std::optional<NomadString> qualifyHubMemberName(HubId hubId, const NomadString& name) const;
     void registerHubMember(const NomadString& name, HubMember member);

@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 1 is implemented and validated, awaiting review.
-Step 2 has not started and is not approved for implementation.
+Status: Steps 1 and 2 are implemented and validated. Step 2 awaits review;
+Step 3A has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -153,6 +153,21 @@ Acceptance: no new public APIs or helper framework; native registration,
 deferred signatures, overloads, and hub failure behavior remain unchanged.
 Use [DeferredNativeFunctionTest.cpp](../../tests/DeferredNativeFunctionTest.cpp),
 [CallableCatalogTest.cpp](../../tests/CallableCatalogTest.cpp), and hub regressions.
+
+Completion evidence (2026-11-10, Windows Debug):
+
+- Merged native free-function registration into its public entry point and
+  removed the unused runtime wrappers, obsolete commented APIs, unused includes,
+  and redundant hub-insertion condition. The manager's mutable-class API remains.
+- Added a failed-rebuild regression checking hub rollback, existing member
+  identity, unchanged constant/dynamic-variable catalogs, and subsequent hub IDs.
+- The `nomad-development` build and language and remaining-unit CTest groups
+  passed. The rebuild emitted existing discarded-`nodiscard` warnings in
+  unchanged test files; those unrelated warnings were not modified.
+- Production code decreased by 65 lines across the runtime header/source;
+  regression coverage added 35 lines. Retired symbols have no active callers.
+- No script semantics changed. Other platforms and manual gameplay were not
+  validated.
 
 ### Step 3A: Make property registration and layout finalization manager-only
 
@@ -348,4 +363,5 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 1 review: Step 2, removing dead layers and obsolete code.
+Next slice after Step 2 review: Step 3A, manager-only property registration
+and field-layout finalization.
