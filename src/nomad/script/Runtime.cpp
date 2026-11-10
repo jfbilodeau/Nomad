@@ -1676,10 +1676,6 @@ CallableId Runtime::getNativeFunctionId(const NomadString& name) const {
     return function == nullptr ? CallableId{} : function->getId();
 }
 
-NativeFunctionFn Runtime::getNativeFunctionFn(const CallableId id) const {
-    return getNativeFunction(id)->getFn();
-}
-
 const NativeFunction* Runtime::getNativeFunction(const NomadString& name) const {
     const auto id = getNativeFunctionId(name);
 
@@ -2320,18 +2316,6 @@ const ScriptFunction* Runtime::getScriptFunction(const CallableId functionId) co
     return function == nullptr ? nullptr : function->asScriptFunction();
 }
 
-bool Runtime::setScriptFunctionReturnType(const CallableId functionId, const Type* returnType) {
-    auto* function = getScriptFunction(functionId);
-
-    if (function == nullptr) {
-        return false;
-    }
-
-    function->setReturnType(returnType);
-
-    return true;
-}
-
 CallableId Runtime::getFunctionId(const NomadString& name) const {
     const auto* function = getScriptFunction(getCallableId(name));
     return function == nullptr ? CallableId{} : function->getId();
@@ -2391,17 +2375,6 @@ NomadIndex Runtime::getFunctionCount() const {
 }
 
 void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) const {
-    functions.clear();
-    functions.reserve(getFunctionCount());
-
-    for (auto* callable : m_callables) {
-        if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            functions.push_back(static_cast<ScriptFunction*>(callable));
-        }
-    }
-}
-
-void Runtime::getFunctions(TempVector<ScriptFunction*>& functions) {
     functions.clear();
     functions.reserve(getFunctionCount());
 
@@ -2475,18 +2448,6 @@ void Runtime::getScriptCallables(std::vector<const ScriptCallableBase*>& callabl
             callables.push_back(script);
         }
     }
-}
-
-NomadIndex Runtime::getFunctionSize() const {
-    NomadIndex size = 0;
-
-    for (const auto* callable : m_callables) {
-        if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
-            size += static_cast<const ScriptFunction*>(callable)->getFunctionLength();
-        }
-    }
-
-    return size;
 }
 
 std::unique_ptr<Compiler> Runtime::createCompiler() {

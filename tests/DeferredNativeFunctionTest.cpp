@@ -270,7 +270,6 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(declaration->getParameters()[1].getTypeName() == "log.SinkConfiguration");
     BOOST_TEST(declaration->getReturnTypeName() == "log.SinkConfiguration");
     BOOST_CHECK_THROW((void)declaration->getFn(), NomadException);
-    BOOST_CHECK_THROW((void)runtime.getNativeFunctionFn(id), NomadException);
     const auto unresolved = runtime.resolveFunction("updateConfiguration", {nullptr, nullptr, nullptr});
     BOOST_CHECK(unresolved.status == ResolveStatus::UnresolvedSignature);
     BOOST_TEST(runtime.describeResolveFailure("updateConfiguration", unresolved).find("unresolved") != NomadString::npos);
@@ -413,7 +412,7 @@ BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_ar
                 diagnostic.message.find(name) != NomadString::npos;
         }));
         BOOST_TEST(!runtime.getNativeFunction(id)->isSignatureResolved());
-        BOOST_CHECK_THROW((void)runtime.getNativeFunctionFn(id), NomadException);
+        BOOST_CHECK_THROW((void)runtime.getNativeFunction(id)->getFn(), NomadException);
     }
     Runtime runtime;
     auto compiler = runtime.createCompiler();
@@ -476,7 +475,8 @@ BOOST_AUTO_TEST_CASE(overload_conflicts_are_reported_after_type_resolution) {
         }));
         BOOST_TEST(!runtime.getNativeFunction(firstId)->isSignatureResolved());
         BOOST_TEST(!runtime.getNativeFunction(secondId)->isSignatureResolved());
-        BOOST_CHECK_THROW((void)runtime.getNativeFunctionFn(firstId), NomadException);
+        BOOST_CHECK_THROW((void)runtime.getNativeFunction(firstId)->getFn(), NomadException);
+        BOOST_CHECK_THROW((void)runtime.getNativeFunction(secondId)->getFn(), NomadException);
     }
 }
 

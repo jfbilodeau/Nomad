@@ -738,9 +738,8 @@ BOOST_AUTO_TEST_CASE(script_function_joins_function_table)
     BOOST_TEST(function->getParameters()[0].type == runtime.getIntegerType());
     BOOST_TEST(function->getReturnType() == nullptr);
 
-    BOOST_TEST(runtime.setScriptFunctionReturnType(scriptId, runtime.getFloatType()));
+    runtime.getScriptFunction(scriptId)->setReturnType(runtime.getFloatType());
     BOOST_TEST(function->getReturnType() == runtime.getFloatType());
-    BOOST_TEST(!runtime.setScriptFunctionReturnType(nativeId, runtime.getFloatType()));
 
     const auto resolved = runtime.resolveFunction("scripted", {runtime.getIntegerType()});
     BOOST_TEST((resolved.status == ResolveStatus::Resolved));
@@ -823,20 +822,16 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     BOOST_TEST(script->getVariableId("value").isInvalid());
     BOOST_TEST(script->getParameterType(script->getParameterId("value")) == runtime.getIntegerType());
     BOOST_TEST(runtime.getFunctionCount() == 1U);
-    BOOST_TEST(runtime.getFunctionSize() == 10U);
+    BOOST_TEST(script->getFunctionLength() == 10U);
     BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == script);
     BOOST_TEST(runtime.getFunctionByStartAddress(10) == script);
     BOOST_TEST(runtime.getFunctionAtInstructionIndex(19) == script);
     BOOST_TEST(runtime.getFunctionAtInstructionIndex(20) == nullptr);
 
-    std::vector<ScriptFunction*> scripts;
+    std::vector<ScriptFunction*> scripts{nullptr};
     runtime.getFunctions(scripts);
     BOOST_REQUIRE(scripts.size() == 1U);
     BOOST_TEST(scripts.front() == script);
-    TempVector<ScriptFunction*> temporaryScripts;
-    runtime.getFunctions(temporaryScripts);
-    BOOST_REQUIRE(temporaryScripts.size() == 1U);
-    BOOST_TEST(temporaryScripts.front() == script);
 }
 
 BOOST_AUTO_TEST_CASE(duplicate_native_function_name_is_rejected)

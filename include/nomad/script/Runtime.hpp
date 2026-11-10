@@ -25,8 +25,6 @@
 #include <nomad/script/TypedNativeFunction.hpp>
 #include <nomad/script/VariableContext.hpp>
 
-#include <nomad/system/TempHeap.hpp>
-
 #include <concepts>
 #include <memory>
 #include <optional>
@@ -314,7 +312,6 @@ public:
         );
     }
     [[nodiscard]] CallableId getNativeFunctionId(const NomadString& name) const;
-    [[nodiscard]] NativeFunctionFn getNativeFunctionFn(CallableId id) const;
 
     // Null unless `functionId` identifies a native function.
     [[nodiscard]] const NativeFunction* getNativeFunction(CallableId functionId) const;
@@ -458,8 +455,6 @@ public:
     [[nodiscard]] const ScriptFunction* getScriptFunction(CallableId functionId) const;
     [[nodiscard]] ScriptCallableBase* getScriptCallable(CallableId callableId);
     [[nodiscard]] const ScriptCallableBase* getScriptCallable(CallableId callableId) const;
-    // Script return types are inferred after compilation. Returns false if `functionId` is not a script function.
-    bool setScriptFunctionReturnType(CallableId functionId, const Type* returnType);
     [[nodiscard]] ScriptFunction* getFunctionAtLine(
         const NomadString& sourceName,
         NomadIndex line
@@ -468,7 +463,6 @@ public:
     [[nodiscard]] ScriptFunction* getFunctionByStartAddress(NomadIndex startAddress) const;
     [[nodiscard]] NomadIndex getFunctionCount() const;
     void getFunctions(std::vector<ScriptFunction*>& functions) const;
-    void getFunctions(TempVector<ScriptFunction*>& functions);
     [[nodiscard]] ScriptFunction* getFunctionAtInstructionIndex(NomadIndex instructionIndex) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableAtLine(
         const NomadString& sourceName,
@@ -477,8 +471,6 @@ public:
     [[nodiscard]] const ScriptCallableBase* getScriptCallableByStartAddress(NomadIndex startAddress) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableAtInstructionIndex(NomadIndex instructionIndex) const;
     void getScriptCallables(std::vector<const ScriptCallableBase*>& callables) const;
-
-    [[nodiscard]] NomadIndex getFunctionSize() const;
 
     std::unique_ptr<Compiler> createCompiler();
     void registerCompilerSetup(std::function<void(Compiler*)> setup);

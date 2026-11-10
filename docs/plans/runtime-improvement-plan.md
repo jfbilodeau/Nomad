@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 4 is implemented and validated, awaiting review.
-Step 5 has not started and is not approved for implementation.
+Status: Step 5 is implemented and validated, awaiting review.
+Step 6 has not started and requires a concrete helper-design review.
 
 Approved planning decisions:
 
@@ -89,7 +89,8 @@ Each slice must:
 
 1. Make one coherent change and migrate every affected repository surface.
 2. Update directly related embedding documentation.
-3. Build using the existing workspace CMake tasks and run focused regressions.
+3. Run focused CTest regressions through the workspace CMake test task, without
+   a separate build first; let the test task handle the required build.
 4. Report removals, behavior preserved, checks run, and remaining limitations.
 5. Stop for review, including after each registration sub-slice below.
 
@@ -382,6 +383,24 @@ cast its selected result: selection inside a method can differ.
 Acceptance: LSP, documentation, game/debug callers, invalid-ID checks, source
 ranges, and uncompiled-callable behavior retain their existing contracts.
 
+Completion evidence (2026-11-10, Windows Debug):
+
+- Removed all four adapters and the runtime header's direct temporary-heap
+  include. Production code decreased by 47 lines.
+- Migrated callback access to guarded native descriptors and return-type
+  refinement to the script descriptor. Deferred-overload tests check that both
+  callbacks remain guarded; live signature and category-narrowing checks remain.
+- Kept bytecode-length coverage on the script descriptor and strengthened
+  standard-vector enumeration coverage with a prepopulated output vector.
+  Removed duplicate assertions dedicated solely to retired adapters.
+- The development build, language, remaining-unit, tooling, and LSP-process
+  CTests passed. All four documentation preparation tests, retired-API searches,
+  and whitespace checks passed. Free-function/all-callable views are unchanged.
+- For subsequent slices, the approved Nomad workflow is to invoke the CMake
+  CTest task directly, not perform a separate build before planned tests.
+- Other platforms, full packaging integration, and manual gameplay were not
+  validated.
+
 ### Step 6: Reduce execution adapter plumbing
 
 Keep the public closure/function overloads and their ownership contracts.
@@ -425,7 +444,8 @@ This is not a claim of measured gameplay performance improvement.
 - Verify no repository code, emitted binding text, examples, or documentation
   still calls retired APIs. Historical plans are historical evidence, not
   current API guidance; do not rewrite the completed struct plan.
-- Build all development targets and run all configured Windows Debug CTests.
+- Run all configured Windows Debug CTests through the workspace CMake test task,
+  allowing it to handle the required build without a separate pre-test build.
 - Run documentation preparation checks and strict published-documentation
   generation using matching built tools/SDK.
 - Verify existing SDK/module/package consuming fixtures with the new headers.
@@ -436,20 +456,17 @@ This is not a claim of measured gameplay performance improvement.
 ## 5. Validation workflow
 
 Use the existing [workspace tasks](../../.vscode/tasks.json) and
-[CMake presets](../../CMakePresets.json). CLI equivalents for Windows Debug:
-
-```powershell
-cmake --build --preset windows-debug
-ctest --preset windows-debug -R '^nomad_test_(language|remaining)$'
-```
+[CMake presets](../../CMakePresets.json). For test validation, invoke the
+`CMake: run tests` task directly and let it handle the required build. Do not
+run a separate build first when planning to run tests.
 
 Select the smallest relevant cases/groups using the existing
 [test configuration](../../tests/CMakeLists.txt). Include tooling and binding
 groups when their callers change. Do not rerun every integration test after
-each small slice; run the complete matrix at Step 8:
+each small slice; run the complete matrix through that task at Step 8.
+Additional documentation and whitespace checks:
 
 ```powershell
-ctest --preset windows-debug
 py -3 -B -m unittest discover -s scripts -p "test_generate_documentation.py"
 git diff --check
 ```
@@ -478,5 +495,5 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 4 review: Step 5, pruning thin query adapters while
-preserving distinct free-function and all-callable views.
+Next after Step 5 review: approve a small Step 6 proposal for shared VM
+acquisition and result finalization before implementing execution-adapter cleanup.
