@@ -18,6 +18,7 @@
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/OpCode.hpp>
 
+#include <deque>
 #include <functional>
 #include <span>
 #include <unordered_map>
@@ -301,6 +302,7 @@ public:
         NomadString hub,
         bool hubInitializer
     );
+    // Hooks registered during a phase start with the next phase.
     void registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook);
     [[nodiscard]] const DeferredType* deferType(TypeReference reference);
     void registerDeferredTypeTarget(std::unique_ptr<DeferredTypeTarget> target);
@@ -402,7 +404,7 @@ private:
 //    Function* m_current_function;
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
-    std::vector<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
+    std::deque<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
     std::vector<SourceRoot> m_sourceRoots;
     bool m_sourceRootsLoaded = false;
     std::vector<ScriptCompilation> m_scripts;

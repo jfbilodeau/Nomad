@@ -66,6 +66,66 @@ BOOST_AUTO_TEST_CASE(executable_hooks_follow_phase_and_registration_order)
     BOOST_TEST(result.getIntegerValue() == 42);
 }
 
+BOOST_AUTO_TEST_CASE(hooks_registered_during_invocation_start_next_phase_without_resetting_state)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"answer", {"editor:answer", "return 42"}}}, {}});
+
+    struct HookObservations {
+        Compiler* compiler;
+        std::vector<std::pair<CompilationPhase, int>> calls;
+        std::vector<std::size_t> invocationCounts;
+    };
+    HookObservations observations{compiler.get(), {}, {}};
+    compiler->registerPhaseHook([&observations, invocationCount = std::size_t{0}](
+        CompilerContext*,
+        const CompilationPhase phase
+    ) mutable {
+        observations.calls.emplace_back(phase, 0);
+        if (phase == CompilationPhase::Configure) {
+            for (auto hookIndex = 1; hookIndex <= 16; ++hookIndex) {
+                observations.compiler->registerPhaseHook(
+                    [&observations, hookIndex](CompilerContext*, const CompilationPhase registeredPhase) {
+                        observations.calls.emplace_back(registeredPhase, hookIndex);
+                    }
+                );
+            }
+        }
+        observations.invocationCounts.push_back(++invocationCount);
+    });
+
+    BOOST_REQUIRE(compiler->compileScripts(&context));
+
+    const std::vector<CompilationPhase> phases{
+        CompilationPhase::Configure,
+        CompilationPhase::PreParse,
+        CompilationPhase::Parse,
+        CompilationPhase::PrepareFormatStrings,
+        CompilationPhase::Resolve,
+        CompilationPhase::Emit,
+        CompilationPhase::Link,
+        CompilationPhase::Verify,
+        CompilationPhase::Completed
+    };
+    std::vector<std::pair<CompilationPhase, int>> expectedCalls;
+    for (const auto phase : phases) {
+        expectedCalls.emplace_back(phase, 0);
+        if (phase != CompilationPhase::Configure) {
+            for (auto hookIndex = 1; hookIndex <= 16; ++hookIndex) {
+                expectedCalls.emplace_back(phase, hookIndex);
+            }
+        }
+    }
+
+    BOOST_CHECK(observations.calls == expectedCalls);
+    BOOST_REQUIRE(observations.invocationCounts.size() == phases.size());
+    for (auto index = std::size_t{0}; index < observations.invocationCounts.size(); ++index) {
+        BOOST_TEST(observations.invocationCounts[index] == index + 1);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(analysis_hooks_skip_emission_linking_and_verification)
 {
     Runtime runtime;
