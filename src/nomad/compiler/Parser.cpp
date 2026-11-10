@@ -340,6 +340,11 @@ bool isNativeMemberCandidate(const Compiler* compiler, const ScriptCallableBase*
         return false;
     }
 
+    // A lexical receiver shadows runtime "this." contexts, including in closures.
+    if (compiler->getReceiverType(function) != nullptr && name.starts_with("this.")) {
+        return true;
+    }
+
     // Exact qualified identifiers take precedence, including those captured from an enclosing scope.
     for (auto* scope = function; scope != nullptr;) {
         if (compiler->getIdentifierType(name, scope) != IdentifierType::Unknown) {

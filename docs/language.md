@@ -15,6 +15,7 @@ Nomad is case‑sensitive.
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Hubs](#hubs)
 - [Class declarations](#class-declarations)
+- [Struct declarations and value semantics](#struct-declarations-and-value-semantics)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
 - [Class types and members](#class-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
@@ -257,9 +258,6 @@ class Point
         this.y = 0.0
     end
 
-    point = new Point
-    point.moveTo 3.0 4.0
-
     init x:float y:float
         this.x = x
         this.y = y
@@ -270,6 +268,9 @@ class Point
         this.y = y
     end
 end
+
+point = new Point
+point.moveTo 3.0 4.0
 ```
 
 Explicit fields use `name = initializer`. Constructors use `init`, optionally
@@ -327,7 +328,7 @@ failure stops subsequent initializers and the constructor body.
 initializes its fields, then runs the selected constructor body. If no `init`
 is declared, the class has an implicit parameterless constructor. Declaring any
 `init` suppresses that implicit constructor. The `new` expression produces the
-new instance. Script member calls are not executable yet.
+new instance.
 Script constructors return `void`: they may use a bare `return` but cannot return
 an expression. An early return still completes `new` with the allocated instance.
 Member parameters are declared in the header, not with a later `params` statement.
@@ -370,7 +371,171 @@ when the host supplies an initialized instance with field storage. Field
 discovery must finish before the host creates these instances. Native objects
 without stored-field storage cannot execute these accesses.
 The embedding host can also initialize class fields without running a constructor.
-Script member calls remain unavailable.
+Script methods can be called in compiled code and the interpreter.
+
+## Struct declarations and value semantics
+
+Use `struct` for a value whose fields copy independently, rather than a shared
+class instance:
+
+```nomad
+struct Point
+    x = 0.0
+    y = 0.0
+
+    init x:float y:float
+        this.x = x
+        this.y = y
+    end
+
+    fun move dx:float dy:float
+        this.x = this.x + dx
+        this.y = this.y + dy
+    end
+end
+
+fun moved value:Point dx:float dy:float
+    value.move dx dy
+    return value
+end
+
+point = new Point 1.0 2.0
+copiedPoint = point
+copiedPoint.move 3.0 4.0
+movedPoint = moved point 10.0 20.0
+assert point.x == 1.0
+assert point.y == 2.0
+assert copiedPoint.x == 4.0
+assert copiedPoint.y == 6.0
+assert movedPoint.x == 11.0
+assert movedPoint.y == 22.0
+```
+
+### Declaration and construction
+
+Structs may be declared at script level or inside a hub, not inside functions,
+control-flow blocks, or other type declarations. Types are available across
+files before callable bodies are compiled. Hub types require fully qualified
+references, including in their own member signatures.
+
+Structs use the same field, `init`, and `fun` syntax as
+[classes](#class-declarations). Fields are inferred from explicit initializers
+and constructor assignments to `this.field`. Methods can update existing fields
+but cannot introduce new ones. Structs are closed: `open struct` and external
+field additions are errors. Different struct declarations have distinct types,
+even when their fields match.
+
+Inside a struct member, `this` always denotes that struct receiver, including
+inside callbacks and format expressions. Its fields do not fall back to a
+game/entity `this.*` context.
+
+`new Point arguments` evaluates arguments right-to-left, runs explicit field
+initializers once in source order, supplies defaults for remaining fields, then
+executes the selected constructor. Initializers cannot use or capture `this`.
+With no declared `init`, a struct has an implicit parameterless constructor;
+declaring an `init` suppresses it. Constructor overloads follow the same rules as
+class constructors. Constructors return no expression; a bare early `return`
+still completes construction.
+
+Copying or default-initializing nested struct storage does not run its
+constructor or explicit field initializer expressions.
+
+### Copies, fields, and methods
+
+Assignment, ordinary arguments, returned values, and callback captures copy
+struct fields. Nested struct fields copy recursively. Strings retain their value,
+and class or collection fields retain references to the same objects:
+
+```nomad
+class Label
+    text = "shared"
+end
+
+struct Location
+    point = new Point 0.0 0.0
+    label = new Label
+end
+
+location = new Location
+copiedLocation = location
+copiedLocation.point.move 5.0 6.0
+copiedLocation.label.text = "shared edit"
+assert location.point.x == 0.0
+assert copiedLocation.point.x == 5.0
+assert location.label.text == "shared edit"
+```
+
+This example uses `Point` from above. Methods borrow their receiver: calling
+`point.move` changes `point`, whereas calling `value.move` inside `moved` changes
+only that function's parameter copy. A method can return or pass `this` as an
+ordinary value; those uses copy it.
+
+Stored struct fields can be read, assigned, and used as method receivers through
+locals, parameters, `this`, class-owned fields, and temporary construction or
+function results. Nested paths such as `player.location.point.move 1.0 2.0`
+update the selected stored value. A temporary receiver is evaluated once before
+the method's arguments or an assignment's right-hand side and kept alive until
+the operation finishes. Mutating a temporary changes only that temporary,
+apart from shared class objects contained in it.
+
+Whole-struct assignment evaluates its complete right-hand side before replacing
+the destination. Self-assignment is safe. Right-hand-side side effects are not
+rolled back if evaluation fails. A native getter returning a struct produces a
+snapshot, not a stored-field alias; mutating that snapshot does not automatically
+call the property's setter.
+
+Returns own their fields independently. Compiled code can construct or forward
+a struct-returning call directly into result storage. Eligible fresh locals
+immediately returned by compiled free functions can also avoid an extra copy.
+The interpreter keeps ordinary copies. Hosts inspecting optimized compiled
+locals see live return-backed storage; see
+[frame storage contracts](embedding.md#local-variable-ids).
+
+Callbacks capture struct snapshots when created, including struct parameters and
+`this`. Each invocation receives independent struct copies; captured class
+objects remain shared. Interpreter expressions can construct registered types
+and invoke compiled methods, but cannot declare new structs or inline callbacks.
+
+### Empty structs and limitations
+
+An empty struct is a value with its own type, not `void`. It occupies no value
+slots but can be assigned, passed, captured, returned, and used as a receiver:
+
+```nomad
+struct Marker
+    init
+        print "created"
+    end
+
+    fun touch
+        print "touched"
+    end
+end
+
+fun echoMarker value:Marker
+    value.touch
+    return value
+end
+
+marker = new Marker
+copiedMarker = marker
+returnedMarker = echoMarker copiedMarker
+returnedMarker.touch
+```
+
+Construction prints `created` once; the two method calls print `touched`.
+Copies do not rerun construction. Empty arguments still evaluate their
+expressions, and empty fields retain their logical names and types.
+
+- Structs cannot be type arguments, directly or nested: `List<Point>` and
+  `Map<string List<Point>>` are rejected. Constructor inference also rejects
+  struct type arguments. A struct may still contain a `List<int>` reference.
+- Structs have no built-in `==` or `!=` operation, including empty structs.
+  Compare the required fields explicitly.
+- Inline struct layouts cannot contain direct or indirect value cycles.
+  Class-reference fields do not form inline layout cycles.
+- Calls with struct arguments, captures, or results execute synchronously;
+  aggregate yield/resume is unsupported.
 
 ## Data types and numeric ranges
 
@@ -406,7 +571,8 @@ event changed items:List<int>
 Each type family defines its required number of type arguments and must be registered
 before use. Parameterized types are not restricted to any particular module.
 Different specializations, such as `List<int>` and `List<string>`, are distinct,
-incompatible types. Type arguments cannot be `void` or internal types. Type annotations
+incompatible types. Type arguments cannot be `void`, internal types, or structs,
+including structs nested in another type argument. Type annotations
 must fit on one line; nesting is limited to 64 types.
 
 String literal notes:
@@ -480,11 +646,12 @@ Writable properties may also change an instance through a parameter
 or temporary. Changes to an object's contents are immediate and are not rolled
 back if a property setter or method fails.
 
-Assigning a new reference to the parameter itself remains invalid.
+Reassigning a parameter changes only the called function's copy, not the
+caller's variable.
 
-Script classes support construction with `new`, but cannot yet execute ordinary
-methods. Their stored properties are readable and writable in compiled code and
-the interpreter. See [Class declarations](#class-declarations).
+Script classes support construction, methods, and stored-property reads/writes
+in compiled code and the interpreter. See [Class declarations](#class-declarations)
+and [struct value semantics](#struct-declarations-and-value-semantics).
 
 The available members for each class type are listed in the [engine API](engine-api.md#object-members).
 
@@ -1288,4 +1455,5 @@ Reserved words (cannot use as identifiers):
 - `open`
 - `params`
 - `return`
+- `struct`
 - `then`

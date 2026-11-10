@@ -51,6 +51,10 @@ in `nomad::generated::log`. Stored fields expose `getXXX()` and `setXXX(value)`.
 Enum names and numeric mappings are preserved. Unsupported names and collisions
 are errors rather than silently renamed APIs.
 
+Generated wrappers remain class-based. Struct declarations and struct-valued
+binding fields are rejected, including one-slot and empty structs; use the
+typed interpreter APIs below for complete struct values instead.
+
 Enum fields additionally expose an integer getter and setter overload:
 
 ```cpp
@@ -809,7 +813,8 @@ string fields, including fields in nested structs; other fields retain their
 cleared defaults. It does not run script field initializers or constructors.
 `Type::emitInitFunctionVariable(emitter, offset)` targets reserved, cleared local
 storage, not an existing owned value. Aggregate local loads and stores are not
-yet supported by bytecode.
+single-register operations; complete struct values use typed copies or stack
+storage.
 
 `Type::emitCopyFunctionVariable(emitter, sourceOffset, destinationOffset)`
 copies between same-type local ranges, replacing owned destination fields.
@@ -827,8 +832,8 @@ nothing and leave scratch unchanged. Both emission APIs require valid reserved l
 resolved sizes. They clobber the scalar result register using the existing
 local load/store ownership conventions; callers must not retain an owned
 result there across these operations or treat the register afterward as an
-additional owned copy. They do not allocate scratch locals or
-provide aggregate expression, parameter, or object-field lowering.
+additional owned copy. They do not allocate scratch locals or evaluate source
+expressions; use resolved expression/storage APIs for those operations.
 
 `Expression::compileIntoLocal(compiler, callable, destinationId)` compiles a
 resolved expression into a same-type local. Scalar expressions replace the
@@ -849,8 +854,9 @@ in physical frame reservation and return cleanup, but their internal names
 are hidden by `getVisibleVariableName`. Repeated resolution reuses the same
 staging local. Scalar assignments retain their existing path. Struct parameter
 targets use the same staging contract and replace the parameter copy, not the
-caller's original value. Object-field, call-result, and interpreter assignment
-lowering remain unsupported.
+caller's original value. Stored-field and call-result assignments also stage
+complete struct values before replacement. Interpreter assignments use their
+own typed-storage path rather than these emission APIs.
 
 `Type::emitCopyParameterToFunctionVariable(emitter, parameterOffset,
 destinationOffset)` replaces a same-type local from a disjoint parameter block.
@@ -902,6 +908,15 @@ name and type. `flagVariableAsCaptured` and `flagParameterAsCaptured` provide
 the corresponding source-specific registration APIs.
 
 ### Borrowed struct call storage
+
+Low-level integrations using `InterpreterCallFrame` (include
+`<nomad/interpreter/InterpreterCallFrame.hpp>`) can borrow writable result slots
+with `RuntimeValue* getResult() const`. `getResultSize()` reports the complete
+result width; empty structs and void return zero and use a null pointer.
+The view is valid only within the call frame's lifetime and does not transfer
+ownership. After execution, use `getResultValue()` to copy the complete result
+into an independently owned `InterpreterValue`. Ordinary host calls should
+prefer the typed `Interpreter` invocation APIs.
 
 The VM supports internal borrowed storage pointers on its existing value stack.
 `RuntimeValue::setStorageAddress()` and `getStorageAddress()` store/read a
@@ -1002,11 +1017,19 @@ to that destination, and `return new Point ...` constructs there directly,
 without an intermediate return local or copy. `return point.copy ...` also
 forwards a struct result from a method on a struct or class receiver. This also
 works inside methods, without confusing the result destination with the receiver.
-Local/parameter/property returns retain their copy paths.
+Parameter/property returns and ineligible locals retain their copy paths.
+Compiled free functions also support a conservative named-return case: a fresh,
+uncaptured, nonempty struct local initialized by a return-forwardable expression
+and immediately returned at the end of a straight-line body. It must have the
+exact result type, no other reads or assignments, and no competing return or
+control-flow paths. Parameters, receivers, empty structs, intervening statements,
+and broader mutable-local cases keep their existing paths. Optimized locals
+expose the actual in-progress return destination to frame inspection, as
+described under [local variable IDs](#local-variable-ids).
 Existing assignment
 targets are replaced only after their source expression finishes. Discarded
 struct results are released, and empty results still execute their side effects.
-Named-return copy elision is not yet supported.
+Interpreter-owned evaluation retains ordinary copies, without NRVO.
 
 `Compiler::addStructMethodCall(methodId, caller, arguments, receiver,
 destinationId)` emits resolved script/native method calls borrowing a struct
@@ -1122,9 +1145,10 @@ uses existing type defaults recursively; copying or initializing storage does
 not run a struct constructor. Existing initializer restrictions on user-written
 `this` expressions remain unchanged.
 
-Struct closure captures remain unsupported and produce compilation errors. This does not
-prevent accessing ordinary class properties through a reference stored inside
-a supported struct.
+Struct closure captures copy complete values, including nested and empty
+structs; contained class references remain shared. See
+[closure capture storage](#closure-capture-storage) and
+[typed callback invocation](#typed-callback-invocation).
 
 `Expression::getStorageLocation()` returns an optional compiler-only
 `StorageLocation` for an addressable local, parameter, borrowed receiver, or
@@ -1287,7 +1311,8 @@ for class types and their subclasses, including strings, or `nullptr` for other 
 
 `ClassType` inherits member metadata from the abstract `CompositeType` base
 (include `<nomad/script/CompositeType.hpp>`). `Type::asCompositeType()` returns that
-descriptor as a borrowed `const CompositeType*` for classes and their subclasses,
+descriptor as a borrowed `const CompositeType*` for classes, their subclasses,
+and structs,
 or `nullptr` for types without composite metadata. The composite view exposes the type
 name, openness, initializer name, properties, constructors, methods, and field
 layout queries. It refers to the same member catalog and IDs as the class view.
@@ -1352,7 +1377,8 @@ and arithmetic overflow raises `NomadException`. Unlike `getFieldIndex()`, the
 offset query raises `NomadException` for native, missing, or other owners'
 property IDs. Representable offsets, including the maximum `NomadIndex`, are
 valid results rather than invalid-ID sentinels. These metadata queries do not
-change the current one-slot-per-field object storage or execution APIs.
+allocate or resize object storage; use physical offsets or complete field views
+rather than assuming one slot per stored field.
 
 `Runtime::finalizeCompositeFieldLayout(typeId)` explicitly finalizes the stored-field
 layout using an ID from the owning runtime. Invalid IDs and non-composite types
@@ -1427,12 +1453,20 @@ Custom type overrides must use the pointer signature rather than the previous
 the type name, but value-dependent overrides can inspect every slot. Rebuild
 custom native types/modules against the updated headers.
 
-This descriptor supports host-owned slot storage only. Every struct bytecode
-emission operation raises `NomadException`, including empty structs. Struct
-declarations, compiled/interpreted aggregate execution, native struct accessors,
-generic struct collections, and aggregate VM allocation are not supported yet.
-Do not pass struct storage to existing single-slot object, constant, argument,
-or interpreter APIs.
+Compiled source and the interpreter support construction, field access,
+assignment, arguments/results, methods, and captures for registered structs.
+Struct values use complete slot storage, not `NomadObject` boxes. Use
+`Interpreter::construct`, `runFunction`, and typed method APIs for host calls;
+they return owned `InterpreterValue` results and accept arguments in logical
+parameter order. See [struct construction and calls](#struct-construction-calls-and-frame-inspection).
+
+Single-register struct emission remains invalid, including for one-slot and
+empty structs. Do not pass complete struct values through single-slot object,
+constant, or raw argument APIs. Struct-valued native properties require
+[method-backed accessors](#method-backed-native-properties), not scalar property
+callbacks. Compiler type arguments containing structs and built-in struct
+equality remain unsupported; compare fields explicitly. Aggregate calls cannot
+yield or resume.
 
 ### Borrowed VM storage
 
@@ -1456,7 +1490,8 @@ retain their capacity checks.
 
 These low-level APIs do not initialize, copy, or release values. Direct writes
 must obey the type's ownership contracts. Existing scalar accessors, argument
-APIs, and bytecode are unchanged; these views do not enable aggregate VM calls.
+APIs remain scalar/reference-only; these views alone do not initialize or invoke
+aggregate calls. Use typed invocation APIs for complete struct values.
 
 ### Script object storage
 
@@ -1489,7 +1524,8 @@ compiler for all host/native receivers or instances allocated before an open
 class gained fields. `getStorageSize()` reports actual allocated slots;
 `getStorageValue(offset)` is a trusted unchecked physical-slot API.
 Native accessors and checked host/interpreter property APIs retain their existing
-behavior. Aggregate stored-field lowering remains unsupported.
+behavior. Stored struct fields use complete typed storage, with nested
+scalar/reference access and staged whole-field replacement.
 
 The specialized opcode names use stored-property terminology:
 `op_stored_property_load_r`, `op_object_stored_property_load_r`,
@@ -1859,9 +1895,10 @@ not own instruction formatting.
 Methods are qualified by their declaring type, and constructor and method call
 targets are identified by name and callable ID.
 
-Use `resolveFunction(name, argumentTypes)`, `resolveMethod(classType, name,
-argumentTypes)`, or `resolveConstructor(classType, argumentTypes)` to select an
+Use `resolveFunction(name, argumentTypes)`, `resolveMethod(receiverType, name,
+argumentTypes)`, or `resolveConstructor(ownerType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
+Method and constructor resolution accept class or struct owners.
 The selected ID or pointer can be retained without repeating name resolution.
 Function overloads are selected by parameter count and types, independently of
 their implementation. Different parameter counts require all parameters to be
@@ -1914,7 +1951,7 @@ source/bytecode lookups continue to exclude methods and constructors.
 script function, method, or constructor, and `nullptr` for native or invalid IDs.
 Const runtimes return a const interface. `Callable::asScriptCallable()` provides
 the same view from a descriptor. Method and constructor descriptors remain owned
-by their declaring class type; they are not returned by `getFunction(id)` or
+by their declaring composite type; they are not returned by `getFunction(id)` or
 `getScriptFunction(id)`.
 
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
@@ -1944,6 +1981,8 @@ Struct owner IDs are rejected by these class APIs.
 
 `TypeManager::registerScriptStructMethod(typeId, name, parameters, path, source)`
 registers the corresponding struct-method signature. Class owner IDs are rejected.
+`registerScriptStructConstructor(typeId, parameters, path, source)` provides the
+corresponding struct-constructor registration.
 `Runtime::registerScriptMethod` dispatches by owner category. Struct descriptors
 own their methods under the same runtime-lifetime contract. Registration alone
 still does not parse or compile the retained source; embedding code must supply
@@ -2486,8 +2525,7 @@ An `InterpreterValue` has no field setters or writable storage views. Copy/move
 assignment replaces the complete value; it does not edit its fields. Struct
 copies have independent storage. Strings and class references are retained for
 the value's lifetime; referenced class objects retain their normal mutable
-reference semantics. Copying and cleanup use the value's `const Type*`, without
-a separate ownership or cleanup discriminator.
+reference semantics.
 
 `Interpreter::getProperty(receiver, property)` returns an owned field value.
 `setProperty(receiver, property, value)` returns a new `InterpreterValue` with
@@ -3034,12 +3072,18 @@ Requesting a specialization creates a descriptor, not an object. The compiler re
 annotations in script parameters, function parameters, and event declarations
 through the same registration API.
 
+The script compiler rejects struct type arguments, including structs nested in
+another argument and arguments chosen by constructor inference. Ordinary
+non-struct specializations remain supported. Registering a host type family does
+not make the built-in collections accept struct elements.
+
 ### Constructor inference signatures
 
 After registering a parameterized type family, hosts can register one constructor
 inference signature with `registerConstructorTemplate(name, parameters)`.
 These declarations are independent of whether the concrete constructor is native
-or script-defined; executable script-defined types are not yet supported.
+or script-defined. They describe inference only; hosts must separately register
+and compile or implement the selected constructor.
 Each `TemplateParameter` describes either a concrete `Type*` or a
 `TypeParameterIndex{index}` referring to the family's zero-based type-argument position.
 For example, for an already registered two-argument family named `Pair`:

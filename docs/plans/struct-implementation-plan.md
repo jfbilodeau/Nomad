@@ -1,12 +1,12 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Current review stop: Steps 5 and 6 are approved within their agreed scope.
+Current review stop: Steps 5, 6, and 7A are approved within their agreed scope.
 Conservative compiled tail-pair NRVO includes live return-backed frame inspection;
 interpreter evaluation keeps ordinary copies and does not need NRVO.
-Step 7A's struct editor, language-server, and generated-reference tooling is
-implemented and validated, awaiting review. Next is Step 7B language/embedding
-documentation reconciliation, followed by final integrated completion checks.
+Step 7B's language/embedding documentation reconciliation and separately approved
+receiver-resolution fix are implemented and validated, awaiting review.
+Next is Step 7C final integrated completion checks.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4767,6 +4767,66 @@ and generic/equality limitations, removing obsolete milestone restrictions.
 The final slice then runs the integrated completion matrix and records remaining
 limitations. Broader NRVO and new language features remain outside this scope.
 No commit or push.
+
+### Step 7B: Language and embedding guide reconciliation
+
+Implemented within this slice:
+
+- Added a language-guide struct section covering declarations, construction,
+  independent copies, shared reference fields, methods, nested/temporary stored
+  receivers, returns, captures, empty values, and current limitations.
+- Added examples with copy-isolation assertions and observable empty-struct
+  constructor/method side effects. Documented closed layouts, inline-cycle
+  rejection, direct/nested/inferred generic argument restrictions, unsupported
+  built-in equality, and synchronous aggregate calls.
+- Removed obsolete class-method restrictions and moved the class construction
+  example's executable statements outside its declaration body.
+- Reconciled embedding guidance for complete struct storage, supported execution,
+  stored fields, captures, and conservative compiled named returns. Documented
+  `InterpreterCallFrame` borrowed result access and owned result snapshots.
+  Interpreter-owned evaluation still uses ordinary copies.
+- Clarified class-based generated binding limits, composite owner metadata,
+  struct constructor registration, typed host calls, native method-backed
+  property access, and scalar/raw API boundaries.
+
+Approved compiler correction discovered during example validation:
+
+- The unchanged `Point` example initially failed with an internal class-field
+  resolution error when compiled with the default modules.
+- The parser's shared member-candidate lookup let a runtime `this.*` variable
+  context override a lexical struct receiver. It now honors the existing lexical
+  receiver priority before consulting enclosing/global identifiers and contexts.
+  No new syntax, opcode, ownership rule, or interpreter optimization was added.
+- Added runtime regression coverage with a competing integer entity context and
+  float struct fields. Constructors, methods, struct-copy parameters/returns,
+  captured receiver mutation, and both simple/expression format placeholders
+  retain the struct receiver. Ordinary non-member context access still works,
+  and struct fields do not introduce context variables.
+
+Evidence and validation:
+
+- Development build passed. Language and tooling CTest groups, compiler-export
+  process checks, and LSP process checks passed.
+- All three new struct examples compile together, unchanged, with the default
+  CLI modules; the corrected class example also compiles. These CLI checks do
+  not execute examples; the focused runtime regression verifies the copy and
+  receiver behavior.
+- Separate CLI checks with the collections module selected confirm direct,
+  nested, and constructor-inferred struct type arguments are rejected. Empty
+  struct `==` and `!=` checks produce the expected operator diagnostics.
+- Four documentation preparation tests passed. SDK reference regeneration,
+  strict MkDocs, and whitespace checks passed.
+- Validation fixtures were temporary and cleaned up. No gameplay, performance,
+  sanitizer, packaging, or interactive editor validation is claimed.
+
+Review stop: reconciled guides, the approved receiver-resolution correction,
+and their validation evidence.
+
+Next, after approval: Step 7C runs the integrated acceptance/regression matrix,
+including the remaining unit groups and relevant module/distribution/package
+checks, and records final limitations or blockers. Broader NRVO, struct generic
+collections, built-in struct equality, and aggregate suspension remain outside
+the approved implementation scope. No commit or push.
 
 ## 5. Acceptance and regression matrix
 

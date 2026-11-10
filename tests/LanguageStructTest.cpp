@@ -15,12 +15,16 @@
 #include <nomad/compiler/StructDeclaration.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
+#include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
@@ -870,6 +874,52 @@ BOOST_AUTO_TEST_CASE(compiled_parameters_returns_and_methods_preserve_independen
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
     }
+}
+
+BOOST_AUTO_TEST_CASE(struct_receivers_shadow_runtime_this_contexts_in_members_callbacks_and_formats) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto contextId = runtime.registerVariableContext(
+        "entity", "this.", std::make_unique<SimpleVariableContext>());
+    BOOST_REQUIRE(contextId.isValid());
+    const auto contextVariable = runtime.registerContextVariable(contextId, "this.x", runtime.getIntegerType());
+    BOOST_REQUIRE(contextVariable.isValid());
+    const auto invokeId = runtime.registerNativeFunction(
+        "invoke",
+        [&](VirtualMachine* machine) {
+            const auto closure = machine->createClosure(&runtime, machine->getCallableIdParameter(0));
+            const auto result = Interpreter(*machine).runFunction(*closure, {});
+            machine->setFloatResult(result.getValue().getFloatValue());
+        },
+        {defParameter("callback", runtime.getCallbackType({}, runtime.getFloatType()), "")},
+        runtime.getFloatType(),
+        ""
+    );
+    BOOST_REQUIRE(invokeId.isValid());
+    fixture.addFunction("main",
+        "struct Point\nx = 0.0\ny = 0.0\n"
+        "init x:float y:float\nthis.x = x\nthis.y = y\nend\n"
+        "fun move dx:float dy:float\nthis.x = this.x + dx\nthis.y = this.y + dy\nend\n"
+        "fun describe\nreturn $\"{this.x} {this.x + 1.0}\"\nend\n"
+        "fun fromCallback\nreturn invoke fun\nthis.x = this.x + 1.0\nreturn this.x\nend\nend\n"
+        "end\n"
+        "fun moved value:Point dx:float dy:float\nvalue.move dx dy\nreturn value\nend\n"
+        "this.x = 100\n"
+        "point = new Point 1.0 2.0\ncopiedPoint = point\ncopiedPoint.move 3.0 4.0\n"
+        "movedPoint = moved point 10.0 20.0\n"
+        "assert point.x == 1.0\nassert point.y == 2.0\n"
+        "assert copiedPoint.x == 4.0\nassert copiedPoint.y == 6.0\n"
+        "assert movedPoint.x == 11.0\nassert movedPoint.y == 22.0\n"
+        "assert point.describe == $\"{point.x} {point.x + 1.0}\"\n"
+        "assert point.fromCallback == 2.0\nassert point.x == 1.0\n"
+        "assert this.x == 100\nreturn movedPoint.x");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    BOOST_TEST(runtime.getContextVariableId("this.y").isInvalid());
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.floatValue == 11.0f);
+    BOOST_TEST(outcome.leakedStrings == 0);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_nested_structs_copy_fields_but_share_contained_class_references) {
