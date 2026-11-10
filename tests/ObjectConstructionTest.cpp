@@ -25,7 +25,7 @@ class ConstructedObject final : public NomadObject {
 };
 
 const ClassType* registerClass(Runtime& runtime, const NomadString& name) {
-    const auto descriptorId = runtime.registerClass<ClassType>(name, ClassMode::Closed, std::vector<const Type*>{}, "A constructed object."
+    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>(name, ClassMode::Closed, std::vector<const Type*>{}, "A constructed object."
     );
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
@@ -391,7 +391,7 @@ BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overlo
 BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_constructor) {
     Runtime runtime;
     std::unique_ptr<Closure> closure;
-    const auto* callbackType = runtime.getCallbackType({}, runtime.getIntegerType());
+    const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "saveCallback", [&](VirtualMachine* machine) {
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
@@ -419,7 +419,7 @@ BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_co
 BOOST_AUTO_TEST_CASE(native_methods_capture_the_enclosing_receiver_not_the_bound_native_receiver) {
     Runtime runtime;
     std::unique_ptr<Closure> closure;
-    const auto* callbackType = runtime.getCallbackType({}, runtime.getIntegerType());
+    const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     const auto* sinkType = registerClass(runtime, "Sink");
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(sinkType->getId(), {
         .parameters = {},
@@ -489,7 +489,7 @@ BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots
 BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_reentry) {
     Runtime runtime;
     std::unique_ptr<Closure> closure;
-    const auto* callbackType = runtime.getCallbackType({}, runtime.getIntegerType());
+    const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     const auto relayId = runtime.registerNativeFunction(
         "relay", [&](VirtualMachine* machine) {
             const auto callbackId = machine->getCallableIdParameter(0);
@@ -912,7 +912,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
     Runtime runtime;
     auto specializations = NomadIndex{0};
     auto constructions = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Box", 1,
         [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++specializations;
@@ -932,7 +932,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
             }).isValid());
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Box", {defTemplateParameter("value", TypeParameterIndex{0}, "")}
     ));
     auto caseIndex = NomadIndex{0};
@@ -985,7 +985,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
 
 BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constructor_signatures) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Same", 1,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Same<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments);
@@ -1001,7 +1001,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
             }).isValid());
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Same",
         {
             defTemplateParameter("first", TypeParameterIndex{0}, ""),
@@ -1044,7 +1044,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_match_compiled_evaluation_or
         },
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
     );
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Pair", 2,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Pair<int int>", ClassMode::Closed, arguments);
@@ -1063,7 +1063,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_match_compiled_evaluation_or
             }).isValid());
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Pair",
         {defTemplateParameter("first", TypeParameterIndex{0}, ""), defTemplateParameter("second", TypeParameterIndex{1}, "")}
     ));
@@ -1088,7 +1088,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_match_compiled_evaluation_or
 BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constructor) {
     for (const auto registerConstructor : {false, true}) {
         Runtime runtime;
-        BOOST_REQUIRE(runtime.registerParameterizedType(
+        BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
             "Box", 1,
             [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
                 return std::make_unique<ClassType>(owningRuntime, id, "Box<int>", ClassMode::Closed, arguments);
@@ -1104,7 +1104,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constr
                 }
             }
         ));
-        BOOST_REQUIRE(runtime.registerConstructorTemplate(
+        BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
             "Box", {defTemplateParameter("value", TypeParameterIndex{0}, "")}
         ));
         auto compiler = runtime.createCompiler();
@@ -1123,14 +1123,14 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constr
 BOOST_AUTO_TEST_CASE(inferred_constructors_parse_from_signatures_without_specializing) {
     Runtime runtime;
     auto factoryCalls = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Pair", 2,
         [&factoryCalls](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++factoryCalls;
             return std::make_unique<ClassType>(owningRuntime, id, "Pair", ClassMode::Closed, arguments);
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Pair",
         {
             defTemplateParameter("key", TypeParameterIndex{0}, ""),
@@ -1167,7 +1167,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_parse_from_signatures_without_special
 
 BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_signatures) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Pair", 2, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Pair", ClassMode::Closed, arguments);
         }
@@ -1180,7 +1180,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_
         BOOST_REQUIRE(context.getFirstError() != nullptr);
         BOOST_TEST(context.getFirstError()->message.find("no inference signature") != NomadString::npos);
     }
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Pair",
         {
             defTemplateParameter("key", TypeParameterIndex{0}, ""),
@@ -1199,7 +1199,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_
 BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_parameter_shapes) {
     Runtime runtime;
     auto calls = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Located", 1, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Located<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments
             );
@@ -1225,7 +1225,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_par
             }).isValid());
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Located",
         {
             defTemplateParameter("file", runtime.getFileNameType(), ""),
@@ -1262,16 +1262,16 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_par
 BOOST_AUTO_TEST_CASE(constructor_templates_store_generic_and_concrete_parameters_without_specializing) {
     Runtime runtime;
     auto factoryCalls = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Example", 2,
         [&factoryCalls](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++factoryCalls;
             return std::make_unique<ClassType>(owningRuntime, id, "Example", ClassMode::Closed, arguments);
         }
     ));
-    BOOST_TEST(!runtime.getConstructorTemplate("Missing").has_value());
-    BOOST_TEST(!runtime.getConstructorTemplate("Example").has_value());
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_TEST(!runtime.getTypeManager().getConstructorTemplate("Missing").has_value());
+    BOOST_TEST(!runtime.getTypeManager().getConstructorTemplate("Example").has_value());
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Example",
         {
             defTemplateParameter("key", TypeParameterIndex{0}, "The key."),
@@ -1281,7 +1281,7 @@ BOOST_AUTO_TEST_CASE(constructor_templates_store_generic_and_concrete_parameters
             defTemplateParameter("file", runtime.getFileNameType(), "")
         }
     ));
-    auto signature = runtime.getConstructorTemplate("Example");
+    auto signature = runtime.getTypeManager().getConstructorTemplate("Example");
     BOOST_REQUIRE(signature.has_value());
     BOOST_REQUIRE(signature->size() == 5u);
     BOOST_TEST((*signature)[0].name == "key");
@@ -1292,7 +1292,7 @@ BOOST_AUTO_TEST_CASE(constructor_templates_store_generic_and_concrete_parameters
     BOOST_TEST(std::get<const Type*>((*signature)[3].type) == runtime.getBooleanType());
     BOOST_TEST(std::get<const Type*>((*signature)[4].type) == runtime.getFileNameType());
     signature->clear();
-    BOOST_TEST(runtime.getConstructorTemplate("Example")->size() == 5u);
+    BOOST_TEST(runtime.getTypeManager().getConstructorTemplate("Example")->size() == 5u);
     BOOST_TEST(factoryCalls == 0u);
     BOOST_TEST(runtime.getTypeByName("Example") == nullptr);
 }
@@ -1303,11 +1303,11 @@ BOOST_AUTO_TEST_CASE(constructor_templates_reject_invalid_definitions_without_re
     const auto factory = [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<ClassType>(owningRuntime, id, "Example", ClassMode::Closed, arguments);
     };
-    BOOST_REQUIRE(runtime.registerParameterizedType("Example", 2, factory));
-    BOOST_TEST(!runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType("Example", 2, factory));
+    BOOST_TEST(!runtime.getTypeManager().registerConstructorTemplate(
         "Missing", {defTemplateParameter("value", TypeParameterIndex{0}, "")}
     ));
-    BOOST_TEST(!runtime.registerConstructorTemplate("Example", {}));
+    BOOST_TEST(!runtime.getTypeManager().registerConstructorTemplate("Example", {}));
     for (const auto& parameters : std::vector<std::vector<TemplateParameter>>{
         {defTemplateParameter("value", TypeParameterIndex{0}, "")},
         {defTemplateParameter("key", TypeParameterIndex{0}, ""), defTemplateParameter("value", TypeParameterIndex{2}, "")},
@@ -1327,28 +1327,28 @@ BOOST_AUTO_TEST_CASE(constructor_templates_reject_invalid_definitions_without_re
             defTemplateParameter("invalid", other.getIntegerType(), "")
         }
     }) {
-        BOOST_TEST(!runtime.registerConstructorTemplate("Example", parameters));
-        BOOST_TEST(!runtime.getConstructorTemplate("Example").has_value());
+        BOOST_TEST(!runtime.getTypeManager().registerConstructorTemplate("Example", parameters));
+        BOOST_TEST(!runtime.getTypeManager().getConstructorTemplate("Example").has_value());
     }
-    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor(
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeParameterizedConstructor(
         "Alias", 1, [](const NomadString&, const std::vector<const Type*>&) {}
     ));
-    BOOST_TEST(!runtime.registerConstructorTemplate(
+    BOOST_TEST(!runtime.getTypeManager().registerConstructorTemplate(
         "Alias", {defTemplateParameter("value", TypeParameterIndex{0}, "")}
     ));
     registerClass(runtime, "Concrete");
-    BOOST_TEST(!runtime.registerConstructorTemplate(
+    BOOST_TEST(!runtime.getTypeManager().registerConstructorTemplate(
         "Concrete", {defTemplateParameter("value", TypeParameterIndex{0}, "")}
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Example",
         {defTemplateParameter("key", TypeParameterIndex{0}, ""), defTemplateParameter("value", TypeParameterIndex{1}, "")}
     ));
-    BOOST_TEST(!runtime.registerConstructorTemplate(
+    BOOST_TEST(!runtime.getTypeManager().registerConstructorTemplate(
         "Example",
         {defTemplateParameter("value", TypeParameterIndex{1}, ""), defTemplateParameter("key", TypeParameterIndex{0}, "")}
     ));
-    const auto signature = runtime.getConstructorTemplate("Example");
+    const auto signature = runtime.getTypeManager().getConstructorTemplate("Example");
     BOOST_REQUIRE(signature.has_value());
     BOOST_TEST((*signature)[0].name == "key");
     BOOST_TEST(std::get<TypeParameterIndex>((*signature)[0].type).index == 0u);
@@ -1357,7 +1357,7 @@ BOOST_AUTO_TEST_CASE(constructor_templates_reject_invalid_definitions_without_re
 BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_construction) {
     Runtime runtime;
     auto calls = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Box", 1,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             const auto* elementType = arguments[0];
@@ -1378,7 +1378,7 @@ BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_constr
             }).isValid());
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Box", {defTemplateParameter("value", TypeParameterIndex{0}, "")}
     ));
     const auto id = compileConstruction(runtime, "return new Box<int> 42");
@@ -1397,14 +1397,14 @@ BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_constr
 BOOST_AUTO_TEST_CASE(constructor_inference_binds_static_types_without_creating_specializations) {
     Runtime runtime;
     auto factoryCalls = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Pair", 2,
         [&factoryCalls](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++factoryCalls;
             return std::make_unique<ClassType>(owningRuntime, id, "Pair", ClassMode::Closed, arguments);
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Pair",
         {
             defTemplateParameter("key", TypeParameterIndex{0}, ""),
@@ -1416,7 +1416,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_binds_static_types_without_creating_s
         {runtime.getIntegerType(), runtime.getBooleanType()},
         {runtime.getBooleanType(), runtime.getFloatType()}
     }) {
-        const auto result = runtime.inferConstructorTypeArguments("Pair", argumentTypes);
+        const auto result = runtime.getTypeManager().inferConstructorTypeArguments("Pair", argumentTypes);
         BOOST_REQUIRE(result.isResolved());
         BOOST_CHECK(result.status == ResolveStatus::Resolved);
         BOOST_TEST(result.error.empty());
@@ -1425,7 +1425,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_binds_static_types_without_creating_s
         BOOST_TEST(result.typeArguments[1] == argumentTypes[1]);
     }
     const auto* nested = registerClass(runtime, "List<int>");
-    const auto result = runtime.inferConstructorTypeArguments("Pair", {runtime.getStringType(), nested});
+    const auto result = runtime.getTypeManager().inferConstructorTypeArguments("Pair", {runtime.getStringType(), nested});
     BOOST_REQUIRE(result.isResolved());
     BOOST_TEST(result.typeArguments[1] == nested);
     BOOST_TEST(factoryCalls == 0u);
@@ -1435,12 +1435,12 @@ BOOST_AUTO_TEST_CASE(constructor_inference_binds_static_types_without_creating_s
 
 BOOST_AUTO_TEST_CASE(constructor_inference_supports_reordered_repeated_and_concrete_parameters) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Example", 2, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Example", ClassMode::Closed, arguments);
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Example",
         {
             defTemplateParameter("value", TypeParameterIndex{1}, ""),
@@ -1452,7 +1452,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_supports_reordered_repeated_and_concr
             defTemplateParameter("line", runtime.getLineNumberType(), "")
         }
     ));
-    const auto result = runtime.inferConstructorTypeArguments(
+    const auto result = runtime.getTypeManager().inferConstructorTypeArguments(
         "Example",
         {
             runtime.getIntegerType(), runtime.getStringType(), runtime.getIntegerType(),
@@ -1468,20 +1468,20 @@ BOOST_AUTO_TEST_CASE(constructor_inference_supports_reordered_repeated_and_concr
 BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bindings) {
     Runtime runtime;
     Runtime other;
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Example", 1, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Example", ClassMode::Closed, arguments);
         }
     ));
-    const auto unknown = runtime.inferConstructorTypeArguments("Missing", {});
+    const auto unknown = runtime.getTypeManager().inferConstructorTypeArguments("Missing", {});
     BOOST_CHECK(unknown.status == ResolveStatus::UnknownName);
     BOOST_TEST(!unknown.isResolved());
     BOOST_TEST(unknown.typeArguments.empty());
     BOOST_TEST(unknown.error.find("Missing") != NomadString::npos);
-    const auto missingSignature = runtime.inferConstructorTypeArguments("Example", {});
+    const auto missingSignature = runtime.getTypeManager().inferConstructorTypeArguments("Example", {});
     BOOST_CHECK(missingSignature.status == ResolveStatus::UnknownName);
     BOOST_TEST(!missingSignature.error.empty());
-    BOOST_REQUIRE(runtime.registerConstructorTemplate(
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
         "Example",
         {
             defTemplateParameter("first", TypeParameterIndex{0}, ""),
@@ -1493,7 +1493,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bind
         {}, {runtime.getIntegerType()},
         {runtime.getIntegerType(), runtime.getIntegerType(), runtime.getIntegerType(), runtime.getIntegerType()}
     }) {
-        const auto result = runtime.inferConstructorTypeArguments("Example", argumentTypes);
+        const auto result = runtime.getTypeManager().inferConstructorTypeArguments("Example", argumentTypes);
         BOOST_CHECK(result.status == ResolveStatus::NoMatchingArity);
         BOOST_TEST(!result.isResolved());
         BOOST_TEST(result.typeArguments.empty());
@@ -1503,7 +1503,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bind
         static_cast<const Type*>(nullptr), static_cast<const Type*>(runtime.getVoidType()),
         runtime.getFileNameType(), static_cast<const Type*>(other.getIntegerType())
     }) {
-        const auto result = runtime.inferConstructorTypeArguments(
+        const auto result = runtime.getTypeManager().inferConstructorTypeArguments(
             "Example", {runtime.getIntegerType(), invalid, runtime.getIntegerType()}
         );
         BOOST_CHECK(result.status == ResolveStatus::NoMatchingTypes);
@@ -1511,7 +1511,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bind
         BOOST_TEST(result.error.find("argument 2 ('second')") != NomadString::npos);
         BOOST_TEST(result.error.find("explicit type arguments") != NomadString::npos);
     }
-    const auto conflict = runtime.inferConstructorTypeArguments(
+    const auto conflict = runtime.getTypeManager().inferConstructorTypeArguments(
         "Example", {runtime.getIntegerType(), runtime.getFloatType(), runtime.getIntegerType()}
     );
     BOOST_CHECK(conflict.status == ResolveStatus::NoMatchingTypes);
@@ -1523,7 +1523,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bind
         static_cast<const Type*>(nullptr), static_cast<const Type*>(runtime.getFloatType()),
         static_cast<const Type*>(other.getIntegerType())
     }) {
-        const auto result = runtime.inferConstructorTypeArguments(
+        const auto result = runtime.getTypeManager().inferConstructorTypeArguments(
             "Example", {runtime.getIntegerType(), runtime.getIntegerType(), incompatible}
         );
         BOOST_CHECK(result.status == ResolveStatus::NoMatchingTypes);
@@ -1531,7 +1531,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bind
         BOOST_TEST(result.error.find("argument 3 ('number')") != NomadString::npos);
         BOOST_TEST(result.error.find("expected exact type 'int'") != NomadString::npos);
     }
-    const auto recovered = runtime.inferConstructorTypeArguments(
+    const auto recovered = runtime.getTypeManager().inferConstructorTypeArguments(
         "Example", {runtime.getIntegerType(), runtime.getIntegerType(), runtime.getIntegerType()}
     );
     BOOST_REQUIRE(recovered.isResolved());
@@ -2015,31 +2015,31 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
             .documentation = ""
         }).isValid());
     };
-    BOOST_TEST(!runtime.registerNativeParameterizedConstructor("", 1, initializer));
-    BOOST_TEST(!runtime.registerNativeParameterizedConstructor("Create", 0, initializer));
-    BOOST_TEST(!runtime.registerNativeParameterizedConstructor("Create", 1, {}));
-    BOOST_TEST(!runtime.registerNativeParameterizedConstructor("int", 1, initializer));
-    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor("Create", 1, initializer));
-    BOOST_TEST(!runtime.registerNativeParameterizedConstructor("Create", 1, initializer));
+    BOOST_TEST(!runtime.getTypeManager().registerNativeParameterizedConstructor("", 1, initializer));
+    BOOST_TEST(!runtime.getTypeManager().registerNativeParameterizedConstructor("Create", 0, initializer));
+    BOOST_TEST(!runtime.getTypeManager().registerNativeParameterizedConstructor("Create", 1, {}));
+    BOOST_TEST(!runtime.getTypeManager().registerNativeParameterizedConstructor("int", 1, initializer));
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeParameterizedConstructor("Create", 1, initializer));
+    BOOST_TEST(!runtime.getTypeManager().registerNativeParameterizedConstructor("Create", 1, initializer));
     BOOST_TEST(runtime.getTypeManager().registerNativeClassConstructor(registerClass(runtime, "Create")->getId(), {
         .parameters = {},
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ConstructedObject); },
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(!runtime.registerParameterizedType("Create", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
+    BOOST_TEST(!runtime.getTypeManager().registerParameterizedType("Create", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
         return std::make_unique<ClassType>(owningRuntime, id, "Collision", ClassMode::Closed);
     }));
-    BOOST_TEST(!runtime.getParameterizedConstructorArgumentCount("Missing").has_value());
-    BOOST_REQUIRE(runtime.getParameterizedConstructorArgumentCount("Create").has_value());
-    BOOST_TEST(*runtime.getParameterizedConstructorArgumentCount("Create") == 1u);
-    BOOST_TEST(runtime.getParameterizedConstructorName("Create", {runtime.getIntegerType()}) == "Create<int>");
-    BOOST_TEST(runtime.getParameterizedConstructorName("Create", {runtime.getIntegerType()}) == "Create<int>");
+    BOOST_TEST(!runtime.getTypeManager().getParameterizedConstructorArgumentCount("Missing").has_value());
+    BOOST_REQUIRE(runtime.getTypeManager().getParameterizedConstructorArgumentCount("Create").has_value());
+    BOOST_TEST(*runtime.getTypeManager().getParameterizedConstructorArgumentCount("Create") == 1u);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Create", {runtime.getIntegerType()}) == "Create<int>");
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Create", {runtime.getIntegerType()}) == "Create<int>");
     BOOST_TEST(calls == 1u);
-    BOOST_TEST(runtime.getParameterizedConstructorName("Create", {other.getIntegerType()}).empty());
-    BOOST_TEST(runtime.getParameterizedConstructorName("Create", {}).empty());
-    BOOST_TEST(runtime.getParameterizedConstructorName("Create", {runtime.getVoidType()}).empty());
-    BOOST_TEST(runtime.getParameterizedConstructorName("Create", {nullptr}).empty());
-    BOOST_TEST(runtime.getParameterizedConstructorName("Missing", {runtime.getIntegerType()}).empty());
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Create", {other.getIntegerType()}).empty());
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Create", {}).empty());
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Create", {runtime.getVoidType()}).empty());
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Create", {nullptr}).empty());
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Missing", {runtime.getIntegerType()}).empty());
     BOOST_TEST(calls == 1u);
     const auto id = compileConstruction(runtime, "return new Create<int> 42");
     RuntimeValue result;
@@ -2051,7 +2051,7 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
 BOOST_AUTO_TEST_CASE(failed_parameterized_initialization_is_not_cached_as_success) {
     Runtime runtime;
     auto attempts = 0;
-    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor(
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeParameterizedConstructor(
         "Create", 1,
         [&](const NomadString& name, const std::vector<const Type*>&) {
             if (attempts++ == 0) {
@@ -2066,7 +2066,7 @@ BOOST_AUTO_TEST_CASE(failed_parameterized_initialization_is_not_cached_as_succes
     ));
     for (auto attempt = 0; attempt < 2; ++attempt) {
         BOOST_CHECK_THROW(
-            static_cast<void>(runtime.getParameterizedConstructorName("Create", {runtime.getIntegerType()})),
+            static_cast<void>(runtime.getTypeManager().getParameterizedConstructorName("Create", {runtime.getIntegerType()})),
             NomadException
         );
     }

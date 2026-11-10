@@ -1020,10 +1020,10 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
         }
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
-    const auto* type = runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
+    const auto* type = runtime.getTypeManager().getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
     BOOST_TEST(type == runtime.getTypeByName("KeyValue<string int>"));
-    BOOST_TEST(type == runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()}));
-    BOOST_TEST(runtime.getConstructorTemplate("KeyValue").has_value());
+    BOOST_TEST(type == runtime.getTypeManager().getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()}));
+    BOOST_TEST(runtime.getTypeManager().getConstructorTemplate("KeyValue").has_value());
     std::ostringstream documentation;
     generateTypeDocumentation(&runtime, documentation);
     generateNativeMemberDocumentation(&runtime, documentation);
@@ -1075,8 +1075,8 @@ BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
     const auto compiled = compiler->compileScripts(&compilation, CompilationTarget::Executable);
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
-    const auto* entryType = runtime.getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
-    const auto* flagsType = runtime.getParameterizedType("KeyValue", {runtime.getIntegerType(), runtime.getBooleanType()});
+    const auto* entryType = runtime.getTypeManager().getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
+    const auto* flagsType = runtime.getTypeManager().getParameterizedType("KeyValue", {runtime.getIntegerType(), runtime.getBooleanType()});
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeEntry"))->getReturnType() == entryType);
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeFlags"))->getReturnType() == flagsType);
     RuntimeValue empty;
@@ -1165,13 +1165,13 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
     BOOST_REQUIRE(dynamic_cast<const Array1Type*>(
-        runtime.getParameterizedType("Array1", {runtime.getIntegerType()})
+        runtime.getTypeManager().getParameterizedType("Array1", {runtime.getIntegerType()})
     ) != nullptr);
     BOOST_REQUIRE(dynamic_cast<const Array2Type*>(
-        runtime.getParameterizedType("Array2", {runtime.getStringType()})
+        runtime.getTypeManager().getParameterizedType("Array2", {runtime.getStringType()})
     ) != nullptr);
     BOOST_REQUIRE(dynamic_cast<const Array3Type*>(
-        runtime.getParameterizedType("Array3", {runtime.getFloatType()})
+        runtime.getTypeManager().getParameterizedType("Array3", {runtime.getFloatType()})
     ) != nullptr);
     NomadString calls;
     runtime.registerNativeFunction(
@@ -1201,7 +1201,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     }}}, {}});
     const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
     BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
-    const auto* nestedType = runtime.getParameterizedType("Array2", {runtime.getIntegerType()});
+    const auto* nestedType = runtime.getTypeManager().getParameterizedType("Array2", {runtime.getIntegerType()});
     RuntimeValue empty;
     nestedType->initValue(&empty);
     nestedType->freeValue(&empty);
@@ -1325,7 +1325,7 @@ BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
     result.freeObjectValue();
     BOOST_TEST(calls == "243765");
     const auto constructorCount = runtime.getConstructors().size();
-    BOOST_TEST(runtime.getParameterizedConstructorName("Array", {runtime.getIntegerType()}) == "Array<int>");
+    BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorName("Array", {runtime.getIntegerType()}) == "Array<int>");
     BOOST_TEST(runtime.getConstructors().size() == constructorCount);
     {
         VirtualMachine machine(&runtime);
@@ -1381,11 +1381,11 @@ BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaul
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
-    const auto* mapType = runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
+    const auto* mapType = runtime.getTypeManager().getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
     BOOST_REQUIRE(dynamic_cast<const MapType*>(mapType) != nullptr);
     BOOST_TEST(mapType->getTypeName() == "Map<string int>");
-    BOOST_TEST(runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()}) == mapType);
-    BOOST_TEST(!mapType->sameType(runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getStringType()})));
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()}) == mapType);
+    BOOST_TEST(!mapType->sameType(runtime.getTypeManager().getParameterizedType("Map", {runtime.getStringType(), runtime.getStringType()})));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue first;
     RuntimeValue second;
@@ -1744,7 +1744,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     BOOST_TEST(documentation.str().find("`returns Array1<int>`") != NomadString::npos);
     BOOST_TEST(documentation.str().find("#### `entries` (*method*)") != NomadString::npos);
     BOOST_TEST(documentation.str().find("`returns Array1<KeyValue<string int>>`") != NomadString::npos);
-    const auto* mapType = runtime.getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
+    const auto* mapType = runtime.getTypeManager().getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
     for (const auto* name : {"keys", "values", "entries"}) {
         const auto memberId = runtime.getNativeMemberId(mapType, name);
         BOOST_REQUIRE((runtime.getMemberType(memberId) == MemberType::Method));
@@ -1868,7 +1868,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     log::flush();
     BOOST_TEST(capture.sink.getEntries().empty());
-    const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    const auto* listType = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
     {
         MapObject map(listType);
         RuntimeValue value;
@@ -2360,7 +2360,7 @@ BOOST_AUTO_TEST_CASE(collections_list_insertion_bounds_fault_without_changing_li
             compiler->registerSources(&compilation, {{{"main", {"main.nomad", source}}}, {}});
             BOOST_REQUIRE_MESSAGE(compiler->compileScripts(&compilation, CompilationTarget::Executable),
                 (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
-            const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+            const auto* listType = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
             RuntimeValue value;
             listType->initValue(&value);
             const auto before = NomadObject::getLiveObjectCount();
@@ -2784,7 +2784,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
     BOOST_TEST(runtime.getKeywordId("new").isValid());
-    const auto* listType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    const auto* listType = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(listType->getId(), {
         .valueType = runtime.getBooleanType(),
@@ -2870,7 +2870,7 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
             TestDirectory directory("nomad_host_bad_construction");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
             auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
-            BOOST_REQUIRE(host->getRuntime()->registerClass(
+            BOOST_REQUIRE(host->getRuntime()->getTypeManager().registerClass(
                 "Unconstructible", ClassMode::Closed
             ).isValid());
             auto compiler = host->getRuntime()->createCompiler();
@@ -2884,7 +2884,7 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
 
 BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     Runtime runtime;
-    const auto descriptorId = runtime.registerClass<ClassType>("Broken", ClassMode::Closed);
+    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("Broken", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
@@ -2919,7 +2919,7 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collection
         const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
         auto& runtime = *host->getRuntime();
-        BOOST_REQUIRE(runtime.registerParameterizedType("Pair", 2, [](Runtime* owningRuntime, TypeId id, const auto& arguments) {
+        BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType("Pair", 2, [](Runtime* owningRuntime, TypeId id, const auto& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Pair<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
                 ClassMode::Closed,
                 arguments
@@ -2938,7 +2938,7 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collection
         BOOST_REQUIRE(compiler->compileScripts(&context, target));
         const auto* function = runtime.getScriptFunction(runtime.getFunctionId("init"));
         BOOST_REQUIRE(function != nullptr);
-        BOOST_TEST(function->getParameterType(0) == runtime.getParameterizedType("List", {runtime.getIntegerType()}));
+        BOOST_TEST(function->getParameterType(0) == runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()}));
         BOOST_TEST(function->getParameterType(1)->getTypeName() == "List<List<string>>");
         BOOST_TEST(function->getParameterType(2)->getTypeName() == "Pair<string List<int>>");
     }
@@ -3019,28 +3019,28 @@ BOOST_AUTO_TEST_CASE(collections_interns_list_specializations) {
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
     BOOST_TEST(runtime.getTypeByName("List<int>") == nullptr);
-    const auto* integers = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    const auto* integers = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(integers != nullptr);
-    BOOST_TEST(integers == runtime.getParameterizedType("List", {runtime.getIntegerType()}));
+    BOOST_TEST(integers == runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()}));
     BOOST_TEST(integers == runtime.getTypeByName("List<int>"));
     const auto* descriptor = dynamic_cast<const ClassType*>(integers);
     BOOST_REQUIRE(descriptor != nullptr);
     BOOST_REQUIRE_EQUAL(descriptor->getTypeArguments().size(), 1u);
     BOOST_TEST(descriptor->getTypeArguments()[0] == runtime.getIntegerType());
-    const auto* strings = runtime.getParameterizedType("List", {runtime.getStringType()});
+    const auto* strings = runtime.getTypeManager().getParameterizedType("List", {runtime.getStringType()});
     BOOST_REQUIRE(strings != nullptr);
     BOOST_TEST(integers != strings);
     BOOST_TEST(!integers->sameType(strings));
-    const auto* nested = runtime.getParameterizedType("List", {integers});
+    const auto* nested = runtime.getTypeManager().getParameterizedType("List", {integers});
     BOOST_REQUIRE(nested != nullptr);
     BOOST_TEST(nested->getTypeName() == "List<List<int>>");
-    BOOST_TEST(runtime.getParameterizedType("List", {}) == nullptr);
-    BOOST_TEST(runtime.getParameterizedType("List", {runtime.getVoidType()}) == nullptr);
-    BOOST_TEST(runtime.getParameterizedType("List", {nullptr}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("List", {}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("List", {runtime.getVoidType()}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("List", {nullptr}) == nullptr);
     Runtime other;
-    BOOST_TEST(runtime.getParameterizedType("List", {other.getIntegerType()}) == nullptr);
-    BOOST_TEST(runtime.getParameterizedType("Missing", {}) == nullptr);
-    BOOST_TEST(!runtime.registerParameterizedType("List", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("List", {other.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("Missing", {}) == nullptr);
+    BOOST_TEST(!runtime.getTypeManager().registerParameterizedType("List", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
         return std::make_unique<ClassType>(owningRuntime, id, "Duplicate", ClassMode::Closed);
     }));
 }
@@ -3050,7 +3050,7 @@ BOOST_AUTO_TEST_CASE(collections_list_defaults_are_distinct_empty_instances) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
-    const auto* type = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    const auto* type = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(type != nullptr);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue first;
@@ -3070,7 +3070,7 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
-    const auto* type = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+    const auto* type = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(type != nullptr);
     runtime.registerNativeFunction(
         "makeList",
@@ -3107,24 +3107,24 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
 BOOST_AUTO_TEST_CASE(parameterized_types_validate_factories_and_cache_by_arguments) {
     Runtime runtime;
     NomadIndex calls = 0;
-    BOOST_TEST(runtime.registerParameterizedType("Example", 1, [&calls](Runtime* owningRuntime, TypeId id, const auto& arguments) {
+    BOOST_TEST(runtime.getTypeManager().registerParameterizedType("Example", 1, [&calls](Runtime* owningRuntime, TypeId id, const auto& arguments) {
         ++calls;
         return std::make_unique<ClassType>(owningRuntime, id, "Example<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments);
     }));
-    const auto* first = runtime.getParameterizedType("Example", {runtime.getIntegerType()});
+    const auto* first = runtime.getTypeManager().getParameterizedType("Example", {runtime.getIntegerType()});
     BOOST_REQUIRE(first != nullptr);
-    BOOST_TEST(first == runtime.getParameterizedType("Example", {runtime.getIntegerType()}));
+    BOOST_TEST(first == runtime.getTypeManager().getParameterizedType("Example", {runtime.getIntegerType()}));
     BOOST_TEST(calls == 1u);
-    BOOST_TEST(!runtime.registerParameterizedType("Empty", 1, {}));
-    BOOST_TEST(!runtime.registerParameterizedType("", 1, {}));
-    BOOST_TEST(runtime.registerParameterizedType("Broken", 1, [](Runtime*, TypeId, const auto&) {
+    BOOST_TEST(!runtime.getTypeManager().registerParameterizedType("Empty", 1, {}));
+    BOOST_TEST(!runtime.getTypeManager().registerParameterizedType("", 1, {}));
+    BOOST_TEST(runtime.getTypeManager().registerParameterizedType("Broken", 1, [](Runtime*, TypeId, const auto&) {
         return std::unique_ptr<Type>{};
     }));
-    BOOST_TEST(runtime.getParameterizedType("Broken", {runtime.getIntegerType()}) == nullptr);
-    BOOST_TEST(runtime.registerParameterizedType("Collision", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("Broken", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().registerParameterizedType("Collision", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
         return std::make_unique<ClassType>(owningRuntime, id, "int", ClassMode::Closed);
     }));
-    BOOST_TEST(runtime.getParameterizedType("Collision", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("Collision", {runtime.getIntegerType()}) == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(collections_module_loads_in_all_modes) {

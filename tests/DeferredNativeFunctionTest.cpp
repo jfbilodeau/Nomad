@@ -323,7 +323,7 @@ BOOST_AUTO_TEST_CASE(hub_enum_signatures_resolve_in_analysis_without_running_cal
     auto secondCalls = 0;
     Runtime first;
     Runtime second;
-    BOOST_REQUIRE(second.createEnum("Padding", {{"Value", 1}}).isValid());
+    BOOST_REQUIRE(second.getTypeManager().createEnum("Padding", {{"Value", 1}}).isValid());
     const auto resolve = [](Runtime& runtime, int& calls) {
         auto compiler = runtime.createCompiler();
         const auto hubId = runtime.registerHub("native", HubMode::Opened);

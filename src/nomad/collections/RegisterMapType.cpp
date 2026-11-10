@@ -21,10 +21,10 @@ namespace {
 void registerMapFamily(
     Runtime* runtime,
     const NomadString& name,
-    Runtime::ParameterizedTypeFactory factory,
+    TypeManager::ParameterizedTypeFactory factory,
     const bool writable
 ) {
-    if (!runtime->registerParameterizedType(
+    if (!runtime->getTypeManager().registerParameterizedType(
         name,
         2,
         std::move(factory),
@@ -33,13 +33,13 @@ void registerMapFamily(
             const auto* classType = static_cast<const nomad::ClassType*>(type);
             const auto* valueType = classType->getTypeArguments()[1];
             const auto* keyType = classType->getTypeArguments()[0];
-            const auto* keysType = runtime->getParameterizedType("Array1", {keyType});
-            const auto* valuesType = runtime->getParameterizedType("Array1", {valueType});
+            const auto* keysType = runtime->getTypeManager().getParameterizedType("Array1", {keyType});
+            const auto* valuesType = runtime->getTypeManager().getParameterizedType("Array1", {valueType});
             const auto* entryType = dynamic_cast<const KeyValueType*>(
-                runtime->getParameterizedType("KeyValue", {keyType, valueType})
+                runtime->getTypeManager().getParameterizedType("KeyValue", {keyType, valueType})
             );
             const auto* entriesType = entryType == nullptr ? nullptr :
-                runtime->getParameterizedType("Array1", {entryType});
+                runtime->getTypeManager().getParameterizedType("Array1", {entryType});
             if (keysType == nullptr || valuesType == nullptr || entriesType == nullptr) {
                 throw nomad::NomadException("Failed to resolve Map snapshot types");
             }
@@ -137,7 +137,7 @@ void registerMapFamily(
             if (!writable) {
                 return;
             }
-            const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyMap", {keyType, valueType});
+            const auto* readOnlyType = runtime->getTypeManager().getParameterizedType("ReadOnlyMap", {keyType, valueType});
             if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "toReadOnly",
                 .parameters = {},

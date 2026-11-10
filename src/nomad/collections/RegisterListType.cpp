@@ -66,7 +66,7 @@ void registerListReaders(Runtime* runtime, const ClassType* classType, const boo
 } // namespace
 
 void registerListType(Runtime* runtime) {
-    if (!runtime->registerParameterizedType(
+    if (!runtime->getTypeManager().registerParameterizedType(
         "ReadOnlyList", 1,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ReadOnlyListType>(
@@ -81,7 +81,7 @@ void registerListType(Runtime* runtime) {
     )) {
         throw NomadException("Failed to register ReadOnlyList");
     }
-    if (!runtime->registerParameterizedType(
+    if (!runtime->getTypeManager().registerParameterizedType(
         "List",
         1,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const nomad::Type*>& arguments) {
@@ -95,7 +95,7 @@ void registerListType(Runtime* runtime) {
             const auto* classType = static_cast<const nomad::ClassType*>(type);
             const auto* elementType = classType->getTypeArguments()[0];
             registerListReaders(runtime, classType, true);
-            const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyList", {elementType});
+            const auto* readOnlyType = runtime->getTypeManager().getParameterizedType("ReadOnlyList", {elementType});
             if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "toReadOnly",
                 .parameters = {},

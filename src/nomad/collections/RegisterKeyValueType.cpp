@@ -11,7 +11,7 @@
 namespace nomad {
 
 void registerKeyValueType(Runtime* runtime) {
-    if (!runtime->registerParameterizedType(
+    if (!runtime->getTypeManager().registerParameterizedType(
         "KeyValue",
         2,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
@@ -72,11 +72,11 @@ void registerKeyValueType(Runtime* runtime) {
     )) {
         throw NomadException("Failed to register KeyValue");
     }
-    if (!runtime->registerMemberTemplate("KeyValue", "key", MemberType::Property) ||
-        !runtime->registerMemberTemplate("KeyValue", "value", MemberType::Property)) {
+    if (!runtime->getTypeManager().registerMemberTemplate("KeyValue", "key", MemberType::Property) ||
+        !runtime->getTypeManager().registerMemberTemplate("KeyValue", "value", MemberType::Property)) {
         throw NomadException("Failed to register KeyValue member signatures");
     }
-    if (!runtime->registerConstructorTemplate(
+    if (!runtime->getTypeManager().registerConstructorTemplate(
         "KeyValue",
         {
             defTemplateParameter("key", TypeParameterIndex{0}, NomadDoc("The key to store.")),

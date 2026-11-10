@@ -278,7 +278,7 @@ BOOST_AUTO_TEST_CASE(conversion_failures_release_owned_dynamic_getter_values_in_
     };
 
     Runtime runtime;
-    const auto typeId = runtime.registerClass<ThrowingFormatType>("ThrowingFormatValue", ClassMode::Closed);
+    const auto typeId = runtime.getTypeManager().registerClass<ThrowingFormatType>("ThrowingFormatValue", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = runtime.getType(typeId).value();
     const auto variableId = runtime.registerDynamicVariable(
@@ -444,7 +444,7 @@ BOOST_AUTO_TEST_CASE(format_expressions_read_complete_struct_receiver_captures_i
         [&](VirtualMachine* active) {
             callback = active->createClosure(&runtime, active->getCallableIdParameter(0));
         },
-        {defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getStringType()), "")},
         runtime.getVoidType(),
         ""
     ).isValid());

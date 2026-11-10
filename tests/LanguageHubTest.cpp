@@ -364,7 +364,7 @@ BOOST_AUTO_TEST_CASE(hub_enum_and_constant_validation_preserves_existing_members
     BOOST_REQUIRE(constantId.isValid());
     BOOST_REQUIRE(runtime.registerHubEnum(hubId, "State", {{"Ready", 1}}).isValid());
     BOOST_REQUIRE(runtime.registerHubVariable("example.variable").isValid());
-    BOOST_REQUIRE(runtime.registerClass("example.Class", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass("example.Class", ClassMode::Closed).isValid());
     BOOST_REQUIRE(runtime.registerHubNativeFunction(
         hubId, "function", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     ).isValid());
@@ -538,8 +538,8 @@ BOOST_AUTO_TEST_CASE(hub_native_function_validation_does_not_publish_partial_reg
     BOOST_REQUIRE(runtime.registerConstant("example.constant", RuntimeValue(NomadInteger{1}),
         runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.registerHubVariable("example.variable").isValid());
-    BOOST_REQUIRE(runtime.registerClass("example.Class", ClassMode::Closed).isValid());
-    BOOST_REQUIRE(runtime.createEnum("example.State", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass("example.Class", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().createEnum("example.State", {{"Ready", 1}}).isValid());
     BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
     for (const auto* name : {"constant", "variable", "Class", "State", "child"}) {
         BOOST_TEST(runtime.registerHubNativeFunction(
@@ -1015,7 +1015,7 @@ BOOST_AUTO_TEST_CASE(hub_objects_index_members_without_duplicating_callable_owne
     BOOST_TEST((functions->ids[0] == functionId));
     BOOST_TEST((functions->ids[1] == overloadId));
     BOOST_TEST(runtime.getFunction(functions->ids[0])->getName() == "example.answer");
-    BOOST_REQUIRE(runtime.createEnum("example.State", {{"Ready", 1}}).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().createEnum("example.State", {{"Ready", 1}}).isValid());
     BOOST_REQUIRE(hub->getMember("State") != nullptr);
     BOOST_TEST(std::get<const Type*>(*hub->getMember("State")) == runtime.getTypeByName("example.State"));
     BOOST_REQUIRE(hub->getMember("State.Ready") != nullptr);
@@ -1087,7 +1087,7 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
     const auto constantId = runtime.registerConstant(
         "example.child.answer", RuntimeValue(NomadInteger{42}), runtime.getIntegerType()
     );
-    const auto typeId = runtime.createEnum("example.child.State", {{"Ready", 1}});
+    const auto typeId = runtime.getTypeManager().createEnum("example.child.State", {{"Ready", 1}});
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = runtime.getType(typeId).value();
     const auto eventId = runtime.registerEvent("example.child.changed", {});
@@ -1111,7 +1111,7 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
     BOOST_REQUIRE(dynamicVariableId.isValid());
     BOOST_REQUIRE(functionId.isValid());
     BOOST_REQUIRE(overloadId.isValid());
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "example.child.Box", 1, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "example.child.Box<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments
             );

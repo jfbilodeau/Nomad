@@ -100,7 +100,7 @@ void Game::initSceneFunctions() {
         }, {
             defParameter(
                 "function",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to initialize the entity.")
             ),
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
@@ -181,7 +181,7 @@ void Game::initSceneFunctions() {
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
             defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
             defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("function", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
+            defParameter("function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
         },
         m_runtime->getVoidType(),
         NomadDoc("Creates a new entity for this scene.")
@@ -213,13 +213,13 @@ void Game::initSceneFunctions() {
         }, {
             defParameter(
                 "function",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Name of the function to execute to initialize the entity.")
             ),
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
             defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
             defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("function", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
+            defParameter("function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
         },
         m_runtime->getVoidType(),
         NomadDoc("Creates a new entity for this scene.")
@@ -284,7 +284,7 @@ void Game::initSceneFunctions() {
         }, {
             defParameter(
                 "function",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Name of the function to execute to initialize the entity.")
             ),
             defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
@@ -329,7 +329,7 @@ void Game::initSceneFunctions() {
             defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
             defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
             defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to display for the entity.")),
-            defParameter("function", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
+            defParameter("function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
         },
         m_runtime->getVoidType(),
         NomadDoc("Creates a new entity for this scene.")
@@ -412,7 +412,7 @@ void Game::initSceneFunctions() {
         {
             defParameter(
                 "function",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to execute after each update of the scene")
             )
         },
@@ -432,7 +432,7 @@ void Game::initSceneFunctions() {
         {
             defParameter(
                 "function",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to execute on each update of the scene")
             )
         },
@@ -622,7 +622,7 @@ void Game::initSceneFunctions() {
             executionContext->setOtherEntities(otherEntities);
         }, {
             defParameter(
-                "predicate", m_runtime->getPredicateType(),
+                "predicate", m_runtime->getTypeManager().getPredicateType(),
                 NomadParamDoc("The predicate used to select other entities")
             ),
         },
@@ -661,7 +661,7 @@ void Game::initSceneFunctions() {
             executionContext->setOtherEntities(otherEntities);
         }, {
             defParameter(
-                "predicate", m_runtime->getPredicateType(),
+                "predicate", m_runtime->getTypeManager().getPredicateType(),
                 NomadParamDoc("The predicate used to select other entities")
             ),
         },

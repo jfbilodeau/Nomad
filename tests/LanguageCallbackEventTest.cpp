@@ -63,7 +63,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
         {
             defParameter(
                 "callback",
-                runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()),
+                runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()),
                 NomadParamDoc("Callback to store")
             ),
         },
@@ -77,7 +77,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
             store.closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
-            defParameter("callback", runtime.getCallbackType({}, runtime.getVoidType()), NomadParamDoc("Callback to store")),
+            defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getVoidType()), NomadParamDoc("Callback to store")),
         },
         runtime.getVoidType(),
         NomadDoc("Store a callback without parameters")
@@ -170,7 +170,7 @@ BOOST_AUTO_TEST_CASE(source_struct_captures_are_snapshots_across_nested_and_repe
         [&](VirtualMachine* active) {
             callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
         },
-        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
         runtime.getVoidType(),
         ""
     ).isValid());
@@ -287,7 +287,7 @@ BOOST_AUTO_TEST_CASE(source_struct_and_empty_receiver_captures_copy_this_without
         [&](VirtualMachine* active) {
             callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
         },
-        {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType()), "")},
         runtime.getVoidType(),
         ""
     ).isValid());
@@ -337,11 +337,11 @@ BOOST_AUTO_TEST_CASE(source_struct_and_empty_receiver_captures_copy_this_without
 BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_structs_after_the_vm_is_destroyed) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto valueId = runtime.registerStruct("TypedCallbackValue");
+    const auto valueId = runtime.getTypeManager().registerStruct("TypedCallbackValue");
     const auto* type = runtime.getTypeByName("TypedCallbackValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
-    const auto emptyId = runtime.registerStruct("TypedCallbackEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("TypedCallbackEmpty");
     const auto* emptyType = runtime.getTypeByName("TypedCallbackEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
@@ -361,7 +361,7 @@ BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_s
         [&](VirtualMachine* active) {
             callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
         },
-        {defParameter("callback", runtime.getCallbackType({type, emptyType, runtime.getIntegerType()}, type), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({type, emptyType, runtime.getIntegerType()}, type), "")},
         runtime.getVoidType(),
         ""
     ).isValid());
@@ -370,7 +370,7 @@ BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_s
         [&](VirtualMachine* active) {
             callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
         },
-        {defParameter("callback", runtime.getCallbackType({emptyType}, emptyType), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({emptyType}, emptyType), "")},
         runtime.getVoidType(),
         ""
     ).isValid());
@@ -379,7 +379,7 @@ BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_s
         [&](VirtualMachine* active) {
             callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
         },
-        {defParameter("callback", runtime.getCallbackType({type}, runtime.getVoidType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({type}, runtime.getVoidType()), "")},
         runtime.getVoidType(),
         ""
     ).isValid());
@@ -472,7 +472,7 @@ BOOST_AUTO_TEST_CASE(aggregate_callbacks_are_synchronous_while_scalar_callbacks_
         [&](VirtualMachine* active) {
             callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
         },
-        {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType()), "")},
         runtime.getVoidType(),
         ""
     ).isValid());
@@ -624,12 +624,12 @@ BOOST_AUTO_TEST_CASE(event_callback_adapters_copy_struct_captures_and_release_th
 
 BOOST_AUTO_TEST_CASE(closure_storage_adopts_complete_slots_and_preserves_logical_empty_and_struct_captures) {
     Runtime runtime;
-    const auto emptyId = runtime.registerStruct("ClosureStorageEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("ClosureStorageEmpty");
     const auto* empty = runtime.getTypeByName("ClosureStorageEmpty");
-    const auto singleId = runtime.registerStruct("ClosureStorageSingle");
+    const auto singleId = runtime.getTypeManager().registerStruct("ClosureStorageSingle");
     const auto* single = runtime.getTypeByName("ClosureStorageSingle");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(singleId, "number", runtime.getIntegerType()).isValid());
-    const auto valueId = runtime.registerStruct("ClosureStorageValue");
+    const auto valueId = runtime.getTypeManager().registerStruct("ClosureStorageValue");
     const auto* type = runtime.getTypeByName("ClosureStorageValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
@@ -706,19 +706,19 @@ BOOST_AUTO_TEST_CASE(closure_storage_adopts_complete_slots_and_preserves_logical
 
 BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_keep_empty_capture_positions) {
     Runtime runtime;
-    const auto sharedId = runtime.registerClass("FrameCaptureShared", ClassMode::Closed);
+    const auto sharedId = runtime.getTypeManager().registerClass("FrameCaptureShared", ClassMode::Closed);
     const auto* shared = runtime.getTypeByName("FrameCaptureShared")->asClassType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(sharedId, "number", runtime.getIntegerType()).isValid());
-    const auto leafId = runtime.registerStruct("FrameCaptureLeaf");
+    const auto leafId = runtime.getTypeManager().registerStruct("FrameCaptureLeaf");
     const auto* leaf = runtime.getTypeByName("FrameCaptureLeaf");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "shared", shared).isValid());
-    const auto valueId = runtime.registerStruct("FrameCaptureValue");
+    const auto valueId = runtime.getTypeManager().registerStruct("FrameCaptureValue");
     const auto* type = runtime.getTypeByName("FrameCaptureValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "leaf", leaf).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "suffix", runtime.getIntegerType()).isValid());
-    const auto emptyId = runtime.registerStruct("FrameCaptureEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("FrameCaptureEmpty");
     const auto* empty = runtime.getTypeByName("FrameCaptureEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(sharedId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
@@ -880,13 +880,13 @@ BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_k
 
 BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve_class_reference_identity) {
     Runtime runtime;
-    const auto valueId = runtime.registerStruct("ReceiverCaptureValue");
+    const auto valueId = runtime.getTypeManager().registerStruct("ReceiverCaptureValue");
     const auto* type = runtime.getTypeByName("ReceiverCaptureValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
-    const auto emptyId = runtime.registerStruct("ReceiverCaptureEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("ReceiverCaptureEmpty");
     const auto* empty = runtime.getTypeByName("ReceiverCaptureEmpty");
-    const auto ownerId = runtime.registerClass("ReceiverCaptureOwner", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("ReceiverCaptureOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("ReceiverCaptureOwner")->asClassType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
@@ -1044,7 +1044,7 @@ BOOST_AUTO_TEST_CASE(loop_callbacks_capture_each_iteration_value)
         [&runtime, &callbacks](VirtualMachine* machine) {
             callbacks.push_back(machine->createClosure(&runtime, CallableId{machine->getIdParameter(0)}));
         },
-        {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType()), "")},
         runtime.getVoidType(), ""
     );
     fixture.addFunction("main",
@@ -1074,7 +1074,7 @@ BOOST_AUTO_TEST_CASE(callbacks_capture_mutated_parameters_and_allow_parameter_re
         [&runtime, &callbacks](VirtualMachine* machine) {
             callbacks.push_back(machine->createClosure(&runtime, CallableId{machine->getIdParameter(0)}));
         },
-        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
         runtime.getVoidType(), ""
     );
     fixture.addFunction("main",

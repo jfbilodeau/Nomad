@@ -65,7 +65,7 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
     BOOST_TEST(event->parameters.front().typeId.id == integerId.id);
     BOOST_TEST(*runtime.getType(event->parameters.front().typeId) == runtime.getIntegerType());
 
-    BOOST_REQUIRE(runtime.registerClass("AddedType", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass("AddedType", ClassMode::Closed).isValid());
     BOOST_TEST(*runtime.getType(integerId) == runtime.getIntegerType());
     const auto addedId = runtime.getTypeId("AddedType");
     BOOST_TEST(addedId.id != integerId.id);
@@ -88,8 +88,8 @@ BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)
 BOOST_AUTO_TEST_CASE(types_report_their_size_in_runtime_value_slots)
 {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.createEnum("State", {{"idle", 1}}).isValid());
-    BOOST_REQUIRE(runtime.getCallbackType(
+    BOOST_REQUIRE(runtime.getTypeManager().createEnum("State", {{"idle", 1}}).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().getCallbackType(
         {runtime.getIntegerType(), runtime.getFloatType()}, runtime.getVoidType()
     ) != nullptr);
 
@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(types_report_their_size_in_runtime_value_slots)
 BOOST_AUTO_TEST_CASE(class_value_size_is_independent_of_its_field_count)
 {
     Runtime runtime;
-    const auto typeId = runtime.registerClass("Point", ClassMode::Closed);
+    const auto typeId = runtime.getTypeManager().registerClass("Point", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = runtime.getType(typeId).value();
     BOOST_TEST(type->getSize() == 1u);

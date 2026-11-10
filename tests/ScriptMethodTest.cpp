@@ -215,7 +215,7 @@ BOOST_AUTO_TEST_CASE(method_callbacks_and_format_expressions_capture_the_method_
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     std::unique_ptr<Closure> closure;
-    const auto* callbackType = runtime.getCallbackType({}, runtime.getIntegerType());
+    const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "save", [&](VirtualMachine* machine) {
             closure = machine->createClosure(&runtime, machine->getCallableIdParameter(0));
@@ -248,7 +248,7 @@ BOOST_AUTO_TEST_CASE(dynamic_formatting_reads_constructor_method_and_captured_re
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "save", [&](VirtualMachine* machine) {
             closure = machine->createClosure(&runtime, machine->getCallableIdParameter(0));
-        }, {defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), "")},
+        }, {defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getStringType()), "")},
         runtime.getVoidType(), ""
     ).isValid());
     fixture.addFunction("main",

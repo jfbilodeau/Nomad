@@ -27,11 +27,11 @@ void registerArrayFamily(
     Runtime* runtime,
     const NomadString& name,
     const NomadString& family,
-    Runtime::ParameterizedTypeFactory factory,
+    TypeManager::ParameterizedTypeFactory factory,
     const std::function<void(const Type*, bool)>& registerMembers,
     const bool writable
 ) {
-    if (!runtime->registerParameterizedType(
+    if (!runtime->getTypeManager().registerParameterizedType(
         family,
         1,
         std::move(factory),
@@ -53,7 +53,7 @@ void registerArrayFamily(
                 throw NomadException("Failed to register Array members");
             }
             if (writable) {
-                const auto* readOnlyType = runtime->getParameterizedType(
+                const auto* readOnlyType = runtime->getTypeManager().getParameterizedType(
                     "ReadOnly" + name, {classType->getElementType()}
                 );
                 if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
@@ -81,7 +81,7 @@ void registerArrayType(Runtime* runtime) {
     const auto registerArrayType = [runtime](
         const NomadString& name,
         const NomadIndex dimensionCount,
-        nomad::Runtime::ParameterizedTypeFactory factory,
+        nomad::TypeManager::ParameterizedTypeFactory factory,
         std::function<void(const Type*, bool)> registerMembers
     ) {
         registerArrayFamily(runtime, name, "ReadOnly" + name, [dimensionCount, name](
@@ -271,12 +271,12 @@ void registerArrayType(Runtime* runtime) {
         "Array", 1,
         [runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
             // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.
-            const auto id = runtime->registerClass(name, nomad::ClassMode::Closed);
+            const auto id = runtime->getTypeManager().registerClass(name, nomad::ClassMode::Closed);
             if (id.isInvalid()) {
                 throw nomad::NomadException("Failed to create Array constructor type");
             }
             for (const auto* family : {"Array1", "Array2", "Array3"}) {
-                const auto* type = runtime->getParameterizedType(family, arguments);
+                const auto* type = runtime->getTypeManager().getParameterizedType(family, arguments);
                 if (type == nullptr) {
                     throw nomad::NomadException("Failed to resolve Array constructor return type");
                 }

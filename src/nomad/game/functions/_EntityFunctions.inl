@@ -15,7 +15,7 @@ BEGIN_ENTITY_FUNCTION(addSystem)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("function", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Function to execute as a system."))
+        defParameter("function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Function to execute as a system."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Add a system function to the entity. The function will be executed every frame (update).")
@@ -152,7 +152,7 @@ BEGIN_ENTITY_FUNCTION(moveToThen)
         defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X coordinate of the destination.")),
         defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y coordinate of the destination.")),
         defParameter("speed", m_runtime->getFloatType(), NomadParamDoc("Speed in pixels per seconds to move to the destination.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Move the entity to a specified location then execute a function when destination is reached.")
@@ -176,7 +176,7 @@ BEGIN_ENTITY_FUNCTION(oldon)
         END_ENTITY_BLOCK()
     }, {
         defParameter("eventName", m_runtime->getStringType(), NomadParamDoc("Name of the event to listen to.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function or function to an event for this entity.")
@@ -238,7 +238,7 @@ BEGIN_ENTITY_FUNCTION(onBeginCollision)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function to the begin collision event for this entity.")
@@ -261,7 +261,7 @@ BEGIN_ENTITY_FUNCTION(onBeginCollisionWith)
         END_ENTITY_BLOCK()
     }, {
         defParameter("mask", m_runtime->getIntegerType(), NomadParamDoc("Collision mask.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function to the begin collision event with a mask.")
@@ -282,7 +282,7 @@ BEGIN_ENTITY_FUNCTION(onEndCollision)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function or function to the collision end event.")
@@ -305,7 +305,7 @@ BEGIN_ENTITY_FUNCTION(onEndCollisionWith)
         END_ENTITY_BLOCK()
     }, {
         defParameter("mask", m_runtime->getIntegerType(), NomadParamDoc("Collision mask.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function or function to the end collision with event.")
@@ -328,7 +328,7 @@ BEGIN_ENTITY_FUNCTION(onPress)
         END_ENTITY_BLOCK()
     }, {
         defParameter("actionName", m_runtime->getStringType(), NomadParamDoc("Name of the action to listen to.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function"))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function"))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function or function to the pressed event for this entity.")
@@ -350,7 +350,7 @@ BEGIN_ENTITY_FUNCTION(onRelease)
         END_ENTITY_BLOCK()
     }, {
         defParameter("actionName", m_runtime->getStringType(), NomadParamDoc("Name of the action to listen to.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function or function to the release event for this entity.")
@@ -381,7 +381,7 @@ BEGIN_ENTITY_FUNCTION(onTimer)
     }, {
         defParameter("frameCount", m_runtime->getIntegerType(), NomadParamDoc("Number of frames to wait before triggering the timer.")),
         defParameter("repeat", m_runtime->getBooleanType(), NomadParamDoc("Whether the timer should repeat.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function.")),
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function.")),
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function or function to be called after a timer expires.")
@@ -402,7 +402,7 @@ BEGIN_ENTITY_FUNCTION(onUpdate)
 
         END_ENTITY_BLOCK()
     }, {
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function to the update event for this entity. Called every frame (update).")
@@ -461,7 +461,7 @@ BEGIN_ENTITY_FUNCTION(playAnimationAndThen)
         defParameter("duration", m_runtime->getIntegerType(), NomadParamDoc("Number of frames to display an animation frame.")),
         defParameter("repeat", m_runtime->getBooleanType(), NomadParamDoc("Whether to repeat the animation. Callback executed every time the animation ends.")),
         defParameter("reverse", m_runtime->getBooleanType(), NomadParamDoc("Whether to reverse the animation.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Play an animation for the entity, then execute a function or function once the animation completes.")
@@ -650,7 +650,7 @@ BEGIN_ENTITY_FUNCTION(systems.afterUpdate)
         END_ENTITY_BLOCK()
     }, {
         defParameter("$function", m_runtime->getFunctionNameType(), NomadParamDoc("ID of the system.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function to be executed after updating this entity.")
@@ -673,7 +673,7 @@ BEGIN_ENTITY_FUNCTION(systems.beforeUpdate)
         END_ENTITY_BLOCK()
     }, {
         defParameter("$function", m_runtime->getFunctionNameType(), NomadParamDoc("ID of the system.")),
-        defParameter("callback", m_runtime->getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
+        defParameter("callback", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("Callback function or function."))
     },
     m_runtime->getVoidType(),
     NomadDoc("Assign a function to be executed before updating this entity.")

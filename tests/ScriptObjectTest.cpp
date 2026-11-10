@@ -31,7 +31,7 @@ static_assert(!std::is_copy_assignable_v<ScriptObject>);
 namespace {
 
 const ClassType* createTestType(Runtime& runtime, const NomadString& name) {
-    const auto id = runtime.registerClass(name, ClassMode::Opened);
+    const auto id = runtime.getTypeManager().registerClass(name, ClassMode::Opened);
     BOOST_REQUIRE(id.isValid());
     return runtime.getType(id).value()->asClassType();
 }
@@ -293,7 +293,7 @@ BOOST_AUTO_TEST_CASE(allocation_and_stores_do_not_run_type_initializers) {
     Runtime runtime;
     auto initialized = NomadIndex{0};
     auto destroyed = NomadIndex{0};
-    const auto valueId = runtime.registerClass<InitializingType>(
+    const auto valueId = runtime.getTypeManager().registerClass<InitializingType>(
         "Counted", ClassMode::Closed, initialized, destroyed, false
     );
     BOOST_REQUIRE(valueId.isValid());
@@ -373,7 +373,7 @@ BOOST_AUTO_TEST_CASE(partial_out_of_order_stores_release_values_without_initiali
     Runtime runtime;
     auto initialized = NomadIndex{0};
     auto destroyed = NomadIndex{0};
-    const auto countedId = runtime.registerClass<InitializingType>(
+    const auto countedId = runtime.getTypeManager().registerClass<InitializingType>(
         "Counted", ClassMode::Closed, initialized, destroyed, false
     );
     BOOST_REQUIRE(countedId.isValid());
@@ -640,7 +640,7 @@ BOOST_AUTO_TEST_CASE(generated_defaults_honor_type_initialization_only_for_field
     auto initialized = NomadIndex{0};
     auto destroyed = NomadIndex{0};
     auto explicitCalls = NomadIndex{0};
-    const auto valueId = runtime.registerClass<InitializingType>(
+    const auto valueId = runtime.getTypeManager().registerClass<InitializingType>(
         "Counted", ClassMode::Closed, initialized, destroyed, false
     );
     BOOST_REQUIRE(valueId.isValid());
@@ -866,13 +866,13 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
     const Type* prefix = runtime.getIntegerType();
     for (auto index = 0; prefix->getSize() <= toNomadIndex(NOMAD_ID_MAX); ++index) {
         const auto name = "FieldPadding" + std::to_string(index);
-        const auto id = runtime.registerStruct(name);
+        const auto id = runtime.getTypeManager().registerStruct(name);
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(id, "left", prefix).isValid());
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(id, "right", prefix).isValid());
         runtime.getTypeManager().finalizeCompositeFieldLayout(id);
         prefix = runtime.getTypeByName(name);
     }
-    const auto ownerId = runtime.registerClass("PhysicalFields", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("PhysicalFields", ClassMode::Closed);
     const auto prefixId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "padding", prefix);
     const auto numberId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType());
     const auto textId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "text", runtime.getStringType());

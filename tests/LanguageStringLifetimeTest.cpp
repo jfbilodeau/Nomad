@@ -230,7 +230,7 @@ BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
             closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
-            defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
+            defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
         },
         runtime.getVoidType(),
         NomadDoc("Store a callback returning a string")
@@ -346,7 +346,7 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
             closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
-            defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
+            defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
         },
         runtime.getVoidType(),
         NomadDoc("Store a callback returning a string")

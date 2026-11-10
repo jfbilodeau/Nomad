@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(evaluation_guards_release_retired_storage_only_on_outermost
 
 BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_released_on_success_or_failure) {
     Runtime runtime;
-    const auto id = runtime.registerStruct("RetiredCounter");
+    const auto id = runtime.getTypeManager().registerStruct("RetiredCounter");
     const auto* type = runtime.getType(id).value();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(id, "value", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(id, "label", runtime.getStringType()).isValid());
@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_rele
 
 BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_changing_logical_variable_ids) {
     Runtime runtime;
-    const auto id = runtime.registerStruct("RetiredView");
+    const auto id = runtime.getTypeManager().registerStruct("RetiredView");
     const auto* type = runtime.getType(id).value();
     const auto field = runtime.getTypeManager().registerScriptStructProperty(id, "text", runtime.getStringType());
     BOOST_REQUIRE(field.isValid());
@@ -241,7 +241,7 @@ BOOST_AUTO_TEST_CASE(scalar_storage_retains_references_and_preserves_addresses_o
 
 BOOST_AUTO_TEST_CASE(object_storage_retains_shared_identity_without_copying_the_object) {
     Runtime runtime;
-    const auto ownerId = runtime.registerClass("StorageObject", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("StorageObject", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto objectsBefore = NomadObject::getLiveObjectCount();
@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(object_storage_retains_shared_identity_without_copying_the_
 
 BOOST_AUTO_TEST_CASE(struct_storage_supports_live_receiver_mutation_and_independent_snapshots) {
     Runtime runtime;
-    const auto ownerId = runtime.registerStruct("MutableStorageStruct");
+    const auto ownerId = runtime.getTypeManager().registerStruct("MutableStorageStruct");
     const auto* owner = runtime.getType(ownerId).value()->asStructType();
     const auto numberProperty = runtime.getTypeManager().registerScriptStructProperty(ownerId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberProperty.isValid());
@@ -295,7 +295,7 @@ BOOST_AUTO_TEST_CASE(struct_storage_supports_live_receiver_mutation_and_independ
 
 BOOST_AUTO_TEST_CASE(zero_sized_storage_preserves_type_and_accepts_empty_assignment) {
     Runtime runtime;
-    const auto emptyId = runtime.registerStruct("MutableStorageEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("MutableStorageEmpty");
     const auto* empty = runtime.getType(emptyId).value()->asStructType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     InterpreterStorage storage(empty, {});
@@ -329,10 +329,10 @@ BOOST_AUTO_TEST_CASE(invalid_storage_widths_are_rejected_without_changing_conten
 BOOST_AUTO_TEST_CASE(failed_copies_release_partial_ownership_and_preserve_assignment_destinations) {
     Runtime runtime;
     FailingStorageCopyType* field = nullptr;
-    const auto fieldId = runtime.registerClass<FailingStorageCopyType>(
+    const auto fieldId = runtime.getTypeManager().registerClass<FailingStorageCopyType>(
         "MutableStorageCopy", ClassMode::Closed, field);
     BOOST_REQUIRE(fieldId.isValid());
-    const auto pairId = runtime.registerStruct("MutableStoragePair");
+    const auto pairId = runtime.getTypeManager().registerStruct("MutableStoragePair");
     const auto* pair = runtime.getType(pairId).value();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "first", field).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "second", field).isValid());
@@ -384,11 +384,11 @@ BOOST_AUTO_TEST_CASE(failed_copies_release_partial_ownership_and_preserve_assign
 
 BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_without_aliasing_reads) {
     Runtime runtime;
-    const auto ownerId = runtime.registerStruct("ContextStorageStruct");
+    const auto ownerId = runtime.getTypeManager().registerStruct("ContextStorageStruct");
     const auto* owner = runtime.getType(ownerId).value();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(ownerId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
-    const auto emptyId = runtime.registerStruct("ContextStorageEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("ContextStorageEmpty");
     const auto* empty = runtime.getType(emptyId).value();
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto machine = runtime.createVirtualMachine();
@@ -429,7 +429,7 @@ BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_wit
 BOOST_AUTO_TEST_CASE(failed_context_type_replacement_preserves_existing_storage_and_metadata) {
     Runtime runtime;
     FailingStorageCopyType* field = nullptr;
-    const auto fieldId = runtime.registerClass<FailingStorageCopyType>(
+    const auto fieldId = runtime.getTypeManager().registerClass<FailingStorageCopyType>(
         "ContextStorageCopy", ClassMode::Closed, field);
     BOOST_REQUIRE(fieldId.isValid());
     auto machine = runtime.createVirtualMachine();

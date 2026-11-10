@@ -194,10 +194,10 @@ BOOST_AUTO_TEST_CASE(interpreters_and_contexts_use_their_bound_virtual_machine) 
 
 BOOST_AUTO_TEST_CASE(interpreter_typed_values_own_complete_nested_storage_and_keep_moves_stable) {
     Runtime runtime;
-    const auto emptyId = runtime.registerStruct("ValueEmpty");
-    const auto leafId = runtime.registerStruct("ValueLeaf");
-    const auto outerId = runtime.registerStruct("ValueOuter");
-    const auto ownerId = runtime.registerClass("ValueOwner", ClassMode::Closed);
+    const auto emptyId = runtime.getTypeManager().registerStruct("ValueEmpty");
+    const auto leafId = runtime.getTypeManager().registerStruct("ValueLeaf");
+    const auto outerId = runtime.getTypeManager().registerStruct("ValueOuter");
+    const auto ownerId = runtime.getTypeManager().registerClass("ValueOwner", ClassMode::Closed);
     const auto* empty = runtime.getTypeByName("ValueEmpty");
     const auto* leaf = runtime.getTypeByName("ValueLeaf");
     const auto* outer = runtime.getTypeByName("ValueOuter");
@@ -279,8 +279,8 @@ BOOST_AUTO_TEST_CASE(interpreter_typed_values_own_complete_nested_storage_and_ke
 
 BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_from_host_storage) {
     Runtime runtime;
-    const auto pairId = runtime.registerStruct("ConsolePair");
-    const auto emptyId = runtime.registerStruct("ConsoleEmpty");
+    const auto pairId = runtime.getTypeManager().registerStruct("ConsolePair");
+    const auto emptyId = runtime.getTypeManager().registerStruct("ConsoleEmpty");
     const auto* pair = runtime.getTypeByName("ConsolePair");
     const auto* empty = runtime.getTypeByName("ConsoleEmpty");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "number", runtime.getIntegerType()).isValid());

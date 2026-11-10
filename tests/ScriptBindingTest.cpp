@@ -176,7 +176,7 @@ BOOST_AUTO_TEST_CASE(runtime_local_ids_and_wrong_runtime_receiver_and_machine_ar
     Runtime second;
     ScriptBindings firstBindings(first);
     ScriptBindings secondBindings(second);
-    BOOST_REQUIRE(second.createEnum("Padding", {{"Value", 1}}).isValid());
+    BOOST_REQUIRE(second.getTypeManager().createEnum("Padding", {{"Value", 1}}).isValid());
     auto secondCompiler = second.createCompiler();
     BOOST_REQUIRE(compileSources({{{"padding", {"padding.nomad",
         "class PaddingClass\nvalue = 1\nend\n"}}}, {}}, *secondCompiler).succeeded());

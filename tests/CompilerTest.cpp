@@ -314,7 +314,7 @@ BOOST_AUTO_TEST_CASE(value_and_void_types_emit_no_cleanup_instructions) {
     const auto initialSize = compiler.getOpCodeSize();
     OpCodeEmitter& emitter = compiler;
     for (const auto* type : {runtime.getIntegerType(), runtime.getFloatType(), runtime.getBooleanType(),
-        runtime.getVoidType(), runtime.getCallbackType({}, runtime.getVoidType())}) {
+        runtime.getVoidType(), runtime.getTypeManager().getCallbackType({}, runtime.getVoidType())}) {
         type->emitFreeResult(emitter);
         type->emitFreeIntermediate(emitter);
         type->emitFreeStackValue(emitter, 5);

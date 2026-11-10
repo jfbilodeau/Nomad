@@ -145,7 +145,7 @@ void Game::initWindowCallbacks() {
             }, {
                 defParameter(
                     "callback",
-                    m_runtime->getCallbackType(parameterTypes, m_runtime->getVoidType()),
+                    m_runtime->getTypeManager().getCallbackType(parameterTypes, m_runtime->getVoidType()),
                     NomadParamDoc("Callback to invoke when the window event occurs.")
                 )
             },

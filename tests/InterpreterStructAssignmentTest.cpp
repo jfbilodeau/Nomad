@@ -270,11 +270,11 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
     const auto fieldId = runtime.getTypeManager().registerClass<FailingAssignmentCopyType>(
         "AssignmentCopy", ClassMode::Closed, field);
     BOOST_REQUIRE(fieldId.isValid());
-    const auto pairId = runtime.registerStruct("AssignmentPair");
+    const auto pairId = runtime.getTypeManager().registerStruct("AssignmentPair");
     const auto* pair = runtime.getTypeByName("AssignmentPair");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "first", field).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "second", field).isValid());
-    const auto rootId = runtime.registerStruct("AssignmentCopyRoot");
+    const auto rootId = runtime.getTypeManager().registerStruct("AssignmentCopyRoot");
     const auto* root = runtime.getTypeByName("AssignmentCopyRoot");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "pair", pair).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
@@ -326,21 +326,21 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
 BOOST_AUTO_TEST_CASE(stored_field_writes_do_not_copy_unrelated_fields) {
     Runtime runtime;
     FailingAssignmentCopyType* reference = nullptr;
-    const auto referenceId = runtime.registerClass<FailingAssignmentCopyType>(
+    const auto referenceId = runtime.getTypeManager().registerClass<FailingAssignmentCopyType>(
         "AssignmentUnreadReference", ClassMode::Closed, reference);
     BOOST_REQUIRE(referenceId.isValid());
-    const auto leafId = runtime.registerStruct("AssignmentLiveLeaf");
+    const auto leafId = runtime.getTypeManager().registerStruct("AssignmentLiveLeaf");
     const auto* leaf = runtime.getTypeByName("AssignmentLiveLeaf")->asStructType();
     const auto numberId = runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "reference", reference).isValid());
-    const auto rootId = runtime.registerStruct("AssignmentLiveRoot");
+    const auto rootId = runtime.getTypeManager().registerStruct("AssignmentLiveRoot");
     const auto* root = runtime.getTypeByName("AssignmentLiveRoot")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "leaf", leaf).isValid());
     const auto siblingId = runtime.getTypeManager().registerScriptStructProperty(rootId, "sibling", runtime.getIntegerType());
     BOOST_REQUIRE(siblingId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "reference", reference).isValid());
-    const auto ownerId = runtime.registerClass("AssignmentLiveOwner", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("AssignmentLiveOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("AssignmentLiveOwner")->asClassType();
     const auto rootPropertyId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "value", root);
     BOOST_REQUIRE(rootPropertyId.isValid());

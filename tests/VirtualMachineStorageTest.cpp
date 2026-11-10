@@ -422,7 +422,7 @@ BOOST_AUTO_TEST_CASE(hidden_pointers_survive_nested_calls_and_host_reentry_failu
 BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_owned_fields) {
     const auto before = RuntimeValue::getLiveStringCount();
     Runtime runtime;
-    const auto typeId = runtime.registerStruct("CallStorage");
+    const auto typeId = runtime.getTypeManager().registerStruct("CallStorage");
     const auto* type = runtime.getTypeByName("CallStorage")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "label", runtime.getStringType()).isValid());
@@ -525,7 +525,7 @@ BOOST_AUTO_TEST_CASE(calls_need_only_existing_frames_and_requested_pointer_slots
 #if defined(_MSC_VER) && defined(_DEBUG)
 BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocating) {
     Runtime runtime;
-    const auto typeId = runtime.registerStruct("AllocationFreeStruct");
+    const auto typeId = runtime.getTypeManager().registerStruct("AllocationFreeStruct");
     const auto* type = runtime.getTypeByName("AllocationFreeStruct");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
@@ -585,7 +585,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocat
 BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto nativeTypeId = runtime.registerClass("CountedNative", ClassMode::Closed);
+    const auto nativeTypeId = runtime.getTypeManager().registerClass("CountedNative", ClassMode::Closed);
     const auto* nativeType = runtime.getTypeByName("CountedNative")->asClassType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(nativeTypeId);
     const auto nativeId = runtime.getTypeManager().registerNativeClassConstructor(nativeTypeId, {

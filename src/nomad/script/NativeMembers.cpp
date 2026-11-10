@@ -32,7 +32,7 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 
 void registerBuiltInNativeMembers(Runtime* runtime) {
     const auto stringTypeId = runtime->getTypeId("string");
-    const auto indexerId = runtime->addIndexer(stringTypeId, {
+    const auto indexerId = runtime->getTypeManager().registerNativeClassIndexer(stringTypeId, {
         .valueTypeId = stringTypeId,
         .indexTypes = {runtime->getIntegerType()->getId()},
         .getter = [](VirtualMachine* machine) {

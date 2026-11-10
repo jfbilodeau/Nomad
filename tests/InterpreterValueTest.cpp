@@ -82,7 +82,7 @@ BOOST_AUTO_TEST_CASE(scalars_copy_and_move_owned_references_in_single_slot_stora
 
 BOOST_AUTO_TEST_CASE(empty_and_moved_values_have_no_scalar_slot) {
     Runtime runtime;
-    const auto emptyId = runtime.registerStruct("EmptyScalarSlot");
+    const auto emptyId = runtime.getTypeManager().registerStruct("EmptyScalarSlot");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto* empty = runtime.getTypeByName("EmptyScalarSlot");
     InterpreterValue value(runtime.getVoidType(), RuntimeValue{});
@@ -109,8 +109,8 @@ BOOST_AUTO_TEST_CASE(empty_and_moved_values_have_no_scalar_slot) {
 
 BOOST_AUTO_TEST_CASE(storage_transitions_preserve_empty_types_and_single_slot_struct_addresses) {
     Runtime runtime;
-    const auto singleId = runtime.registerStruct("SingleSlot");
-    const auto emptyId = runtime.registerStruct("EmptySlots");
+    const auto singleId = runtime.getTypeManager().registerStruct("SingleSlot");
+    const auto emptyId = runtime.getTypeManager().registerStruct("EmptySlots");
     const auto* single = runtime.getTypeByName("SingleSlot");
     const auto* empty = runtime.getTypeByName("EmptySlots");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(singleId, "text", runtime.getStringType()).isValid());
@@ -173,7 +173,7 @@ BOOST_AUTO_TEST_CASE(failed_scalar_and_array_copies_release_partial_ownership) {
     const auto fieldId = manager.registerClass<ThrowingCopyType>("ThrowingCopy", ClassMode::Closed);
     const auto* field = runtime.getTypeByName("ThrowingCopy");
     BOOST_REQUIRE(fieldId.isValid());
-    const auto aggregateId = runtime.registerStruct("FailingAggregateCopy");
+    const auto aggregateId = runtime.getTypeManager().registerStruct("FailingAggregateCopy");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(aggregateId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(aggregateId, "failing", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(aggregateId);
@@ -199,9 +199,9 @@ BOOST_AUTO_TEST_CASE(failed_scalar_and_array_copies_release_partial_ownership) {
 BOOST_AUTO_TEST_CASE(stored_property_replacements_preserve_inputs_and_validate_the_complete_path) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const auto emptyId = runtime.registerStruct("PropertyEmpty");
-    const auto leafId = runtime.registerStruct("PropertyLeaf");
-    const auto rootId = runtime.registerStruct("PropertyRoot");
+    const auto emptyId = runtime.getTypeManager().registerStruct("PropertyEmpty");
+    const auto leafId = runtime.getTypeManager().registerStruct("PropertyLeaf");
+    const auto rootId = runtime.getTypeManager().registerStruct("PropertyRoot");
     const auto* empty = runtime.getTypeByName("PropertyEmpty");
     const auto* leaf = runtime.getTypeByName("PropertyLeaf");
     const auto* root = runtime.getTypeByName("PropertyRoot");
@@ -274,10 +274,10 @@ BOOST_AUTO_TEST_CASE(stored_property_replacements_preserve_inputs_and_validate_t
 
 BOOST_AUTO_TEST_CASE(returned_replacements_outlive_the_interpreter_and_inputs) {
     Runtime runtime;
-    const auto ownerId = runtime.registerClass("ValueOwner", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("ValueOwner", ClassMode::Closed);
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto* owner = runtime.getTypeByName("ValueOwner")->asClassType();
-    const auto rootId = runtime.registerStruct("ReturnedValue");
+    const auto rootId = runtime.getTypeManager().registerStruct("ReturnedValue");
     const auto* root = runtime.getTypeByName("ReturnedValue");
     const auto numberId = runtime.getTypeManager().registerScriptStructProperty(rootId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberId.isValid());
@@ -315,11 +315,11 @@ BOOST_AUTO_TEST_CASE(returned_replacements_outlive_the_interpreter_and_inputs) {
 BOOST_AUTO_TEST_CASE(property_reads_outlive_their_struct_and_preserve_reference_semantics) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const auto ownerId = runtime.registerClass("ReadValueOwner", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("ReadValueOwner", ClassMode::Closed);
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto* owner = runtime.getTypeByName("ReadValueOwner")->asClassType();
-    const auto leafId = runtime.registerStruct("ReadValueLeaf");
-    const auto rootId = runtime.registerStruct("ReadValueRoot");
+    const auto leafId = runtime.getTypeManager().registerStruct("ReadValueLeaf");
+    const auto rootId = runtime.getTypeManager().registerStruct("ReadValueRoot");
     const auto* leaf = runtime.getTypeByName("ReadValueLeaf");
     const auto* root = runtime.getTypeByName("ReadValueRoot");
     const auto textId = runtime.getTypeManager().registerScriptStructProperty(leafId, "text", runtime.getStringType());
@@ -355,8 +355,8 @@ BOOST_AUTO_TEST_CASE(property_reads_outlive_their_struct_and_preserve_reference_
 BOOST_AUTO_TEST_CASE(empty_root_property_operations_preserve_types_without_slot_pointers) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    const auto emptyId = runtime.registerStruct("EmptyPropertyValue");
-    const auto rootId = runtime.registerStruct("EmptyPropertyRoot");
+    const auto emptyId = runtime.getTypeManager().registerStruct("EmptyPropertyValue");
+    const auto rootId = runtime.getTypeManager().registerStruct("EmptyPropertyRoot");
     const auto* empty = runtime.getTypeByName("EmptyPropertyValue");
     const auto* root = runtime.getTypeByName("EmptyPropertyRoot");
     const auto propertyId = runtime.getTypeManager().registerScriptStructProperty(rootId, "empty", empty);
@@ -381,8 +381,8 @@ BOOST_AUTO_TEST_CASE(empty_root_property_operations_preserve_types_without_slot_
 
 BOOST_AUTO_TEST_CASE(context_property_selectors_update_bindings_without_overwriting_results) {
     Runtime runtime;
-    const auto leafId = runtime.registerStruct("ContextPropertyLeaf");
-    const auto rootId = runtime.registerStruct("ContextPropertyRoot");
+    const auto leafId = runtime.getTypeManager().registerStruct("ContextPropertyLeaf");
+    const auto rootId = runtime.getTypeManager().registerStruct("ContextPropertyRoot");
     const auto* leaf = runtime.getTypeByName("ContextPropertyLeaf");
     const auto* root = runtime.getTypeByName("ContextPropertyRoot");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType()).isValid());

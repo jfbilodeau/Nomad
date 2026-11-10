@@ -93,24 +93,24 @@ BOOST_AUTO_TEST_CASE(keyword_ids_support_registration_lookup_and_catalog_growth)
 BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)
 {
     Runtime runtime;
-    const auto* integers = runtime.getIteratorType(runtime.getIntegerType());
-    const auto* strings = runtime.getIteratorType(runtime.getStringType());
+    const auto* integers = runtime.getTypeManager().getIteratorType(runtime.getIntegerType());
+    const auto* strings = runtime.getTypeManager().getIteratorType(runtime.getStringType());
     BOOST_TEST(integers->getTypeName() == "Iterator<int>");
     BOOST_TEST(strings->getTypeName() == "Iterator<string>");
     BOOST_TEST(integers != strings);
-    BOOST_TEST(runtime.getIteratorType(runtime.getIntegerType()) == integers);
-    BOOST_TEST(runtime.getParameterizedType("Iterator", {runtime.getStringType()}) == strings);
-    BOOST_CHECK_THROW(static_cast<void>(runtime.getIteratorType(runtime.getVoidType())), NomadException);
+    BOOST_TEST(runtime.getTypeManager().getIteratorType(runtime.getIntegerType()) == integers);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("Iterator", {runtime.getStringType()}) == strings);
+    BOOST_CHECK_THROW(static_cast<void>(runtime.getTypeManager().getIteratorType(runtime.getVoidType())), NomadException);
 }
 
 BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
 {
     Runtime runtime;
-    const auto id = runtime.registerClass("DefinitionSequence", ClassMode::Closed);
+    const auto id = runtime.getTypeManager().registerClass("DefinitionSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     const auto* type = runtime.getType(id).value()->asClassType();
     const auto* valueType = runtime.getIntegerType();
-    const auto* iteratorType = runtime.getIteratorType(valueType);
+    const auto* iteratorType = runtime.getTypeManager().getIteratorType(valueType);
     auto calls = 0;
     NativeInterableDefinition definition{
         .valueTypeId = valueType->getId(),
@@ -128,7 +128,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
     definition.factory.function = {};
     definition.factory.documentation = "Changed.";
     const auto owned = type->getIterableInfo();
-    const auto info = runtime.getIterableInfo(type);
+    const auto info = runtime.getTypeManager().getIterableInfo(type);
     BOOST_REQUIRE(owned.has_value());
     BOOST_REQUIRE(info.has_value());
     BOOST_TEST(info->valueType == valueType);
@@ -150,7 +150,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
     const auto count = runtime.getFunctionTableSize();
     definition.factory.name = "secondTraversal";
     definition.factory.function = [](VirtualMachine*) {};
-    BOOST_CHECK_THROW(runtime.addIterable(id, definition), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, definition), NomadException);
     BOOST_TEST(runtime.getFunctionTableSize() == count);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(type->getIterableInfo()->factoryId == info->factoryId);
@@ -159,15 +159,15 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
 BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_a_factory)
 {
     Runtime runtime;
-    const auto id = runtime.registerClass("InvalidDefinitionSequence", ClassMode::Closed);
+    const auto id = runtime.getTypeManager().registerClass("InvalidDefinitionSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     const auto* type = runtime.getType(id).value()->asClassType();
     const auto* integer = runtime.getIntegerType();
     const NativeInterableDefinition definition{
         integer->getId(),
-        {"traverse", {}, runtime.getIteratorType(integer)->getId(), [](VirtualMachine*) {}, ""}
+        {"traverse", {}, runtime.getTypeManager().getIteratorType(integer)->getId(), [](VirtualMachine*) {}, ""}
     };
-    const auto stringIteratorId = runtime.getIteratorType(runtime.getStringType())->getId();
+    const auto stringIteratorId = runtime.getTypeManager().getIteratorType(runtime.getStringType())->getId();
     const auto count = runtime.getFunctionTableSize();
     const auto verifyUnchanged = [&]() {
         BOOST_TEST(runtime.getFunctionTableSize() == count);
@@ -175,7 +175,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
         BOOST_TEST(!type->getIterableInfo().has_value());
     };
     for (const auto invalid : {TypeId::INVALID, TypeId{NOMAD_ID_MAX}, integer->getId()}) {
-        BOOST_CHECK_THROW(runtime.addIterable(invalid, definition), NomadException);
+        BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(invalid, definition), NomadException);
         verifyUnchanged();
     }
     for (const auto invalid : {
@@ -184,7 +184,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
     }) {
         auto candidate = definition;
         candidate.valueTypeId = invalid;
-        BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+        BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, candidate), NomadException);
         verifyUnchanged();
     }
     for (const auto invalid : {
@@ -193,21 +193,21 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
     }) {
         auto candidate = definition;
         candidate.factory.returnTypeId = invalid;
-        BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+        BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, candidate), NomadException);
         verifyUnchanged();
     }
     auto candidate = definition;
     candidate.factory.function = {};
-    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, candidate), NomadException);
     verifyUnchanged();
     candidate = definition;
     candidate.factory.parameters = {{integer->getId(), "value", ""}};
-    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, candidate), NomadException);
     verifyUnchanged();
     candidate.factory.parameters = {{runtime.getLineNumberType()->getId(), "line", ""}};
-    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, candidate), NomadException);
     verifyUnchanged();
-    runtime.addIterable(id, definition);
+    runtime.getTypeManager().registerNativeClassIterable(id, definition);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(type->getIterableInfo().has_value());
 }
@@ -215,18 +215,18 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
 BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_class_type_associations)
 {
     Runtime runtime;
-    const auto id = runtime.registerClass("ConflictingSequence", ClassMode::Closed);
+    const auto id = runtime.getTypeManager().registerClass("ConflictingSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     const auto* type = runtime.getType(id).value()->asClassType();
     const auto* integer = runtime.getIntegerType();
     const NativeInterableDefinition definition{
         integer->getId(),
-        {"traverse", {}, runtime.getIteratorType(integer)->getId(), [](VirtualMachine*) {}, ""}
+        {"traverse", {}, runtime.getTypeManager().getIteratorType(integer)->getId(), [](VirtualMachine*) {}, ""}
     };
     const auto methodId = runtime.getTypeManager().registerNativeClassMethod(id, definition.factory);
     BOOST_REQUIRE(methodId.isValid());
     const auto count = runtime.getFunctionTableSize();
-    BOOST_CHECK_THROW(runtime.addIterable(id, definition), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, definition), NomadException);
     BOOST_TEST(runtime.getFunctionTableSize() == count);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(!type->getIterableInfo().has_value());
@@ -234,7 +234,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_class_
     mutableType->registerIterableType(runtime, integer, runtime.getMethod(methodId));
     auto candidate = definition;
     candidate.factory.name = "anotherTraversal";
-    BOOST_CHECK_THROW(runtime.addIterable(id, candidate), NomadException);
+    BOOST_CHECK_THROW(runtime.getTypeManager().registerNativeClassIterable(id, candidate), NomadException);
     BOOST_TEST(runtime.getFunctionTableSize() == count);
     BOOST_TEST(type->getIterableInfo()->factoryId == methodId);
 }
@@ -257,18 +257,18 @@ BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
     };
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto id = runtime.registerClass("LoopDefinition", ClassMode::Closed);
+    const auto id = runtime.getTypeManager().registerClass("LoopDefinition", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(id, {
         {}, [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); }, ""
     }).isValid());
     auto factoryCalls = 0;
-    runtime.addIterable(id, {
+    runtime.getTypeManager().registerNativeClassIterable(id, {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .factory = {
             .name = "beginTraversal",
             .parameters = {},
-            .returnTypeId = runtime.getIteratorType(runtime.getIntegerType())->getId(),
+            .returnTypeId = runtime.getTypeManager().getIteratorType(runtime.getIntegerType())->getId(),
             .function = [&](VirtualMachine* machine) {
                 ++factoryCalls;
                 machine->getResult().setObjectValue(new DefinitionIterator(runtime.getIntegerType()));
@@ -307,11 +307,11 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
 {
     Runtime runtime;
     Runtime other;
-    const auto descriptorId = runtime.registerClass("SequenceMetadata", ClassMode::Closed);
+    const auto descriptorId = runtime.getTypeManager().registerClass("SequenceMetadata", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     auto* type = const_cast<ClassType*>(runtime.getType(descriptorId).value()->asClassType());
     const auto* integer = runtime.getIntegerType();
-    const auto* iterator = runtime.getIteratorType(integer);
+    const auto* iterator = runtime.getTypeManager().getIteratorType(integer);
     const auto factoryId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "iterator",
         .parameters = {},
@@ -322,13 +322,13 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
     BOOST_REQUIRE(factoryId.isValid());
     const auto* factory = runtime.getMethod(factoryId);
     BOOST_TEST(!type->getIterableInfo().has_value());
-    BOOST_TEST(!runtime.getIterableInfo(type).has_value());
-    BOOST_TEST(!runtime.getIterableInfo(nullptr).has_value());
-    BOOST_TEST(!runtime.getIterableInfo(integer).has_value());
-    BOOST_TEST(!other.getIterableInfo(type).has_value());
-    BOOST_TEST(!runtime.getIterableInfo(other.getStringType()).has_value());
+    BOOST_TEST(!runtime.getTypeManager().getIterableInfo(type).has_value());
+    BOOST_TEST(!runtime.getTypeManager().getIterableInfo(nullptr).has_value());
+    BOOST_TEST(!runtime.getTypeManager().getIterableInfo(integer).has_value());
+    BOOST_TEST(!other.getTypeManager().getIterableInfo(type).has_value());
+    BOOST_TEST(!runtime.getTypeManager().getIterableInfo(other.getStringType()).has_value());
     ClassType unregistered(&runtime, TypeId::INVALID, "SequenceMetadata", ClassMode::Closed);
-    BOOST_TEST(!runtime.getIterableInfo(&unregistered).has_value());
+    BOOST_TEST(!runtime.getTypeManager().getIterableInfo(&unregistered).has_value());
     BOOST_CHECK_THROW(unregistered.registerIterableType(runtime, integer, factory), NomadException);
     BOOST_CHECK_THROW(type->registerIterableType(other, other.getIntegerType(), factory), NomadException);
     for (const auto* invalid : {static_cast<const Type*>(nullptr), runtime.getVoidType(),
@@ -364,12 +364,12 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
         BOOST_CHECK_THROW(type->registerIterableType(runtime, integer, runtime.getMethod(invalidId)), NomadException);
     }
     BOOST_TEST(!type->getIterableInfo().has_value());
-    BOOST_TEST(!runtime.getIterableInfo(type).has_value());
+    BOOST_TEST(!runtime.getTypeManager().getIterableInfo(type).has_value());
 
     type->registerIterableType(runtime, integer, factory);
     const auto verifyAssociation = [&]() {
         const auto owned = type->getIterableInfo();
-        const auto forwarded = runtime.getIterableInfo(type);
+        const auto forwarded = runtime.getTypeManager().getIterableInfo(type);
         BOOST_REQUIRE(owned.has_value());
         BOOST_REQUIRE(forwarded.has_value());
         BOOST_TEST(owned->valueType == integer);
@@ -387,10 +387,10 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
     snapshot->valueType = runtime.getStringType();
     snapshot->factoryId = CallableId::INVALID;
     for (auto index = 0; index < 32; ++index) {
-        const auto additionalId = runtime.registerClass("AdditionalSequence" + std::to_string(index), ClassMode::Closed);
+        const auto additionalId = runtime.getTypeManager().registerClass("AdditionalSequence" + std::to_string(index), ClassMode::Closed);
         BOOST_REQUIRE(additionalId.isValid());
         const auto* additionalType = runtime.getType(additionalId).value()->asClassType();
-        runtime.addIterable(additionalId, {
+        runtime.getTypeManager().registerNativeClassIterable(additionalId, {
             .valueTypeId = integer->getId(),
             .factory = {
                 .name = "iterator",
@@ -400,8 +400,8 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
                 .documentation = ""
             }
         });
-        BOOST_REQUIRE(runtime.getIterableInfo(additionalType).has_value());
-        const auto additionalFactoryId = runtime.getIterableInfo(additionalType)->factoryId;
+        BOOST_REQUIRE(runtime.getTypeManager().getIterableInfo(additionalType).has_value());
+        const auto additionalFactoryId = runtime.getTypeManager().getIterableInfo(additionalType)->factoryId;
         BOOST_REQUIRE(runtime.getMethod(additionalFactoryId) != nullptr);
         BOOST_TEST(runtime.getMethod(additionalFactoryId)->getClassType() == additionalType);
     }
@@ -414,11 +414,11 @@ BOOST_AUTO_TEST_CASE(range_iterable_metadata_is_exposed_by_its_owner)
     const auto* range = dynamic_cast<const ClassType*>(runtime.getTypeByName("Range"));
     BOOST_REQUIRE(range != nullptr);
     const auto owned = range->getIterableInfo();
-    const auto forwarded = runtime.getIterableInfo(range);
+    const auto forwarded = runtime.getTypeManager().getIterableInfo(range);
     BOOST_REQUIRE(owned.has_value());
     BOOST_REQUIRE(forwarded.has_value());
     BOOST_TEST(owned->valueType == runtime.getIntegerType());
-    BOOST_TEST(owned->iteratorType == runtime.getIteratorType(runtime.getIntegerType()));
+    BOOST_TEST(owned->iteratorType == runtime.getTypeManager().getIteratorType(runtime.getIntegerType()));
     BOOST_TEST(forwarded->factoryId == owned->factoryId);
     BOOST_REQUIRE(runtime.getMethod(owned->factoryId) != nullptr);
     BOOST_TEST(runtime.getMethod(owned->factoryId)->getClassType() == range);
@@ -490,7 +490,7 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
 
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto typeId = runtime.registerClass("Sequence", ClassMode::Closed);
+    const auto typeId = runtime.getTypeManager().registerClass("Sequence", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     auto* sourceType = const_cast<ClassType*>(runtime.getType(typeId).value()->asClassType());
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(sourceType->getId(), {
@@ -504,7 +504,7 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
     const auto factoryId = runtime.getTypeManager().registerNativeClassMethod(sourceType->getId(), {
         .name = "startTraversal",
         .parameters = {},
-        .returnTypeId = runtime.getIteratorType(runtime.getIntegerType())->getId(),
+        .returnTypeId = runtime.getTypeManager().getIteratorType(runtime.getIntegerType())->getId(),
         .function = [&factoryCalls](VirtualMachine* machine) {
             ++factoryCalls;
             machine->getResult().setObjectValue(new SequenceIterator(machine->getRuntime()->getIntegerType()));

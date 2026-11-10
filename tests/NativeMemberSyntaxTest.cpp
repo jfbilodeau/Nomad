@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_SUITE(native_member_syntax)
 BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_concrete_members) {
     Runtime runtime;
     auto specializations = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Box", 1,
         [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++specializations;
@@ -76,11 +76,11 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             }).isValid());
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate("Box", {
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate("Box", {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredProperty", MemberType::Property));
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredMethod", MemberType::Method, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Box", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Box", "declaredMethod", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, ""),
         defTemplateParameter("line", runtime.getLineNumberType(), "")
     }));

@@ -390,9 +390,7 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-`addIndexer(TypeId, NativeIndexerDefinition)` remains a Runtime compatibility API
-for native member registration. Prefer the corresponding explicit TypeManager
-registration APIs, including `registerNativeClassIndexer` and
+Use the explicit TypeManager registration APIs, including `registerNativeClassIndexer` and
 `registerNativeClassIterable`. The latter registers a native factory method
 and its iterable association. Include `<nomad/script/NativeMember.hpp>` for
 the native member creation definitions.
@@ -400,7 +398,8 @@ Register native class accessors through
 `runtime.getTypeManager().registerNativeClassProperty(ownerId, definition)`.
 Their metadata structures are now named `NativePropertyInfo`,
 `NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
-`getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
+`Runtime::getNativePropertyInfo`, `Runtime::getNativeIndexerInfo`, and
+`TypeManager::getIterableInfo`;
 `NativeProperty::getInfo()` returns a property snapshot.
 
 Fallible metadata snapshot lookups return `std::optional<Info>`. An empty
@@ -484,9 +483,8 @@ nested, object-owned, and temporary struct receivers. Host snapshot-based
 struct-method calls return explicit updated receiver/result values.
 
 Register class and struct types with
-`TypeManager::registerClass` and `registerStruct`; existing Runtime entry points
-remain compatible. Enum, opaque-ID, and callback creation also belong to
-TypeManager, with compatible Runtime entry points. Callable
+`TypeManager::registerClass` and `registerStruct`. Enum, opaque-ID, and callback
+creation also belong to TypeManager. Callable
 IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
 check namespace collisions. `catalogType()` requires a non-null descriptor
@@ -606,8 +604,7 @@ returns its `TypeId`. Each `EnumValueDefinition` supplies a member name and an
 explicit integer value. The runtime owns the resulting type and copies or moves
 the supplied names, values, and documentation.
 
-Access it through `runtime.getTypeManager()`; `Runtime::createEnum` remains
-compatible. Enum constants and equality operators are registered in Runtime
+Access it through `runtime.getTypeManager()`. Enum constants and equality operators are registered in Runtime
 with their existing IDs and calling conventions.
 `Runtime::registerEnumOperators(type)` registers enum equality/inequality for
 an already registered same-runtime enum. Invalid ownership throws
@@ -616,11 +613,10 @@ manager enum creation rather than register operators separately.
 
 `TypeManager::registerOpaqueIdType(name, documentation)` creates a borrowed
 opaque-ID descriptor with the existing name and namespace rules.
-`getCallbackType(parameterTypes, returnType)` interns callback descriptors by
+`TypeManager::getCallbackType(parameterTypes, returnType)` interns callback descriptors by
 their exact parameter and return-type pointers. Matching signatures reuse a
 descriptor; different signatures have distinct IDs even when their type names
-match. `getPredicateType()` returns the parameterless boolean callback type.
-Runtime's corresponding methods remain compatible.
+match. `TypeManager::getPredicateType()` returns the parameterless boolean callback type.
 
 Creation also registers typed constants named `EnumName.MemberName` and
 same-enum equality and inequality operators. Existing script enum syntax is
@@ -3052,10 +3048,10 @@ return null.
 `getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
 or an empty optional if the family is not registered.
 
-Access these APIs through `runtime.getTypeManager()`. Existing Runtime methods
-and factory/initializer type aliases remain compatible. Constructor-inference
-and member-template registration also belong to TypeManager; Runtime wrappers
-retain the same behavior. `getParameterizedTypeNames(names)` appends family
+Access these APIs and their factory/initializer type aliases through TypeManager.
+Constructor-inference and member-template registration also belong to TypeManager.
+Factory and initializer callbacks retain their `Runtime*` parameters; use
+`runtime->getTypeManager()` inside them. `getParameterizedTypeNames(names)` appends family
 names in registration order without clearing existing entries.
 `getMemberTemplateSignature(name)` returns family template metadata only;
 `Runtime::getMemberSignature(name)` continues to combine it with native members.
@@ -3231,7 +3227,7 @@ type, not its result type.
 Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-const auto typeId = runtime.registerClass("Example", nomad::ClassMode::Closed);
+const auto typeId = runtime.getTypeManager().registerClass("Example", nomad::ClassMode::Closed);
 const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
@@ -3476,7 +3472,6 @@ receivers and its independent receiver/result snapshots.
 
 Register an indexer with
 `TypeManager::registerNativeClassIndexer(typeId, NativeIndexerDefinition{...})`.
-`Runtime::addIndexer` remains a compatibility wrapper.
 The definition supplies `valueTypeId`, a non-empty `std::vector<TypeId>` named
 `indexTypes`, `getter`, `setter`, and `documentation`.
 The index vector specifies the number and types of indices. All IDs are local
@@ -3630,13 +3625,13 @@ resolving the iterator type may create its registered specialization.
 The runtime owns the factory metadata and callback; changing the input definition
 after registration does not change the registered factory.
 `TypeManager::getIterableInfo(sourceType)` returns an optional association
-containing its factory ID. Runtime's `addIterable`, `getIteratorType`, and
-`getIterableInfo` remain compatibility wrappers.
+containing its factory ID. Obtain iterator specializations with
+`TypeManager::getIteratorType(elementType)`.
 
 The source `ClassType` owns its iterable association. Include
 `<nomad/script/ClassType.hpp>` for `IterableInfo`.
 `ClassType::getIterableInfo()` returns an optional snapshot containing
-the element type, iterator type, and factory `CallableId`. Runtime lookup returns
+the element type, iterator type, and factory `CallableId`. Manager lookup returns
 the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
 Hosts retaining a mutable registered class type may call
 `ClassType::registerIterableType(runtime, elementType, factory)` directly;

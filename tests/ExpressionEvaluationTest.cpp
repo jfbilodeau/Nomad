@@ -90,7 +90,7 @@ BOOST_AUTO_TEST_CASE(expression_values_do_not_use_the_published_context_result)
 BOOST_AUTO_TEST_CASE(expression_struct_results_own_their_values_after_ast_and_vm_destruction)
 {
     Runtime runtime;
-    const auto typeId = runtime.registerStruct("AstOwnedValue");
+    const auto typeId = runtime.getTypeManager().registerStruct("AstOwnedValue");
     const auto* type = runtime.getTypeByName("AstOwnedValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());

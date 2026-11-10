@@ -21,7 +21,7 @@ namespace {
 class PropertyOwner final : public NomadObject {};
 
 TypeId registerPropertyOwner(Runtime& runtime) {
-    const auto id = runtime.registerClass("PropertyOwner", ClassMode::Closed);
+    const auto id = runtime.getTypeManager().registerClass("PropertyOwner", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(id, {
         .parameters = {},
@@ -241,8 +241,8 @@ BOOST_AUTO_TEST_CASE(checked_resolution_preserves_readiness_until_central_comple
     Runtime other;
     auto compiler = runtime.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
-    const auto stateId = runtime.createEnum("State", {{"Ready", 1}});
-    const auto otherStateId = other.createEnum("State", {{"Ready", 1}});
+    const auto stateId = runtime.getTypeManager().createEnum("State", {{"Ready", 1}});
+    const auto otherStateId = other.getTypeManager().createEnum("State", {{"Ready", 1}});
     BOOST_REQUIRE(stateId.isValid());
     BOOST_REQUIRE(otherStateId.isValid());
     auto calls = 0;

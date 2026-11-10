@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 3C is implemented and validated, awaiting review.
-Step 3D has not started and is not approved for implementation.
+Status: Step 3D is implemented and validated, awaiting review.
+Step 4 has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -303,6 +303,24 @@ Acceptance: compiler, runtime, CLI/LSP, collections, and modules build without
 the retired APIs. Type identity, specialization reuse, namespace collisions,
 constructor inference, iterator behavior, and collection behavior are unchanged.
 
+Completion evidence (2026-11-10, Windows Debug):
+
+- Migrated descriptor creation, parameterized families, constructor inference,
+  member templates, lazy callback/iterator/predicate types, iterables, and indexers
+  to manager APIs across compiler, runtime, modules, collections, and tests.
+- Removed the remaining public facades and factory aliases, plus two unused
+  private catalog forwarders. Production code decreased by 199 lines.
+- Preserved common runtime type lookups, fundamental getters, callable/property/
+  indexer catalogs, namespace publication, and hub-scoped registration helpers.
+  Factory and initializer callbacks still receive `Runtime*`.
+- The build exposed callback-type calls in the shared entity-function `.inl`;
+  those were migrated too. The final `nomad-development` build passed.
+- Language, remaining-unit, tooling, bindings, compiler-export, and LSP-process
+  CTests passed. All four documentation preparation tests, built-tool reference
+  generation, strict MkDocs, retired-API searches, and whitespace checks passed.
+- Other platforms, full packaging integration, and manual gameplay were not
+  validated.
+
 For every Step 3 sub-slice, include relevant
 [embedding examples](../embedding.md), collection registrations, native members,
 and retained module fixtures. Inspect
@@ -443,5 +461,4 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 3C review: Step 3D, completing descriptor, family, and
-iterable/indexer API migration.
+Next slice after Step 3D review: Step 4, retiring the duplicate documentation exporter.

@@ -891,7 +891,7 @@ BOOST_AUTO_TEST_CASE(struct_receivers_shadow_runtime_this_contexts_in_members_ca
             const auto result = Interpreter(*machine).runFunction(*closure, {});
             machine->setFloatResult(result.getValue().getFloatValue());
         },
-        {defParameter("callback", runtime.getCallbackType({}, runtime.getFloatType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getFloatType()), "")},
         runtime.getFloatType(),
         ""
     );
@@ -1009,7 +1009,7 @@ BOOST_AUTO_TEST_CASE(struct_declarations_have_specialized_ast_members_and_source
     auto compiler = runtime.createCompiler();
     BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
         *compiler, CompilationTarget::Analysis).succeeded());
-    BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerStruct("Point").isValid());
     auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
     CompilerContext context(compiler.get());
     std::unique_ptr<Statement> statement;
@@ -1069,7 +1069,7 @@ BOOST_AUTO_TEST_CASE(struct_declarations_have_specialized_ast_members_and_source
 BOOST_AUTO_TEST_CASE(struct_member_scanning_balances_blocks_callbacks_and_loop_closers) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();
-    const auto* callbackType = runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType());
+    const auto* callbackType = runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType());
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "invoke",
         [](VirtualMachine*) {},
@@ -1079,7 +1079,7 @@ BOOST_AUTO_TEST_CASE(struct_member_scanning_balances_blocks_callbacks_and_loop_c
     ).isValid());
     BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
         *compiler, CompilationTarget::Analysis).succeeded());
-    BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerStruct("Point").isValid());
     auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
     CompilerContext context(compiler.get());
     Tokenizer tokens(&context, "blocks.nomad",

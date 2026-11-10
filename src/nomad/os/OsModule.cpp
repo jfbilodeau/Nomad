@@ -156,17 +156,17 @@ void registerOs(ModuleContext* context) {
     if (runtime->registerHub("os", HubMode::Closed).isInvalid()) {
         throw NomadException("Failed to register os hub");
     }
-    const auto platformTypeId = runtime->createEnum("os.Platform", {
+    const auto platformTypeId = runtime->getTypeManager().createEnum("os.Platform", {
         {"Windows", 1}, {"Linux", 2}, {"MacOS", 3}
     });
-    const auto architectureTypeId = runtime->createEnum("os.Architecture", {
+    const auto architectureTypeId = runtime->getTypeManager().createEnum("os.Architecture", {
         {"X86", 1}, {"X64", 2}, {"Arm32", 3}, {"Arm64", 4}
     });
     const auto platformType = runtime->getType(platformTypeId);
     const auto architectureType = runtime->getType(architectureTypeId);
     const auto* stringType = runtime->getStringType();
-    const auto* argumentsType = runtime->getParameterizedType("ReadOnlyArray1", {stringType});
-    const auto* environmentType = runtime->getParameterizedType("ReadOnlyMap", {stringType, stringType});
+    const auto* argumentsType = runtime->getTypeManager().getParameterizedType("ReadOnlyArray1", {stringType});
+    const auto* environmentType = runtime->getTypeManager().getParameterizedType("ReadOnlyMap", {stringType, stringType});
     if (!platformType || !architectureType ||
         argumentsType == nullptr || environmentType == nullptr) {
         throw NomadException("Failed to resolve os types; collections is required");

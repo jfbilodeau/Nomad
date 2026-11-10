@@ -1603,7 +1603,7 @@ bool parseCallableArguments(
             );
 
             arguments->add(std::move(argument));
-        } else if (argumentType == context->getRuntime()->getPredicateType()) {
+        } else if (argumentType == context->getRuntime()->getTypeManager().getPredicateType()) {
             auto argument = parsePredicateArgument(context, function, tokens);
 
             if (argument == nullptr) {

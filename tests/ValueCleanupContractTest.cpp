@@ -22,7 +22,7 @@ int main(int argumentCount, char* arguments[]) {
             std::set_terminate(terminate);
             type.freeValue(nullptr);
         } else {
-            const auto id = runtime.registerStruct("Unfinalized");
+            const auto id = runtime.getTypeManager().registerStruct("Unfinalized");
             const auto* type = runtime.getTypeByName("Unfinalized")->asStructType();
             if (testCase == "failed-layout-fields") {
                 if (runtime.getTypeManager().registerScriptStructProperty(id, "prefix", runtime.getIntegerType()).isInvalid() ||

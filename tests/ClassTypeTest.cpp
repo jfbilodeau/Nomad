@@ -111,7 +111,7 @@ public:
 };
 
 const ClassType* createTestType(Runtime& runtime, const NomadString& name, const ClassMode mode) {
-    const auto id = runtime.registerClass(name, mode);
+    const auto id = runtime.getTypeManager().registerClass(name, mode);
     BOOST_REQUIRE(id.isValid());
     const auto type = runtime.getType(id);
     BOOST_REQUIRE(type.has_value());
@@ -126,7 +126,7 @@ BOOST_AUTO_TEST_CASE(runtime_finalization_rejects_invalid_and_non_composite_type
     Runtime runtime;
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "value", runtime.getIntegerType()).isValid());
-    const auto enumId = runtime.createEnum("State", {{"Ready", 1}});
+    const auto enumId = runtime.getTypeManager().createEnum("State", {{"Ready", 1}});
     BOOST_REQUIRE(enumId.isValid());
     for (const auto id : {TypeId::INVALID, TypeId{-2}, TypeId{NOMAD_ID_MAX},
         runtime.getVoidType()->getId(), runtime.getIntegerType()->getId(), enumId}) {
@@ -212,7 +212,7 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
 BOOST_AUTO_TEST_CASE(finalization_distinguishes_empty_inline_layouts_from_unresolved_layouts) {
     Runtime runtime;
     InlineLayoutTestType* empty = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "EmptyInline", ClassMode::Closed, empty
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
@@ -247,10 +247,10 @@ BOOST_AUTO_TEST_CASE(finalization_resolves_nested_inline_dependencies_before_con
     Runtime runtime;
     InlineLayoutTestType* point = nullptr;
     InlineLayoutTestType* pair = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "PointInline", ClassMode::Closed, point
     ).isValid());
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "PairInline", ClassMode::Closed, pair
     ).isValid());
     for (const auto* name : {"x", "y", "z"}) {
@@ -289,10 +289,10 @@ BOOST_AUTO_TEST_CASE(finalization_rejects_direct_and_indirect_inline_cycles_with
         Runtime runtime;
         InlineLayoutTestType* first = nullptr;
         InlineLayoutTestType* second = nullptr;
-        BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
             "FirstInline", ClassMode::Closed, first
         ).isValid());
-        BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+        BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
             "SecondInline", ClassMode::Closed, second
         ).isValid());
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "number", runtime.getIntegerType()).isValid());
@@ -317,10 +317,10 @@ BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline
     Runtime runtime;
     InlineLayoutTestType* point = nullptr;
     InlineLayoutTestType* nativeOnly = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "PointInline", ClassMode::Closed, point
     ).isValid());
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "NativeInline", ClassMode::Closed, nativeOnly
     ).isValid());
     const auto* owner = createTestType(runtime, "Player", ClassMode::Closed);
@@ -342,7 +342,7 @@ BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline
     BOOST_TEST(getterCalls == 0);
 
     InlineLayoutTestType* referenceOnly = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "ReferenceInline", ClassMode::Closed, referenceOnly
     ).isValid());
     const auto* referencedClass = createTestType(runtime, "Referenced", ClassMode::Closed);
@@ -356,10 +356,10 @@ BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_bac
     Runtime runtime;
     InlineLayoutTestType* empty = nullptr;
     FieldLayoutTestType* pending = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "EmptyInline", ClassMode::Closed, empty
     ).isValid());
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "PendingWidth", ClassMode::Closed, pending, std::nullopt
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
@@ -401,10 +401,10 @@ BOOST_AUTO_TEST_CASE(finalization_checks_overflow_without_rejecting_maximum_offs
     const auto maximumSize = std::numeric_limits<NomadIndex>::max();
     FieldLayoutTestType* maximum = nullptr;
     InlineLayoutTestType* empty = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "MaximumWidth", ClassMode::Closed, maximum, maximumSize
     ).isValid());
-    BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<InlineLayoutTestType>(
         "EmptyInline", ClassMode::Closed, empty
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
@@ -428,7 +428,7 @@ BOOST_AUTO_TEST_CASE(finalization_checks_overflow_without_rejecting_maximum_offs
 BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout) {
     Runtime runtime;
     FieldLayoutTestType* owner = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "Fields", ClassMode::Closed, owner, NomadIndex{1}
     ).isValid());
     CompositeType* composite = owner;
@@ -512,10 +512,10 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     Runtime runtime;
     FieldLayoutTestType* emptyType = nullptr;
     FieldLayoutTestType* pointType = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
     ).isValid());
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "PointWidth", ClassMode::Closed, pointType, NomadIndex{3}
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Opened);
@@ -597,7 +597,7 @@ BOOST_AUTO_TEST_CASE(empty_and_native_only_field_layouts_use_no_storage) {
 BOOST_AUTO_TEST_CASE(field_layout_queries_follow_size_resolution) {
     Runtime runtime;
     FieldLayoutTestType* pendingType = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "PendingWidth", ClassMode::Closed, pendingType, std::nullopt
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
@@ -638,10 +638,10 @@ BOOST_AUTO_TEST_CASE(field_layout_checks_overflow_without_rejecting_representabl
     const auto maximumSize = std::numeric_limits<NomadIndex>::max();
     FieldLayoutTestType* maximumType = nullptr;
     FieldLayoutTestType* emptyType = nullptr;
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "MaximumWidth", ClassMode::Closed, maximumType, maximumSize
     ).isValid());
-    BOOST_REQUIRE(runtime.registerClass<FieldLayoutTestType>(
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<FieldLayoutTestType>(
         "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
@@ -699,12 +699,12 @@ BOOST_AUTO_TEST_CASE(class_conversion_returns_the_original_descriptor_for_classe
 
 BOOST_AUTO_TEST_CASE(class_conversion_returns_null_for_non_class_descriptors) {
     Runtime runtime;
-    const auto enumId = runtime.createEnum("State", {{"Ready", 1}});
+    const auto enumId = runtime.getTypeManager().createEnum("State", {{"Ready", 1}});
     BOOST_REQUIRE(enumId.isValid());
     for (const auto* type : {
         runtime.getVoidType(), runtime.getIntegerType(), runtime.getFloatType(), runtime.getBooleanType(),
         runtime.getType(enumId).value(),
-        runtime.getCallbackType({runtime.getIntegerType()}, runtime.getBooleanType())
+        runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getBooleanType())
     }) {
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST_CONTEXT(type->getTypeName()) {

@@ -421,7 +421,7 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
     const auto callbackFunctionId = runtime.getFunctionId("callbackFunction");
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
-    const auto* callbackType = runtime.getCallbackType(
+    const auto* callbackType = runtime.getTypeManager().getCallbackType(
         {runtime.getIntegerType()},
         runtime.getIntegerType()
     );
@@ -467,7 +467,7 @@ BOOST_AUTO_TEST_CASE(callback_argument_rejects_uncompiled_inline_callback_functi
         "params value:int\nreturn value"}}}, {}});
     const auto callbackFunctionId = runtime.getFunctionId("uncompiledCallback");
     BOOST_REQUIRE(callbackFunctionId.isValid());
-    const auto* callbackType = runtime.getCallbackType(
+    const auto* callbackType = runtime.getTypeManager().getCallbackType(
         {runtime.getIntegerType()},
         runtime.getIntegerType()
     );

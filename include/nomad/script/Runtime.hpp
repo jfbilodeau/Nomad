@@ -51,7 +51,6 @@ class Tokenizer;
 class Type;
 class ClassType;
 class EnumType;
-class OpaqueIdType;
 struct EnumValueDefinition;
 
 DeclareId(ConstantId);
@@ -135,7 +134,7 @@ public:
         if (!qualifiedName) {
             return TypeId::INVALID;
         }
-        return registerClass<Descriptor>(*qualifiedName, mode, std::forward<Arguments>(arguments)...);
+        return m_typeManager.registerClass<Descriptor>(*qualifiedName, mode, std::forward<Arguments>(arguments)...);
     }
     [[nodiscard]] ConstantId registerHubConstant(
         HubId hubId,
@@ -188,50 +187,6 @@ public:
     void initializeScripts();
 
     // Types
-    using ParameterizedTypeFactory = TypeManager::ParameterizedTypeFactory;
-    using ParameterizedTypeInitializer = TypeManager::ParameterizedTypeInitializer;
-    
-    [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
-    bool registerParameterizedType(
-        const NomadString& name,
-        NomadIndex argumentCount,
-        ParameterizedTypeFactory factory,
-        ParameterizedTypeInitializer initializer = {}
-    );
-    [[nodiscard]] const Type* getParameterizedType(
-        const NomadString& name,
-        const std::vector<const Type*>& arguments
-    );
-    bool registerConstructorTemplate(
-        const NomadString& name,
-        std::vector<TemplateParameter> parameters
-    );
-    [[nodiscard]] std::optional<std::vector<TemplateParameter>> getConstructorTemplate(
-        const NomadString& name
-    ) const;
-    [[nodiscard]] ConstructorInferenceResult inferConstructorTypeArguments(
-        const NomadString& name,
-        const std::vector<const Type*>& argumentTypes
-    ) const;
-    [[nodiscard]] TypeId registerClass(
-        NomadString name,
-        ClassMode mode,
-        NomadString documentation = {}
-    );
-    template<std::derived_from<ClassType> Descriptor, typename... Arguments>
-    [[nodiscard]] TypeId registerClass(
-        NomadString name,
-        ClassMode mode,
-        Arguments&&... arguments
-    ) {
-        return m_typeManager.registerClass<Descriptor>(
-            std::move(name), mode, std::forward<Arguments>(arguments)...
-        );
-    }
-    [[nodiscard]] const ClassType* getIteratorType(const Type* valueType);
-    [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
-    void addIterable(TypeId id, NativeInterableDefinition definition);
-    [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] TypeManager& getTypeManager();
     [[nodiscard]] const TypeManager& getTypeManager() const;
@@ -247,44 +202,17 @@ public:
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
-    [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
-    [[nodiscard]] TypeId createEnum(
-        NomadString name,
-        std::vector<EnumValueDefinition> values,
-        NomadString documentation = {}
-    );
-    [[nodiscard]] const Type* getCallbackType(const std::vector<const Type*>& parameterTypes, const Type* returnType);
-    [[nodiscard]] const Type* getPredicateType();
     void registerEnumOperators(const EnumType* type);
 
     // Null unless `functionId` identifies a constructor.
     [[nodiscard]] const NativeConstructor* getNativeConstructor(CallableId functionId) const;
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors() const;
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors(const Type* classType) const;
-    using ParameterizedConstructorInitializer = TypeManager::ParameterizedConstructorInitializer;
-    // The initializer registers a class type named after the specialization and its constructors.
-    bool registerNativeParameterizedConstructor(
-        const NomadString& name,
-        NomadIndex argumentCount,
-        ParameterizedConstructorInitializer initializer
-    );
-    [[nodiscard]] std::optional<NomadIndex> getParameterizedConstructorArgumentCount(const NomadString& name) const;
-    [[nodiscard]] NomadString getParameterizedConstructorName(
-        const NomadString& name,
-        const std::vector<const Type*>& arguments
-    );
 
     // Member declarations
-    bool registerMemberTemplate(
-        const NomadString& family,
-        const NomadString& name,
-        MemberType type,
-        const std::vector<TemplateParameter>& parameters = {}
-    );
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
     // Native members
-    [[nodiscard]] IndexerId addIndexer(TypeId id, NativeIndexerDefinition definition);
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* classType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
     [[nodiscard]] std::optional<NativeIndexerInfo> getNativeIndexerInfo(IndexerId indexerId) const;
@@ -620,8 +548,6 @@ private:
         const std::vector<const Type*>& argumentTypes
     ) const;
     // Type and member validation
-    [[nodiscard]] TypeId reserveTypeId();
-    void registerType(std::unique_ptr<Type>&& type);
     [[nodiscard]] bool ownsType(const Type* type) const;
     // Hub registration
     [[nodiscard]] std::optional<NomadString> qualifyHubMemberName(HubId hubId, const NomadString& name) const;

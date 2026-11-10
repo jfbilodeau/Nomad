@@ -316,7 +316,7 @@ void ClassType::registerIterableType(
     const Type* valueType,
     const Method* factory
 ) {
-    const auto* iteratorType = runtime.getIteratorType(valueType);
+    const auto* iteratorType = runtime.getTypeManager().getIteratorType(valueType);
     if (runtime.getType(getId()) != this ||
         factory == nullptr || runtime.getMethod(factory->getId()) != factory ||
         factory->getClassType() != this || factory->getParameterCount() != 0 ||

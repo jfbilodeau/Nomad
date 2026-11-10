@@ -68,16 +68,16 @@ BOOST_AUTO_TEST_CASE(collection_iterable_factories_belong_to_their_specialized_t
     const auto* integerType = runtime.getIntegerType();
     for (const auto* name : {"Array1", "ReadOnlyArray1", "List", "ReadOnlyList"}) {
         BOOST_TEST_CONTEXT(name) {
-            const auto* type = runtime.getParameterizedType(name, {integerType});
+            const auto* type = runtime.getTypeManager().getParameterizedType(name, {integerType});
             BOOST_REQUIRE(type != nullptr);
             const auto* classType = type->asClassType();
             BOOST_REQUIRE(classType != nullptr);
             const auto owned = classType->getIterableInfo();
-            const auto forwarded = runtime.getIterableInfo(type);
+            const auto forwarded = runtime.getTypeManager().getIterableInfo(type);
             BOOST_REQUIRE(owned.has_value());
             BOOST_REQUIRE(forwarded.has_value());
             BOOST_TEST(owned->valueType == integerType);
-            BOOST_TEST(owned->iteratorType == runtime.getIteratorType(integerType));
+            BOOST_TEST(owned->iteratorType == runtime.getTypeManager().getIteratorType(integerType));
             BOOST_TEST(forwarded->factoryId == owned->factoryId);
             const auto* factory = runtime.getMethod(owned->factoryId);
             BOOST_REQUIRE(factory != nullptr);
@@ -111,10 +111,10 @@ BOOST_AUTO_TEST_CASE(list_snapshots_copy_containers_share_nested_values_and_rele
             "for emptyValue in empty\nassert false\nend\n"
             "fun count values:ReadOnlyList<string>\nreturn values.count\nend\n"
             "assert (count snapshot) == 2\n");
-        const auto* type = runtime.getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
+        const auto* type = runtime.getTypeManager().getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST(runtime.getConstructors(type).empty());
-        const auto* mutableType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+        const auto* mutableType = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
         BOOST_TEST(!type->acceptsArgument(mutableType));
         BOOST_TEST(!mutableType->acceptsArgument(type));
     }
@@ -135,7 +135,7 @@ BOOST_AUTO_TEST_CASE(list_mutators_and_constructors_are_unavailable_in_both_exec
 BOOST_AUTO_TEST_CASE(native_lists_can_be_exposed_directly_as_read_only) {
     Runtime runtime;
     registerCollections(runtime);
-    const auto* type = runtime.getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
+    const auto* type = runtime.getTypeManager().getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
     auto list = std::make_unique<ListObject>(runtime.getIntegerType());
     (void)list->append(RuntimeValue(NomadInteger{42}));
     RuntimeValue value;
@@ -169,7 +169,7 @@ BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
             "defaults = new Array<ReadOnlyMap<string int>> 1\nempty = defaults[0]\n"
             "assert empty.count == 0\nassert empty[\"missing\"] == 0\nassert empty.count == 0\n"
             "emptyCopy = (new Map<string int>).toReadOnly\nassert emptyCopy.count == 0\n");
-        const auto* type = runtime.getParameterizedType("ReadOnlyMap", {runtime.getStringType(), runtime.getIntegerType()});
+        const auto* type = runtime.getTypeManager().getParameterizedType("ReadOnlyMap", {runtime.getStringType(), runtime.getIntegerType()});
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST(runtime.getConstructors(type).empty());
     }
@@ -210,7 +210,7 @@ BOOST_AUTO_TEST_CASE(array_snapshots_preserve_rank_dimensions_and_shallow_values
             "assert emptyLineCopy[0] == 0\nassert emptyGridCopy[0 0] == 0\nassert emptyVolumeCopy[0 0 0] == 0\n"
             "defaults = new Array<ReadOnlyArray3<int>> 1\nassert defaults[0].count == 0\n");
         for (const auto* family : {"ReadOnlyArray1", "ReadOnlyArray2", "ReadOnlyArray3"}) {
-            const auto* type = runtime.getParameterizedType(family, {runtime.getIntegerType()});
+            const auto* type = runtime.getTypeManager().getParameterizedType(family, {runtime.getIntegerType()});
             BOOST_REQUIRE(type != nullptr);
             BOOST_TEST(runtime.getConstructors(type).empty());
         }

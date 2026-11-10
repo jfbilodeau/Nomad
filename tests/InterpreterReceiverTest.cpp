@@ -58,7 +58,7 @@ BOOST_AUTO_TEST_SUITE(interpreter_receivers)
 
 BOOST_AUTO_TEST_CASE(object_factory_retains_identity_after_the_source_value_is_destroyed) {
     Runtime runtime;
-    const auto ownerId = runtime.registerClass("FactoryObject", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("FactoryObject", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
     const auto numberProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberProperty.isValid());
@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(object_factory_supports_string_class_receivers_and_releases
 
 BOOST_AUTO_TEST_CASE(struct_factory_borrows_storage_without_copying_or_releasing_it) {
     Runtime runtime;
-    const auto ownerId = runtime.registerStruct("FactoryStruct");
+    const auto ownerId = runtime.getTypeManager().registerStruct("FactoryStruct");
     const auto* owner = runtime.getType(ownerId).value()->asStructType();
     const auto numberProperty = runtime.getTypeManager().registerScriptStructProperty(ownerId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberProperty.isValid());
@@ -157,9 +157,9 @@ BOOST_AUTO_TEST_CASE(struct_factory_borrows_storage_without_copying_or_releasing
 
 BOOST_AUTO_TEST_CASE(struct_factory_supports_null_storage_for_zero_sized_structs_and_fields) {
     Runtime runtime;
-    const auto emptyId = runtime.registerStruct("FactoryEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("FactoryEmpty");
     const auto* empty = runtime.getType(emptyId).value()->asStructType();
-    const auto ownerId = runtime.registerStruct("FactoryEmptyOwner");
+    const auto ownerId = runtime.getTypeManager().registerStruct("FactoryEmptyOwner");
     const auto* owner = runtime.getType(ownerId).value()->asStructType();
     const auto property = runtime.getTypeManager().registerScriptStructProperty(ownerId, "empty", empty);
     BOOST_REQUIRE(property.isValid());
@@ -183,13 +183,13 @@ BOOST_AUTO_TEST_CASE(struct_factory_supports_null_storage_for_zero_sized_structs
 
 BOOST_AUTO_TEST_CASE(struct_wrappers_borrow_original_or_caller_owned_storage_and_support_empty_values) {
     Runtime runtime;
-    const auto emptyId = runtime.registerStruct("CompositeEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("CompositeEmpty");
     const auto* empty = runtime.getTypeByName("CompositeEmpty")->asStructType();
-    const auto leafId = runtime.registerStruct("CompositeLeaf");
+    const auto leafId = runtime.getTypeManager().registerStruct("CompositeLeaf");
     const auto* leaf = runtime.getTypeByName("CompositeLeaf")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "text", runtime.getStringType()).isValid());
-    const auto rootId = runtime.registerStruct("CompositeRoot");
+    const auto rootId = runtime.getTypeManager().registerStruct("CompositeRoot");
     const auto* root = runtime.getTypeByName("CompositeRoot")->asStructType();
     const auto leafProperty = runtime.getTypeManager().registerScriptStructProperty(rootId, "leaf", leaf);
     const auto emptyProperty = runtime.getTypeManager().registerScriptStructProperty(rootId, "empty", empty);
@@ -246,11 +246,11 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_borrow_original_or_caller_owned_storage_and
 
 BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_native_properties) {
     Runtime runtime;
-    const auto leafId = runtime.registerStruct("ObjectCompositeLeaf");
+    const auto leafId = runtime.getTypeManager().registerStruct("ObjectCompositeLeaf");
     const auto* leaf = runtime.getTypeByName("ObjectCompositeLeaf")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(leafId);
-    const auto ownerId = runtime.registerClass<ClassType>("ObjectCompositeOwner", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass<ClassType>("ObjectCompositeOwner", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
     const auto numberProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType());
     const auto leafProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "leaf", leaf);
@@ -308,9 +308,9 @@ BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_nativ
 BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_original_and_caller_owned_storage) {
     Runtime runtime;
     FailingCompositeCopyType* field = nullptr;
-    const auto fieldId = runtime.registerClass<FailingCompositeCopyType>("CompositeCopy", ClassMode::Closed, field);
+    const auto fieldId = runtime.getTypeManager().registerClass<FailingCompositeCopyType>("CompositeCopy", ClassMode::Closed, field);
     BOOST_REQUIRE(fieldId.isValid());
-    const auto pairId = runtime.registerStruct("CompositeCopyPair");
+    const auto pairId = runtime.getTypeManager().registerStruct("CompositeCopyPair");
     const auto* pair = runtime.getTypeByName("CompositeCopyPair")->asStructType();
     const auto firstProperty = runtime.getTypeManager().registerScriptStructProperty(pairId, "first", field);
     BOOST_REQUIRE(firstProperty.isValid());
@@ -481,18 +481,18 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
 BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke_whole_value_setters) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto sharedId = runtime.registerClass("AccessorMethodShared", ClassMode::Closed);
+    const auto sharedId = runtime.getTypeManager().registerClass("AccessorMethodShared", ClassMode::Closed);
     const auto* shared = runtime.getTypeByName("AccessorMethodShared")->asClassType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(sharedId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(sharedId);
-    const auto valueId = runtime.registerStruct("AccessorMethodValue");
+    const auto valueId = runtime.getTypeManager().registerStruct("AccessorMethodValue");
     const auto* type = runtime.getTypeByName("AccessorMethodValue")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "shared", shared).isValid());
-    const auto emptyId = runtime.registerStruct("AccessorMethodEmpty");
+    const auto emptyId = runtime.getTypeManager().registerStruct("AccessorMethodEmpty");
     const auto* emptyType = runtime.getTypeByName("AccessorMethodEmpty");
-    const auto ownerId = runtime.registerClass("AccessorMethodOwner", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("AccessorMethodOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("AccessorMethodOwner")->asClassType();
     const auto backingId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "backing", type);
     BOOST_REQUIRE(backingId.isValid());
@@ -662,13 +662,13 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
 BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_preserve_callback_mutations) {
     Runtime runtime;
     FailingCompositeCopyType* field = nullptr;
-    const auto fieldId = runtime.registerClass<FailingCompositeCopyType>("MethodAccessorCopy", ClassMode::Closed, field);
-    const auto valueId = runtime.registerStruct("MethodAccessorPair");
+    const auto fieldId = runtime.getTypeManager().registerClass<FailingCompositeCopyType>("MethodAccessorCopy", ClassMode::Closed, field);
+    const auto valueId = runtime.getTypeManager().registerStruct("MethodAccessorPair");
     const auto* type = runtime.getTypeByName("MethodAccessorPair");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
-    const auto ownerId = runtime.registerClass("MethodAccessorFailureOwner", ClassMode::Closed);
+    const auto ownerId = runtime.getTypeManager().registerClass("MethodAccessorFailureOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("MethodAccessorFailureOwner")->asClassType();
     const auto backingId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "backing", type);
     BOOST_REQUIRE(backingId.isValid());
@@ -768,10 +768,10 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_compile_as_native_method_calls_wit
     for (const auto* source : {"owner.value", "owner.value = argument"}) {
         nomad::test::LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
-        const auto valueId = runtime.registerStruct("PendingAccessorValue");
+        const auto valueId = runtime.getTypeManager().registerStruct("PendingAccessorValue");
         const auto* type = runtime.getTypeByName("PendingAccessorValue");
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
-        const auto ownerId = runtime.registerClass("PendingAccessorOwner", ClassMode::Closed);
+        const auto ownerId = runtime.getTypeManager().registerClass("PendingAccessorOwner", ClassMode::Closed);
         const auto* owner = runtime.getTypeByName("PendingAccessorOwner")->asClassType();
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
         const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
@@ -807,10 +807,10 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_keep_read_write_and_value
     for (const auto& [source, expectedError] : cases) {
         nomad::test::LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
-        const auto valueId = runtime.registerStruct("RestrictedAccessorValue");
+        const auto valueId = runtime.getTypeManager().registerStruct("RestrictedAccessorValue");
         const auto* type = runtime.getTypeByName("RestrictedAccessorValue");
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
-        const auto ownerId = runtime.registerClass("RestrictedAccessorOwner", ClassMode::Closed);
+        const auto ownerId = runtime.getTypeManager().registerClass("RestrictedAccessorOwner", ClassMode::Closed);
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
         const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
             .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = [](VirtualMachine*) {}
