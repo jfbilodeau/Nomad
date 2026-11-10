@@ -51,11 +51,19 @@ const RuntimeValue& VirtualMachine::getFunctionVariableValue(const VariableId va
 
 std::span<RuntimeValue> VirtualMachine::getFunctionVariableStorage(const VariableId variableId) {
     const auto* callable = getCurrentCallable();
+    if (variableId.isValid() && variableId == callable->getNamedReturnVariable()) {
+        const auto pointer = getEnclosingParameterStorage(*callable->getCallStorageLayout().returnOffset, 1);
+        return {pointer[0].getStorageAddress(), callable->getVariableType(variableId)->getSize()};
+    }
     return getLocalStorage(callable->getVariableOffset(variableId), callable->getVariableType(variableId)->getSize());
 }
 
 std::span<const RuntimeValue> VirtualMachine::getFunctionVariableStorage(const VariableId variableId) const {
     const auto* callable = getCurrentCallable();
+    if (variableId.isValid() && variableId == callable->getNamedReturnVariable()) {
+        const auto pointer = getEnclosingParameterStorage(*callable->getCallStorageLayout().returnOffset, 1);
+        return {pointer[0].getStorageAddress(), callable->getVariableType(variableId)->getSize()};
+    }
     return getLocalStorage(callable->getVariableOffset(variableId), callable->getVariableType(variableId)->getSize());
 }
 

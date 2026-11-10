@@ -7,6 +7,7 @@
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Variable.hpp>
 
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -230,10 +231,16 @@ public:
     }
 
     [[nodiscard]] NomadIndex getVariableCount() const { return m_variables.getVariableCount(); }
-    [[nodiscard]] NomadIndex getVariableOffset(const VariableId variableId) const {
-        return m_variables.getVariableOffset(variableId);
-    }
-    [[nodiscard]] NomadIndex getVariableStorageSize() const { return m_variables.getStorageSize(); }
+    [[nodiscard]] NomadIndex getVariableOffset(VariableId variableId) const;
+    [[nodiscard]] NomadIndex getVariableStorageSize() const;
+    [[nodiscard]] bool isVariableStoredLocally(VariableId variableId) const;
+    [[nodiscard]] VariableId getNamedReturnVariable() const;
+    // Compiler-selected candidate and redundant assignment/return staging retain logical IDs only.
+    void setNamedReturnVariable(
+        VariableId variableId,
+        VariableId assignmentStaging,
+        VariableId returnStaging
+    );
 
     [[nodiscard]] NomadString getVisibleVariableName(VariableId variableId) const {
         const auto& storageName = getVariableName(variableId);
@@ -294,6 +301,9 @@ private:
     NomadIndex m_functionStartIndex = NOMAD_INVALID_INDEX;
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
     VariableMap m_variables;
+    std::array<VariableId, 3> m_returnVariables{
+        VariableId::INVALID, VariableId::INVALID, VariableId::INVALID
+    };
     std::vector<Capture> m_captures;
     CallableId m_parentId = CallableId{};
 };

@@ -1692,6 +1692,16 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptCallableBase
         return;
     }
 
+    for (const auto& segment : m_segments) {
+        if (segment.type != FormatTemplateSegmentType::Literal) {
+            IdentifierDefinition definition;
+            context->getCompiler()->getIdentifierDefinition(segment.text, function, definition);
+            if (definition.identifierType == IdentifierType::FunctionVariable) {
+                context->getCompiler()->recordLocalRead(function->getId(), definition.variableId, this);
+            }
+        }
+    }
+
     for (const auto& placeholder : m_expressionPlaceholders) {
         const auto* expressionFunction = context->getRuntime()->getScriptCallable(placeholder.functionId);
         const auto* returnType = expressionFunction->getReturnType();
@@ -1888,6 +1898,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
     if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable &&
         context->getMode() == CompilerMode::Script) {
         function->registerVariable(m_identifier, m_identifierDefinition.valueType);
+        compiler->recordLocalRead(function->getId(), m_identifierDefinition.variableId, this);
     }
 
     if (m_identifierDefinition.identifierType == IdentifierType::Parameter &&

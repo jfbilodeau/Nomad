@@ -14,6 +14,7 @@
 #include <nomad/interpreter/InterpreterContext.hpp>
 #include <nomad/interpreter/InterpreterValue.hpp>
 
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -2421,6 +2422,125 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
+BOOST_AUTO_TEST_CASE(named_struct_returns_elide_only_fresh_adjacent_tail_pairs) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto inspectCapture = runtime.registerNativeFunction("inspectNamedCapture", [&](VirtualMachine* active) {
+        const auto closure = active->createClosure(&runtime, active->getCallableIdParameter(0));
+        const auto result = Interpreter(*active).runFunction(*closure, {});
+        BOOST_TEST(result.getValue().getIntegerValue() == 0);
+    }, {defParameter("callback", runtime.getCallbackType({}, runtime.getIntegerType()), "")},
+        runtime.getVoidType(), "");
+    BOOST_REQUIRE(inspectCapture.isValid());
+    fixture.addFunction("main",
+        "class NamedReturnOwner\nnumber = 4\nend\n"
+        "struct NamedReturnLeaf\ntext = \"tail\"\nowner = new NamedReturnOwner\nend\n"
+        "struct NamedReturnValue\nnumber = 17\nleaf = new NamedReturnLeaf\n"
+        "fun create\ncandidate = new NamedReturnValue\nreturn candidate\nend\n"
+        "fun identity\nreturn this\nend\nend\n"
+        "struct NamedReturnSingle\nnumber = 17\nend\n"
+        "struct NamedReturnEmpty\nend\n"
+        "class NamedReturnFactory\n"
+        "fun create\ncandidate = new NamedReturnValue\nreturn candidate\nend\nend\n"
+        "fun namedConstruct\ncandidate = new NamedReturnValue\nreturn candidate\nend\n"
+        "fun namedForward\ncandidate = namedConstruct\nreturn candidate\nend\n"
+        "fun namedMethod factory:NamedReturnFactory\ncandidate = factory.create\nreturn candidate\nend\n"
+        "fun namedSingle\ncandidate = new NamedReturnSingle\nreturn candidate\nend\n"
+        "fun namedNeighbors\nbefore = new NamedReturnSingle\nnote = \"ordinary\"\n"
+        "candidate = namedForward\nreturn candidate\nend\n"
+        "fun namedParameterCopy value:NamedReturnValue\nvalue.number = 99\n"
+        "candidate = namedForward\nreturn candidate\nend\n"
+        "fun namedParameter value:NamedReturnValue\nreturn value\nend\n"
+        "fun namedParameterAssignment value:NamedReturnValue\nvalue = namedConstruct\nreturn value\nend\n"
+        "fun namedObserved\nassert candidate.number == 0\n"
+        "candidate = namedConstruct\nreturn candidate\nend\n"
+        "fun namedReassigned\ncandidate = namedConstruct\ncandidate = namedForward\nreturn candidate\nend\n"
+        "fun namedIntervening\ncandidate = namedConstruct\nassert candidate.number == 17\nreturn candidate\nend\n"
+        "fun namedBranch flag:bool\nif flag\nreturn namedConstruct\nend\n"
+        "candidate = namedConstruct\nreturn candidate\nend\n"
+        "fun namedLoop\nwhile false\nmarker = 1\nend\ncandidate = namedConstruct\nreturn candidate\nend\n"
+        "fun namedCopied value:NamedReturnValue\ncandidate = value\nreturn candidate\nend\n"
+        "fun namedSelfUse\ncandidate = namedConstruct\ncandidate = namedParameterCopy candidate\nreturn candidate\nend\n"
+        "fun namedEarlierMutation\ncandidate = namedConstruct\ncandidate.number = 9\n"
+        "candidate = namedConstruct\nreturn candidate\nend\n"
+        "fun namedFormatted\nnote = $\"{candidate}\"\ncandidate = namedConstruct\nreturn candidate\nend\n"
+        "fun namedCaptured\ninspectNamedCapture fun\nreturn candidate.number\nend\n"
+        "candidate = namedConstruct\nreturn candidate\nend\n"
+        "fun namedEmpty\ncandidate = new NamedReturnEmpty\nreturn candidate\nend\n"
+        "original = namedConstruct\ncopy = namedForward\n"
+        "copy = namedParameterCopy original\nassert original.number == 17\n"
+        "assert copy.leaf.text == \"tail\"\nassert copy.leaf.owner.number == 4\n"
+        "assert (namedNeighbors).number == 17\nassert (namedSingle).number == 17\n"
+        "assert ((new NamedReturnFactory).create).number == 17\n"
+        "assert (namedMethod (new NamedReturnFactory)).number == 17\n"
+        "assert (original.create).number == 17\nassert (original.identity).number == 17\n"
+        "assert (namedParameter original).number == 17\n"
+        "assert (namedParameterAssignment original).number == 17\n"
+        "assert (namedObserved).number == 17\nassert (namedReassigned).number == 17\n"
+        "assert (namedIntervening).number == 17\nassert (namedBranch true).number == 17\n"
+        "assert (namedBranch false).number == 17\nassert (namedLoop).number == 17\n"
+        "assert (namedCopied original).number == 17\nassert (namedSelfUse).number == 17\n"
+        "assert (namedEarlierMutation).number == 17\nassert (namedCaptured).number == 17\n"
+        "assert (namedFormatted).number == 17\n"
+        "namedEmpty\nreturn original.number + copy.number");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    for (const auto* name : {"namedConstruct", "namedForward", "namedMethod", "namedSingle", "namedParameterCopy"}) {
+        BOOST_TEST_CONTEXT(name) {
+            const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+            BOOST_REQUIRE(function != nullptr);
+            const auto candidate = function->getVariableId("candidate");
+            BOOST_TEST(function->getNamedReturnVariable().id == candidate.id);
+            BOOST_TEST(function->getVariableCount() == 3U);
+            BOOST_TEST(function->getVariableStorageSize() == 0U);
+            BOOST_TEST(!function->isVariableStoredLocally(candidate));
+            BOOST_CHECK_THROW(static_cast<void>(function->getVariableOffset(candidate)), NomadBug);
+            std::ostringstream dump;
+            dumpInstructions(runtime, *function, dump);
+            BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
+            BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+            BOOST_TEST(dump.str().find(OpCodes::op_function_variable_set) == NomadString::npos);
+            BOOST_TEST(dump.str().find(OpCodes::op_function_variable_get_r) == NomadString::npos);
+            BOOST_TEST(dump.str().find(OpCodes::op_object_free_variable) == NomadString::npos);
+            BOOST_TEST(dump.str().find(OpCodes::op_return + NomadString{"\n"}) != NomadString::npos);
+        }
+    }
+    const auto* neighbors = runtime.getScriptFunction(runtime.getFunctionId("namedNeighbors"));
+    BOOST_REQUIRE(neighbors != nullptr);
+    BOOST_TEST(neighbors->getVariableStorageSize() == 3U);
+    auto offset = NomadIndex{0};
+    auto omitted = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < neighbors->getVariableCount(); ++index) {
+        const auto variable = VariableId{toNomadId(index)};
+        if (neighbors->isVariableStoredLocally(variable)) {
+            BOOST_TEST(neighbors->getVariableOffset(variable) == offset);
+            offset += neighbors->getVariableType(variable)->getSize();
+        } else {
+            ++omitted;
+        }
+    }
+    BOOST_TEST(offset == 3U);
+    BOOST_TEST(omitted == 3U);
+    for (const auto* name : {"namedParameter", "namedParameterAssignment", "namedObserved", "namedReassigned",
+        "namedIntervening", "namedBranch", "namedLoop", "namedCopied", "namedSelfUse",
+        "namedEarlierMutation", "namedFormatted", "namedCaptured", "namedEmpty"}) {
+        BOOST_TEST_CONTEXT(name) {
+            const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+            BOOST_REQUIRE(function != nullptr);
+            BOOST_TEST(function->getNamedReturnVariable().isInvalid());
+        }
+    }
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 34);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_order_and_assignment_staging) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
@@ -2488,15 +2608,20 @@ BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_orde
         "fun relay owner:ForwardingOwner\n"
         "return makeForwardedPayload owner (argument 2) (argument 3)\nend\n"
         "fun relayAgain owner:ForwardingOwner\nreturn relay owner\nend\n"
+        "fun namedRelay owner:ForwardingOwner\n"
+        "candidate = makeForwardedPayload owner (argument 2) (argument 3)\nreturn candidate\nend\n"
+        "fun namedRelayAgain owner:ForwardingOwner\ncandidate = namedRelay owner\nreturn candidate\nend\n"
         "owner = makeForwardingOwner\nowner.payload.number = 5\n"
         "owner.payload = relayAgain owner\n"
+        "assert owner.payload.text == \"forwarded\"\nowner.payload.number = 5\n"
+        "owner.payload = namedRelayAgain owner\n"
         "assert owner.payload.text == \"forwarded\"\nreturn owner.payload.number");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
-    for (const auto* name : {"relay", "relayAgain"}) {
+    for (const auto* name : {"relay", "relayAgain", "namedRelay", "namedRelayAgain"}) {
         const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
-        BOOST_TEST(wrapper->getVariableCount() == 0U);
+        BOOST_TEST(wrapper->getVariableCount() == (NomadStringView{name}.starts_with("named") ? 3U : 0U));
         BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
         std::ostringstream dump;
         dumpInstructions(runtime, *wrapper, dump);
@@ -2504,7 +2629,7 @@ BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_orde
         BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
         BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
     }
-    const std::vector<NomadInteger> expectedCalls{3, 2, 100};
+    const std::vector<NomadInteger> expectedCalls{3, 2, 100, 3, 2, 100};
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
@@ -2592,11 +2717,16 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     fixture.addFunction("main",
         "fun create owner:ConstructionOwner\n"
         "return new ConstructedReturn owner (recordConstruction 2) (recordConstruction 3)\nend\n"
+        "fun namedCreate owner:ConstructionOwner\n"
+        "candidate = new ConstructedReturn owner (recordConstruction 2) (recordConstruction 3)\n"
+        "return candidate\nend\n"
         "fun emptyConstruction\nreturn new EmptyConstructionReturn (recordConstruction 4)\nend\n"
         "owner = makeConstructionOwner\n"
         "owner.payload.number = 5\nowner.payload.text = \"previous\"\n"
         "owner.payload = create owner\n"
         "assert owner.payload.text == \"constructed\"\n"
+        "owner.payload.number = 5\nowner.payload.text = \"previous\"\n"
+        "owner.payload = namedCreate owner\nassert owner.payload.text == \"constructed\"\n"
         "empty = emptyConstruction\nemptyConstruction\n"
         "return owner.payload.number");
     const auto compiled = fixture.compile();
@@ -2610,6 +2740,15 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
     BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
     BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
+    const auto* namedCreate = runtime.getScriptFunction(runtime.getFunctionId("namedCreate"));
+    BOOST_REQUIRE(namedCreate != nullptr);
+    BOOST_TEST(namedCreate->getNamedReturnVariable().isValid());
+    BOOST_TEST(namedCreate->getVariableStorageSize() == 0U);
+    std::ostringstream namedDump;
+    dumpInstructions(runtime, *namedCreate, namedDump);
+    BOOST_TEST(namedDump.str().find(OpCodes::op_create_native_struct) != NomadString::npos);
+    BOOST_TEST(namedDump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
+    BOOST_TEST(namedDump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
     const auto* empty = runtime.getScriptFunction(runtime.getFunctionId("emptyConstruction"));
     BOOST_REQUIRE(empty != nullptr);
     BOOST_TEST(empty->getVariableCount() == 0U);
@@ -2618,7 +2757,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     dumpInstructions(runtime, *empty, emptyDump);
     BOOST_TEST(emptyDump.str().find(OpCodes::op_storage_parameter_address_push) == NomadString::npos);
     BOOST_TEST(emptyDump.str().find(OpCodes::op_create_native_struct) != NomadString::npos);
-    const std::vector<NomadInteger> expectedCalls{3, 2, 100, 4, 4, 4, 4};
+    const std::vector<NomadInteger> expectedCalls{3, 2, 100, 3, 2, 100, 4, 4, 4, 4};
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {

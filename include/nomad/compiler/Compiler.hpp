@@ -317,6 +317,16 @@ public:
     [[nodiscard]] bool isRecursiveFunctionCall(CallableId callerFunctionId, CallableId calleeFunctionId) const;
     // Records that a function contains a `return` statement. Functions without one return void.
     void addReturningFunction(CallableId functionId);
+    void recordLocalRead(
+        CallableId functionId,
+        VariableId variableId,
+        const Expression* expression
+    );
+    void recordLocalAssignment(
+        CallableId functionId,
+        VariableId variableId,
+        const AssignmentStatement* statement
+    );
     void linkFunctions();
     void postCompile(CompilerContext* context);
 
@@ -364,6 +374,7 @@ private:
     void reportFieldDiagnostics(CompilerContext* context) const;
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
     void compileFunction(const FunctionCompilation& function);
+    void prepareNamedReturn(const FunctionCompilation& function);
     void compilePropertyInitializer(const FunctionCompilation& initializer);
     void compileConstructor(const FunctionCompilation& constructor);
 
@@ -413,6 +424,11 @@ private:
     std::vector<FunctionLink> m_functionLinks;
     std::unordered_map<CallableId, std::unordered_set<CallableId, IdHash>, IdHash> m_functionCallDependencies;
     std::unordered_set<CallableId, IdHash> m_returningFunctions;
+    struct LocalAccess {
+        std::unordered_set<const Expression*> reads;
+        std::unordered_set<const AssignmentStatement*> assignments;
+    };
+    std::unordered_map<CallableId, std::unordered_map<VariableId, LocalAccess, IdHash>, IdHash> m_localAccess;
     std::vector<Instruction>& m_instructions;
 };
 

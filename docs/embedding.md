@@ -760,8 +760,14 @@ they do not allocate storage or change existing VM access.
 
 `ScriptCallableBase::getVariableOffset(id)` and `getVariableStorageSize()`
 expose the same physical layout queries for script function, method, and
-constructor locals. They include all registered locals, including compiler-owned
-temporaries. Local bytecode uses compiler-computed physical offsets for load, store, and
+constructor locals, excluding locals and temporaries whose storage has been
+eliminated. `isVariableStoredLocally(id)` identifies variables with physical local
+offsets. `getNamedReturnVariable()` identifies a local backed by the function's
+return destination, or returns `VariableId::INVALID`. Requesting a physical
+offset for a return-backed local or eliminated temporary throws `NomadBug`.
+Logical IDs, names, types, and `getVariableCount()` remain available independently
+of these physical storage choices.
+Local bytecode uses compiler-computed physical offsets for load, store, and
 cleanup, and frames reserve/pop physical slot totals. Logical IDs remain stable
 when sizes change. VM host-facing local APIs and frame-backed interpreter access
 resolve those IDs through callable metadata; instruction execution does not.
@@ -773,8 +779,18 @@ return exactly its type's slot count. Empty structs return an empty view with a
 null data pointer. Native callbacks access their enclosing active script
 frame's locals, not their native argument slots.
 
+For an optimized named struct return, the local view borrows the actual return
+destination. During initialization, inspection sees the contents written so far,
+not an independent default-initialized local or an atomic whole-value assignment.
+Frame writes change the same result and can affect the value returned.
+Ineligible locals retain separate local storage. Interpreter-owned evaluation
+and snapshots still copy; an interpreter context attached to a compiled frame
+borrows that frame's live storage.
+
 The caller supplies a valid local ID belonging to the active compiled callable
-and keeps its frame alive while using the view. Lookup does not copy values,
+with physical local or named-return storage, and keeps its frame alive while
+using the view. Eliminated compiler temporaries have no borrowable local storage.
+Lookup does not copy values,
 retain references, or transfer ownership. Mutating borrowed slots changes the
 live local; use the type's assignment operations when replacing owned values.
 The existing scalar value accessors remain for scalar/reference locals.

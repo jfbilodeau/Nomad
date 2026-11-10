@@ -6,6 +6,7 @@
 #include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
+#include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/FunctionParameterTypeTarget.hpp>
 #include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
@@ -1793,8 +1794,82 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
     return types;
 }
 
+void Compiler::recordLocalRead(
+    const CallableId functionId,
+    const VariableId variableId,
+    const Expression* expression
+) {
+    m_localAccess[functionId][variableId].reads.insert(expression);
+}
+
+void Compiler::recordLocalAssignment(
+    const CallableId functionId,
+    const VariableId variableId,
+    const AssignmentStatement* statement
+) {
+    m_localAccess[functionId][variableId].assignments.insert(statement);
+}
+
+void Compiler::prepareNamedReturn(const FunctionCompilation& source) {
+    auto* function = source.function;
+    const auto* type = function->getReturnType();
+    if (source.kind != CompilationCallableTarget::Function || type == nullptr ||
+        !type->isStruct() || type->getSize() == 0) {
+        return;
+    }
+
+    const Statement* previous = nullptr;
+    const Statement* last = nullptr;
+    const auto* statements = source.ast->getStatements();
+    for (auto index = NomadIndex{0}; index < statements->getStatementCount(); ++index) {
+        const auto* statement = statements->getStatement(index);
+        if (statement->isDeclaration() || dynamic_cast<const NullStatement*>(statement) != nullptr) {
+            continue;
+        }
+        if (dynamic_cast<const ReturnStatementNode*>(last) != nullptr ||
+            (dynamic_cast<const AssignmentStatement*>(statement) == nullptr &&
+             dynamic_cast<const MemberAssignmentStatement*>(statement) == nullptr &&
+             dynamic_cast<const ExpressionStatement*>(statement) == nullptr &&
+             dynamic_cast<const CallStatementNode*>(statement) == nullptr &&
+             dynamic_cast<const ReturnStatementNode*>(statement) == nullptr)) {
+            return;
+        }
+        previous = last;
+        last = statement;
+    }
+    const auto* assignment = dynamic_cast<const AssignmentStatement*>(previous);
+    const auto* returned = dynamic_cast<const ReturnStatementNode*>(last);
+    if (assignment == nullptr || returned == nullptr || returned->getExpression() == nullptr ||
+        assignment->getExpression()->getType() != type ||
+        !assignment->getExpression()->supportsReturnDestination()) {
+        return;
+    }
+    const auto* identifier = returned->getExpression()->asIdentifierExpression();
+    if (identifier == nullptr || identifier->getIdentifier() != assignment->getIdentifier()) {
+        return;
+    }
+    const auto variable = function->getVariableId(assignment->getIdentifier());
+    const auto accesses = m_localAccess.find(function->getId());
+    if (variable.isInvalid() || accesses == m_localAccess.end()) {
+        return;
+    }
+    const auto entry = accesses->second.find(variable);
+    if (entry == accesses->second.end() || entry->second.reads.size() != 1 ||
+        !entry->second.reads.contains(identifier) || entry->second.assignments.size() != 1 ||
+        !entry->second.assignments.contains(assignment)) {
+        return;
+    }
+    for (const auto& nested : m_functions) {
+        if (nested.function->getParentId() == function->getId() && nested.function->isCaptured(variable)) {
+            return;
+        }
+    }
+    function->setNamedReturnVariable(variable, assignment->getStagingVariable(), returned->getStagingVariable());
+}
+
 void Compiler::compileFunction(const FunctionCompilation& source) {
     auto* function = source.function;
+    prepareNamedReturn(source);
     function->setFunctionStart(m_instructions.size());
     addFunctionEntry(function);
     source.ast->compile(this, function);
@@ -1914,7 +1989,9 @@ void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
     }
     for (auto index = NomadIndex{0}; index < count; ++index) {
         const auto id = VariableId{toNomadId(index)};
-        function->getVariableType(id)->emitInitFunctionVariable(*this, function->getVariableOffset(id));
+        if (function->isVariableStoredLocally(id)) {
+            function->getVariableType(id)->emitInitFunctionVariable(*this, function->getVariableOffset(id));
+        }
     }
 }
 
@@ -1958,7 +2035,9 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
     // Free owned variables before releasing the function's variable slots.
     for (auto i = NomadIndex{0}; i < variableCount; ++i) {
         const auto id = VariableId{toNomadId(i)};
-        function->getVariableType(id)->emitFreeFunctionVariable(*this, function->getVariableOffset(id));
+        if (function->isVariableStoredLocally(id)) {
+            function->getVariableType(id)->emitFreeFunctionVariable(*this, function->getVariableOffset(id));
+        }
     }
 
     switch (storageSize) {
@@ -2279,6 +2358,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         m_functionLinks.clear();
         m_functionCallDependencies.clear();
         m_returningFunctions.clear();
+        m_localAccess.clear();
         m_pendingFormatStrings.clear();
     };
     const auto cleanupGuard = std::unique_ptr<Compiler, decltype(cleanup)>(this, cleanup);

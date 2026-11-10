@@ -23,6 +23,8 @@ public:
     explicit ReturnStatementNode(NomadIndex line, NomadIndex column, std::unique_ptr<Expression> expression);
 
     [[nodiscard]] NomadBoolean alwaysReturns() const override;
+    [[nodiscard]] const Expression* getExpression() const;
+    [[nodiscard]] VariableId getStagingVariable() const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;

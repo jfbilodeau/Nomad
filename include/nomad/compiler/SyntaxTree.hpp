@@ -199,6 +199,7 @@ public:
     AssignmentStatement(NomadIndex line, NomadIndex column, NomadString identifier, std::unique_ptr<Expression> expression);
     [[nodiscard]] const NomadString& getIdentifier() const;
     [[nodiscard]] const Expression* getExpression() const;
+    [[nodiscard]] VariableId getStagingVariable() const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -287,6 +288,7 @@ public:
     void addStatement(std::unique_ptr<Statement> statement);
 
     [[nodiscard]] NomadIndex getStatementCount() const;
+    [[nodiscard]] const Statement* getStatement(NomadIndex index) const;
     [[nodiscard]] NomadIndex isEmpty() const;
     // True when execution cannot reach the end of the list without executing a `return`.
     [[nodiscard]] NomadBoolean alwaysReturns() const;

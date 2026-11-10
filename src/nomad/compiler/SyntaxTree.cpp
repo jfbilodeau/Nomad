@@ -182,6 +182,10 @@ const Expression* AssignmentStatement::getExpression() const {
     return m_expression.get();
 }
 
+VariableId AssignmentStatement::getStagingVariable() const {
+    return m_stagingVariable;
+}
+
 HubInitializerStatement::HubInitializerStatement(
     const NomadIndex line,
     const NomadIndex column,
@@ -369,6 +373,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 
     switch (identifier.identifierType) {
     case IdentifierType::FunctionVariable: {
+        compiler->recordLocalAssignment(function->getId(), identifier.variableId, this);
         // Make sure type is unknown or the same as the expression.
         const auto variableType = function->getVariableType(identifier.variableId);
 
@@ -456,6 +461,11 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 }
 
 void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
+    const auto candidate = function->getNamedReturnVariable();
+    if (candidate.isValid() && m_identifier == function->getVariableName(candidate)) {
+        m_expression->compileIntoReturn(compiler, function);
+        return;
+    }
     if (m_stagingVariable.isValid()) {
         if (const auto* receiver = compiler->getReceiverType(function);
             receiver != nullptr && m_identifier.starts_with("this.")) {
@@ -695,6 +705,10 @@ void StatementList::addStatement(std::unique_ptr<Statement> statement) {
 
 NomadIndex StatementList::getStatementCount() const {
     return m_statements.size();
+}
+
+const Statement* StatementList::getStatement(const NomadIndex index) const {
+    return m_statements.at(index).get();
 }
 
 NomadIndex StatementList::isEmpty() const {

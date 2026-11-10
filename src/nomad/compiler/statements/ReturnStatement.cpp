@@ -4,6 +4,7 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -24,6 +25,14 @@ ReturnStatementNode::ReturnStatementNode(
 
 NomadBoolean ReturnStatementNode::alwaysReturns() const {
     return true;
+}
+
+const Expression* ReturnStatementNode::getExpression() const {
+    return m_expression.get();
+}
+
+VariableId ReturnStatementNode::getStagingVariable() const {
+    return m_stagingVariable;
 }
 
 void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase* function) {
@@ -83,6 +92,13 @@ void ReturnStatementNode::onResolve(CompilerContext* context, ScriptCallableBase
 }
 
 void ReturnStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* function) {
+    const auto candidate = function->getNamedReturnVariable();
+    const auto* identifier = m_expression != nullptr ? m_expression->asIdentifierExpression() : nullptr;
+    if (candidate.isValid() && identifier != nullptr &&
+        identifier->getIdentifier() == function->getVariableName(candidate)) {
+        compiler->addFunctionReturn(function);
+        return;
+    }
     if (m_expression != nullptr) {
         if (m_forwardReturn) {
             m_expression->compileIntoReturn(compiler, function);

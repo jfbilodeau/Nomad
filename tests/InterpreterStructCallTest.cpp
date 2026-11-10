@@ -1785,7 +1785,7 @@ BOOST_AUTO_TEST_CASE(synchronous_script_function_calls_restore_prior_yield_state
     machine->pop1();
 }
 
-BOOST_AUTO_TEST_CASE(tail_return_initializers_keep_partial_results_separate_from_inspected_locals) {
+BOOST_AUTO_TEST_CASE(ineligible_tail_return_initializers_keep_partial_results_separate_from_inspected_locals) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     const auto valueId = runtime.registerStruct("NrvoInspectionValue");
@@ -1820,7 +1820,7 @@ BOOST_AUTO_TEST_CASE(tail_return_initializers_keep_partial_results_separate_from
         ++visits;
     }, {}, type, "").isValid());
     fixture.addFunction("makeInspectedNrvoPair",
-        "candidate = makeInspectedNrvoValue\nreturn candidate");
+        "candidate = makeInspectedNrvoValue\ncandidate.number = candidate.number\nreturn candidate");
     fixture.addFunction("main",
         "value = makeInspectedNrvoPair\n"
         "assert value.number == 17\nassert value.text == \"completed result\"\nreturn value.number");
@@ -1833,6 +1833,84 @@ BOOST_AUTO_TEST_CASE(tail_return_initializers_keep_partial_results_separate_from
         BOOST_TEST(outcome.integerValue == 17);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+    BOOST_TEST(visits == 3);
+}
+
+BOOST_AUTO_TEST_CASE(named_return_frame_views_expose_and_mutate_the_actual_initializer_destination) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto valueId = runtime.registerStruct("ReturnBackedValue");
+    const auto* type = runtime.getTypeByName("ReturnBackedValue");
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    runtime.finalizeCompositeFieldLayout(valueId);
+    auto visits = 0;
+    auto failInitializer = false;
+    const auto factory = runtime.registerNativeFunction("makeReturnBackedValue", [&](VirtualMachine* active) {
+        auto* destination = active->getParameter(0).getStorageAddress();
+        destination[0].setIntegerValue(17);
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("partial result");
+        const auto* callable = active->getCurrentCallable();
+        BOOST_REQUIRE(callable != nullptr);
+        const auto candidate = callable->getVariableId("candidate");
+        BOOST_TEST(callable->getNamedReturnVariable().id == candidate.id);
+        const auto local = active->getFunctionVariableStorage(candidate);
+        BOOST_REQUIRE_EQUAL(local.size(), 2U);
+        BOOST_TEST(local.data() == destination);
+        BOOST_TEST(std::as_const(*active).getFunctionVariableStorage(candidate).data() == destination);
+        const Interpreter interpreter(*active);
+        InterpreterContext frame(interpreter, *callable);
+        BOOST_TEST(frame.getVariableStorage("candidate").data() == destination);
+        const InterpreterValue snapshot(type, local);
+        BOOST_REQUIRE(interpreter.execute(
+            "candidate.number = 91\ncandidate.text = \"frame mutation\"", frame));
+        BOOST_TEST(destination[0].getIntegerValue() == 91);
+        BOOST_TEST(destination[1].getStringValue() == "frame mutation");
+        const auto nested = interpreter.runFunction(runtime.getFunctionId("returnBackedNested"), {});
+        BOOST_TEST(nested.getValue().getIntegerValue() == 42);
+        BOOST_TEST(active->getFunctionVariableStorage(candidate).data() == destination);
+        BOOST_TEST(active->getParameter(0).getStorageAddress() == destination);
+        BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 17);
+        BOOST_TEST(snapshot.getStorage()[1].getStringValue() == "partial result");
+        if (failInitializer) {
+            throw NomadException("named return initializer failure");
+        }
+        destination[1].freeObjectValue();
+        destination[1].setStringValue("completed result");
+        ++visits;
+    }, {}, type, "");
+    BOOST_REQUIRE(factory.isValid());
+    fixture.addFunction("returnBackedNested", "return 42");
+    fixture.addFunction("returnBackedPair", "candidate = makeReturnBackedValue\nreturn candidate");
+    fixture.addFunction("main",
+        "value = returnBackedPair\n"
+        "assert value.number == 91\nassert value.text == \"completed result\"\nreturn value.number");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("returnBackedPair"));
+    BOOST_REQUIRE(function != nullptr);
+    BOOST_TEST(function->getVariableCount() == 3U);
+    BOOST_TEST(function->getVariableStorageSize() == 0U);
+    VirtualMachine failureMachine(&runtime);
+    const Interpreter failureInterpreter(failureMachine);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 91);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        failInitializer = true;
+        BOOST_CHECK_EXCEPTION(
+            static_cast<void>(failureInterpreter.runFunction(function->getId(), {})),
+            NomadException,
+            [](const auto& error) { return NomadString{error.what()} == "named return initializer failure"; });
+        BOOST_TEST(!failureMachine.isRunning());
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        failInitializer = false;
     }
     BOOST_TEST(visits == 3);
 }

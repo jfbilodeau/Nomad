@@ -5,9 +5,10 @@ Current review stop: Step 5 is approved within its agreed scope. Step 6A's
 conservative initialization/return-pair NRVO shape and Step 6B1's VM logical-local
 lookup are approved. Step 6B2 approves exposing actual return-backed storage to
 frame inspection for optimized compiled locals, including during initialization.
-Compiler optimization remains unimplemented. Interpreter evaluation keeps
-ordinary copies and does not need NRVO. The next slice is Step 6B3 implementation
-and validation.
+Step 6B3's conservative compiled tail-pair NRVO is implemented and validated,
+awaiting review. Interpreter evaluation keeps ordinary copies and does not need
+NRVO. Next is Step 6 sign-off, then Step 7 tooling/documentation reconciliation
+and final integration checks.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4617,6 +4618,79 @@ Next: Step 6B3 implements the approved compiled tail-pair NRVO and validates its
 emission, ownership, frame inspection, and fallback behavior, then stops for
 review. Step 7 follows Step 6 sign-off with final tooling, documentation
 reconciliation, and integration checks. No commit or push in this slice.
+
+### Step 6B3: Compiled tail-pair NRVO implemented
+
+Implemented within the approved scope:
+
+- Select a nonempty, exact-type local initialized by an existing
+  return-forwardable expression and returned by the immediately following final
+  top-level executable statement. Earlier straight-line statements and unrelated
+  locals remain in order. Branches, loops, competing returns, and unsupported
+  statement shapes retain the existing fallback.
+- Existing resolution records distinct local read expressions and assignments
+  across repeated inference passes. Only the candidate's sole assignment and
+  final bare-identifier read qualify. Compiled format placeholders count as
+  reads; nested callable captures exclude their source local.
+- Callable metadata retains the candidate and both redundant staging variables'
+  logical IDs/types while omitting their physical slots. Remaining local offsets
+  and total storage reflect those omissions. Physical-offset queries reject
+  return-backed/elided variables rather than exposing stale offsets.
+- Candidate assignment uses existing return-destination forwarding. The final
+  return emits ordinary unrelated-local/parameter cleanup and return handling,
+  without copying the candidate or freeing caller-owned returned fields.
+- Mutable/const VM logical-local lookup resolves the candidate to its actual
+  return destination using the enclosing script frame, including inside native
+  callbacks. Frame-backed interpreter access therefore exposes in-progress
+  initialization, as approved in Step 6B2.
+- No new opcodes, general optimizer, shadow locals, observation flags, or
+  interpreter NRVO were introduced. Interpreter-owned snapshots still copy.
+- The embedding guide documents return-backed logical views and physical-layout
+  query contracts.
+
+Regression and emission evidence:
+
+- Eligible scripted/native constructors, script/native calls, and method results
+  execute correctly, including class and struct method bodies. One-slot and
+  nested multi-slot structs retain logical type identity and owned fields.
+- Focused emission checks verify three retained logical IDs but zero physical
+  slots for eligible wrappers, forwarded destination addressing, and absence of
+  redundant local loads/stores, candidate cleanup, and local-slot return forms.
+  An earlier-local case omits exactly three variables while preserving three
+  physical slots and correctly adjusted offsets for the remaining locals.
+- Parameters remain independent copies. Parameter/receiver returns, captured
+  locals, prior reads (including formatting), reassignment/self-use, intervening
+  statements, branches/loops, non-forwardable copies, and empty returns keep
+  their fallback behavior.
+- Eligible initializer inspection sees the partially written result through the
+  candidate's logical ID and through a frame-backed interpreter context.
+  Const/mutable views share its address; frame mutation changes the returned
+  number from the initializer's explicit `17` to the observer's explicit `91`.
+  An owned snapshot retains the earlier number/string.
+- The earlier separate-default-local observation regression remains, now with an
+  intentionally intervening field assignment making the tail pair ineligible.
+- Native nested calls restore destination/local addresses and argument bindings.
+  Existing native-call and constructor tests now exercise both direct forwarding
+  and named-return wrappers, verifying that existing caller targets remain
+  unchanged until staged assignment completes and argument evaluation order is
+  preserved.
+- Successes and typed host-call initializer failures repeat three times, with
+  live string/object counts restored. Partial owned result fields are released
+  when the initializer throws; the exception propagates.
+
+Validation:
+
+- Development build and the final focused test rebuild passed.
+- CTest language, remaining, value-cleanup contract, binding, and tooling groups
+  passed. Module script staging, compiler exports, LSP process, and module-runtime
+  integration checks passed.
+- Four documentation preparation tests, regenerated API documentation, strict
+  MkDocs, and whitespace checks passed.
+- No gameplay, performance, sanitizer, or runtime-speedup claims are made.
+
+Review stop: Step 6 implementation and evidence. After sign-off, Step 7 reconciles
+tooling and published documentation and runs final completion checks. Broader
+mutable-local NRVO is not part of this slice. No commit or push.
 
 ### Step 7: Tooling, documentation, and completion checks
 
