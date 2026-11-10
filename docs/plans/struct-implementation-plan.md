@@ -1,14 +1,12 @@
 # Struct implementation plan
 
 Status: implementation proceeds only in separately approved, reviewable slices.
-Current review stop: Step 5 is approved within its agreed scope. Step 6A's
-conservative initialization/return-pair NRVO shape and Step 6B1's VM logical-local
-lookup are approved. Step 6B2 approves exposing actual return-backed storage to
-frame inspection for optimized compiled locals, including during initialization.
-Step 6B3's conservative compiled tail-pair NRVO is implemented and validated,
-awaiting review. Interpreter evaluation keeps ordinary copies and does not need
-NRVO. Next is Step 6 sign-off, then Step 7 tooling/documentation reconciliation
-and final integration checks.
+Current review stop: Steps 5 and 6 are approved within their agreed scope.
+Conservative compiled tail-pair NRVO includes live return-backed frame inspection;
+interpreter evaluation keeps ordinary copies and does not need NRVO.
+Step 7A's struct editor, language-server, and generated-reference tooling is
+implemented and validated, awaiting review. Next is Step 7B language/embedding
+documentation reconciliation, followed by final integrated completion checks.
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4694,7 +4692,8 @@ mutable-local NRVO is not part of this slice. No commit or push.
 
 ### Step 7: Tooling, documentation, and completion checks
 
-Prerequisite: step 6 approved.
+Prerequisite: step 6 approved. Satisfied following the compiled NRVO and
+return-metadata reviews.
 
 - Update editor syntax, relevant language-server declaration/signature handling,
   compiler dumps, and documentation generation for logical struct types.
@@ -4709,6 +4708,65 @@ Prerequisite: step 6 approved.
 
 Review stop: final behavior, validation evidence, limitations, and follow-up
 scope. No commit or push without a separate request.
+
+### Step 7A: Struct tooling audit and corrections
+
+Implemented within this slice:
+
+- Generated TextMate grammar recognizes struct declaration names and folding,
+  with constructor-header highlighting scoped to class/struct member bodies.
+  The checked-in editor grammar was regenerated using the compiler command.
+- Language-server completion and hover enumerate stored fields and script
+  methods through the existing shared composite-type APIs, preserving receiver
+  filtering and overloads for structs as well as classes. Struct type completion
+  uses the protocol's struct kind.
+- Contextual `init` completion/hover works at struct member headers, not within
+  constructor/method/control-flow bodies. Existing class behavior is covered by
+  the same regression.
+- Signature help finds struct constructor overloads through composite metadata
+  and preserves logical argument/result types, including zero-slot parameters.
+  Struct declarations do not produce call signature help.
+- Generated member reference documentation now includes stored struct fields and
+  script methods, including host-registered stored structs. Type/constructor
+  sections continue using existing logical type names. Native-only member
+  exports keep their existing filtering, and the member section heading remains
+  unchanged.
+- Instruction dumps already use logical callable signatures and need no
+  production changes. Added regression coverage for mixed-width/empty arguments,
+  struct constructors/methods, and an NRVO wrapper with zero physical local slots.
+- The editor guide describes struct completion, logical signatures, and
+  declaration highlighting. Language/runtime semantics and NRVO eligibility
+  are unchanged.
+
+Evidence and validation:
+
+- Struct LSP coverage includes qualified hub types, inferred constructor fields,
+  method overloads, nested stored-field receivers, receiver filtering, `this`,
+  function-local/candidate visibility, and empty constructor/argument signatures.
+- Reference generation covers qualified constructors, stored scalar/nested/empty
+  fields, method overload ordering, struct parameters/results, and native-only
+  filtering without executing constructor or entry-point callbacks.
+- Compiler-export process coverage now checks struct documentation, logical
+  instruction-dump parameters, and generated grammar through the actual CLI.
+  Source containing `assert false` confirms these exports do not execute scripts.
+- Development build and the focused test rebuild passed. Language, tooling, and
+  remaining CTest groups passed, including generated grammar regressions.
+  Compiler-export and LSP process integration checks passed.
+- All ten editor extension checks passed. The regenerated shipped grammar was
+  checked for its struct declaration pattern.
+- Four documentation preparation tests, regenerated SDK reference documentation,
+  strict MkDocs, and whitespace checks passed.
+- No gameplay, performance, sanitizer, or interactive VS Code visual-validation
+  claims are made.
+
+Review stop: tooling corrections and their regression evidence.
+
+Next, after approval: Step 7B reconciles the language and public embedding guides
+with implemented construction, copying, methods, empty structs, return behavior,
+and generic/equality limitations, removing obsolete milestone restrictions.
+The final slice then runs the integrated completion matrix and records remaining
+limitations. Broader NRVO and new language features remain outside this scope.
+No commit or push.
 
 ## 5. Acceptance and regression matrix
 

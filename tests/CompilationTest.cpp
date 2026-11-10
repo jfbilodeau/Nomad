@@ -75,6 +75,39 @@ BOOST_AUTO_TEST_CASE(instruction_dump_skips_analysis_only_callables) {
     BOOST_TEST(stream.str().empty());
 }
 
+BOOST_AUTO_TEST_CASE(instruction_dump_keeps_struct_signatures_logical_without_executing) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    auto calls = 0;
+    runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++calls; }, {}, runtime.getVoidType(), "");
+    const auto result = compileSources({{{"main", {"editor:structs",
+        "struct DumpEmpty\nend\n"
+        "struct DumpLeaf\ntext = \"owned\"\n"
+        "init number:int\nprobe\nthis.number = number\nend\n"
+        "fun read value:DumpLeaf empty:DumpEmpty\nreturn value.number\nend\nend\n"
+        "fun makeDump value:DumpLeaf empty:DumpEmpty\ncandidate = new DumpLeaf 17\nreturn candidate\nend\n"
+        "probe\nassert false\nreturn 0"}}}, {}}, *compiler);
+    BOOST_REQUIRE_MESSAGE(result.succeeded(),
+        (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
+    const auto instructionCount = runtime.getInstructions().size();
+    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("makeDump"));
+    BOOST_REQUIRE(function != nullptr);
+    BOOST_TEST(function->getVariableStorageSize() == 0U);
+    BOOST_TEST(function->getParameterCount() == 2U);
+    BOOST_TEST(function->getParameterStorageSize() == 2U);
+    std::ostringstream selected;
+    dumpInstructions(runtime, *function, selected);
+    BOOST_TEST(selected.str().starts_with("function makeDump value:DumpLeaf empty:DumpEmpty\n"));
+    BOOST_TEST(selected.str().find("Unknown instruction") == NomadString::npos);
+    std::ostringstream all;
+    dumpInstructions(runtime, all);
+    BOOST_TEST(all.str().find("method DumpLeaf.read value:DumpLeaf empty:DumpEmpty\n") != NomadString::npos);
+    BOOST_TEST(all.str().find("constructor DumpLeaf number:int\n") != NomadString::npos);
+    BOOST_TEST(all.str().find("constructor DumpEmpty\n") != NomadString::npos);
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(runtime.getInstructions().size() == instructionCount);
+}
+
 BOOST_AUTO_TEST_CASE(configured_compilation_preserves_targets_hooks_diagnostics_and_execution_boundaries) {
     for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
         Runtime runtime;

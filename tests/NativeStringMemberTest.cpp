@@ -33,15 +33,48 @@ BOOST_AUTO_TEST_CASE(textmate_init_is_scoped_to_constructor_headers_not_global_k
     BOOST_TEST(!std::regex_search(std::string("system.init"), header));
     const auto& keywords = repository.at("keywords").as_object().at("patterns").as_array()[0].as_object();
     BOOST_TEST(!std::regex_search(std::string("init"), std::regex(keywords.at("match").as_string().c_str())));
-    const auto& classPatterns = repository.at("classes").as_object().at("patterns").as_array()[0]
-        .as_object().at("patterns").as_array();
-    BOOST_TEST(classPatterns[0].as_object().at("include").as_string() == "#constructors");
+    for (const auto* name : {"classes", "structs"}) {
+        const auto& memberPatterns = repository.at(name).as_object().at("patterns").as_array()[0]
+            .as_object().at("patterns").as_array();
+        BOOST_TEST(memberPatterns[0].as_object().at("include").as_string() == "#constructors");
+    }
     for (const auto& pattern : grammar.at("patterns").as_array()) {
         BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
     }
     for (const auto& pattern : constructor.at("patterns").as_array()) {
         BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
     }
+}
+
+BOOST_AUTO_TEST_CASE(textmate_struct_headers_capture_type_names_and_support_folding)
+{
+    Runtime runtime;
+    std::ostringstream output;
+    generateTextMateGrammar(&runtime, output);
+    const auto grammar = boost::json::parse(output.str()).as_object();
+    const auto& repository = grammar.at("repository").as_object();
+    const auto& declaration = repository.at("structs").as_object().at("patterns").as_array()[0].as_object();
+    const std::regex header{declaration.at("begin").as_string().c_str()};
+    std::cmatch captures;
+    BOOST_REQUIRE(std::regex_match("    struct model.Point # stored fields", captures, header));
+    BOOST_TEST(captures[1].str() == "struct");
+    BOOST_TEST(captures[2].str() == "model.Point");
+    BOOST_TEST(declaration.at("beginCaptures").as_object().at("2").as_object().at("name").as_string() ==
+        "entity.name.type.nomad");
+    BOOST_TEST(declaration.at("end").as_string() == "^\\s*end\\b");
+    for (const auto* invalid : {"open struct Point", "fun struct", "point.struct", "struct Point extra"}) {
+        BOOST_TEST(!std::regex_match(invalid, header));
+    }
+    const auto& keywords = repository.at("keywords").as_object().at("patterns").as_array()[0].as_object();
+    BOOST_TEST(std::regex_match("struct", std::regex(keywords.at("match").as_string().c_str())));
+    BOOST_TEST(std::regex_search("struct Point", std::regex(grammar.at("foldingStartMarker").as_string().c_str())));
+    auto seenStruct = false;
+    for (const auto& pattern : grammar.at("patterns").as_array()) {
+        const auto& include = pattern.as_object().at("include").as_string();
+        if (include == "#structs") seenStruct = true;
+        if (include == "#keywords") BOOST_TEST(seenStruct);
+    }
+    BOOST_TEST(seenStruct);
 }
 
 namespace {

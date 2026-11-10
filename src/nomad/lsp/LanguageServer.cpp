@@ -12,7 +12,7 @@
 
 #include <nomad/project/ProjectConfiguration.hpp>
 
-#include <nomad/script/ClassType.hpp>
+#include <nomad/script/CompositeType.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
 
@@ -48,6 +48,7 @@ enum class CompletionItemKind {
     Property = 10,
     Keyword = 14,
     Constant = 21,
+    Struct = 22,
 };
 
 struct ApiSymbol {
@@ -131,31 +132,31 @@ ApiAnalysis analyzeApiSymbols(
     const auto session = createAnalysisSession(group, path);
     auto* runtime = session->getRuntime();
     auto batch = session->loadSources(group.roots, group.overrides);
-    auto classMemberPosition = false;
+    auto compositeMemberPosition = false;
     for (const auto& script : batch.sources) {
         if (script.source.sourceName != uri) continue;
         auto compiler = runtime->createCompiler();
         CompilerContext context(compiler.get());
         Tokenizer tokens(&context, uri, script.source.text);
-        std::vector<bool> classBlocks;
+        std::vector<bool> compositeBlocks;
         while (tokens.nextLine() && tokens.getLineIndex() < line) {
             if (tokens.is(TokenType::Identifier) && tokens.is("end")) {
-                if (!classBlocks.empty()) classBlocks.pop_back();
+                if (!compositeBlocks.empty()) compositeBlocks.pop_back();
                 continue;
             }
-            const auto classHeader = tokens.is("class") ||
+            const auto compositeHeader = tokens.is("class") || tokens.is("struct") ||
                 (tokens.is("open") && tokens.getTokenCount() > 1 && tokens.getTokenAt(1) == "class");
-            const auto constructorHeader = !classBlocks.empty() && classBlocks.back() && tokens.is("init");
+            const auto constructorHeader = !compositeBlocks.empty() && compositeBlocks.back() && tokens.is("init");
             auto openings = parser::countBlockOpenings(compiler.get(), &tokens);
             if (constructorHeader) ++openings;
             for (auto index = NomadIndex{0}; index < openings; ++index) {
-                classBlocks.push_back(classHeader && index == 0);
+                compositeBlocks.push_back(compositeHeader && index == 0);
             }
         }
-        classMemberPosition = !classBlocks.empty() && classBlocks.back();
+        compositeMemberPosition = !compositeBlocks.empty() && compositeBlocks.back();
         // Only the declaration's first word is a constructor-keyword position.
         if (tokens.getLineIndex() == line && tokens.getTokenCount() > 1 && !tokens.is("init")) {
-            classMemberPosition = false;
+            compositeMemberPosition = false;
         }
         break;
     }
@@ -181,9 +182,9 @@ ApiAnalysis analyzeApiSymbols(
             diagnostic.severity == DiagnosticSeverity::Error;
     });
     std::vector<ApiSymbol> symbols;
-    if (classMemberPosition) {
+    if (compositeMemberPosition) {
         symbols.push_back({"init", CompletionItemKind::Keyword, "init [name:Type ...]",
-            "Declares a constructor in a class body. Use explicit this.member references for instance members."});
+            "Declares a constructor in a class or struct body. Use explicit this.member references for instance members."});
     }
     std::vector<KeywordDefinition> keywords;
     runtime->getKeywords(keywords);
@@ -194,12 +195,12 @@ ApiAnalysis analyzeApiSymbols(
     runtime->getTypes(types);
     for (const auto* type : types) {
         if (!type->isInternal()) {
-            symbols.push_back({type->getTypeName(), CompletionItemKind::Class,
+            symbols.push_back({type->getTypeName(), type->isStruct() ? CompletionItemKind::Struct : CompletionItemKind::Class,
                 type->getTypeName(), type->getDocumentation()});
         }
-        const auto* object = type->asClassType();
-        if (object == nullptr || type->isInternal()) continue;
-        for (const auto* property : object->getProperties()) {
+        const auto* composite = type->asCompositeType();
+        if (composite == nullptr || type->isInternal()) continue;
+        for (const auto* property : composite->getProperties()) {
             if (property->asNativeProperty() != nullptr) continue;
             const auto* valueType = property->getValueType();
             const auto value = valueType ? valueType->getTypeName() : "unknown";
@@ -207,8 +208,8 @@ ApiAnalysis analyzeApiSymbols(
                 type->getTypeName() + "." + property->getName() + ":" + value,
                 property->getDoc(), valueType ? value : NomadString{}, type->getTypeName()});
         }
-        for (const auto* method : object->getMethods()) {
-            if (method->asScriptMethod() == nullptr || method->getName() == object->getInitializerName()) continue;
+        for (const auto* method : composite->getMethods()) {
+            if (method->asScriptMethod() == nullptr || method->getName() == composite->getInitializerName()) continue;
             symbols.push_back(createMethodSymbol(*method));
         }
     }

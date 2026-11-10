@@ -6,6 +6,7 @@
 #include <nomad/compiler/Parser.hpp>
 
 #include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/CompositeType.hpp>
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -74,14 +75,14 @@ std::vector<MemberDocumentationInfo> getMemberDocumentation(const Runtime* runti
         std::vector<const Type*> types;
         runtime->getTypes(types);
         for (const auto* type : types) {
-            const auto* object = type->asClassType();
-            if (object == nullptr || type->isInternal()) continue;
-            for (const auto* property : object->getProperties()) {
+            const auto* composite = type->asCompositeType();
+            if (composite == nullptr || type->isInternal()) continue;
+            for (const auto* property : composite->getProperties()) {
                 if (property->asNativeProperty() != nullptr) continue;
                 members.emplace_back(property->getId(), MemberType::Property, type, property->getName());
             }
-            for (const auto* method : object->getMethods()) {
-                if (method->asScriptMethod() == nullptr || method->getName() == object->getInitializerName()) continue;
+            for (const auto* method : composite->getMethods()) {
+                if (method->asScriptMethod() == nullptr || method->getName() == composite->getInitializerName()) continue;
                 members.emplace_back(method->getId(), MemberType::Method, type, method->getName(),
                     getCallableSignature(runtime, *method));
             }
@@ -522,8 +523,8 @@ namespace {
 void writeMemberDocumentation(const Runtime* runtime, const bool includeScript, std::ostream& out) {
     out << "## Object Members" << std::endl;
     out << std::endl;
-    out << (includeScript ? "Fields, properties, and methods are available on instances of each class type." :
-        "Properties and methods are available on instances of each class type.") << std::endl;
+    out << (includeScript ? "Fields, properties, and methods are available on class and struct instances." :
+        "Properties and methods are available on class and struct instances.") << std::endl;
 
     const Type* currentType = nullptr;
 
@@ -700,6 +701,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
         "strings",
         "numbers",
         "classes",
+        "structs",
         "blocks",
         "keywords",
         "literals",
@@ -814,7 +816,14 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     auto classPatterns = array({createInclude("constructors")});
     for (const auto& pattern : ordinaryPatterns) classPatterns.push_back(pattern);
     classDeclaration["patterns"] = std::move(classPatterns);
+    auto structDeclaration = classDeclaration;
+    structDeclaration["begin"] = "^\\s*(struct)\\s+([A-Za-z_][A-Za-z0-9_.]*)\\s*(?:#.*)?$";
+    structDeclaration["beginCaptures"] = object({
+        {"1", object({{"name", "keyword.control.nomad"}})},
+        {"2", object({{"name", "entity.name.type.nomad"}})}
+    });
     repository["classes"] = createPatternRepositoryEntry(std::move(classDeclaration));
+    repository["structs"] = createPatternRepositoryEntry(std::move(structDeclaration));
 
     repository["literals"] = createPatternRepositoryEntry(
         createMatchPattern("constant.language.boolean.nomad", createWordPattern({"true", "false"}))
@@ -853,7 +862,7 @@ void generateTextMateGrammar(Runtime* runtime, std::ostream& out) {
     );
 
     root["repository"] = std::move(repository);
-    root["foldingStartMarker"] = "\\b(class|fun|hub|if|else|enum)\\b|^\\s*init\\b";
+    root["foldingStartMarker"] = "\\b(class|struct|fun|hub|if|else|enum)\\b|^\\s*init\\b";
     root["foldingStopMarker"] = "\\bend\\b";
     out << boost::json::serialize(root) << std::endl;
 }

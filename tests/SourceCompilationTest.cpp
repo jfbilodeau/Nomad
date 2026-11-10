@@ -599,6 +599,65 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     BOOST_TEST(callbackCalls == 0);
 }
 
+BOOST_AUTO_TEST_CASE(generates_struct_fields_and_logical_signatures_without_execution)
+{
+    TestDirectory directory("nomad_compilation_test_struct_reference");
+    const auto source = directory.write("structs.nomad",
+        "hub model\n"
+        "struct Empty\ninit\nprobe\nend\nend\n"
+        "struct Leaf\ntext = \"reference\"\n"
+        "init number:int\nprobe\nthis.number = number\nend\n"
+        "init text:string\nprobe\nthis.number = text.length\nthis.text = text\nend\n"
+        "fun read delta:int\nreturn this.number + delta\nend\n"
+        "fun read suffix:string\nreturn $\"{this.text}{suffix}\"\nend\n"
+        "fun copy value:model.Leaf empty:model.Empty\nreturn value\nend\n"
+        "fun clear\nreturn\nend\nend\n"
+        "struct Container\nempty = new model.Empty\nleaf = new model.Leaf 3\nend\nend\n"
+        "fun consume value:model.Container empty:model.Empty\nreturn value\nend\n"
+        "probe\nreturn 0");
+    Runtime runtime;
+    const auto hostType = runtime.registerStruct("HostDocumented", "A host-registered struct.");
+    BOOST_REQUIRE(runtime.registerProperty(hostType, "hostNumber", runtime.getIntegerType()).isValid());
+    auto callbackCalls = 0;
+    runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },
+        {}, runtime.getVoidType(), "");
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
+    BOOST_REQUIRE_MESSAGE(result.succeeded(),
+        (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
+    const auto text = documentation.str();
+    for (const auto* expected : {
+        "### `HostDocumented`", "A host-registered struct.",
+        "Constructor: `new model.Empty` -> `model.Empty`",
+        "Constructor: `new model.Leaf number:int` -> `model.Leaf`",
+        "Constructor: `new model.Leaf text:string` -> `model.Leaf`",
+        "Constructor: `new model.Container` -> `model.Container`",
+        "#### `hostNumber` (*read/write field*)\n\n`hostNumber:int`",
+        "#### `empty` (*read/write field*)\n\n`empty:model.Empty`",
+        "#### `leaf` (*read/write field*)\n\n`leaf:model.Leaf`",
+        "#### `number` (*read/write field*)\n\n`number:int`",
+        "#### `text` (*read/write field*)\n\n`text:string`",
+        "`read delta:int -> int`", "`read suffix:string -> string`",
+        "`copy value:model.Leaf empty:model.Empty -> model.Leaf`", "`clear -> void`",
+        "- `value:model.Container`", "- `empty:model.Empty`", "`returns model.Container`"
+    }) {
+        BOOST_TEST_CONTEXT(expected) {
+            BOOST_TEST(text.find(expected) != NomadString::npos);
+        }
+    }
+    BOOST_TEST(text.find("`read delta:int -> int`") < text.find("`read suffix:string -> string`"));
+    BOOST_TEST(text.find("$init") == NomadString::npos);
+    BOOST_TEST(text.find("$return") == NomadString::npos);
+    BOOST_TEST(text.find("- `this:") == NomadString::npos);
+    std::ostringstream nativeMembers;
+    generateNativeMemberDocumentation(&runtime, nativeMembers);
+    BOOST_TEST(nativeMembers.str().find("### `model.Leaf`") == NomadString::npos);
+    BOOST_TEST(nativeMembers.str().find("### `model.Container`") == NomadString::npos);
+    BOOST_TEST(callbackCalls == 0);
+}
+
 BOOST_AUTO_TEST_CASE(class_reference_overloads_have_deterministic_order)
 {
     TestDirectory directory("nomad_compilation_test_class_reference_order");
