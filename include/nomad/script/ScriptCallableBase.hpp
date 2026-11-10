@@ -7,7 +7,6 @@
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/Variable.hpp>
 
-#include <array>
 #include <utility>
 #include <vector>
 
@@ -263,6 +262,12 @@ protected:
     [[nodiscard]] virtual std::vector<Parameter>& getEditableParameters() = 0;
 
 private:
+    struct NamedReturnVariables {
+        VariableId candidate = VariableId::INVALID;
+        VariableId assignmentStaging = VariableId::INVALID;
+        VariableId returnStaging = VariableId::INVALID;
+    };
+
     NomadId registerCapture(const Capture& capture) {
         const auto& name = capture.name;
         const auto existingCaptureId = getCaptureId(name);
@@ -301,9 +306,7 @@ private:
     NomadIndex m_functionStartIndex = NOMAD_INVALID_INDEX;
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
     VariableMap m_variables;
-    std::array<VariableId, 3> m_returnVariables{
-        VariableId::INVALID, VariableId::INVALID, VariableId::INVALID
-    };
+    NamedReturnVariables m_returnVariables;
     std::vector<Capture> m_captures;
     CallableId m_parentId = CallableId{};
 };
