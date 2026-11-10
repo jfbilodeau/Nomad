@@ -243,7 +243,7 @@ bool registerMemberSignatures(
                 type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
             );
         } else if (member->getKind() == ClassMemberKind::Constructor) {
-            id = runtime->registerScriptClassConstructor(
+            id = runtime->getTypeManager().registerScriptClassConstructor(
                 type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         } else {
@@ -282,7 +282,7 @@ bool registerMemberSignatures(
         context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
     if (type->getConstructors().empty()) {
-        const auto id = runtime->registerScriptClassConstructor(
+        const auto id = runtime->getTypeManager().registerScriptClassConstructor(
             type->getId(), {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {

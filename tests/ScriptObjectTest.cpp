@@ -91,7 +91,7 @@ void compileTestConstructor(
     const ClassType* type,
     CallableId initializerId
 ) {
-    const auto id = runtime.registerScriptConstructor(type->getId(), {}, "", "");
+    const auto id = runtime.getTypeManager().registerScriptClassConstructor(type->getId(), {}, "", "");
     BOOST_REQUIRE(id.isValid());
     auto* constructor = runtime.getScriptCallable(id);
     constructor->setFunctionStart(runtime.getInstructions().size());
@@ -436,7 +436,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
             .setter = {},
             .documentation = ""
         }).isValid());
-        BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
             .parameters = {},
             .function = [type](VirtualMachine* machine) {
                 auto object = std::make_unique<ScriptObject>(type);

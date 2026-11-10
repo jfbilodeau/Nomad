@@ -107,7 +107,7 @@ void registerArrayType(Runtime* runtime) {
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
             if (writable) {
-                const auto constructorId = runtime->addConstructor(arrayType->getId(), {
+                const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(arrayType->getId(), {
                     .parameters = {{runtime->getIntegerType()->getId(), "size", ""}},
                     .function = [arrayType](VirtualMachine* machine) {
                         const auto size = machine->getIntegerParameter(0);
@@ -166,7 +166,7 @@ void registerArrayType(Runtime* runtime) {
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
             if (writable) {
-                const auto constructorId = runtime->addConstructor(arrayType->getId(), {
+                const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(arrayType->getId(), {
                     .parameters = {
                         {runtime->getIntegerType()->getId(), "size1", ""},
                         {runtime->getIntegerType()->getId(), "size2", ""}
@@ -218,7 +218,7 @@ void registerArrayType(Runtime* runtime) {
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
             if (writable) {
-                const auto constructorId = runtime->addConstructor(arrayType->getId(), {
+                const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(arrayType->getId(), {
                     .parameters = {
                         {runtime->getIntegerType()->getId(), "size1", ""},
                         {runtime->getIntegerType()->getId(), "size2", ""},
@@ -290,7 +290,7 @@ void registerArrayType(Runtime* runtime) {
                 for (const auto& parameter : constructor->getParameters()) {
                     parameters.push_back({parameter.type->getId(), parameter.name, parameter.doc});
                 }
-                if (runtime->addConstructor(id, constructor->getReturnType()->getId(), {
+                if (runtime->getTypeManager().registerNativeClassConstructor(id, constructor->getReturnType()->getId(), {
                     .parameters = std::move(parameters),
                     .function = constructor->getFn(),
                     .documentation = ""

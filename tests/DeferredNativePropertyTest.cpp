@@ -23,7 +23,7 @@ class PropertyOwner final : public NomadObject {};
 TypeId registerPropertyOwner(Runtime& runtime) {
     const auto id = runtime.registerClass("PropertyOwner", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
-    BOOST_REQUIRE(runtime.addConstructor(id, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(id, {
         .parameters = {},
         .function = [](VirtualMachine* machine) {
             machine->getResult().setObjectValue(new PropertyOwner);

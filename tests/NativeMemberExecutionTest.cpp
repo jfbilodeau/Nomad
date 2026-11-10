@@ -31,7 +31,7 @@ const ClassType* registerTestObject(Runtime& runtime) {
     const auto descriptorId = runtime.registerClass<ClassType>("TestObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
-    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
         .parameters = {},
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new TestObject); },
         .documentation = ""
@@ -93,7 +93,7 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
         std::move(receiver), std::move(arguments));
     BOOST_REQUIRE(expression.resolve(&compilation, nullptr));
 
-    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
         .function = [](VirtualMachine* machine) {
             auto* object = new TestObject;

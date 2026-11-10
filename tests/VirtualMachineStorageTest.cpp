@@ -530,13 +530,13 @@ BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocat
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
-    const auto nativeId = runtime.registerNativeStructConstructor(typeId, {
+    const auto nativeId = runtime.getTypeManager().registerNativeStructConstructor(typeId, {
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
         .function = [](VirtualMachine* active) {
             active->getStorageParameter(1, 0) = active->getParameter(0);
         }
     });
-    const auto scriptId = runtime.registerScriptStructConstructor(typeId,
+    const auto scriptId = runtime.getTypeManager().registerScriptStructConstructor(typeId,
         {defParameter("number", runtime.getIntegerType(), ""), defParameter("unused", runtime.getIntegerType(), "")},
         "", "");
     BOOST_REQUIRE(nativeId.isValid());
@@ -588,7 +588,7 @@ BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) 
     const auto nativeTypeId = runtime.registerClass("CountedNative", ClassMode::Closed);
     const auto* nativeType = runtime.getTypeByName("CountedNative")->asClassType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(nativeTypeId);
-    const auto nativeId = runtime.registerNativeClassConstructor(nativeTypeId, {
+    const auto nativeId = runtime.getTypeManager().registerNativeClassConstructor(nativeTypeId, {
         .parameters = {},
         .function = [nativeType](VirtualMachine* active) {
             active->getResult().setObjectValue(new ScriptObject(nativeType));

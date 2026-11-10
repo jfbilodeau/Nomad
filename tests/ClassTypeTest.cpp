@@ -189,7 +189,7 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""
     });
-    const auto constructor = runtime.addConstructor(owner->getId(), {
+    const auto constructor = runtime.getTypeManager().registerNativeClassConstructor(owner->getId(), {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""
@@ -473,7 +473,7 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""
     });
-    const auto constructor = runtime.addConstructor(owner->getId(), {
+    const auto constructor = runtime.getTypeManager().registerNativeClassConstructor(owner->getId(), {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""

@@ -52,7 +52,7 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             const auto* type = owningRuntime->getType(id).value();
             const auto* classType = static_cast<const ClassType*>(type);
             const auto* valueType = classType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.addConstructor(classType->getId(), {
+            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(classType->getId(), {
                 .parameters = {{valueType->getId(), "value", ""}},
                 .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); },
                 .documentation = ""

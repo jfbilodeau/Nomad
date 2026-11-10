@@ -1311,38 +1311,6 @@ std::optional<MemberSignature> Runtime::getMemberSignature(const NomadString& na
     return MemberSignature{type, {}};
 }
 
-CallableId Runtime::addConstructor(const TypeId id, NativeConstructorDefinition definition) {
-    return addConstructor(id, id, std::move(definition));
-}
-
-CallableId Runtime::registerNativeClassConstructor(const TypeId id, NativeConstructorDefinition definition) {
-    return m_typeManager.registerNativeClassConstructor(id, std::move(definition));
-}
-
-CallableId Runtime::registerNativeClassConstructor(
-    const TypeId id,
-    const TypeId createdTypeId,
-    NativeConstructorDefinition definition
-) {
-    return m_typeManager.registerNativeClassConstructor(id, createdTypeId, std::move(definition));
-}
-
-CallableId Runtime::registerNativeStructConstructor(const TypeId id, NativeConstructorDefinition definition) {
-    return m_typeManager.registerNativeStructConstructor(id, std::move(definition));
-}
-
-CallableId Runtime::addConstructor(
-    const TypeId id,
-    const TypeId createdTypeId,
-    NativeConstructorDefinition definition
-) {
-    const auto owner = getType(id);
-    if (owner.has_value() && (*owner)->isStruct() && id == createdTypeId) {
-        return registerNativeStructConstructor(id, std::move(definition));
-    }
-    return registerNativeClassConstructor(id, createdTypeId, std::move(definition));
-}
-
 std::vector<const NativeConstructor*> Runtime::getConstructors() const {
     std::vector<const NativeConstructor*> constructors;
     for (const auto* callable : m_callables) {
@@ -1481,41 +1449,6 @@ void Runtime::catalogNativeProperty(const PropertyId id) {
     }
     m_nativeMembers.push_back(id);
     m_nativeMembersByName[property->getName()].push_back(id);
-}
-
-CallableId Runtime::registerScriptConstructor(
-    const TypeId id,
-    std::vector<Parameter> parameters,
-    NomadString path,
-    NomadString source
-) {
-    const auto type = getType(id);
-    if (type.has_value() && (*type)->isStruct()) {
-        return registerScriptStructConstructor(
-            id, std::move(parameters), std::move(path), std::move(source)
-        );
-    }
-    return registerScriptClassConstructor(
-        id, std::move(parameters), std::move(path), std::move(source)
-    );
-}
-
-CallableId Runtime::registerScriptClassConstructor(
-    const TypeId id,
-    std::vector<Parameter> parameters,
-    NomadString path,
-    NomadString source
-) {
-    return m_typeManager.registerScriptClassConstructor(id, std::move(parameters), std::move(path), std::move(source));
-}
-
-CallableId Runtime::registerScriptStructConstructor(
-    const TypeId id,
-    std::vector<Parameter> parameters,
-    NomadString path,
-    NomadString source
-) {
-    return m_typeManager.registerScriptStructConstructor(id, std::move(parameters), std::move(path), std::move(source));
 }
 
 void Runtime::catalogNativeMethod(const CallableId id) {

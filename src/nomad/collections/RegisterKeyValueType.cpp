@@ -27,7 +27,7 @@ void registerKeyValueType(Runtime* runtime) {
             const auto* classType = static_cast<const KeyValueType*>(type);
             const auto* keyType = classType->getTypeArguments()[0];
             const auto* valueType = classType->getTypeArguments()[1];
-            const auto constructorId = runtime->addConstructor(id, {
+            const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(id, {
                 .parameters = {
                     {keyType->getId(), "key", NomadDoc("The key to store.")},
                     {valueType->getId(), "value", NomadDoc("The value to store.")}

@@ -221,7 +221,7 @@ BOOST_AUTO_TEST_CASE(hub_classes_use_local_names_and_preserve_class_modes)
         BOOST_REQUIRE(member != nullptr);
         BOOST_TEST(std::get<const Type*>(*member) == type);
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(classId, "value", runtime.getIntegerType()).isValid());
-        BOOST_REQUIRE(runtime.addConstructor(classId, {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(classId, {
             .parameters = {},
             .function = [type](VirtualMachine* machine) {
                 machine->getResult().setObjectValue(new ScriptObject(type));

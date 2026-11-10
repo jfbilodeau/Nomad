@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 3B is implemented and validated, awaiting review.
-Step 3C has not started and is not approved for implementation.
+Status: Step 3C is implemented and validated, awaiting review.
+Step 3D has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -272,6 +272,24 @@ empty/multi-slot structs, overload rejection, and initialization side effects
 remain correct. Use [ObjectConstructionTest.cpp](../../tests/ObjectConstructionTest.cpp),
 [ScriptObjectTest.cpp](../../tests/ScriptObjectTest.cpp), and callable/struct tests.
 
+Completion evidence (2026-11-10, Windows Debug):
+
+- Migrated constructor registration in both compiler declaration paths,
+  collections, module consumers, and tests to existing specialized manager APIs.
+- Removed eight runtime overloads without replacement wrappers; production code
+  decreased by 99 lines. Callable catalogs and constructed-type identity remain
+  runtime-wide.
+- Preserved distinct declaring/result class factories, including collection
+  wrappers, and empty/multi-slot struct construction and initializer sequencing.
+  The distinct-result rejection case now explicitly verifies that the class
+  factory API rejects a struct owner; no struct factory overload was added.
+- The `nomad-development` build and language, remaining-unit, tooling, and
+  binding CTest groups passed. All four documentation preparation tests,
+  built-tool reference generation, strict MkDocs, retired-API searches, and
+  whitespace checks passed.
+- Other platforms, full packaging integration, and manual gameplay were not
+  validated.
+
 ### Step 3D: Finish descriptor, family, and iterable/indexer migration
 
 - Migrate descriptor creation, parameterized registration/specialization,
@@ -425,4 +443,5 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 3B review: Step 3C, manager-only constructor registration.
+Next slice after Step 3C review: Step 3D, completing descriptor, family, and
+iterable/indexer API migration.

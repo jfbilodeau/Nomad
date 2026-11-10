@@ -43,7 +43,7 @@ void registerMapFamily(
             if (keysType == nullptr || valuesType == nullptr || entriesType == nullptr) {
                 throw nomad::NomadException("Failed to resolve Map snapshot types");
             }
-            if (writable && runtime->addConstructor(id, {
+            if (writable && runtime->getTypeManager().registerNativeClassConstructor(id, {
                 .parameters = {},
                 .function = [valueType](VirtualMachine* machine) {
                     machine->getResult().setObjectValue(new nomad::MapObject(valueType));

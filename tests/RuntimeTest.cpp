@@ -743,7 +743,7 @@ BOOST_AUTO_TEST_CASE(documentation_lists_native_factories_under_the_constructed_
     BOOST_REQUIRE(ownerId.isValid());
     BOOST_REQUIRE(resultId.isValid());
     auto callbackCalls = 0;
-    BOOST_REQUIRE(runtime.addConstructor(ownerId, resultId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(ownerId, resultId, {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = "Creates a result."

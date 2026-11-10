@@ -112,7 +112,7 @@ void registerListType(Runtime* runtime) {
             }).isInvalid()) {
                 throw NomadException("Failed to register List.toReadOnly");
             }
-            const auto constructorId = runtime->addConstructor(id, {
+            const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(id, {
                 .parameters = {},
                 .function = [elementType](VirtualMachine* machine) {
                     machine->getResult().setObjectValue(new nomad::ListObject(elementType));

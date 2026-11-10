@@ -506,7 +506,7 @@ BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_
     }
     BOOST_TEST(runtime.getFunctionId("move").isInvalid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassMethod(typeId, "move", parameters, "owner.nomad", "").isInvalid());
-    BOOST_TEST(runtime.registerScriptConstructor(typeId, parameters, "owner.nomad", "").isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassConstructor(typeId, parameters, "owner.nomad", "").isInvalid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassMethod(runtime.getIntegerType()->getId(), "move", {}, "", "").isInvalid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassConstructor(TypeId{}, {}, "", "").isInvalid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassMethod(typeId, "bad",
@@ -1227,7 +1227,7 @@ CallableId registerResolutionConstructor(
     const ClassType* type,
     const std::vector<ParameterDefinition>& parameters
 ) {
-    return runtime.addConstructor(type->getId(), {
+    return runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
         .parameters = parameters,
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ResolutionObject); },
         .documentation = ""
@@ -1289,7 +1289,7 @@ BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
     Runtime runtime;
     const auto* declaringType = registerResolutionType(runtime, "ConstructorOwner");
     const auto* createdType = registerResolutionType(runtime, "ConstructorResult");
-    const auto id = runtime.addConstructor(declaringType->getId(), createdType->getId(), {
+    const auto id = runtime.getTypeManager().registerNativeClassConstructor(declaringType->getId(), createdType->getId(), {
         .parameters = {},
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ResolutionObject); },
         .documentation = ""
@@ -1307,7 +1307,7 @@ BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
 
     Runtime otherRuntime;
     const auto otherCallableCount = otherRuntime.getFunctionTableSize();
-    BOOST_TEST(otherRuntime.addConstructor(otherRuntime.getTypeId(declaringType->getTypeName()), {
+    BOOST_TEST(otherRuntime.getTypeManager().registerNativeClassConstructor(otherRuntime.getTypeId(declaringType->getTypeName()), {
         .parameters = {},
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ResolutionObject); },
         .documentation = ""
@@ -1362,7 +1362,7 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
             ++destructions;
             delete value;
         });
-        const auto id = runtime.addConstructor(type->getId(), {
+        const auto id = runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
             .parameters = {},
             .function = [lifetime = std::move(lifetime)](VirtualMachine* machine) {
                 machine->getResult().setObjectValue(new ResolutionObject);

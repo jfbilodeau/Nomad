@@ -2677,7 +2677,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
         runtime.getIntegerType(),
         ""
     ).isValid());
-    BOOST_REQUIRE(runtime.registerNativeStructConstructor(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructConstructor(typeId, {
         .parameters = {
             {ownerId, "owner", ""},
             {runtime.getIntegerType()->getId(), "first", ""},
@@ -2707,7 +2707,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     }).isValid());
     const auto emptyId = runtime.registerStruct("EmptyConstructionReturn");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
-    BOOST_REQUIRE(runtime.registerNativeStructConstructor(emptyId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructConstructor(emptyId, {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
         .function = [&](VirtualMachine* active) {
             calls.push_back(active->getIntegerParameter(0));
@@ -4334,7 +4334,7 @@ BOOST_AUTO_TEST_CASE(registered_native_struct_constructors_create_nonempty_and_e
         }
         runtime.getTypeManager().finalizeCompositeFieldLayout(id);
         auto calls = 0;
-        BOOST_REQUIRE(runtime.registerNativeStructConstructor(id, {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructConstructor(id, {
             .parameters = {},
             .function = [&](VirtualMachine*) { ++calls; },
             .documentation = ""
@@ -4352,7 +4352,7 @@ BOOST_AUTO_TEST_CASE(registered_empty_script_struct_constructor_bodies_create_va
     auto& runtime = fixture.getRuntime();
     const auto id = runtime.registerStruct("PendingBody");
     runtime.getTypeManager().finalizeCompositeFieldLayout(id);
-    const auto constructorId = runtime.registerScriptStructConstructor(id, {}, "pending.nomad", "");
+    const auto constructorId = runtime.getTypeManager().registerScriptStructConstructor(id, {}, "pending.nomad", "");
     BOOST_REQUIRE(constructorId.isValid());
     fixture.addFunction("main", "value = new PendingBody");
     fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
@@ -4404,7 +4404,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
         argumentOrder.push_back(2);
         active->setStringResult("owned");
     }, {}, runtime.getStringType(), "").isValid());
-    const auto nativeConstructor = runtime.registerNativeStructConstructor(nativeId, {
+    const auto nativeConstructor = runtime.getTypeManager().registerNativeStructConstructor(nativeId, {
         .parameters = {
             {runtime.getIntegerType()->getId(), "number", ""},
             {runtime.getStringType()->getId(), "text", ""}
@@ -4419,13 +4419,13 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
         }
     });
     BOOST_REQUIRE(nativeConstructor.isValid());
-    const auto scriptConstructor = runtime.registerScriptStructConstructor(scriptId,
+    const auto scriptConstructor = runtime.getTypeManager().registerScriptStructConstructor(scriptId,
         {defParameter("copy", nativeType, "")}, "created.nomad",
         "assert this.number == 42\nassert this.text == \"\"\n"
         "assert this.nested.number == 0\nassert this.nested.text == \"\"\n"
         "this.nested = copy\nthis.text = copy.text\nthis.number = copy.number\ncopy.number = 99");
     BOOST_REQUIRE(scriptConstructor.isValid());
-    const auto emptyConstructor = runtime.registerScriptStructConstructor(emptyId, {}, "empty.nomad", "recordEmpty");
+    const auto emptyConstructor = runtime.getTypeManager().registerScriptStructConstructor(emptyId, {}, "empty.nomad", "recordEmpty");
     BOOST_REQUIRE(emptyConstructor.isValid());
     BOOST_REQUIRE(runtime.registerNativeFunction("recordEmpty", [&](VirtualMachine*) {
         ++emptyCalls;

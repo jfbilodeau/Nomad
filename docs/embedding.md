@@ -390,8 +390,7 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-`addConstructor(TypeId, NativeConstructorDefinition)`, and
-`addIndexer(TypeId, NativeIndexerDefinition)` remain Runtime compatibility APIs
+`addIndexer(TypeId, NativeIndexerDefinition)` remains a Runtime compatibility API
 for native member registration. Prefer the corresponding explicit TypeManager
 registration APIs, including `registerNativeClassIndexer` and
 `registerNativeClassIterable`. The latter registers a native factory method
@@ -454,13 +453,10 @@ Register class methods and constructors with the explicit
 native/script class APIs on TypeManager. The manager also exposes
 `registerNativeStructMethod` and `registerScriptStructMethod`.
 Native property accessors remain class-only and are registered through TypeManager.
-Generic Runtime constructor registration entry points
-remain compatibility delegates.
 Register struct constructors with
 `TypeManager::registerNativeStructConstructor(ownerId, definition)` or
 `registerScriptStructConstructor(ownerId, parameters, path, source)`.
-`Runtime::addConstructor` and `registerScriptConstructor` also accept struct
-owners. Struct constructors construct their declaring type; unlike class native
+Struct constructors construct their declaring type; unlike class native
 factories, they cannot specify a different constructed type. Invalid owners,
 invalid parameters, empty native callbacks, and duplicate signatures are
 rejected without publishing a callable. Native/script duplicates share the
@@ -1977,8 +1973,7 @@ an implicit local or a receiver to the explicit parameter list. A parameter name
 source is retained for compiler diagnostics; registration alone does not parse,
 compile, or enable invocation of the member.
 
-Runtime's existing `addConstructor` and `registerScriptConstructor` methods
-remain constructor compatibility entry points.
+Register constructors through the manager's explicit class/struct APIs.
 Callable IDs and category lookup APIs remain runtime-wide. Class descriptors
 own their methods and constructors; returned pointers are borrowed for the
 runtime's lifetime. Registration does not run native callbacks or alter stored
@@ -3146,7 +3141,7 @@ selects `Pair<string int>`. Argument expressions can include variables and neste
 inferred constructors. Deduction does not execute argument expressions.
 The selected specialization is reused through the normal type registry, and its
 concrete constructor must still match the arguments. Hosts register that
-constructor with `addConstructor`, usually in the type-family
+constructor with `TypeManager::registerNativeClassConstructor`, usually in the type-family
 initializer. Compiled scripts and the interpreter both support inferred
 construction through the existing native constructor execution paths.
 
@@ -3260,14 +3255,14 @@ signatures are rejected, even if their parameter names differ. Use an empty para
 list for a parameterless constructor.
 
 When a class creates a different kind of object, use
-`addConstructor(typeId, createdTypeId, definition)`.
+`runtime.getTypeManager().registerNativeClassConstructor(typeId, createdTypeId, definition)`.
 Different overloads of one class may then create different types. The created type must be a public
 class type.
 
 All IDs are local to the receiving runtime. Invalid or non-class owner/result IDs,
 invalid parameter IDs, and missing callbacks are rejected before a constructor is
 published. Definitions are owned inputs; modifying one after registration does not
-change the registered constructor. `addConstructor` returns its `CallableId`.
+change the registered constructor. Registration returns its `CallableId`.
 
 Constructor parameters follow the same conventions as native function
 parameters, including `$file`, `$function`, and `$line`.

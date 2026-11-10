@@ -257,20 +257,6 @@ public:
     [[nodiscard]] const Type* getPredicateType();
     void registerEnumOperators(const EnumType* type);
 
-    // `id` identifies the declaring type; `createdTypeId` can identify a different result type.
-    [[nodiscard]] CallableId registerNativeClassConstructor(TypeId id, NativeConstructorDefinition definition);
-    [[nodiscard]] CallableId registerNativeClassConstructor(
-        TypeId id,
-        TypeId createdTypeId,
-        NativeConstructorDefinition definition
-    );
-    [[nodiscard]] CallableId registerNativeStructConstructor(TypeId id, NativeConstructorDefinition definition);
-    [[nodiscard]] CallableId addConstructor(TypeId id, NativeConstructorDefinition definition);
-    [[nodiscard]] CallableId addConstructor(
-        TypeId id,
-        TypeId createdTypeId,
-        NativeConstructorDefinition definition
-    );
     // Null unless `functionId` identifies a constructor.
     [[nodiscard]] const NativeConstructor* getNativeConstructor(CallableId functionId) const;
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors() const;
@@ -298,30 +284,12 @@ public:
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
     // Native members
-    [[nodiscard]] CallableId registerScriptClassConstructor(
-        TypeId id,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-    [[nodiscard]] CallableId registerScriptStructConstructor(
-        TypeId id,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
     [[nodiscard]] IndexerId addIndexer(TypeId id, NativeIndexerDefinition definition);
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* classType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
     [[nodiscard]] std::optional<NativeIndexerInfo> getNativeIndexerInfo(IndexerId indexerId) const;
     [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
-    [[nodiscard]] CallableId registerScriptConstructor(
-        TypeId id,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
     void setPropertyHasExplicitInitializer(PropertyId id, bool hasExplicitInitializer);
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;

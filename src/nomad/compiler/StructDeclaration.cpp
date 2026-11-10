@@ -242,7 +242,7 @@ bool registerMemberSignatures(
                 type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
             );
         } else if (member->getKind() == StructMemberKind::Constructor) {
-            id = runtime->registerScriptStructConstructor(
+            id = runtime->getTypeManager().registerScriptStructConstructor(
                 type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         } else {
@@ -281,7 +281,7 @@ bool registerMemberSignatures(
         context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
     if (type->getConstructors().empty()) {
-        const auto id = runtime->registerScriptStructConstructor(
+        const auto id = runtime->getTypeManager().registerScriptStructConstructor(
             type->getId(), {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {

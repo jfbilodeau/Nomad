@@ -259,7 +259,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
     auto& runtime = fixture.getRuntime();
     const auto id = runtime.registerClass("LoopDefinition", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
-    BOOST_REQUIRE(runtime.addConstructor(id, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(id, {
         {}, [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); }, ""
     }).isValid());
     auto factoryCalls = 0;
@@ -493,7 +493,7 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
     const auto typeId = runtime.registerClass("Sequence", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     auto* sourceType = const_cast<ClassType*>(runtime.getType(typeId).value()->asClassType());
-    BOOST_REQUIRE(runtime.addConstructor(sourceType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(sourceType->getId(), {
         .parameters = {},
         .function = [](VirtualMachine* machine) {
             machine->getResult().setObjectValue(new SequenceObject);

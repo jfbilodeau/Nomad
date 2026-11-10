@@ -2887,7 +2887,7 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     const auto descriptorId = runtime.registerClass<ClassType>("Broken", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
-    BOOST_REQUIRE(runtime.addConstructor(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
         .parameters = {},
         .function = [](VirtualMachine*) {},
         .documentation = ""
