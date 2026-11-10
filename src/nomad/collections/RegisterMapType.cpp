@@ -63,7 +63,7 @@ void registerMapFamily(
                 .setter = {},
                 .documentation = NomadDoc("The number of entries in the map.")
             });
-            const auto keysId = runtime->addMethod(id, {
+            const auto keysId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "keys",
                 .parameters = {},
                 .returnTypeId = keysType->getId(),
@@ -74,7 +74,7 @@ void registerMapFamily(
                 },
                 .documentation = NomadDoc("A fixed-size snapshot of all keys in unspecified order. Changes to the array and map are independent.")
             });
-            const auto valuesId = runtime->addMethod(id, {
+            const auto valuesId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "values",
                 .parameters = {},
                 .returnTypeId = valuesType->getId(),
@@ -85,7 +85,7 @@ void registerMapFamily(
                 },
                 .documentation = NomadDoc("A fixed-size snapshot of all values in unspecified order. Object values share references.")
             });
-            const auto entriesId = runtime->addMethod(id, {
+            const auto entriesId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "entries",
                 .parameters = {},
                 .returnTypeId = entriesType->getId(),
@@ -118,7 +118,7 @@ void registerMapFamily(
                     ? NomadDoc("Reads, inserts, or replaces an entry by string key. Missing keys log an error and return a default without inserting.")
                     : NomadDoc("Reads an entry by string key. Missing keys log an error and return a default without inserting.")
             });
-            const auto containsId = runtime->addMethod(id, {
+            const auto containsId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "contains",
                 .parameters = {{runtime->getTypeId("string"), "key", NomadDoc("The case-sensitive key to check.")}},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -138,7 +138,7 @@ void registerMapFamily(
                 return;
             }
             const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyMap", {keyType, valueType});
-            if (readOnlyType == nullptr || runtime->addMethod(id, {
+            if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "toReadOnly",
                 .parameters = {},
                 .returnTypeId = readOnlyType->getId(),
@@ -150,7 +150,7 @@ void registerMapFamily(
             }).isInvalid()) {
                 throw NomadException("Failed to register Map.toReadOnly");
             }
-            const auto removeId = runtime->addMethod(id, {
+            const auto removeId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "remove",
                 .parameters = {{runtime->getTypeId("string"), "key", NomadDoc("The case-sensitive key to remove.")}},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -162,7 +162,7 @@ void registerMapFamily(
                 },
                 .documentation = NomadDoc("Removes an entry and returns true if it existed. Missing keys return false without logging.")
             });
-            const auto clearId = runtime->addMethod(id, {
+            const auto clearId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "clear",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("void"),

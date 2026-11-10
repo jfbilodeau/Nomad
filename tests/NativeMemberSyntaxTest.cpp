@@ -64,7 +64,7 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
                 .setter = {},
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addMethod(classType->getId(), {
+            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
                 .name = "declaredMethod",
                 .parameters = {
                     {valueType->getId(), "value", ""},
@@ -256,7 +256,7 @@ BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "clear",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),

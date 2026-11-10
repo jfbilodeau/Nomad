@@ -938,13 +938,21 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
     std::vector<CallableId> methods;
     std::vector<CallableId> descriptors;
     for (const auto* receiverType : std::array<const Type*, 3>{type, empty, owner}) {
-        const auto methodId = runtime.registerScriptMethod(
-            receiverType->getId(),
-            "capture",
-            {},
-            "receiver-capture.nomad",
-            ""
-        );
+        const auto methodId = receiverType->isStruct() ?
+            runtime.getTypeManager().registerScriptStructMethod(
+                receiverType->getId(),
+                "capture",
+                {},
+                "receiver-capture.nomad",
+                ""
+            ) :
+            runtime.getTypeManager().registerScriptClassMethod(
+                receiverType->getId(),
+                "capture",
+                {},
+                "receiver-capture.nomad",
+                ""
+            );
         BOOST_REQUIRE(methodId.isValid());
         auto* method = runtime.getScriptCallable(methodId);
         method->setReturnType(runtime.getVoidType());

@@ -72,7 +72,7 @@ BOOST_AUTO_TEST_CASE(named_and_nested_struct_receivers_borrow_storage_without_co
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "prefix", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "leaf", leaf).isValid());
     InterpreterContext* evaluation = nullptr;
-    const auto incrementId = runtime.addMethod(leafId, {
+    const auto incrementId = runtime.getTypeManager().registerNativeStructMethod(leafId, {
         .name = "increment", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [&](VirtualMachine* active) {
             auto& number = active->getStorageParameter(0, 0);

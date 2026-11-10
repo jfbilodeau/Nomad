@@ -742,7 +742,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = createTestType(runtime, "Receiver");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "visits", runtime.getIntegerType()).isValid());
-    const auto initializerId = runtime.registerScriptMethod(type->getId(), "Receiver$init", {}, "", "");
+    const auto initializerId = runtime.getTypeManager().registerScriptClassMethod(type->getId(), "Receiver$init", {}, "", "");
     BOOST_REQUIRE(initializerId.isValid());
     auto* initializer = runtime.getScriptCallable(initializerId);
     const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
@@ -835,7 +835,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_host_construction_and
     }, "", {});
     for (const auto* name : {"OuterReceiver", "InnerReceiver", "BrokenReceiver"}) {
         const auto* type = createTestType(runtime, name);
-        const auto id = runtime.registerScriptMethod(type->getId(), type->getInitializerName(), {}, "", "");
+        const auto id = runtime.getTypeManager().registerScriptClassMethod(type->getId(), type->getInitializerName(), {}, "", "");
         BOOST_REQUIRE(id.isValid());
         auto* initializer = runtime.getScriptCallable(id);
         initializer->setFunctionStart(runtime.getInstructions().size());

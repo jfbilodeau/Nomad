@@ -502,13 +502,13 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
     auto setterCalls = 0;
     auto emptyGetterCalls = 0;
     auto emptySetterCalls = 0;
-    const auto numberMethod = runtime.addMethod(ownerId, {
+    const auto numberMethod = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "readNumber", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             active->setIntegerResult(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[0].getIntegerValue());
         }
     });
-    const auto getter = runtime.addMethod(ownerId, {
+    const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getValue", .parameters = {}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             ++getterCalls;
@@ -522,7 +522,7 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
             type->copyValue(object->getFieldStorage(0).data(), destination);
         }
     });
-    const auto setter = runtime.addMethod(ownerId, {
+    const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setValue", .parameters = {{valueId, "value", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine* active) {
@@ -539,11 +539,11 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
             argument[0].setIntegerValue(99);
         }
     });
-    const auto emptyGetter = runtime.addMethod(ownerId, {
+    const auto emptyGetter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getEmpty", .parameters = {}, .returnTypeId = emptyId,
         .function = [&](VirtualMachine*) { ++emptyGetterCalls; }
     });
-    const auto emptySetter = runtime.addMethod(ownerId, {
+    const auto emptySetter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setEmpty", .parameters = {{emptyId, "empty", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++emptySetterCalls; }
@@ -567,7 +567,7 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
     });
     BOOST_REQUIRE(propertyId.isValid() && readOnlyId.isValid() && writeOnlyId.isValid() &&
         emptyProperty.isValid() && numberProperty.isValid());
-    BOOST_REQUIRE(runtime.addMethod(valueId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(valueId, {
         .name = "bump", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             auto& number = active->getStorageParameter(0, 0);
@@ -675,7 +675,7 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto failGetter = false;
     auto failSetter = false;
-    const auto getter = runtime.addMethod(ownerId, {
+    const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getValue", .parameters = {}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             auto* destination = &active->getStorageParameter(0, 0);
@@ -686,7 +686,7 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
             type->copyValue(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0).data(), destination);
         }
     });
-    const auto setter = runtime.addMethod(ownerId, {
+    const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setValue", .parameters = {{valueId, "value", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine* active) {
@@ -774,10 +774,10 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_compile_as_native_method_calls_wit
         const auto ownerId = runtime.registerClass("PendingAccessorOwner", ClassMode::Closed);
         const auto* owner = runtime.getTypeByName("PendingAccessorOwner")->asClassType();
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
-        const auto getter = runtime.addMethod(ownerId, {
+        const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
             .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = [](VirtualMachine*) {}
         });
-        const auto setter = runtime.addMethod(ownerId, {
+        const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
             .name = "setValue", .parameters = {{valueId, "value", ""}},
             .returnTypeId = runtime.getVoidType()->getId(), .function = [](VirtualMachine*) {}
         });
@@ -812,10 +812,10 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_keep_read_write_and_value
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
         const auto ownerId = runtime.registerClass("RestrictedAccessorOwner", ClassMode::Closed);
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
-        const auto getter = runtime.addMethod(ownerId, {
+        const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
             .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = [](VirtualMachine*) {}
         });
-        const auto setter = runtime.addMethod(ownerId, {
+        const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
             .name = "setValue", .parameters = {{valueId, "value", ""}},
             .returnTypeId = runtime.getVoidType()->getId(), .function = [](VirtualMachine*) {}
         });

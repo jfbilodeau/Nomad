@@ -255,14 +255,14 @@ BOOST_AUTO_TEST_CASE(script_fields_reject_native_and_script_member_collisions) {
         .name = "nativeProperty",
         .getter = [](VirtualMachine*, RuntimeValue&) {}
     });
-    const auto nativeMethod = runtime.addMethod(classId, {
+    const auto nativeMethod = runtime.getTypeManager().registerNativeClassMethod(classId, {
         .name = "nativeMethod",
         .parameters = {},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [](VirtualMachine*) {},
         .documentation = ""
     });
-    const auto scriptMethod = runtime.registerScriptMethod(classId, "scriptMethod", {}, "", "");
+    const auto scriptMethod = runtime.getTypeManager().registerScriptClassMethod(classId, "scriptMethod", {}, "", "");
     BOOST_REQUIRE(nativeProperty.isValid() && nativeMethod.isValid() && scriptMethod.isValid());
     for (const auto* name : {"nativeProperty", "nativeMethod", "scriptMethod"}) {
         BOOST_TEST(manager.registerScriptClassProperty(classId, name, runtime.getIntegerType()).isInvalid());
@@ -285,7 +285,7 @@ BOOST_AUTO_TEST_CASE(native_member_registration_does_not_validate_identifier_syn
     for (const auto* name : {"", "invalid.name", "1member", "bad name", "member@hidden"}) {
         Runtime methodRuntime;
         const auto methodOwner = methodRuntime.registerClass("Methods", ClassMode::Closed);
-        const auto methodId = methodRuntime.addMethod(methodOwner, {
+        const auto methodId = methodRuntime.getTypeManager().registerNativeClassMethod(methodOwner, {
             .name = name,
             .parameters = {},
             .returnTypeId = methodRuntime.getVoidType()->getId(),
@@ -382,9 +382,9 @@ BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_o
     BOOST_CHECK_THROW(runtime.catalogNativeMethod(scriptMethodId), NomadException);
     BOOST_CHECK_THROW(runtime.catalogNativeMethod(constructorId), NomadException);
     BOOST_CHECK_THROW(runtime.catalogNativeMethod(CallableId::INVALID), NomadException);
-    BOOST_TEST(runtime.addMethod(ownerId, methodDefinition).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(ownerId, methodDefinition).isInvalid());
     BOOST_TEST(runtime.addConstructor(ownerId, createdId, constructorDefinition).isInvalid());
-    BOOST_TEST(runtime.registerScriptMethod(ownerId, "scriptMethod", {}, "", "").isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassMethod(ownerId, "scriptMethod", {}, "", "").isInvalid());
     BOOST_TEST(runtime.registerScriptConstructor(ownerId,
         {defParameter("value", runtime.getIntegerType(), "")}, "", "").isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == before + 4);
@@ -595,7 +595,7 @@ BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_ow
     BOOST_TEST(manager.registerScriptStructMethod(TypeId::INVALID, "scriptMethod", {}, "", "").isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == before);
     const auto nativeId = manager.registerNativeStructMethod(structId, definition);
-    const auto scriptId = runtime.registerScriptMethod(structId, "scriptMethod",
+    const auto scriptId = runtime.getTypeManager().registerScriptStructMethod(structId, "scriptMethod",
         {defParameter("number", runtime.getIntegerType(), "")}, "struct.nomad", "return number");
     BOOST_REQUIRE(nativeId.isValid());
     BOOST_REQUIRE(scriptId.isValid());
@@ -606,16 +606,16 @@ BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_ow
     BOOST_TEST(runtime.resolveMethod(type, "scriptMethod", {runtime.getIntegerType()}).id == scriptId);
     BOOST_TEST(type->asCompositeType()->getMethods().size() == 2U);
     BOOST_CHECK_THROW(runtime.catalogNativeMethod(nativeId), NomadException);
-    BOOST_TEST(runtime.addMethod(structId, definition).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeStructMethod(structId, definition).isInvalid());
     BOOST_TEST(manager.registerScriptStructMethod(structId, "scriptMethod",
         {defParameter("number", runtime.getIntegerType(), "")}, "", "").isInvalid());
     auto invalid = definition;
     invalid.name = "invalidStructMethod";
     invalid.returnTypeId = TypeId::INVALID;
-    BOOST_TEST(runtime.addMethod(structId, invalid).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeStructMethod(structId, invalid).isInvalid());
     invalid.returnTypeId = definition.returnTypeId;
     invalid.function = {};
-    BOOST_TEST(runtime.addMethod(structId, invalid).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeStructMethod(structId, invalid).isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == before + 2);
 }
 

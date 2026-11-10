@@ -56,7 +56,7 @@ void registerArrayFamily(
                 const auto* readOnlyType = runtime->getParameterizedType(
                     "ReadOnly" + name, {classType->getElementType()}
                 );
-                if (readOnlyType == nullptr || runtime->addMethod(id, {
+                if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
                     .name = "toReadOnly",
                     .parameters = {},
                     .returnTypeId = readOnlyType->getId(),

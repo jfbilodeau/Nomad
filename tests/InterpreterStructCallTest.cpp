@@ -407,7 +407,7 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
         order.push_back(0);
         active->getResult().setObjectValue(new NomadObject());
     }, {}, boxType, "");
-    const auto combineId = runtime.addMethod(boxId, {
+    const auto combineId = runtime.getTypeManager().registerNativeClassMethod(boxId, {
         .name = "combine",
         .parameters = {
             {runtime.getIntegerType()->getId(), "first", ""},
@@ -907,12 +907,12 @@ BOOST_AUTO_TEST_CASE(host_method_copy_failures_release_arguments_results_and_rec
         .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
     });
     auto calls = 0;
-    const auto consumeId = runtime.addMethod(ownerId, {
+    const auto consumeId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "consume", .parameters = {{fieldId, "value", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++calls; }
     });
-    const auto makeId = runtime.addMethod(ownerId, {
+    const auto makeId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "make", .parameters = {}, .returnTypeId = fieldId,
         .function = [](VirtualMachine* active) { active->setStringResult("method result"); }
     });
@@ -978,14 +978,14 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
         .parameters = {},
         .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
     });
-    const auto readId = runtime.addMethod(ownerId, {
+    const auto readId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "read", .parameters = {{valueId, "value", ""}},
         .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             active->setIntegerResult(active->getParameterStorage(0, 2)[0].getIntegerValue());
         }
     });
-    const auto singleMethodId = runtime.addMethod(ownerId, {
+    const auto singleMethodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "single", .parameters = {{singleId, "value", ""}}, .returnTypeId = singleId,
         .function = [singleType](VirtualMachine* active) {
             singleType->copyValue(active->getParameterStorage(0, 1).data(), &active->getStorageParameter(1, 0));
@@ -993,7 +993,7 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
     });
     auto calls = 0;
     InterpreterContext* activeContext = nullptr;
-    const auto exchangeId = runtime.addMethod(ownerId, {
+    const auto exchangeId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "exchange",
         .parameters = {{valueId, "value", ""}, {emptyId, "empty", ""},
             {runtime.getIntegerType()->getId(), "delta", ""}},
@@ -1106,7 +1106,7 @@ BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_
     });
     auto calls = 0;
     auto throwAfterWrite = false;
-    const auto methodId = runtime.addMethod(ownerId, {
+    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "copy", .parameters = {{valueId, "argument", ""}}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             ++calls;
@@ -1659,7 +1659,7 @@ BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_ever
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     auto calls = 0;
-    const auto methodId = runtime.addMethod(valueId, {
+    const auto methodId = runtime.getTypeManager().registerNativeStructMethod(valueId, {
         .name = "copy", .parameters = {{valueId, "snapshot", ""}}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             ++calls;

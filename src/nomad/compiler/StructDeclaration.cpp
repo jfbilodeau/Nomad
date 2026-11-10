@@ -238,7 +238,7 @@ bool registerMemberSignatures(
         if (member->getKind() == StructMemberKind::Field) {
             if (initializerRegistered) continue;
             initializerRegistered = true;
-            id = runtime->registerScriptStructMethod(
+            id = runtime->getTypeManager().registerScriptStructMethod(
                 type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
             );
         } else if (member->getKind() == StructMemberKind::Constructor) {
@@ -246,7 +246,7 @@ bool registerMemberSignatures(
                 type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         } else {
-            id = runtime->registerScriptStructMethod(
+            id = runtime->getTypeManager().registerScriptStructMethod(
                 type->getId(), member->getName(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         }
@@ -268,7 +268,7 @@ bool registerMemberSignatures(
         }
     }
     if (!initializerRegistered) {
-        const auto id = runtime->registerScriptStructMethod(
+        const auto id = runtime->getTypeManager().registerScriptStructMethod(
             type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {

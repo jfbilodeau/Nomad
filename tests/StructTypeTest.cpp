@@ -2800,20 +2800,20 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
     auto emptyGetters = 0;
     auto emptySetters = 0;
     NomadObject* expectedSetterReceiver = nullptr;
-    const auto readNumber = runtime.addMethod(ownerId, {
+    const auto readNumber = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getNumber", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             active->setIntegerResult(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[0].getIntegerValue());
         }
     });
-    const auto writeNumber = runtime.addMethod(ownerId, {
+    const auto writeNumber = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setNumber", .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [](VirtualMachine* active) {
             static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[0].setIntegerValue(active->getIntegerParameter(0));
         }
     });
-    const auto readValue = runtime.addMethod(ownerId, {
+    const auto readValue = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getValue", .parameters = {}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             ++getters;
@@ -2833,7 +2833,7 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
             type->assignValue(object->getFieldStorage(0).data(), destination, scratch.data());
         }
     });
-    const auto writeValue = runtime.addMethod(ownerId, {
+    const auto writeValue = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setValue", .parameters = {{valueId, "value", ""}}, .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine* active) {
             ++setters;
@@ -2856,13 +2856,13 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
             argument[1].setStringValue("setter parameter copy");
         }
     });
-    const auto readText = runtime.addMethod(ownerId, {
+    const auto readText = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getText", .parameters = {}, .returnTypeId = runtime.getStringType()->getId(),
         .function = [](VirtualMachine* active) {
             active->getResult().copyObjectValue(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[1]);
         }
     });
-    const auto writeText = runtime.addMethod(ownerId, {
+    const auto writeText = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setText", .parameters = {{runtime.getStringType()->getId(), "text", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine* active) {
@@ -2873,24 +2873,24 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
             argument[0].setStringValue("private text");
         }
     });
-    const auto readSingle = runtime.addMethod(ownerId, {
+    const auto readSingle = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getSingle", .parameters = {}, .returnTypeId = singleId,
         .function = [](VirtualMachine* active) {
             active->getStorageParameter(0, 0).setIntegerValue(
                 static_cast<ScriptObject*>(active->getThis())->getFieldStorage(1)[0].getIntegerValue());
         }
     });
-    const auto writeSingle = runtime.addMethod(ownerId, {
+    const auto writeSingle = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setSingle", .parameters = {{singleId, "single", ""}}, .returnTypeId = runtime.getVoidType()->getId(),
         .function = [](VirtualMachine* active) {
             static_cast<ScriptObject*>(active->getThis())->getFieldStorage(1)[0].setIntegerValue(active->getIntegerParameter(0));
         }
     });
-    const auto readEmpty = runtime.addMethod(ownerId, {
+    const auto readEmpty = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "getEmpty", .parameters = {}, .returnTypeId = emptyId,
         .function = [&](VirtualMachine* active) { ++emptyGetters; BOOST_TEST(active->getThis() != nullptr); }
     });
-    const auto writeEmpty = runtime.addMethod(ownerId, {
+    const auto writeEmpty = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "setEmpty", .parameters = {{emptyId, "empty", ""}}, .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine* active) { ++emptySetters; BOOST_TEST(active->getThis() != nullptr); }
     });
@@ -2918,7 +2918,7 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = empty, .name = "empty", .getterMethodId = readEmpty, .setterMethodId = writeEmpty
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(valueId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(valueId, {
         .name = "bump", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             auto& number = active->getStorageParameter(0, 0);
@@ -3057,7 +3057,7 @@ BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_re
         replacement.freeObjectValue();
         active->setIntegerResult(2);
     }, {}, runtime.getIntegerType(), "").isValid());
-    const auto methodId = runtime.addMethod(ownerId, {
+    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "copied",
         .parameters = {{payloadId, "snapshot", ""}, {emptyId, "empty", ""},
             {runtime.getIntegerType()->getId(), "first", ""}, {runtime.getIntegerType()->getId(), "second", ""}},
@@ -3093,14 +3093,14 @@ BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_re
             BOOST_TEST(receiver[0].getIntegerValue() == 5);
         }
     });
-    const auto emptyMethodId = runtime.addMethod(ownerId, {
+    const auto emptyMethodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "empty", .parameters = {{emptyId, "empty", ""}}, .returnTypeId = emptyId,
         .function = [&](VirtualMachine* active) {
             calls.push_back(200);
             BOOST_TEST(active->getThis()->getReferenceCount() > 0U);
         }
     });
-    const auto singleMethodId = runtime.addMethod(ownerId, {
+    const auto singleMethodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
         .name = "single", .parameters = {{emptyId, "empty", ""}}, .returnTypeId = singleId,
         .function = [](VirtualMachine* active) {
             active->getStorageParameter(0, 0).setIntegerValue(31);
@@ -3213,7 +3213,7 @@ BOOST_AUTO_TEST_CASE(native_method_return_forwarding_preserves_borrowed_storage_
         runtime.getIntegerType(),
         ""
     ).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "copied",
         .parameters = {
             {ownerId, "owner", ""},
@@ -3299,7 +3299,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
     BOOST_REQUIRE(runtime.registerNativeFunction("makeSourceEmpty", [](VirtualMachine*) {},
         {}, empty, "").isValid());
     auto shiftCalls = 0;
-    const auto shiftId = runtime.addMethod(typeId, {
+    const auto shiftId = runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "shiftSourcePoint",
         .parameters = {{runtime.getIntegerType()->getId(), "delta", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
@@ -3311,7 +3311,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
         .documentation = ""
     });
     BOOST_REQUIRE(shiftId.isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "readSourcePoint",
         .parameters = {},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -3320,7 +3320,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "copySourcePoint",
         .parameters = {},
         .returnTypeId = typeId,
@@ -3331,7 +3331,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "textSourcePoint",
         .parameters = {},
         .returnTypeId = runtime.getStringType()->getId(),
@@ -3340,7 +3340,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "takeSourcePoint",
         .parameters = {{typeId, "value", ""}},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -3354,19 +3354,19 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
         .documentation = ""
     }).isValid());
     auto emptyCalls = 0;
-    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(emptyId, {
         .name = "cloneSourceEmpty",
         .parameters = {},
         .returnTypeId = emptyId,
         .function = [&](VirtualMachine*) { ++emptyCalls; },
         .documentation = ""
     }).isValid());
-    const auto forwardId = runtime.registerScriptMethod(typeId, "sourceForward",
+    const auto forwardId = runtime.getTypeManager().registerScriptStructMethod(typeId, "sourceForward",
         {defParameter("delta", runtime.getIntegerType(), "")}, "forward.nomad",
         "this.shiftSourcePoint delta\ncopy = this\nthis.takeSourcePoint this\nthis.copySourcePoint\nreturn this");
-    const auto wrappedId = runtime.registerScriptMethod(typeId, "sourceWrapped",
+    const auto wrappedId = runtime.getTypeManager().registerScriptStructMethod(typeId, "sourceWrapped",
         {defParameter("delta", runtime.getIntegerType(), "")}, "wrapped.nomad", "return this.sourceForward delta");
-    const auto emptyForwardId = runtime.registerScriptMethod(emptyId, "emptySourceForward",
+    const auto emptyForwardId = runtime.getTypeManager().registerScriptStructMethod(emptyId, "emptySourceForward",
         {}, "emptyForward.nomad", "this.cloneSourceEmpty\nreturn this");
     BOOST_REQUIRE(forwardId.isValid());
     BOOST_REQUIRE(wrappedId.isValid());
@@ -3454,7 +3454,7 @@ BOOST_AUTO_TEST_CASE(native_methods_borrow_temporary_receivers_and_preserve_owne
         type,
         ""
     ).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "shift",
         .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -3464,7 +3464,7 @@ BOOST_AUTO_TEST_CASE(native_methods_borrow_temporary_receivers_and_preserve_owne
             active->setIntegerResult(number.getIntegerValue());
         }
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "label",
         .parameters = {},
         .returnTypeId = runtime.getStringType()->getId(),
@@ -3472,7 +3472,7 @@ BOOST_AUTO_TEST_CASE(native_methods_borrow_temporary_receivers_and_preserve_owne
             active->getResult().copyObjectValue(active->getStorageParameter(0, 1));
         }
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "copied",
         .parameters = {},
         .returnTypeId = typeId,
@@ -3482,7 +3482,7 @@ BOOST_AUTO_TEST_CASE(native_methods_borrow_temporary_receivers_and_preserve_owne
             type->copyValue(&active->getStorageParameter(0, 0), destination);
         }
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "touch",
         .parameters = {},
         .returnTypeId = runtime.getVoidType()->getId(),
@@ -3531,7 +3531,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_and_interpreter_rece
     const auto* type = runtime.getTypeByName("ReceiverChecks");
     runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     auto calls = 0;
-    BOOST_REQUIRE(runtime.addMethod(typeId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(typeId, {
         .name = "readReceiverCheck",
         .parameters = {},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -3569,7 +3569,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_and_interpreter_rece
     BOOST_TEST(!interpreter.hasError());
     BOOST_TEST(interpreter.getResult() == nullptr);
     BOOST_TEST(calls == 2);
-    const auto scriptId = runtime.registerScriptMethod(typeId, "checkProperties", {}, "properties.nomad", "");
+    const auto scriptId = runtime.getTypeManager().registerScriptStructMethod(typeId, "checkProperties", {}, "properties.nomad", "");
     auto* script = runtime.getScriptCallable(scriptId);
     BOOST_REQUIRE(script != nullptr);
     NativeMemberExpression property(nullptr, 1, 1, "this.number", "number",
@@ -3637,7 +3637,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_share_nested_local_parameter_and_b
         ++emptyCalls;
     }, {}, empty, "").isValid());
     auto emptyTouches = 0;
-    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(emptyId, {
         .name = "touchPropertyEmpty",
         .parameters = {},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -3647,15 +3647,15 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_share_nested_local_parameter_and_b
         },
         .documentation = ""
     }).isValid());
-    const auto leafMethod = runtime.registerScriptMethod(leafId, "copyPropertyLeaf",
+    const auto leafMethod = runtime.getTypeManager().registerScriptStructMethod(leafId, "copyPropertyLeaf",
         {defParameter("delta", runtime.getIntegerType(), "")}, "leaf.nomad",
         "this.number = this.number + delta\nthis.text = this.text\nreturn this");
-    const auto pairMethod = runtime.registerScriptMethod(pairId, "mutatePropertyPair",
+    const auto pairMethod = runtime.getTypeManager().registerScriptStructMethod(pairId, "mutatePropertyPair",
         {defParameter("delta", runtime.getIntegerType(), "")}, "pair.nomad",
         "this.left.number = this.left.number + delta\nthis.left.text = this.right.text\n"
         "this.right = this.left\nthis.left = this.left\nthis.left = this.right.copyPropertyLeaf 1\n"
         "this.empty = makePropertyEmpty\nreturn this.left");
-    const auto prepareMethod = runtime.registerScriptMethod(pairId, "preparePropertyAssignment",
+    const auto prepareMethod = runtime.getTypeManager().registerScriptStructMethod(pairId, "preparePropertyAssignment",
         {}, "prepare.nomad", "this.left.number = 999\nreturn 45");
     BOOST_REQUIRE(leafMethod.isValid());
     BOOST_REQUIRE(pairMethod.isValid());
@@ -3789,7 +3789,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics
         destination[0].freeObjectValue();
         destination[0].setObjectValue(new ScriptObject(actor));
     }, {}, holder, "").isValid());
-    const auto methodId = runtime.registerScriptMethod(holderId, "replacePropertyActor",
+    const auto methodId = runtime.getTypeManager().registerScriptStructMethod(holderId, "replacePropertyActor",
         {defParameter("number", runtime.getIntegerType(), "")}, "actor.nomad",
         "this.actor = this.actor\nthis.actor = makePropertyActor\nthis.actor.value = number\nreturn this.actor");
     BOOST_REQUIRE(methodId.isValid());
@@ -3911,7 +3911,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         BOOST_TEST(object->getStorageSize() == 0U);
         active->getResult().setObjectValue(object);
     }, {}, emptyOwner, "").isValid());
-    BOOST_REQUIRE(runtime.addMethod(pointId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(pointId, {
         .name = "ownedShift",
         .parameters = {{runtime.getIntegerType()->getId(), "delta", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
@@ -3921,7 +3921,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(pointId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(pointId, {
         .name = "ownedRead",
         .parameters = {},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -3930,7 +3930,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(pointId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(pointId, {
         .name = "ownedText",
         .parameters = {},
         .returnTypeId = runtime.getStringType()->getId(),
@@ -3939,7 +3939,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(pointId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(pointId, {
         .name = "ownedCopy",
         .parameters = {},
         .returnTypeId = pointId,
@@ -3950,13 +3950,13 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         },
         .documentation = ""
     }).isValid());
-    const auto pointMethod = runtime.registerScriptMethod(pointId, "ownedScript",
+    const auto pointMethod = runtime.getTypeManager().registerScriptStructMethod(pointId, "ownedScript",
         {defParameter("delta", runtime.getIntegerType(), "")}, "ownedPoint.nomad",
         "this.number = this.number + delta\nthis.text = this.text\nreturn this");
-    const auto outerMethod = runtime.registerScriptMethod(outerId, "ownedOuterScript",
+    const auto outerMethod = runtime.getTypeManager().registerScriptStructMethod(outerId, "ownedOuterScript",
         {defParameter("delta", runtime.getIntegerType(), "")}, "ownedOuter.nomad",
         "return this.point.ownedScript delta");
-    const auto ownerMethod = runtime.registerScriptMethod(ownerId, "ownedOwnerShift",
+    const auto ownerMethod = runtime.getTypeManager().registerScriptClassMethod(ownerId, "ownedOwnerShift",
         {defParameter("delta", runtime.getIntegerType(), "")}, "ownedReceiver.nomad",
         "this.outer.point.ownedShift delta\nreturn this.outer.point.ownedRead");
     BOOST_REQUIRE(pointMethod.isValid());
@@ -3975,7 +3975,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         ++replacements;
         active->setIntegerResult(5);
     }, {}, runtime.getIntegerType(), "").isValid());
-    BOOST_REQUIRE(runtime.addMethod(pointId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(pointId, {
         .name = "ownedSwapRead",
         .parameters = {{runtime.getIntegerType()->getId(), "delta", ""}},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -4003,7 +4003,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
                 active->setIntegerResult(number);
             }, {}, runtime.getIntegerType(), "").isValid());
     }
-    BOOST_REQUIRE(runtime.addMethod(pointId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(pointId, {
         .name = "ownedOrder",
         .parameters = {
             {runtime.getIntegerType()->getId(), "first", ""},
@@ -4018,7 +4018,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         .documentation = ""
     }).isValid());
     auto emptyCalls = 0;
-    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(emptyId, {
         .name = "ownedEmpty",
         .parameters = {},
         .returnTypeId = emptyId,
@@ -4028,7 +4028,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(emptyId, {
         .name = "ownedCreate",
         .parameters = {},
         .returnTypeId = pointId,
@@ -4041,7 +4041,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(emptyId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(emptyId, {
         .name = "ownedEmptyNumber",
         .parameters = {},
         .returnTypeId = runtime.getIntegerType()->getId(),
@@ -4231,7 +4231,7 @@ BOOST_AUTO_TEST_CASE(native_temporary_property_paths_preserve_receiver_storage_a
         runtime.getVoidType(),
         ""
     ).isValid());
-    BOOST_REQUIRE(runtime.addMethod(innerId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(innerId, {
         .name = "shifted",
         .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
         .returnTypeId = innerId,
@@ -4430,9 +4430,9 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
     BOOST_REQUIRE(runtime.registerNativeFunction("recordEmpty", [&](VirtualMachine*) {
         ++emptyCalls;
     }, {}, runtime.getVoidType(), "").isValid());
-    const auto nativeInitializer = runtime.registerScriptStructMethod(nativeId,
+    const auto nativeInitializer = runtime.getTypeManager().registerScriptStructMethod(nativeId,
         nativeType->asCompositeType()->getInitializerName(), {}, "", "");
-    const auto scriptInitializer = runtime.registerScriptStructMethod(scriptId,
+    const auto scriptInitializer = runtime.getTypeManager().registerScriptStructMethod(scriptId,
         scriptType->asCompositeType()->getInitializerName(), {}, "", "");
     BOOST_REQUIRE(nativeInitializer.isValid());
     BOOST_REQUIRE(scriptInitializer.isValid());

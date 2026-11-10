@@ -170,7 +170,7 @@ BOOST_AUTO_TEST_CASE(native_method_reentry_restores_receiver_and_parameter_bindi
     fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
         if (phase != CompilationPhase::Parse) return;
         const auto* type = runtime.getTypeByName("Counter");
-        BOOST_REQUIRE(runtime.addMethod(type->getId(), {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
             .name = "invokeHost",
             .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
             .returnTypeId = runtime.getIntegerType()->getId(),
@@ -619,15 +619,15 @@ BOOST_AUTO_TEST_CASE(aggregate_object_methods_are_synchronous_without_changing_s
     const auto* emptyType = runtime.getTypeByName("ObjectAggregateYieldEmpty");
     const auto scriptEcho = runtime.resolveMethod(owner, "echo", {emptyType});
     const auto scriptPause = runtime.resolveMethod(owner, "pause", {emptyType});
-    const auto nativeEcho = runtime.addMethod(owner->getId(), {
+    const auto nativeEcho = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
         .name = "nativeEcho", .parameters = {{emptyType->getId(), "empty", ""}}, .returnTypeId = emptyType->getId(),
         .function = [](VirtualMachine*) {}
     });
-    const auto nativePause = runtime.addMethod(owner->getId(), {
+    const auto nativePause = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
         .name = "nativePause", .parameters = {{emptyType->getId(), "empty", ""}}, .returnTypeId = emptyType->getId(),
         .function = [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); }
     });
-    const auto scalarPause = runtime.addMethod(owner->getId(), {
+    const auto scalarPause = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
         .name = "scalarPause", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); }
     });

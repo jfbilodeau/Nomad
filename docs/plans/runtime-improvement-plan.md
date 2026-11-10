@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 3A2 is implemented and validated, awaiting review.
-Step 3B has not started and is not approved for implementation.
+Status: Step 3B is implemented and validated, awaiting review.
+Step 3C has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -242,6 +242,24 @@ Acceptance: unchanged receiver borrowing, parameter/result ownership, member
 resolution, overload behavior, and method source metadata. Cover native/script
 class and struct methods, temporary receivers, and source compilation.
 
+Completion evidence (2026-11-10, Windows Debug):
+
+- Migrated native/script method registration in both compiler declaration
+  paths, built-ins, collections, audio, module consumers, and tests to existing
+  manager APIs selected by the declaring owner's class/struct category.
+- Removed six runtime entry points without replacement wrappers; production
+  code decreased by 80 lines. Callable IDs, native-member indexes, and signature
+  checks remain runtime-wide.
+- The heterogeneous receiver-capture regression selects the explicit manager
+  API locally; no shared category-dispatching helper was introduced.
+- The `nomad-development` build and language, remaining-unit, tooling, and
+  binding CTest groups passed. Existing receiver mutation/borrowing, source
+  metadata, overload, aggregate result, capture, and reentry coverage remains.
+- All four documentation preparation tests, built-tool reference generation,
+  strict MkDocs, retired-API searches, and whitespace checks passed.
+- Other platforms, full packaging integration, and manual gameplay were not
+  validated.
+
 ### Step 3C: Make constructor registration manager-only
 
 - Migrate generic constructor aliases and mirrored runtime constructors to
@@ -407,4 +425,4 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 3A2 review: Step 3B, manager-only method registration.
+Next slice after Step 3B review: Step 3C, manager-only constructor registration.

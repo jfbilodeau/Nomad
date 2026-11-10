@@ -390,7 +390,6 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-`addMethod(TypeId, NativeMethodDefinition)`,
 `addConstructor(TypeId, NativeConstructorDefinition)`, and
 `addIndexer(TypeId, NativeIndexerDefinition)` remain Runtime compatibility APIs
 for native member registration. Prefer the corresponding explicit TypeManager
@@ -452,10 +451,10 @@ Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
 Register native class accessors with `TypeManager::registerNativeClassProperty`.
 Register class methods and constructors with the explicit
-native/script class APIs on TypeManager or Runtime. Both also expose
+native/script class APIs on TypeManager. The manager also exposes
 `registerNativeStructMethod` and `registerScriptStructMethod`.
 Native property accessors remain class-only and are registered through TypeManager.
-Generic Runtime method and constructor registration entry points
+Generic Runtime constructor registration entry points
 remain compatibility delegates.
 Register struct constructors with
 `TypeManager::registerNativeStructConstructor(ownerId, definition)` or
@@ -1811,8 +1810,7 @@ runtime-local and must not be transferred between runtimes.
 
 `registerNativeStructMethod(id, definition)` provides the corresponding
 registration for struct owners. The class and struct entry points reject the
-other owner category. `Runtime::addMethod` dispatches to the appropriate entry
-point. Both publish methods in the same callable and native-member catalogs.
+other owner category. Both publish methods in the same callable and native-member catalogs.
 Struct callbacks use the borrowed storage ABI above, not `getThis()`.
 
 Each `ParameterDefinition` supplies its type ID, name, and documentation.
@@ -1923,7 +1921,8 @@ do not implicitly convert to integers or other ID categories.
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-`TypeManager::registerNativeClassProperty` returns a `PropertyId`; `addMethod` returns
+`TypeManager::registerNativeClassProperty` returns a `PropertyId`;
+`TypeManager::registerNativeClassMethod` and `registerNativeStructMethod` return
 the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
 `CallableId::INVALID`, respectively.
 `getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
@@ -1978,8 +1977,8 @@ an implicit local or a receiver to the explicit parameter list. A parameter name
 source is retained for compiler diagnostics; registration alone does not parse,
 compile, or enable invocation of the member.
 
-Runtime's existing `addMethod`, `addConstructor`, `registerScriptMethod`, and
-`registerScriptConstructor` methods remain compatibility entry points.
+Runtime's existing `addConstructor` and `registerScriptConstructor` methods
+remain constructor compatibility entry points.
 Callable IDs and category lookup APIs remain runtime-wide. Class descriptors
 own their methods and constructors; returned pointers are borrowed for the
 runtime's lifetime. Registration does not run native callbacks or alter stored
@@ -1990,7 +1989,7 @@ Struct owner IDs are rejected by these class APIs.
 registers the corresponding struct-method signature. Class owner IDs are rejected.
 `registerScriptStructConstructor(typeId, parameters, path, source)` provides the
 corresponding struct-constructor registration.
-`Runtime::registerScriptMethod` dispatches by owner category. Struct descriptors
+Register script methods through the manager's explicit owner-category API. Struct descriptors
 own their methods under the same runtime-lifetime contract. Registration alone
 still does not parse or compile the retained source; embedding code must supply
 the method body through the existing compiler integration APIs.
@@ -3452,7 +3451,8 @@ for methods on a registered class type. Read the instance inside the callback:
 }
 ```
 
-Use `registerNativeFunction` for a global function and `addMethod` for a
+Use `registerNativeFunction` for a global function and the manager's
+`registerNativeClassMethod` or `registerNativeStructMethod` for a
 method on a class type identified by its runtime-local `TypeId`.
 Global function lookup and enumeration exclude methods.
 
@@ -3566,7 +3566,7 @@ Built-in string methods use the same object-method API. Read the instance with
 `getThisAs<Object>()`:
 
 ```cpp
-const auto methodId = runtime.addMethod(runtime.getTypeId("string"), {
+const auto methodId = runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
     .name = "textSize",
     .parameters = {},
     .returnTypeId = runtime.getTypeId("int"),

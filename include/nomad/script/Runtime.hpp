@@ -298,22 +298,6 @@ public:
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
     // Native members
-    [[nodiscard]] CallableId registerNativeClassMethod(TypeId id, NativeMethodDefinition definition);
-    [[nodiscard]] CallableId registerNativeStructMethod(TypeId id, NativeMethodDefinition definition);
-    [[nodiscard]] CallableId registerScriptClassMethod(
-        TypeId id,
-        NomadString name,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-    [[nodiscard]] CallableId registerScriptStructMethod(
-        TypeId id,
-        NomadString name,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
     [[nodiscard]] CallableId registerScriptClassConstructor(
         TypeId id,
         std::vector<Parameter> parameters,
@@ -332,14 +316,6 @@ public:
     [[nodiscard]] std::optional<NativeIndexerInfo> getNativeIndexerInfo(IndexerId indexerId) const;
     [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
-    [[nodiscard]] CallableId addMethod(TypeId id, NativeMethodDefinition definition);
-    [[nodiscard]] CallableId registerScriptMethod(
-        TypeId id,
-        NomadString name,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
     [[nodiscard]] CallableId registerScriptConstructor(
         TypeId id,
         std::vector<Parameter> parameters,

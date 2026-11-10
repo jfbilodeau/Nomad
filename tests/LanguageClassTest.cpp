@@ -962,7 +962,7 @@ BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
         auto& runtime = fixture.getRuntime();
         const auto id = runtime.registerClass("Other", ClassMode::Closed);
         BOOST_REQUIRE(id.isValid());
-        BOOST_REQUIRE(runtime.addMethod(id, {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(id, {
             .name = "extra",
             .parameters = {{
                 sourceParameter ? runtime.getLineNumberType()->getId() : runtime.getIntegerType()->getId(), "value", ""

@@ -85,7 +85,7 @@ BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_rele
     auto clear = false;
     auto fail = false;
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
-    const auto method = runtime.addMethod(id, {
+    const auto method = runtime.getTypeManager().registerNativeStructMethod(id, {
         .name = "next", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [&](VirtualMachine* active) {
             auto* receiver = &active->getStorageParameter(0, 0);

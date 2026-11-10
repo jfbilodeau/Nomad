@@ -3079,7 +3079,7 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
         },
         {}, type, ""
     );
-    const auto memberId = runtime.addMethod(type->getId(), {
+    const auto memberId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "copyReference",
         .parameters = {},
         .returnTypeId = type->getId(),

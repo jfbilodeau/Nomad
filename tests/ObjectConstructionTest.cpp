@@ -155,7 +155,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_byt
             machine->getResult().setObjectValue(new ConstructedObject);
         }
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(nativeType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(nativeType->getId(), {
         .name = "echo",
         .parameters = {{runtime.getStringType()->getId(), "text", ""}},
         .returnTypeId = runtime.getStringType()->getId(),
@@ -425,7 +425,7 @@ BOOST_AUTO_TEST_CASE(native_methods_capture_the_enclosing_receiver_not_the_bound
         .parameters = {},
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ConstructedObject); }
     }).isValid());
-    BOOST_REQUIRE(runtime.addMethod(sinkType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(sinkType->getId(), {
         .name = "save",
         .parameters = {{callbackType->getId(), "callback", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
@@ -1687,7 +1687,7 @@ BOOST_AUTO_TEST_CASE(host_script_construction_preserves_native_method_context_an
     }).isValid());
     CallableId constructorId;
     auto calls = 0;
-    BOOST_REQUIRE(runtime.addMethod(receiverType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(receiverType->getId(), {
         .name = "construct",
         .parameters = {{runtime.getStringType()->getId(), "text", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),

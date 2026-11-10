@@ -96,7 +96,7 @@ void registerListType(Runtime* runtime) {
             const auto* elementType = classType->getTypeArguments()[0];
             registerListReaders(runtime, classType, true);
             const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyList", {elementType});
-            if (readOnlyType == nullptr || runtime->addMethod(id, {
+            if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "toReadOnly",
                 .parameters = {},
                 .returnTypeId = readOnlyType->getId(),
@@ -119,7 +119,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = ""
             });
-            const auto appendId = runtime->addMethod(id, {
+            const auto appendId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "append",
                 .parameters = {{elementType->getId(), "value", NomadDoc("The value to append.")}},
                 .returnTypeId = runtime->getTypeId("int"),
@@ -131,7 +131,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Appends a value and returns its zero-based index.")
             });
-            const auto prependId = runtime->addMethod(id, {
+            const auto prependId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "prepend",
                 .parameters = {{elementType->getId(), "value", NomadDoc("The value to insert at the beginning.")}},
                 .returnTypeId = runtime->getTypeId("void"),
@@ -142,7 +142,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Inserts a value at the beginning, shifting existing elements right.")
             });
-            const auto insertId = runtime->addMethod(id, {
+            const auto insertId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "insert",
                 .parameters = {
                     {runtime->getTypeId("int"), "index", NomadDoc("The insertion position from zero through count.")},
@@ -157,7 +157,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Inserts before the index, shifting later elements right. Index count appends; out-of-range indices fault.")
             });
-            const auto removeId = runtime->addMethod(id, {
+            const auto removeId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "remove",
                 .parameters = {{runtime->getTypeId("int"), "index", NomadDoc("The zero-based index to remove.")}},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -169,7 +169,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Removes the indexed element and shifts later elements left. Returns false without logging for out-of-range indices.")
             });
-            const auto removeFirstId = runtime->addMethod(id, {
+            const auto removeFirstId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "removeFirst",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -180,7 +180,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Removes the first element. Returns false without logging if the list is empty.")
             });
-            const auto removeLastId = runtime->addMethod(id, {
+            const auto removeLastId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "removeLast",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -191,7 +191,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Removes the last element. Returns false without logging if the list is empty.")
             });
-            const auto clearId = runtime->addMethod(id, {
+            const auto clearId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "clear",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("void"),

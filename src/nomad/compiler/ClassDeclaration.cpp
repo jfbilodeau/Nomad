@@ -239,7 +239,7 @@ bool registerMemberSignatures(
         if (member->getKind() == ClassMemberKind::Field) {
             if (initializerRegistered) continue;
             initializerRegistered = true;
-            id = runtime->registerScriptClassMethod(
+            id = runtime->getTypeManager().registerScriptClassMethod(
                 type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
             );
         } else if (member->getKind() == ClassMemberKind::Constructor) {
@@ -247,7 +247,7 @@ bool registerMemberSignatures(
                 type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         } else {
-            id = runtime->registerScriptClassMethod(
+            id = runtime->getTypeManager().registerScriptClassMethod(
                 type->getId(), member->getName(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         }
@@ -269,7 +269,7 @@ bool registerMemberSignatures(
         }
     }
     if (!initializerRegistered) {
-        const auto id = runtime->registerScriptClassMethod(
+        const auto id = runtime->getTypeManager().registerScriptClassMethod(
             type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {

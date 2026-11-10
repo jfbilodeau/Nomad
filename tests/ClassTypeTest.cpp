@@ -182,7 +182,7 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
     });
-    const auto method = runtime.addMethod(owner->getId(), {
+    const auto method = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
         .name = "update",
         .parameters = {},
         .returnTypeId = runtime.getVoidType()->getId(),
@@ -466,7 +466,7 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
     });
-    const auto method = runtime.addMethod(owner->getId(), {
+    const auto method = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
         .name = "update",
         .parameters = {},
         .returnTypeId = runtime.getVoidType()->getId(),
@@ -847,7 +847,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     }
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "value", other.getIntegerType()).isInvalid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "value", runtime.getVoidType()).isInvalid());
-    const auto method = runtime.addMethod(type->getId(), {
+    const auto method = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "move",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -857,7 +857,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_REQUIRE(method.isValid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "move", runtime.getFloatType()).isInvalid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getFloatType()).isValid());
-    BOOST_TEST(runtime.addMethod(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "x",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),

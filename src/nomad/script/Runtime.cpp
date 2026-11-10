@@ -62,7 +62,7 @@ Runtime::Runtime():
             const auto* type = runtime->getType(id).value();
             const auto* iteratorType = static_cast<const ClassType*>(type);
             const auto* valueType = iteratorType->getTypeArguments()[0];
-            const auto advanceId = runtime->addMethod(id, {
+            const auto advanceId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "moveNext",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -1483,24 +1483,6 @@ void Runtime::catalogNativeProperty(const PropertyId id) {
     m_nativeMembersByName[property->getName()].push_back(id);
 }
 
-CallableId Runtime::registerScriptMethod(
-    const TypeId id,
-    NomadString name,
-    std::vector<Parameter> parameters,
-    NomadString path,
-    NomadString source
-) {
-    const auto type = getType(id);
-    if (type.has_value() && (*type)->isClass()) {
-        return registerScriptClassMethod(
-            id, std::move(name), std::move(parameters), std::move(path), std::move(source)
-        );
-    }
-    return registerScriptStructMethod(
-        id, std::move(name), std::move(parameters), std::move(path), std::move(source)
-    );
-}
-
 CallableId Runtime::registerScriptConstructor(
     const TypeId id,
     std::vector<Parameter> parameters,
@@ -1516,44 +1498,6 @@ CallableId Runtime::registerScriptConstructor(
     return registerScriptClassConstructor(
         id, std::move(parameters), std::move(path), std::move(source)
     );
-}
-
-CallableId Runtime::addMethod(const TypeId id, NativeMethodDefinition definition) {
-    const auto type = getType(id);
-    if (type.has_value() && (*type)->isClass()) {
-        return registerNativeClassMethod(id, std::move(definition));
-    }
-    return registerNativeStructMethod(id, std::move(definition));
-}
-
-CallableId Runtime::registerNativeClassMethod(const TypeId id, NativeMethodDefinition definition) {
-    return m_typeManager.registerNativeClassMethod(id, std::move(definition));
-}
-
-CallableId Runtime::registerNativeStructMethod(const TypeId id, NativeMethodDefinition definition) {
-    return m_typeManager.registerNativeStructMethod(id, std::move(definition));
-}
-
-CallableId Runtime::registerScriptClassMethod(
-    const TypeId id,
-    NomadString name,
-    std::vector<Parameter> parameters,
-    NomadString path,
-    NomadString source
-) {
-    return m_typeManager.registerScriptClassMethod(
-        id, std::move(name), std::move(parameters), std::move(path), std::move(source));
-}
-
-CallableId Runtime::registerScriptStructMethod(
-    const TypeId id,
-    NomadString name,
-    std::vector<Parameter> parameters,
-    NomadString path,
-    NomadString source
-) {
-    return m_typeManager.registerScriptStructMethod(
-        id, std::move(name), std::move(parameters), std::move(path), std::move(source));
 }
 
 CallableId Runtime::registerScriptClassConstructor(
