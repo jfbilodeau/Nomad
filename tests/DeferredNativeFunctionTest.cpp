@@ -12,6 +12,7 @@
 
 #include <nomad/modules/ScriptBindings.hpp>
 
+#include <nomad/script/Documentation.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -279,8 +280,14 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
         [](const auto& error) { return NomadString{error.what()}.find("unresolved signature") != NomadString::npos; });
     BOOST_TEST(calls == 0);
     std::ostringstream documentation;
-    runtime.dumpDocumentation(documentation);
+    generateDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("### `updateConfiguration`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("level:log.Level") != NomadString::npos);
     BOOST_TEST(documentation.str().find("configuration:log.SinkConfiguration") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("active:bool") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`returns log.SinkConfiguration`") != NomadString::npos);
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(!declaration->isSignatureResolved());
 
     const auto compilation = compileSources({{{"log.configuration", {"configuration.nomad", getLogBindingSource() +
         "\nfun exerciseDeferred\n"

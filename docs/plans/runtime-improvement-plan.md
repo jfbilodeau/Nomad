@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 3D is implemented and validated, awaiting review.
-Step 4 has not started and is not approved for implementation.
+Status: Step 4 is implemented and validated, awaiting review.
+Step 5 has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -343,6 +343,23 @@ hand-edit build-generated or vendored files.
 Acceptance: existing reference-generation, compiler-export, and module-host
 documentation tests pass; no generated documentation is edited manually.
 
+Completion evidence (2026-11-10, Windows Debug):
+
+- Removed the duplicate runtime exporter and its declaration; production code
+  decreased by 115 lines. The existing documentation module is unchanged.
+- Migrated its sole caller and strengthened the deferred-signature regression
+  to check the function name, all parameter types, and return type, plus no
+  callback execution or signature-resolution side effects during generation.
+- The `nomad-development` build and language, remaining-unit, tooling, and
+  compiler-export CTests passed. All four documentation preparation tests,
+  built-tool reference generation, strict MkDocs, retired-API searches, and
+  whitespace checks passed.
+- The CLI-generated engine API reference has the same SHA-256 before and after
+  this slice. No instruction section was added to the CLI output; only the
+  retired exporter's diagnostic listing was removed.
+- Other platforms, full packaging integration, and manual gameplay were not
+  validated.
+
 ### Step 5: Prune thin query adapters without merging distinct views
 
 Retire these remaining adapters after migrating their callers:
@@ -461,4 +478,5 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 3D review: Step 4, retiring the duplicate documentation exporter.
+Next slice after Step 4 review: Step 5, pruning thin query adapters while
+preserving distinct free-function and all-callable views.

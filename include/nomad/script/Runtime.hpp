@@ -493,9 +493,6 @@ public:
     void executeFunction(CallableId functionId, const std::vector<RuntimeValue> &args);
     void executeFunction(CallableId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue);
 
-    // Debug
-    void dumpDocumentation(std::ostream& out) const;
-
 private:
     // Nested types
     struct UnaryOperatorRegistration {

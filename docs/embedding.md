@@ -2009,7 +2009,9 @@ methods together with script fields and methods, grouped by receiver type.
 Fields are read/write, and each method overload shows its parameter and return
 types. `generateNativeMemberDocumentation(runtime, output)` remains native-only.
 
-These generators do not invoke scripts or native callbacks. The compiler tooling
+These generators do not invoke scripts or native callbacks. Native functions
+with unresolved signatures can be documented using their declared type names;
+generation does not resolve or enable those functions. The compiler tooling
 compiles source inputs before generating their reference.
 
 ## Module configuration
