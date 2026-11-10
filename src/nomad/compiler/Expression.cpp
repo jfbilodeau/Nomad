@@ -1188,7 +1188,7 @@ bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptCallableB
     }
     auto* runtime = context->getRuntime();
     m_indexerId = runtime->getNativeIndexerId(m_receiver->getType(), m_indexes.size());
-    const auto info = runtime->getNativeIndexerInfo(m_indexerId);
+    const auto* info = runtime->getNativeIndexerInfo(m_indexerId);
     if (!info) {
         reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) +
             "' has no indexer with " + toString(m_indexes.size()) + " indices");

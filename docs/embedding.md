@@ -427,6 +427,9 @@ parameter is retained or reused from an earlier lookup. A getter on an
 already-valid descriptor, such as `NativeProperty::getInfo()`, returns its
 snapshot directly.
 
+`Runtime::getNativeIndexerInfo(id)` instead returns borrowed const metadata,
+or `nullptr` for an invalid or unregistered ID. It does not copy callbacks.
+
 ### Type lookup
 
 Include `<nomad/script/Type.hpp>` for the base `Type`, storage categories, and
@@ -3507,8 +3510,8 @@ failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
 `NativeIndexerDefinition` and `NativeIndexerInfo`. Runtime retains the indexer
 ID catalog and lookup operations. IDs are runtime-local and remain stable as more
 indexers are registered. They do not implicitly convert to integers or other
-ID categories. `getNativeIndexerInfo(id)` returns
-`std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
+ID categories. `getNativeIndexerInfo(id)` returns a borrowed
+`const NativeIndexerInfo*`, or `nullptr` for invalid or unregistered IDs.
 
 Invalid or non-class owner IDs, invalid value/index IDs, and definitions with
 neither callback are rejected without publishing an indexer. Definitions are
@@ -3516,9 +3519,9 @@ owned inputs; modifying one after registration does not change the registered
 indexer.
 
 ```cpp
-const auto info = runtime.getNativeIndexerInfo(id);
+const auto* info = runtime.getNativeIndexerInfo(id);
 if (info) {
-    // Inspect the detached metadata snapshot through info->...
+    // Inspect the borrowed metadata through info->...
 }
 ```
 
@@ -3528,7 +3531,9 @@ returns a borrowed `const NativeIndexerInfo*`, or `nullptr` when absent.
 `Runtime::getNativeIndexers()` enumerates the runtime-wide borrowed catalog in
 registration order. Both enumerate const metadata pointers; these pointers
 remain valid as more indexers are registered, until the runtime destroys their
-owning types. `getNativeIndexerInfo` returns a metadata copy.
+owning types. `getNativeIndexerInfo` returns the same type-owned metadata
+without copying its index types, documentation, or callbacks. Keep the runtime
+alive while using a borrowed pointer; callers cannot mutate the metadata.
 
 Hosts retaining a mutable registered class type may also call
 `ClassType::registerNativeIndexer(runtime, info)`. This existing low-level

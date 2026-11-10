@@ -44,7 +44,7 @@ namespace {
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
     const auto indexerId = IndexerId{machine->nextId()};
-    const auto info = machine->getRuntime()->getNativeIndexerInfo(indexerId);
+    const auto* info = machine->getRuntime()->getNativeIndexerInfo(indexerId);
     if (!info) {
         machine->fault("Invalid native indexer");
     }

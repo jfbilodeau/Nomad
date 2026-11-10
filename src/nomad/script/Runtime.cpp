@@ -1238,11 +1238,9 @@ IndexerId Runtime::getNativeIndexerId(const Type* classType, const NomadIndex in
     return info == nullptr ? IndexerId::INVALID : info->id;
 }
 
-std::optional<NativeIndexerInfo> Runtime::getNativeIndexerInfo(const IndexerId indexerId) const {
-    if (isIdOutOfRange(indexerId.id, m_nativeIndexers.size())) {
-        return std::nullopt;
-    }
-    return *m_nativeIndexers[toNomadIndex(indexerId.id)];
+const NativeIndexerInfo* Runtime::getNativeIndexerInfo(const IndexerId indexerId) const {
+    return isIdOutOfRange(indexerId.id, m_nativeIndexers.size()) ?
+        nullptr : m_nativeIndexers[toNomadIndex(indexerId.id)];
 }
 
 const std::vector<const NativeIndexerInfo*>& Runtime::getNativeIndexers() const {
@@ -1342,8 +1340,8 @@ MemberReference Runtime::getNativeMemberId(const Type* classType, const NomadStr
     for (const auto memberId : overloads->second) {
         switch (getMemberType(memberId)) {
         case MemberType::Property: {
-            const auto info = getNativePropertyInfo(memberId);
-            if (info && info->classType == classType) {
+            const auto* property = getNativeProperty(std::get<PropertyId>(memberId));
+            if (property != nullptr && property->getClassType() == classType) {
                 return memberId;
             }
             break;
@@ -1396,8 +1394,8 @@ void Runtime::getNativeMembers(const Type* classType, std::vector<MemberReferenc
         const auto type = getMemberType(memberId);
 
         if (type == MemberType::Property) {
-            const auto info = getNativePropertyInfo(memberId);
-            if (info && info->classType == classType) {
+            const auto* property = getNativeProperty(std::get<PropertyId>(memberId));
+            if (property != nullptr && property->getClassType() == classType) {
                 members.push_back(memberId);
             }
         } else if (type == MemberType::Method) {

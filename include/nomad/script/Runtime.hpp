@@ -212,7 +212,8 @@ public:
     // Native members
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* classType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
-    [[nodiscard]] std::optional<NativeIndexerInfo> getNativeIndexerInfo(IndexerId indexerId) const;
+    // Borrows type-owned metadata until runtime destruction; null for an invalid or unregistered ID.
+    [[nodiscard]] const NativeIndexerInfo* getNativeIndexerInfo(IndexerId indexerId) const;
     [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
     void setPropertyHasExplicitInitializer(PropertyId id, bool hasExplicitInitializer);

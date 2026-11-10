@@ -814,7 +814,7 @@ void VirtualMachine::callNativeIndexer(
     const RuntimeValue& receiver,
     const bool write
 ) {
-    const auto info = m_runtime->getNativeIndexerInfo(indexerId);
+    const auto* info = m_runtime->getNativeIndexerInfo(indexerId);
     if (!info) {
         fault("Invalid native indexer");
     }
@@ -840,7 +840,7 @@ void VirtualMachine::runNativeIndexer(
     const RuntimeValue& receiver,
     const bool write
 ) {
-    const auto info = m_runtime->getNativeIndexerInfo(indexerId);
+    const auto* info = m_runtime->getNativeIndexerInfo(indexerId);
     if (!info) {
         fault("Invalid native indexer");
     }

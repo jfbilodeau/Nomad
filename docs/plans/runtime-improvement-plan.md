@@ -1,8 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 6 is implemented and validated, awaiting review.
-Runtime retains temporary-VM startup initialization. Step 7 has not started
-and is not approved for implementation.
+Status: Step 7 is implemented and validated, awaiting review.
+Step 8 has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -477,6 +476,30 @@ Add a focused callback-copy regression where practical; verify invalid
 lookups, descriptor stability through catalog growth, and deferred guards.
 This is not a claim of measured gameplay performance improvement.
 
+Completion evidence (2026-11-10, Windows Debug):
+
+- Native-member owner lookup and per-type enumeration now inspect borrowed
+  property descriptors instead of creating callback-bearing property snapshots.
+- Native-indexer lookup returns the existing type-owned const pointer, or null
+  for invalid/unregistered IDs. Compiler and VM callers, the opcode path,
+  embedding contracts, and examples use the borrowed API.
+- Added a copy-counting regression requiring zero callback copies during member
+  metadata queries and indexer lookup; its property snapshot control confirms
+  the probe detects callback copies. Property snapshot APIs and their deferred
+  guards are unchanged.
+- Updated invalid-ID, const-result-type, and pointer-identity coverage. A pointer
+  borrowed before owner/catalog growth remains identical afterward; callers
+  no longer receive a mutable indexer snapshot.
+- Invoked CTest directly without a separate build. Fresh binaries passed the
+  language, remaining-unit, and tooling groups, including deferred property,
+  native indexer, collection, and module-host coverage. All four documentation
+  preparation tests, built-tool reference generation, strict MkDocs, retired
+  return-shape searches, and whitespace checks passed.
+- Net production code decreased by one line. The benefit is removing metadata/
+  callback copies, not moving implementations or claiming measured speedups.
+- Other platforms, full packaging/distribution integration, and manual gameplay
+  were not validated.
+
 ### Step 8: Integrated acceptance and final API audit
 
 - Verify no repository code, emitted binding text, examples, or documentation
@@ -533,5 +556,4 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next after Step 6 review: Step 7, borrowing native member/indexer metadata
-instead of copying callback snapshots.
+Next after Step 7 review: Step 8, integrated acceptance and final API audit.
