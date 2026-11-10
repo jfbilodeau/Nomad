@@ -6,12 +6,14 @@
 
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
+#include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
 #include <type_traits>
+#include <vector>
 
 using namespace nomad;
 using namespace nomad::test;
@@ -27,6 +29,51 @@ static_assert(!std::is_invocable_v<decltype(&Runtime::getConstantType), Runtime&
 static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadConstant), Compiler&, NomadId, ExpressionTarget>);
 
 BOOST_AUTO_TEST_SUITE(language_constants)
+
+BOOST_AUTO_TEST_CASE(unsupported_constant_types_do_not_publish_or_retain_values)
+{
+    Runtime runtime;
+    Runtime otherRuntime;
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    auto& manager = runtime.getTypeManager();
+    std::vector<const Type*> invalidTypes{
+        nullptr, runtime.getVoidType(), runtime.getFileNameType(), otherRuntime.getIntegerType()
+    };
+    for (auto fieldCount = 0; fieldCount < 4; ++fieldCount) {
+        const auto id = manager.registerStruct("Rejected" + std::to_string(fieldCount));
+        BOOST_REQUIRE(id.isValid());
+        const auto* type = manager.getType(id).value();
+        if (fieldCount < 3) {
+            for (auto index = 0; index < fieldCount; ++index) {
+                BOOST_REQUIRE(manager.registerScriptStructProperty(
+                    id, "field" + std::to_string(index), runtime.getIntegerType()
+                ).isValid());
+            }
+            manager.finalizeCompositeFieldLayout(id);
+        }
+        invalidTypes.push_back(type);
+    }
+
+    RuntimeValue value(NomadString{"not retained"});
+    for (const auto* type : invalidTypes) {
+        BOOST_TEST(runtime.registerConstant("example.direct", value, type).isInvalid());
+        BOOST_TEST(runtime.registerHubConstant(hubId, "scoped", value, type).isInvalid());
+        BOOST_TEST(runtime.getConstantId("example.direct").isInvalid());
+        BOOST_TEST(runtime.getConstantId("example.scoped").isInvalid());
+        BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1U);
+    }
+    value.freeObjectValue();
+
+    BOOST_REQUIRE(runtime.registerConstant(
+        "example.direct", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerHubConstant(
+        hubId, "scoped", RuntimeValue{NomadInteger{43}}, runtime.getIntegerType()
+    ).isValid());
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().size() == 2U);
+}
 
 BOOST_AUTO_TEST_CASE(constant_ids_support_registration_lookup_iteration_and_catalog_growth)
 {

@@ -645,6 +645,12 @@ rejected without replacing the original value. `getConstantId(name)` returns
 `ConstantId::INVALID` when absent. Constant IDs belong to the runtime that issued
 them and remain stable as more constants are registered.
 
+Direct and hub constant registration require a non-void, non-internal type
+registered with the same runtime. Struct types are rejected, including empty,
+one-slot, multi-slot, and unfinalized structs. Invalid types are logged and
+return `ConstantId::INVALID` without publishing a constant or hub member or
+retaining the supplied value. Strings and class references remain supported.
+
 Pass a registered ID to `getConstantName`, `getConstantType`, or
 `getConstantValue`. The value is borrowed; the runtime retains ownership.
 `getFirstConstantId` and `getNextConstantId` enumerate registered constants in

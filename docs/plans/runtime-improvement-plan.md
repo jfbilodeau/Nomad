@@ -1,6 +1,7 @@
 # Runtime improvement plan
 
-Status: draft for review. No implementation step has started.
+Status: Step 1 is implemented and validated, awaiting review.
+Step 2 has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -8,8 +9,8 @@ Approved planning decisions:
 - Redundant public APIs may be removed without compatibility wrappers.
   Migrate in-repository callers, tests, and documentation in the same slice.
 
-These decisions approve the plan's direction, not autonomous implementation.
-Obtain approval before starting, implement one reviewable slice, then stop.
+Implementation approval applies only to the current slice.
+Obtain approval before each following slice, implement it, then stop.
 Do not commit or push without a separate request.
 
 ## 1. Goals and boundaries
@@ -125,6 +126,18 @@ Acceptance:
   reference-lifetime coverage.
 
 Review stop: scalar-only boundary enforcement, not aggregate constant support.
+
+Completion evidence (2026-11-10, Windows Debug):
+
+- Constant type validation is centralized before catalog/storage mutation.
+- New regressions cover null, void, internal, foreign-runtime, empty/one-slot/
+  multi-slot/unfinalized struct rejection through both registration paths,
+  unchanged string reference counts on rejection, and retained class references.
+- The `nomad-development` build and the language and remaining-unit CTest
+  groups passed. All four documentation preparation tests passed; reference
+  generation with the built tools, strict MkDocs, and whitespace checks passed.
+- No public API was removed; production code has no net line-count change.
+  Other platforms/configurations and manual gameplay were not validated.
 
 ### Step 2: Remove dead layers and obsolete code
 
@@ -335,4 +348,4 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Proposed first implementation slice: Step 1 only, after plan review and approval.
+Next slice after Step 1 review: Step 2, removing dead layers and obsolete code.

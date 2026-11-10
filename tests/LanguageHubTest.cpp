@@ -426,6 +426,40 @@ BOOST_AUTO_TEST_CASE(hub_constants_retain_object_values_without_taking_the_calle
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
+BOOST_AUTO_TEST_CASE(direct_and_hub_constants_retain_class_references)
+{
+    const auto before = NomadObject::getLiveObjectCount();
+    {
+        Runtime runtime;
+        const auto hubId = runtime.registerHub("example", HubMode::Opened);
+        BOOST_REQUIRE(hubId.isValid());
+        auto& manager = runtime.getTypeManager();
+        const auto typeId = manager.registerClass("ConstantObject", ClassMode::Closed);
+        BOOST_REQUIRE(typeId.isValid());
+        manager.finalizeCompositeFieldLayout(typeId);
+        const auto* type = manager.getType(typeId).value()->asClassType();
+        BOOST_REQUIRE(type != nullptr);
+        RuntimeValue value;
+        value.setObjectValue(new ScriptObject(type));
+        const auto directId = runtime.registerConstant("example.direct", value, type);
+        const auto scopedId = runtime.registerHubConstant(hubId, "scoped", value, type);
+        BOOST_REQUIRE(directId.isValid());
+        BOOST_REQUIRE(scopedId.isValid());
+        BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3U);
+        value.freeObjectValue();
+
+        RuntimeValue direct;
+        RuntimeValue scoped;
+        runtime.getConstantValue(directId, direct);
+        runtime.getConstantValue(scopedId, scoped);
+        BOOST_TEST(direct.getObjectValue() == scoped.getObjectValue());
+        BOOST_TEST(direct.getObjectValue()->getReferenceCount() == 2U);
+        BOOST_TEST(runtime.getConstantType(directId) == type);
+        BOOST_TEST(runtime.getConstantType(scopedId) == type);
+    }
+    BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
 BOOST_AUTO_TEST_CASE(hub_native_functions_use_local_names_and_shared_overload_resolution)
 {
     for (const auto mode : {HubMode::Opened, HubMode::Closed}) {

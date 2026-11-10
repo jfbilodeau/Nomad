@@ -249,10 +249,6 @@ ConstantId Runtime::registerHubConstant(
         log::error("Cannot register hub constant '" + name + "': invalid hub");
         return ConstantId::INVALID;
     }
-    if (!ownsType(type) || type->isVoid() || type->isInternal()) {
-        log::error("Cannot register hub constant '" + name + "': invalid value type");
-        return ConstantId::INVALID;
-    }
     return registerConstant(hub->getName() + "." + name, value, type);
 }
 
@@ -2097,6 +2093,10 @@ void Runtime::getKeywords(std::vector<KeywordDefinition>& keywords) const {
 }
 
 ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type) {
+    if (!ownsType(type) || type->isVoid() || type->isInternal() || type->isStruct()) {
+        log::error("Cannot register constant '" + name + "': invalid value type");
+        return ConstantId::INVALID;
+    }
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register constant '" + name + "': name is reserved by a hub");
         return ConstantId::INVALID;
