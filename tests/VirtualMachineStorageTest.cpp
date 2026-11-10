@@ -424,8 +424,8 @@ BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_own
     Runtime runtime;
     const auto typeId = runtime.registerStruct("CallStorage");
     const auto* type = runtime.getTypeByName("CallStorage")->asStructType();
-    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(typeId, "label", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "label", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     const auto callerId = runtime.registerScriptFunction("storageCaller", "storage.nomad", "");
     const auto calleeId = runtime.registerScriptFunction("storageCallee", "storage.nomad", "");
@@ -527,8 +527,8 @@ BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocat
     Runtime runtime;
     const auto typeId = runtime.registerStruct("AllocationFreeStruct");
     const auto* type = runtime.getTypeByName("AllocationFreeStruct");
-    BOOST_REQUIRE(runtime.registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     const auto nativeId = runtime.registerNativeStructConstructor(typeId, {
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},

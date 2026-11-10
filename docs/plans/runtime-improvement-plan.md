@@ -1,7 +1,7 @@
 # Runtime improvement plan
 
-Status: Step 3A1 is implemented and validated, awaiting review.
-Steps 3A2 and 3B have not started and are not approved for implementation.
+Status: Step 3A2 is implemented and validated, awaiting review.
+Step 3B has not started and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -206,6 +206,23 @@ Completion evidence (2026-11-10, Windows Debug):
 - Remove runtime `registerProperty`, `registerScriptClassProperty`, and
   `registerScriptStructProperty`. Do not replace them with a generic wrapper.
 
+Completion evidence (2026-11-10, Windows Debug):
+
+- Migrated stored-field callers to explicit manager class/struct registration
+  using their registered owner category, including class-owned nested structs,
+  foreign-runtime fixtures, generated-binding consumers, and lazy type factories.
+- Removed all three runtime entry points without adding a replacement dispatch
+  wrapper. Production code decreased by 31 lines. The descriptor's low-level
+  property registration and runtime-wide property IDs/metadata remain unchanged.
+- Existing owner-category, value-type, redeclaration, layout-freezing, nested/
+  empty-struct, inference, and deferred-property tests remain in place. Removed
+  one assertion dedicated solely to the retired compatibility delegator.
+- The `nomad-development` build and language, remaining-unit, tooling, and
+  binding CTest groups passed. All four documentation preparation tests,
+  built-tool reference generation, strict MkDocs, and whitespace checks passed.
+- Other platforms, full packaging integration, and manual gameplay were not
+  validated.
+
 Acceptance: preserve field inference, redeclaration, layout freezing,
 nested/empty structs, offsets, native accessors, and deferred type resolution.
 Run focused cases from [TypeManagerTest.cpp](../../tests/TypeManagerTest.cpp),
@@ -390,5 +407,4 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next slice after Step 3A1 review: Step 3A2, manager-only stored-field registration.
-Method registration follows in Step 3B.
+Next slice after Step 3A2 review: Step 3B, manager-only method registration.

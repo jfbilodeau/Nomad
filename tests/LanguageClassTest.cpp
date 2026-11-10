@@ -647,8 +647,8 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     BOOST_TEST(first->getFieldIndex(first->getProperty("y")->getId()) == 1u);
     BOOST_TEST(first->getFieldIndex(secondId) == NOMAD_INVALID_INDEX);
     BOOST_TEST(first->getFieldIndex(PropertyId{}) == NOMAD_INVALID_INDEX);
-    BOOST_TEST(runtime.registerProperty(first->getId(), "x", runtime.getIntegerType()) == firstId);
-    BOOST_REQUIRE(runtime.registerProperty(first->getId(), "later", runtime.getBooleanType()).isValid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "x", runtime.getIntegerType()) == firstId);
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "later", runtime.getBooleanType()).isValid());
     BOOST_TEST(first->getFieldIndex(firstId) == 0u);
     BOOST_TEST(first->getFieldIndex(first->getProperty("later")->getId()) == 2u);
     const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(first->getId(), {
@@ -660,7 +660,7 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     });
     BOOST_REQUIRE(nativeId.isValid());
     BOOST_TEST(first->getFieldIndex(nativeId) == NOMAD_INVALID_INDEX);
-    const auto lastId = runtime.registerProperty(first->getId(), "last", runtime.getBooleanType());
+    const auto lastId = runtime.getTypeManager().registerScriptClassProperty(first->getId(), "last", runtime.getBooleanType());
     BOOST_REQUIRE(lastId.isValid());
     BOOST_TEST(first->getFieldIndex(lastId) == 3u);
 }
@@ -935,7 +935,7 @@ BOOST_AUTO_TEST_CASE(external_fields_resolve_nested_receivers_and_captured_alias
     fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
         if (phase != CompilationPhase::Parse) return;
         auto& runtime = fixture.getRuntime();
-        BOOST_REQUIRE(runtime.registerProperty(
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(
             runtime.getTypeByName("Outer")->getId(), "inner", runtime.getTypeByName("Inner")
         ).isValid());
     });

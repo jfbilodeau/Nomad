@@ -64,13 +64,13 @@ BOOST_AUTO_TEST_CASE(named_and_nested_struct_receivers_borrow_storage_without_co
     BOOST_REQUIRE(fieldId.isValid());
     const auto leafId = runtime.registerStruct("EvaluationLeaf");
     const auto* leaf = runtime.getType(leafId).value();
-    const auto numberId = runtime.registerProperty(leafId, "number", runtime.getIntegerType());
+    const auto numberId = runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(leafId, "reference", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "reference", field).isValid());
     const auto rootId = runtime.registerStruct("EvaluationRoot");
     const auto* root = runtime.getType(rootId).value();
-    BOOST_REQUIRE(runtime.registerProperty(rootId, "prefix", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(rootId, "leaf", leaf).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "prefix", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "leaf", leaf).isValid());
     InterpreterContext* evaluation = nullptr;
     const auto incrementId = runtime.addMethod(leafId, {
         .name = "increment", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
@@ -131,12 +131,12 @@ BOOST_AUTO_TEST_CASE(temporary_struct_field_operations_release_backing_storage_a
     Runtime runtime;
     const auto leafId = runtime.registerStruct("EvaluationTemporaryLeaf");
     const auto* leaf = runtime.getType(leafId).value();
-    const auto numberId = runtime.registerProperty(leafId, "number", runtime.getIntegerType());
+    const auto numberId = runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(leafId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "text", runtime.getStringType()).isValid());
     const auto rootId = runtime.registerStruct("EvaluationTemporaryRoot");
     const auto* root = runtime.getType(rootId).value();
-    BOOST_REQUIRE(runtime.registerProperty(rootId, "leaf", leaf).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "leaf", leaf).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto calls = 0;
     const auto makeId = runtime.registerNativeFunction("makeEvaluationTemporary", [&](VirtualMachine* active) {
@@ -184,12 +184,12 @@ BOOST_AUTO_TEST_CASE(object_field_scopes_retain_the_owner_after_its_variable_is_
     Runtime runtime;
     const auto leafId = runtime.registerStruct("EvaluationObjectLeaf");
     const auto* leaf = runtime.getType(leafId).value();
-    const auto numberId = runtime.registerProperty(leafId, "number", runtime.getIntegerType());
+    const auto numberId = runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(leafId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "text", runtime.getStringType()).isValid());
     const auto ownerId = runtime.registerClass("EvaluationObjectOwner", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
-    const auto leafProperty = runtime.registerProperty(ownerId, "leaf", leaf);
+    const auto leafProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "leaf", leaf);
     BOOST_REQUIRE(leafProperty.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto compiler = runtime.createCompiler();
@@ -245,7 +245,7 @@ BOOST_AUTO_TEST_CASE(zero_sized_nested_receivers_borrow_no_slots_and_keep_their_
     const auto* empty = runtime.getType(emptyId).value();
     const auto rootId = runtime.registerStruct("EvaluationEmptyRoot");
     const auto* root = runtime.getType(rootId).value();
-    BOOST_REQUIRE(runtime.registerProperty(rootId, "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "empty", empty).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto compiler = runtime.createCompiler();
     auto machine = runtime.createVirtualMachine();

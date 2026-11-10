@@ -135,8 +135,8 @@ BOOST_AUTO_TEST_CASE(manager_finalizes_nested_composites_and_validates_mutable_o
     const auto outerId = runtime.registerStruct("Outer");
     const auto* inner = manager.getTypeByName("Inner")->asStructType();
     const auto* outer = manager.getTypeByName("Outer")->asStructType();
-    BOOST_REQUIRE(runtime.registerProperty(innerId, "value", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(outerId, "inner", inner).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(innerId, "value", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(outerId, "inner", inner).isValid());
     manager.finalizeCompositeFieldLayout(outerId);
     BOOST_TEST(inner->isFieldLayoutFinalized());
     BOOST_TEST(outer->isFieldLayoutFinalized());
@@ -214,7 +214,6 @@ BOOST_AUTO_TEST_CASE(script_property_apis_enforce_owner_categories_and_value_con
         BOOST_TEST(property->asNativeProperty() == nullptr);
         BOOST_TEST(!property->hasExplicitInitializer());
         BOOST_TEST(registerField(ownerId, "value", runtime.getIntegerType()) == fieldId);
-        BOOST_TEST(runtime.registerProperty(ownerId, "value", runtime.getIntegerType()) == fieldId);
         BOOST_TEST(registerField(ownerId, "value", runtime.getFloatType()).isInvalid());
         BOOST_TEST(owner->getPropertyCount() == 1U);
         BOOST_TEST(owner->getFieldIndex(fieldId) == 0U);
@@ -240,8 +239,8 @@ BOOST_AUTO_TEST_CASE(script_field_registration_does_not_validate_identifier_synt
         BOOST_REQUIRE(classField.isValid() && structField.isValid());
         BOOST_TEST(runtime.getProperty(classField)->getName() == name);
         BOOST_TEST(runtime.getProperty(structField)->getName() == name);
-        BOOST_TEST(runtime.registerProperty(classId, name, runtime.getIntegerType()) == classField);
-        BOOST_TEST(runtime.registerProperty(structId, name, runtime.getIntegerType()) == structField);
+        BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(classId, name, runtime.getIntegerType()) == classField);
+        BOOST_TEST(runtime.getTypeManager().registerScriptStructProperty(structId, name, runtime.getIntegerType()) == structField);
     }
 }
 
@@ -627,8 +626,8 @@ BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destinat
     const auto emptyId = runtime.registerStruct("ConstructedEmpty");
     const auto classId = runtime.registerClass("ConstructorClass", ClassMode::Closed);
     const auto* type = runtime.getTypeByName("ConstructedStruct");
-    BOOST_REQUIRE(runtime.registerProperty(structId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(structId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(structId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(structId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(structId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto calls = 0;

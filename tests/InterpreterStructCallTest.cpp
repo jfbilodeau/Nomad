@@ -96,8 +96,8 @@ BOOST_AUTO_TEST_SUITE(interpreter_struct_calls)
 BOOST_AUTO_TEST_CASE(call_frame_results_borrow_writable_complete_storage_and_preserve_owned_snapshots) {
     Runtime runtime;
     const auto valueId = runtime.registerStruct("FrameResult");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     const auto emptyId = runtime.registerStruct("FrameEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
@@ -285,8 +285,8 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
     const auto emptyId = runtime.registerStruct("NativeCallEmpty");
     const auto* valueType = runtime.getTypeByName("NativeCallValue");
     const auto* emptyType = runtime.getTypeByName("NativeCallEmpty");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto emptyCalls = 0;
@@ -569,8 +569,8 @@ BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_own
     const auto valueId = runtime.registerStruct("FailingCallValue");
     const auto* valueType = runtime.getTypeByName("FailingCallValue");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     auto calls = 0;
     const auto consumeId = runtime.registerNativeFunction("consumeFailingCall", [&](VirtualMachine*) {
@@ -717,8 +717,8 @@ BOOST_AUTO_TEST_CASE(host_script_calls_and_construction_return_independent_value
 BOOST_AUTO_TEST_CASE(host_native_calls_and_factories_preserve_values_frames_and_registered_result_types) {
     Runtime runtime;
     const auto valueId = runtime.registerStruct("HostValue");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     const auto* valueType = runtime.getTypeByName("HostValue");
     const auto constructorId = runtime.registerNativeStructConstructor(valueId, {
@@ -964,11 +964,11 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
     const auto valueId = runtime.registerStruct("NativeObjectMethodValue");
     const auto* type = runtime.getTypeByName("NativeObjectMethodValue");
     const auto* emptyType = runtime.getTypeByName("NativeObjectMethodEmpty");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     const auto singleId = runtime.registerStruct("NativeObjectMethodSingle");
     const auto* singleType = runtime.getTypeByName("NativeObjectMethodSingle");
-    BOOST_REQUIRE(runtime.registerProperty(singleId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(singleId, "number", runtime.getIntegerType()).isValid());
     const auto ownerId = runtime.registerClass("NativeAggregateOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("NativeAggregateOwner")->asClassType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
@@ -1095,8 +1095,8 @@ BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_
     const auto valueId = runtime.registerStruct("ObjectAggregateCopyValue");
     const auto* type = runtime.getTypeByName("ObjectAggregateCopyValue");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     const auto ownerId = runtime.registerClass("ObjectAggregateCopyOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("ObjectAggregateCopyOwner")->asClassType();
@@ -1195,8 +1195,8 @@ BOOST_AUTO_TEST_CASE(closure_arguments_and_captures_are_copied_once_directly_int
     const auto valueId = runtime.registerStruct("DirectClosurePair");
     const auto* type = runtime.getTypeByName("DirectClosurePair");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "makeDirectClosurePair",
@@ -1362,8 +1362,8 @@ BOOST_AUTO_TEST_CASE(compiled_formatting_reuses_direct_frame_captures_and_cleans
     const auto valueId = runtime.registerStruct("FormattingCopyPair");
     const auto* type = runtime.getTypeByName("FormattingCopyPair");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     fixture.addFunction("renderCopyPair", "params value:FormattingCopyPair\nreturn $\"{value.first}\"");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
@@ -1429,8 +1429,8 @@ BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_r
     const auto valueId = runtime.registerStruct("ClosureInvocationValue");
     const auto* type = runtime.getTypeByName("ClosureInvocationValue");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "makeClosureInvocationValue",
@@ -1528,8 +1528,8 @@ BOOST_AUTO_TEST_CASE(closure_capture_copy_failures_release_completed_and_partial
     const auto valueId = runtime.registerStruct("ClosureCopyValue");
     const auto* type = runtime.getTypeByName("ClosureCopyValue");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     const auto parentId = runtime.registerScriptFunction("closureCopyParent", "captures.nomad", "");
     auto* parent = runtime.getScriptFunction(parentId);
@@ -1655,8 +1655,8 @@ BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_ever
     const auto valueId = runtime.registerStruct("StructMethodCopyValue");
     const auto* type = runtime.getTypeByName("StructMethodCopyValue");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     auto calls = 0;
     const auto methodId = runtime.addMethod(valueId, {
@@ -1790,8 +1790,8 @@ BOOST_AUTO_TEST_CASE(ineligible_tail_return_initializers_keep_partial_results_se
     auto& runtime = fixture.getRuntime();
     const auto valueId = runtime.registerStruct("NrvoInspectionValue");
     const auto* type = runtime.getTypeByName("NrvoInspectionValue");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     auto visits = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction("makeInspectedNrvoValue", [&](VirtualMachine* active) {
@@ -1842,8 +1842,8 @@ BOOST_AUTO_TEST_CASE(named_return_frame_views_expose_and_mutate_the_actual_initi
     auto& runtime = fixture.getRuntime();
     const auto valueId = runtime.registerStruct("ReturnBackedValue");
     const auto* type = runtime.getTypeByName("ReturnBackedValue");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     auto visits = 0;
     auto failInitializer = false;

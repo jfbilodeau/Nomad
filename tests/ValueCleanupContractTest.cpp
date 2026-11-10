@@ -25,8 +25,8 @@ int main(int argumentCount, char* arguments[]) {
             const auto id = runtime.registerStruct("Unfinalized");
             const auto* type = runtime.getTypeByName("Unfinalized")->asStructType();
             if (testCase == "failed-layout-fields") {
-                if (runtime.registerProperty(id, "prefix", runtime.getIntegerType()).isInvalid() ||
-                    runtime.registerProperty(id, "cycle", type).isInvalid()) {
+                if (runtime.getTypeManager().registerScriptStructProperty(id, "prefix", runtime.getIntegerType()).isInvalid() ||
+                    runtime.getTypeManager().registerScriptStructProperty(id, "cycle", type).isInvalid()) {
                     std::fputs("Failed to prepare cyclic layout\n", stderr);
                     return 2;
                 }

@@ -354,7 +354,7 @@ BOOST_AUTO_TEST_CASE(resolved_bindings_are_shared_and_keep_stable_slots_without_
     BOOST_TEST(&second.getBinding() == &binding);
     BOOST_TEST(&wrapped.getBinding() == &binding);
 
-    BOOST_REQUIRE(runtime.registerProperty(
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(
         binding.getClassType()->getId(), "extension", runtime.getIntegerType()
     ).isValid());
     BOOST_TEST(binding.getPropertyId(0) == activeId);

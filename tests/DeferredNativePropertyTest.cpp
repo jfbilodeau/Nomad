@@ -227,7 +227,7 @@ BOOST_AUTO_TEST_CASE(invalid_resolved_types_and_foreign_placeholders_are_rejecte
     auto compiler = runtime.createCompiler();
     auto otherCompiler = other.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
-    BOOST_TEST(runtime.registerProperty(ownerId, "storedDeferred", compiler->deferType({"Settings"})).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(ownerId, "storedDeferred", compiler->deferType({"Settings"})).isInvalid());
     BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = otherCompiler->deferType({"Settings"}),
         .name = "foreign",
@@ -252,7 +252,7 @@ BOOST_AUTO_TEST_CASE(checked_resolution_preserves_readiness_until_central_comple
         .getter = [&](VirtualMachine*, RuntimeValue& result) { ++calls; result.setIntegerValue(1); }
     });
     BOOST_REQUIRE(id.isValid());
-    const auto storedId = runtime.registerProperty(ownerId, "stored", runtime.getIntegerType());
+    const auto storedId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "stored", runtime.getIntegerType());
     BOOST_REQUIRE(storedId.isValid());
     BOOST_TEST(runtime.getMutableNativeProperty(storedId) == nullptr);
     BOOST_TEST(runtime.getMutableNativeProperty(PropertyId{NOMAD_ID_MAX}) == nullptr);

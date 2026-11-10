@@ -465,8 +465,8 @@ BOOST_AUTO_TEST_CASE(native_methods_use_distinct_receiver_argument_and_result_st
     const auto emptyId = runtime.registerStruct("NativeHostMethodEmpty");
     const auto* type = runtime.getTypeByName("NativeHostMethodValue");
     const auto* emptyType = runtime.getTypeByName("NativeHostMethodEmpty");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto readId = runtime.addMethod(valueId, {
@@ -546,7 +546,7 @@ BOOST_AUTO_TEST_CASE(native_empty_and_one_slot_receivers_keep_hidden_pointer_lay
     const auto oneId = runtime.registerStruct("NativeMethodOne");
     const auto* emptyType = runtime.getTypeByName("NativeMethodEmpty");
     const auto* oneType = runtime.getTypeByName("NativeMethodOne");
-    BOOST_REQUIRE(runtime.registerProperty(oneId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(oneId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(oneId);
     auto emptyCalls = 0;
@@ -590,7 +590,7 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
     const auto valueId = runtime.registerStruct("CheckedStructReceiver");
     const auto otherId = runtime.registerStruct("OtherStructReceiver");
     const auto* type = runtime.getTypeByName("CheckedStructReceiver");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(otherId);
     auto calls = 0;
@@ -621,7 +621,9 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
     const InterpreterValue classReceiver(classType, RuntimeValue{});
     Runtime foreignRuntime;
     const auto foreignId = foreignRuntime.registerStruct("CheckedStructReceiver");
-    BOOST_REQUIRE(foreignRuntime.registerProperty(foreignId, "number", foreignRuntime.getIntegerType()).isValid());
+    BOOST_REQUIRE(foreignRuntime.getTypeManager().registerScriptStructProperty(
+        foreignId, "number", foreignRuntime.getIntegerType()
+    ).isValid());
     foreignRuntime.getTypeManager().finalizeCompositeFieldLayout(foreignId);
     const InterpreterValue foreignReceiver(foreignRuntime.getTypeByName("CheckedStructReceiver"), source);
     const InterpreterValue foreignArgument(foreignRuntime.getIntegerType(), RuntimeValue{NomadInteger{3}});
@@ -679,13 +681,13 @@ BOOST_AUTO_TEST_CASE(native_failures_discard_struct_replacements_but_keep_shared
     Runtime runtime;
     const auto ownerId = runtime.registerClass<ClassType>("FailedMethodOwner", ClassMode::Closed);
     const auto* ownerType = runtime.getType(ownerId).value()->asClassType();
-    BOOST_REQUIRE(runtime.registerProperty(ownerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto valueId = runtime.registerStruct("FailedMethodValue");
     const auto* type = runtime.getTypeByName("FailedMethodValue");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "owner", ownerType).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "owner", ownerType).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     const auto methodId = runtime.addMethod(valueId, {
         .name = "fail", .parameters = {}, .returnTypeId = valueId,
@@ -802,7 +804,7 @@ BOOST_AUTO_TEST_CASE(native_struct_reentry_preserves_enclosing_class_receiver_an
     auto& runtime = fixture.getRuntime();
     const auto probeId = runtime.registerStruct("HostFrameProbe");
     const auto* probeType = runtime.getTypeByName("HostFrameProbe");
-    BOOST_REQUIRE(runtime.registerProperty(probeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(probeId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(probeId);
     auto probes = 0;
     const auto methodId = runtime.addMethod(probeId, {

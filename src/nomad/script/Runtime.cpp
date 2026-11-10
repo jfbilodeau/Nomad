@@ -1420,34 +1420,6 @@ const std::vector<const NativeIndexerInfo*>& Runtime::getNativeIndexers() const 
     return m_nativeIndexers;
 }
 
-PropertyId Runtime::registerProperty(
-    const TypeId ownerId,
-    const NomadString& name,
-    const Type* valueType
-) {
-    const auto type = getType(ownerId);
-    if (type.has_value() && (*type)->isClass()) {
-        return registerScriptClassProperty(ownerId, name, valueType);
-    }
-    return registerScriptStructProperty(ownerId, name, valueType);
-}
-
-PropertyId Runtime::registerScriptClassProperty(
-    const TypeId id,
-    const NomadString& name,
-    const Type* valueType
-) {
-    return m_typeManager.registerScriptClassProperty(id, name, valueType);
-}
-
-PropertyId Runtime::registerScriptStructProperty(
-    const TypeId id,
-    const NomadString& name,
-    const Type* valueType
-) {
-    return m_typeManager.registerScriptStructProperty(id, name, valueType);
-}
-
 void Runtime::setPropertyHasExplicitInitializer(
     const PropertyId id,
     const bool hasExplicitInitializer

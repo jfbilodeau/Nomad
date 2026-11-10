@@ -60,7 +60,7 @@ BOOST_AUTO_TEST_CASE(object_factory_retains_identity_after_the_source_value_is_d
     Runtime runtime;
     const auto ownerId = runtime.registerClass("FactoryObject", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
-    const auto numberProperty = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
+    const auto numberProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberProperty.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto machine = runtime.createVirtualMachine();
@@ -123,9 +123,9 @@ BOOST_AUTO_TEST_CASE(struct_factory_borrows_storage_without_copying_or_releasing
     Runtime runtime;
     const auto ownerId = runtime.registerStruct("FactoryStruct");
     const auto* owner = runtime.getType(ownerId).value()->asStructType();
-    const auto numberProperty = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
+    const auto numberProperty = runtime.getTypeManager().registerScriptStructProperty(ownerId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberProperty.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(ownerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(ownerId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
@@ -161,7 +161,7 @@ BOOST_AUTO_TEST_CASE(struct_factory_supports_null_storage_for_zero_sized_structs
     const auto* empty = runtime.getType(emptyId).value()->asStructType();
     const auto ownerId = runtime.registerStruct("FactoryEmptyOwner");
     const auto* owner = runtime.getType(ownerId).value()->asStructType();
-    const auto property = runtime.registerProperty(ownerId, "empty", empty);
+    const auto property = runtime.getTypeManager().registerScriptStructProperty(ownerId, "empty", empty);
     BOOST_REQUIRE(property.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     BOOST_TEST(empty->getSize() == 0U);
@@ -187,12 +187,12 @@ BOOST_AUTO_TEST_CASE(struct_wrappers_borrow_original_or_caller_owned_storage_and
     const auto* empty = runtime.getTypeByName("CompositeEmpty")->asStructType();
     const auto leafId = runtime.registerStruct("CompositeLeaf");
     const auto* leaf = runtime.getTypeByName("CompositeLeaf")->asStructType();
-    BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(leafId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "text", runtime.getStringType()).isValid());
     const auto rootId = runtime.registerStruct("CompositeRoot");
     const auto* root = runtime.getTypeByName("CompositeRoot")->asStructType();
-    const auto leafProperty = runtime.registerProperty(rootId, "leaf", leaf);
-    const auto emptyProperty = runtime.registerProperty(rootId, "empty", empty);
+    const auto leafProperty = runtime.getTypeManager().registerScriptStructProperty(rootId, "leaf", leaf);
+    const auto emptyProperty = runtime.getTypeManager().registerScriptStructProperty(rootId, "empty", empty);
     BOOST_REQUIRE(leafProperty.isValid() && emptyProperty.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(rootId);
     auto machine = runtime.createVirtualMachine();
@@ -248,12 +248,12 @@ BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_nativ
     Runtime runtime;
     const auto leafId = runtime.registerStruct("ObjectCompositeLeaf");
     const auto* leaf = runtime.getTypeByName("ObjectCompositeLeaf")->asStructType();
-    BOOST_REQUIRE(runtime.registerProperty(leafId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(leafId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(leafId);
     const auto ownerId = runtime.registerClass<ClassType>("ObjectCompositeOwner", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
-    const auto numberProperty = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
-    const auto leafProperty = runtime.registerProperty(ownerId, "leaf", leaf);
+    const auto numberProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType());
+    const auto leafProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "leaf", leaf);
     BOOST_REQUIRE(numberProperty.isValid() && leafProperty.isValid());
     const auto nativeProperty = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = runtime.getIntegerType(), .name = "nativeNumber",
@@ -312,9 +312,9 @@ BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_original_and_caller_
     BOOST_REQUIRE(fieldId.isValid());
     const auto pairId = runtime.registerStruct("CompositeCopyPair");
     const auto* pair = runtime.getTypeByName("CompositeCopyPair")->asStructType();
-    const auto firstProperty = runtime.registerProperty(pairId, "first", field);
+    const auto firstProperty = runtime.getTypeManager().registerScriptStructProperty(pairId, "first", field);
     BOOST_REQUIRE(firstProperty.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(pairId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
@@ -483,18 +483,18 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
     auto& runtime = fixture.getRuntime();
     const auto sharedId = runtime.registerClass("AccessorMethodShared", ClassMode::Closed);
     const auto* shared = runtime.getTypeByName("AccessorMethodShared")->asClassType();
-    BOOST_REQUIRE(runtime.registerProperty(sharedId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(sharedId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(sharedId);
     const auto valueId = runtime.registerStruct("AccessorMethodValue");
     const auto* type = runtime.getTypeByName("AccessorMethodValue")->asStructType();
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "text", runtime.getStringType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "shared", shared).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "shared", shared).isValid());
     const auto emptyId = runtime.registerStruct("AccessorMethodEmpty");
     const auto* emptyType = runtime.getTypeByName("AccessorMethodEmpty");
     const auto ownerId = runtime.registerClass("AccessorMethodOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("AccessorMethodOwner")->asClassType();
-    const auto backingId = runtime.registerProperty(ownerId, "backing", type);
+    const auto backingId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "backing", type);
     BOOST_REQUIRE(backingId.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
@@ -666,11 +666,11 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
     const auto valueId = runtime.registerStruct("MethodAccessorPair");
     const auto* type = runtime.getTypeByName("MethodAccessorPair");
     BOOST_REQUIRE(fieldId.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     const auto ownerId = runtime.registerClass("MethodAccessorFailureOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("MethodAccessorFailureOwner")->asClassType();
-    const auto backingId = runtime.registerProperty(ownerId, "backing", type);
+    const auto backingId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "backing", type);
     BOOST_REQUIRE(backingId.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto failGetter = false;
@@ -770,7 +770,7 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_compile_as_native_method_calls_wit
         auto& runtime = fixture.getRuntime();
         const auto valueId = runtime.registerStruct("PendingAccessorValue");
         const auto* type = runtime.getTypeByName("PendingAccessorValue");
-        BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
         const auto ownerId = runtime.registerClass("PendingAccessorOwner", ClassMode::Closed);
         const auto* owner = runtime.getTypeByName("PendingAccessorOwner")->asClassType();
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
@@ -809,7 +809,7 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_keep_read_write_and_value
         auto& runtime = fixture.getRuntime();
         const auto valueId = runtime.registerStruct("RestrictedAccessorValue");
         const auto* type = runtime.getTypeByName("RestrictedAccessorValue");
-        BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
         const auto ownerId = runtime.registerClass("RestrictedAccessorOwner", ClassMode::Closed);
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
         const auto getter = runtime.addMethod(ownerId, {

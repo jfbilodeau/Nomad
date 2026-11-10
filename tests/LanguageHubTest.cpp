@@ -220,7 +220,7 @@ BOOST_AUTO_TEST_CASE(hub_classes_use_local_names_and_preserve_class_modes)
         const auto* member = runtime.getHub(hubId)->getMember("Point");
         BOOST_REQUIRE(member != nullptr);
         BOOST_TEST(std::get<const Type*>(*member) == type);
-        BOOST_REQUIRE(runtime.registerProperty(classId, "value", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(classId, "value", runtime.getIntegerType()).isValid());
         BOOST_REQUIRE(runtime.addConstructor(classId, {
             .parameters = {},
             .function = [type](VirtualMachine* machine) {

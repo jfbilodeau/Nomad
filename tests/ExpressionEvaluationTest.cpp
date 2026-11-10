@@ -92,8 +92,8 @@ BOOST_AUTO_TEST_CASE(expression_struct_results_own_their_values_after_ast_and_vm
     Runtime runtime;
     const auto typeId = runtime.registerStruct("AstOwnedValue");
     const auto* type = runtime.getTypeByName("AstOwnedValue");
-    BOOST_REQUIRE(runtime.registerProperty(typeId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(typeId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     BOOST_REQUIRE(runtime.registerNativeFunction("ast.makeValue", [](VirtualMachine* active) {
         auto* destination = &active->getStorageParameter(0, 0);

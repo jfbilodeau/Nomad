@@ -115,8 +115,8 @@ BOOST_AUTO_TEST_CASE(class_value_size_is_independent_of_its_field_count)
     BOOST_TEST(type->getSize() == 1u);
     BOOST_TEST(type->asClassType()->getPropertyCount() == 0u);
 
-    BOOST_REQUIRE(runtime.registerProperty(typeId, "x", runtime.getFloatType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(typeId, "y", runtime.getFloatType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(typeId, "x", runtime.getFloatType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(typeId, "y", runtime.getFloatType()).isValid());
     BOOST_TEST(type->asClassType()->getPropertyCount() == 2u);
     BOOST_TEST(type->getSize() == 1u);
 }

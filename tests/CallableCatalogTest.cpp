@@ -164,7 +164,7 @@ BOOST_AUTO_TEST_CASE(local_layout_metadata_is_shared_across_script_callable_cate
     const auto* empty = runtime.getTypeByName("EmptyLocal")->asStructType();
     const auto* point = runtime.getTypeByName("PointLocal")->asStructType();
     for (const auto* name : {"x", "y", "z"}) {
-        BOOST_REQUIRE(runtime.registerProperty(pointId, name, runtime.getFloatType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pointId, name, runtime.getFloatType()).isValid());
     }
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(pointId);
@@ -311,8 +311,8 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_param
     const auto emptyId = runtime.registerStruct("HiddenEmpty");
     const auto* point = runtime.getTypeByName("HiddenPoint");
     const auto* empty = runtime.getTypeByName("HiddenEmpty");
-    BOOST_REQUIRE(runtime.registerProperty(pointId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(pointId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pointId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pointId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(pointId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const std::vector<Parameter> parameters{

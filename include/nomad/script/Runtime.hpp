@@ -326,8 +326,6 @@ public:
         NomadString path,
         NomadString source
     );
-    [[nodiscard]] PropertyId registerScriptClassProperty(TypeId id, const NomadString& name, const Type* valueType);
-    [[nodiscard]] PropertyId registerScriptStructProperty(TypeId id, const NomadString& name, const Type* valueType);
     [[nodiscard]] IndexerId addIndexer(TypeId id, NativeIndexerDefinition definition);
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* classType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
@@ -348,7 +346,6 @@ public:
         NomadString path,
         NomadString source
     );
-    PropertyId registerProperty(TypeId ownerId, const NomadString& name, const Type* valueType);
     void setPropertyHasExplicitInitializer(PropertyId id, bool hasExplicitInitializer);
     [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;

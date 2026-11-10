@@ -207,7 +207,7 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_conflicts_and_preserves_compatible_recei
     BOOST_REQUIRE(secondMethodId.isValid());
     BOOST_TEST(runtime.addMethod(secondId, definition).isInvalid());
     definition.name = "stored";
-    BOOST_REQUIRE(runtime.registerProperty(first->getId(), "stored", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "stored", runtime.getIntegerType()).isValid());
     BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
     definition.name = "native";
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(firstId, {
@@ -493,7 +493,7 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_duplicate_and_conflicting_members) {
     readOnlyDefinition.name = "readOnly";
     readOnlyDefinition.setter = {};
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(readOnlyDefinition)).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "stored", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "stored", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.addMethod(type->getId(), {
         .name = "method",
         .parameters = {},
@@ -611,7 +611,7 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_validate_accessor_signatures_and_p
     const auto* owner = runtime.getTypeByName("MethodPropertyOwner")->asClassType();
     const auto valueId = runtime.registerStruct("MethodPropertyValue");
     const auto* valueType = runtime.getTypeByName("MethodPropertyValue");
-    BOOST_REQUIRE(runtime.registerProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto calls = 0;

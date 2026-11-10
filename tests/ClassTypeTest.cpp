@@ -125,7 +125,7 @@ BOOST_AUTO_TEST_SUITE(class_type)
 BOOST_AUTO_TEST_CASE(runtime_finalization_rejects_invalid_and_non_composite_type_ids) {
     Runtime runtime;
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
-    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "value", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "value", runtime.getIntegerType()).isValid());
     const auto enumId = runtime.createEnum("State", {{"Ready", 1}});
     BOOST_REQUIRE(enumId.isValid());
     for (const auto id : {TypeId::INVALID, TypeId{-2}, TypeId{NOMAD_ID_MAX},
@@ -141,8 +141,8 @@ BOOST_AUTO_TEST_CASE(runtime_finalization_rejects_invalid_and_non_composite_type
 BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_or_native_members) {
     Runtime runtime;
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Opened);
-    const auto first = runtime.registerProperty(owner->getId(), "first", runtime.getFloatType());
-    const auto second = runtime.registerProperty(owner->getId(), "second", runtime.getStringType());
+    const auto first = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", runtime.getFloatType());
+    const auto second = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "second", runtime.getStringType());
     BOOST_REQUIRE(first.isValid());
     BOOST_REQUIRE(second.isValid());
     BOOST_TEST(!owner->isFieldLayoutFinalized());
@@ -164,8 +164,8 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
     BOOST_TEST(fields[1].offset == 1U);
     BOOST_TEST(fields[1].size == 1U);
     runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
-    BOOST_TEST(runtime.registerProperty(owner->getId(), "first", runtime.getFloatType()) == first);
-    BOOST_TEST(runtime.registerProperty(owner->getId(), "extra", runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", runtime.getFloatType()) == first);
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "extra", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(owner->getProperty("extra") == nullptr);
     BOOST_TEST(owner->getPropertyCount() == 2U);
     runtime.setPropertyHasExplicitInitializer(first, true);
@@ -216,10 +216,10 @@ BOOST_AUTO_TEST_CASE(finalization_distinguishes_empty_inline_layouts_from_unreso
         "EmptyInline", ClassMode::Closed, empty
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
-    const auto first = runtime.registerProperty(owner->getId(), "first", empty);
-    const auto number = runtime.registerProperty(owner->getId(), "number", runtime.getIntegerType());
-    const auto middle = runtime.registerProperty(owner->getId(), "middle", empty);
-    const auto last = runtime.registerProperty(owner->getId(), "last", empty);
+    const auto first = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", empty);
+    const auto number = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "number", runtime.getIntegerType());
+    const auto middle = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "middle", empty);
+    const auto last = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "last", empty);
     BOOST_REQUIRE(first.isValid());
     BOOST_REQUIRE(number.isValid());
     BOOST_REQUIRE(middle.isValid());
@@ -254,14 +254,14 @@ BOOST_AUTO_TEST_CASE(finalization_resolves_nested_inline_dependencies_before_con
         "PairInline", ClassMode::Closed, pair
     ).isValid());
     for (const auto* name : {"x", "y", "z"}) {
-        BOOST_REQUIRE(runtime.registerProperty(point->getId(), name, runtime.getFloatType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(point->getId(), name, runtime.getFloatType()).isValid());
     }
-    const auto origin = runtime.registerProperty(pair->getId(), "origin", point);
-    const auto destination = runtime.registerProperty(pair->getId(), "destination", point);
-    const auto label = runtime.registerProperty(pair->getId(), "label", runtime.getStringType());
+    const auto origin = runtime.getTypeManager().registerScriptClassProperty(pair->getId(), "origin", point);
+    const auto destination = runtime.getTypeManager().registerScriptClassProperty(pair->getId(), "destination", point);
+    const auto label = runtime.getTypeManager().registerScriptClassProperty(pair->getId(), "label", runtime.getStringType());
     const auto* owner = createTestType(runtime, "Player", ClassMode::Closed);
-    const auto name = runtime.registerProperty(owner->getId(), "name", runtime.getStringType());
-    const auto location = runtime.registerProperty(owner->getId(), "location", pair);
+    const auto name = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "name", runtime.getStringType());
+    const auto location = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "location", pair);
     BOOST_REQUIRE(origin.isValid());
     BOOST_REQUIRE(destination.isValid());
     BOOST_REQUIRE(label.isValid());
@@ -279,7 +279,7 @@ BOOST_AUTO_TEST_CASE(finalization_resolves_nested_inline_dependencies_before_con
     BOOST_TEST(owner->getFieldOffset(location) == 1U);
     BOOST_TEST(owner->getFieldStorageSize() == 8U);
     BOOST_TEST(owner->getSize() == 1U);
-    BOOST_TEST(runtime.registerProperty(point->getId(), "extra", runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(point->getId(), "extra", runtime.getIntegerType()).isInvalid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->getFieldStorageSize() == 8U);
 }
@@ -295,10 +295,10 @@ BOOST_AUTO_TEST_CASE(finalization_rejects_direct_and_indirect_inline_cycles_with
         BOOST_REQUIRE(runtime.registerClass<InlineLayoutTestType>(
             "SecondInline", ClassMode::Closed, second
         ).isValid());
-        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "number", runtime.getIntegerType()).isValid());
-        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "next", indirect ? second : first).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "number", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "next", indirect ? second : first).isValid());
         if (indirect) {
-            BOOST_REQUIRE(runtime.registerProperty(second->getId(), "next", first).isValid());
+            BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(second->getId(), "next", first).isValid());
         }
         BOOST_CHECK_EXCEPTION(runtime.getTypeManager().finalizeCompositeFieldLayout(first->getId()), NomadException, [](const NomadException& error) {
             const auto message = std::string(error.what());
@@ -309,7 +309,7 @@ BOOST_AUTO_TEST_CASE(finalization_rejects_direct_and_indirect_inline_cycles_with
         BOOST_CHECK_THROW((void)first->getSize(), NomadException);
         BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(first->getId()), NomadException);
         BOOST_TEST(!first->isFieldLayoutFinalized());
-        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "extra", runtime.getIntegerType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "extra", runtime.getIntegerType()).isValid());
     }
 }
 
@@ -324,8 +324,8 @@ BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline
         "NativeInline", ClassMode::Closed, nativeOnly
     ).isValid());
     const auto* owner = createTestType(runtime, "Player", ClassMode::Closed);
-    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "location", point).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(point->getId(), "player", owner).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "location", point).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(point->getId(), "player", owner).isValid());
     auto getterCalls = 0;
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(point->getId(), {
         .valueType = nativeOnly,
@@ -346,7 +346,7 @@ BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline
         "ReferenceInline", ClassMode::Closed, referenceOnly
     ).isValid());
     const auto* referencedClass = createTestType(runtime, "Referenced", ClassMode::Closed);
-    BOOST_REQUIRE(runtime.registerProperty(referenceOnly->getId(), "reference", referencedClass).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(referenceOnly->getId(), "reference", referencedClass).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(referenceOnly->getId());
     BOOST_TEST(referenceOnly->getSize() == 1U);
     BOOST_TEST(!referencedClass->isFieldLayoutFinalized());
@@ -363,14 +363,14 @@ BOOST_AUTO_TEST_CASE(finalization_can_retry_unresolved_sizes_without_rolling_bac
         "PendingWidth", ClassMode::Closed, pending, std::nullopt
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
-    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "empty", empty).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "pending", pending).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "empty", empty).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "pending", pending).isValid());
     BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId()), NomadException);
     BOOST_TEST(!owner->isFieldLayoutFinalized());
     BOOST_TEST(empty->isFieldLayoutFinalized());
     BOOST_TEST(empty->getSize() == 0U);
     BOOST_TEST(pending->getSizeQueryCount() == 1U);
-    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "extra", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "extra", runtime.getIntegerType()).isValid());
 
     pending->setSize(3);
     runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
@@ -408,8 +408,8 @@ BOOST_AUTO_TEST_CASE(finalization_checks_overflow_without_rejecting_maximum_offs
         "EmptyInline", ClassMode::Closed, empty
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
-    BOOST_REQUIRE(runtime.registerProperty(owner->getId(), "maximum", maximum).isValid());
-    const auto emptyField = runtime.registerProperty(owner->getId(), "empty", empty);
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "maximum", maximum).isValid());
+    const auto emptyField = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "empty", empty);
     BOOST_REQUIRE(emptyField.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
     BOOST_TEST(owner->isFieldLayoutFinalized());
@@ -417,8 +417,8 @@ BOOST_AUTO_TEST_CASE(finalization_checks_overflow_without_rejecting_maximum_offs
     BOOST_TEST(owner->getFieldOffset(emptyField) == maximumSize);
 
     const auto* overflow = createTestType(runtime, "Overflow", ClassMode::Closed);
-    BOOST_REQUIRE(runtime.registerProperty(overflow->getId(), "maximum", maximum).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(overflow->getId(), "extra", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(overflow->getId(), "maximum", maximum).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(overflow->getId(), "extra", runtime.getIntegerType()).isValid());
     BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(overflow->getId()), NomadException);
     BOOST_TEST(!overflow->isFieldLayoutFinalized());
     BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(overflow->getId()), NomadException);
@@ -526,17 +526,17 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; },
         .setter = [&](VirtualMachine*, const RuntimeValue&) { ++callbackCalls; }
     });
-    const auto first = runtime.registerProperty(owner->getId(), "first", emptyType);
-    const auto point = runtime.registerProperty(owner->getId(), "point", pointType);
+    const auto first = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", emptyType);
+    const auto point = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "point", pointType);
     const auto nativeBetween = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "nativeBetween",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
     });
-    const auto text = runtime.registerProperty(owner->getId(), "text", runtime.getStringType());
-    const auto middle = runtime.registerProperty(owner->getId(), "middle", emptyType);
-    const auto number = runtime.registerProperty(owner->getId(), "number", runtime.getIntegerType());
-    const auto last = runtime.registerProperty(owner->getId(), "last", emptyType);
+    const auto text = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "text", runtime.getStringType());
+    const auto middle = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "middle", emptyType);
+    const auto number = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "number", runtime.getIntegerType());
+    const auto last = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "last", emptyType);
     const auto nativeAfter = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = emptyType,
         .name = "nativeAfter",
@@ -559,7 +559,7 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     BOOST_TEST(owner->getSize() == 1U);
 
     const auto* pointProperty = owner->getProperty(point);
-    const auto appended = runtime.registerProperty(owner->getId(), "appended", pointType);
+    const auto appended = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "appended", pointType);
     BOOST_REQUIRE(appended.isValid());
     BOOST_TEST(owner->getFieldIndex(appended) == 6U);
     BOOST_TEST(owner->getFieldOffset(appended) == 5U);
@@ -601,9 +601,9 @@ BOOST_AUTO_TEST_CASE(field_layout_queries_follow_size_resolution) {
         "PendingWidth", ClassMode::Closed, pendingType, std::nullopt
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
-    const auto first = runtime.registerProperty(owner->getId(), "first", runtime.getIntegerType());
-    const auto pending = runtime.registerProperty(owner->getId(), "pending", pendingType);
-    const auto following = runtime.registerProperty(owner->getId(), "following", runtime.getFloatType());
+    const auto first = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", runtime.getIntegerType());
+    const auto pending = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "pending", pendingType);
+    const auto following = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "following", runtime.getFloatType());
     const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
         .valueType = pendingType,
         .name = "native",
@@ -645,19 +645,19 @@ BOOST_AUTO_TEST_CASE(field_layout_checks_overflow_without_rejecting_representabl
         "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
-    const auto maximum = runtime.registerProperty(owner->getId(), "maximum", maximumType);
-    const auto empty = runtime.registerProperty(owner->getId(), "empty", emptyType);
+    const auto maximum = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "maximum", maximumType);
+    const auto empty = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "empty", emptyType);
     BOOST_REQUIRE(maximum.isValid());
     BOOST_REQUIRE(empty.isValid());
     BOOST_TEST(owner->getFieldOffset(maximum) == 0U);
     BOOST_TEST(owner->getFieldOffset(empty) == maximumSize);
     BOOST_TEST(owner->getFieldStorageSize() == maximumSize);
 
-    const auto overflow = runtime.registerProperty(owner->getId(), "overflow", runtime.getIntegerType());
+    const auto overflow = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "overflow", runtime.getIntegerType());
     BOOST_REQUIRE(overflow.isValid());
     BOOST_TEST(owner->getFieldOffset(overflow) == maximumSize);
     BOOST_CHECK_THROW((void)owner->getFieldStorageSize(), NomadException);
-    const auto following = runtime.registerProperty(owner->getId(), "following", runtime.getIntegerType());
+    const auto following = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "following", runtime.getIntegerType());
     BOOST_REQUIRE(following.isValid());
     BOOST_CHECK_THROW((void)owner->getFieldOffset(following), NomadException);
 }
@@ -667,8 +667,8 @@ BOOST_AUTO_TEST_CASE(field_offsets_reject_invalid_and_foreign_property_ids) {
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Closed);
     const auto* other = createTestType(runtime, "Other", ClassMode::Closed);
     BOOST_CHECK_THROW((void)owner->getFieldOffset(PropertyId::INVALID), NomadException);
-    const auto first = runtime.registerProperty(owner->getId(), "first", runtime.getIntegerType());
-    const auto foreign = runtime.registerProperty(other->getId(), "foreign", runtime.getIntegerType());
+    const auto first = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", runtime.getIntegerType());
+    const auto foreign = runtime.getTypeManager().registerScriptClassProperty(other->getId(), "foreign", runtime.getIntegerType());
     BOOST_REQUIRE(first.isValid());
     BOOST_REQUIRE(foreign.isValid());
     BOOST_TEST(owner->getFieldOffset(first) == 0U);
@@ -718,12 +718,12 @@ BOOST_AUTO_TEST_CASE(open_type_registers_and_reuses_property_ids) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point", ClassMode::Opened);
     BOOST_TEST(type->isOpen());
-    const auto xId = runtime.registerProperty(type->getId(), "x", runtime.getFloatType());
-    const auto yId = runtime.registerProperty(type->getId(), "y", runtime.getFloatType());
+    const auto xId = runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getFloatType());
+    const auto yId = runtime.getTypeManager().registerScriptClassProperty(type->getId(), "y", runtime.getFloatType());
     BOOST_REQUIRE(xId.isValid());
     BOOST_REQUIRE(yId.isValid());
     BOOST_TEST(xId != yId);
-    BOOST_TEST(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()) == xId);
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getFloatType()) == xId);
     BOOST_TEST(type->getPropertyCount() == 2u);
 
     const auto* xProperty = type->getProperty("x");
@@ -739,15 +739,15 @@ BOOST_AUTO_TEST_CASE(closed_type_can_register_declared_properties) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "ClosedPoint", ClassMode::Closed);
     BOOST_TEST(!type->isOpen());
-    BOOST_TEST(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()).isValid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getFloatType()).isValid());
     BOOST_TEST(type->getPropertyCount() == 1u);
 }
 
 BOOST_AUTO_TEST_CASE(explicit_initializer_metadata_is_owned_by_each_stored_property) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Fields", ClassMode::Opened);
-    const auto firstId = runtime.registerProperty(type->getId(), "first", runtime.getIntegerType());
-    const auto secondId = runtime.registerProperty(type->getId(), "second", runtime.getStringType());
+    const auto firstId = runtime.getTypeManager().registerScriptClassProperty(type->getId(), "first", runtime.getIntegerType());
+    const auto secondId = runtime.getTypeManager().registerScriptClassProperty(type->getId(), "second", runtime.getStringType());
     BOOST_REQUIRE(firstId.isValid());
     BOOST_REQUIRE(secondId.isValid());
     const auto* first = runtime.getProperty(firstId);
@@ -757,7 +757,7 @@ BOOST_AUTO_TEST_CASE(explicit_initializer_metadata_is_owned_by_each_stored_prope
     runtime.setPropertyHasExplicitInitializer(firstId, true);
     BOOST_TEST(first->hasExplicitInitializer());
     BOOST_TEST(!second->hasExplicitInitializer());
-    BOOST_TEST(runtime.registerProperty(type->getId(), "first", runtime.getIntegerType()) == firstId);
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "first", runtime.getIntegerType()) == firstId);
     BOOST_TEST(first->hasExplicitInitializer());
     runtime.setPropertyHasExplicitInitializer(firstId, false);
     BOOST_TEST(!first->hasExplicitInitializer());
@@ -778,8 +778,8 @@ BOOST_AUTO_TEST_CASE(explicit_initializer_metadata_is_owned_by_each_stored_prope
 BOOST_AUTO_TEST_CASE(property_type_cannot_be_redefined) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point", ClassMode::Opened);
-    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()).isValid());
-    BOOST_TEST(runtime.registerProperty(type->getId(), "x", runtime.getIntegerType()).isInvalid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getFloatType()).isValid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 1u);
     BOOST_TEST(type->getProperty("x")->getValueType() == runtime.getFloatType());
 }
@@ -787,7 +787,7 @@ BOOST_AUTO_TEST_CASE(property_type_cannot_be_redefined) {
 BOOST_AUTO_TEST_CASE(null_property_type_is_rejected) {
     Runtime runtime;
     const auto* type = createTestType(runtime, "Point", ClassMode::Opened);
-    BOOST_TEST(runtime.registerProperty(type->getId(), "x", nullptr).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", nullptr).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 0u);
     BOOST_TEST(type->getProperty("x") == nullptr);
 }
@@ -796,7 +796,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     Runtime runtime;
     const auto* first = createTestType(runtime, "First", ClassMode::Opened);
     const auto* second = createTestType(runtime, "Second", ClassMode::Opened);
-    const auto scriptId = runtime.registerProperty(first->getId(), "value", runtime.getFloatType());
+    const auto scriptId = runtime.getTypeManager().registerScriptClassProperty(first->getId(), "value", runtime.getFloatType());
     const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(second->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
@@ -826,7 +826,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     BOOST_TEST(!runtime.getNativePropertyInfo(scriptId).has_value());
 
     for (auto index = 0; index < 64; ++index) {
-        BOOST_REQUIRE(runtime.registerProperty(first->getId(), "extra" + std::to_string(index), runtime.getFloatType()).isValid());
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "extra" + std::to_string(index), runtime.getFloatType()).isValid());
     }
     BOOST_TEST(runtime.getProperty(scriptId) == scriptProperty);
     BOOST_TEST(runtime.getNativeProperty(nativeId) == nativeProperty);
@@ -843,10 +843,10 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     Runtime other;
     const auto* type = createTestType(runtime, "Point", ClassMode::Opened);
     for (const auto id : {TypeId::INVALID, TypeId{-2}, TypeId{NOMAD_ID_MAX}, runtime.getIntegerType()->getId()}) {
-        BOOST_TEST(runtime.registerProperty(id, "value", runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(id, "value", runtime.getIntegerType()).isInvalid());
     }
-    BOOST_TEST(runtime.registerProperty(type->getId(), "value", other.getIntegerType()).isInvalid());
-    BOOST_TEST(runtime.registerProperty(type->getId(), "value", runtime.getVoidType()).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "value", other.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "value", runtime.getVoidType()).isInvalid());
     const auto method = runtime.addMethod(type->getId(), {
         .name = "move",
         .parameters = {},
@@ -855,8 +855,8 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
         .documentation = ""
     });
     BOOST_REQUIRE(method.isValid());
-    BOOST_TEST(runtime.registerProperty(type->getId(), "move", runtime.getFloatType()).isInvalid());
-    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "x", runtime.getFloatType()).isValid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "move", runtime.getFloatType()).isInvalid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getFloatType()).isValid());
     BOOST_TEST(runtime.addMethod(type->getId(), {
         .name = "x",
         .parameters = {},
@@ -880,7 +880,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
         .documentation = ""
     });
     BOOST_REQUIRE(nativeId.isValid());
-    BOOST_TEST(runtime.registerProperty(type->getId(), "native", runtime.getIntegerType()).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "native", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 2u);
     Property standalone(type, "standalone", runtime.getIntegerType());
     BOOST_TEST(standalone.registerWithRuntime(runtime).isInvalid());

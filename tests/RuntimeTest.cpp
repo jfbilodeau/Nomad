@@ -270,7 +270,7 @@ BOOST_AUTO_TEST_CASE(runtime_parameterized_callbacks_receive_the_owner_and_regis
             BOOST_REQUIRE(type.has_value());
             BOOST_TEST((*type)->getRuntime() == owningRuntime);
             BOOST_TEST(owningRuntime->getTypeByName("AssociatedBox<int>") == *type);
-            BOOST_REQUIRE(owningRuntime->registerProperty(id, "value", runtime.getIntegerType()).isValid());
+            BOOST_REQUIRE(owningRuntime->getTypeManager().registerScriptClassProperty(id, "value", runtime.getIntegerType()).isValid());
         }
     ));
 

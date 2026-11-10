@@ -76,8 +76,8 @@ BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_rele
     Runtime runtime;
     const auto id = runtime.registerStruct("RetiredCounter");
     const auto* type = runtime.getType(id).value();
-    BOOST_REQUIRE(runtime.registerProperty(id, "value", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(id, "label", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(id, "value", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(id, "label", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
@@ -134,7 +134,7 @@ BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_chan
     Runtime runtime;
     const auto id = runtime.registerStruct("RetiredView");
     const auto* type = runtime.getType(id).value();
-    const auto field = runtime.registerProperty(id, "text", runtime.getStringType());
+    const auto field = runtime.getTypeManager().registerScriptStructProperty(id, "text", runtime.getStringType());
     BOOST_REQUIRE(field.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     auto machine = runtime.createVirtualMachine();
@@ -263,9 +263,9 @@ BOOST_AUTO_TEST_CASE(struct_storage_supports_live_receiver_mutation_and_independ
     Runtime runtime;
     const auto ownerId = runtime.registerStruct("MutableStorageStruct");
     const auto* owner = runtime.getType(ownerId).value()->asStructType();
-    const auto numberProperty = runtime.registerProperty(ownerId, "number", runtime.getIntegerType());
+    const auto numberProperty = runtime.getTypeManager().registerScriptStructProperty(ownerId, "number", runtime.getIntegerType());
     BOOST_REQUIRE(numberProperty.isValid());
-    BOOST_REQUIRE(runtime.registerProperty(ownerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(ownerId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
@@ -334,8 +334,8 @@ BOOST_AUTO_TEST_CASE(failed_copies_release_partial_ownership_and_preserve_assign
     BOOST_REQUIRE(fieldId.isValid());
     const auto pairId = runtime.registerStruct("MutableStoragePair");
     const auto* pair = runtime.getType(pairId).value();
-    BOOST_REQUIRE(runtime.registerProperty(pairId, "first", field).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(pairId, "second", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "first", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     std::array<RuntimeValue, 2> original{
@@ -386,7 +386,7 @@ BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_wit
     Runtime runtime;
     const auto ownerId = runtime.registerStruct("ContextStorageStruct");
     const auto* owner = runtime.getType(ownerId).value();
-    BOOST_REQUIRE(runtime.registerProperty(ownerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(ownerId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     const auto emptyId = runtime.registerStruct("ContextStorageEmpty");
     const auto* empty = runtime.getType(emptyId).value();

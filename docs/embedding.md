@@ -453,10 +453,9 @@ Declare stored fields with
 Register native class accessors with `TypeManager::registerNativeClassProperty`.
 Register class methods and constructors with the explicit
 native/script class APIs on TypeManager or Runtime. Both also expose
-`registerNativeStructMethod`, `registerScriptStructMethod`,
-`registerScriptClassProperty`, and `registerScriptStructProperty`.
+`registerNativeStructMethod` and `registerScriptStructMethod`.
 Native property accessors remain class-only and are registered through TypeManager.
-Generic Runtime stored-field, method, and constructor registration entry points
+Generic Runtime method and constructor registration entry points
 remain compatibility delegates.
 Register struct constructors with
 `TypeManager::registerNativeStructConstructor(ownerId, definition)` or
@@ -1345,8 +1344,8 @@ owner category, invalid or unused IDs, and invalid value types with a logged
 error. Field names are stored as supplied; identifier syntax is validated by
 the compiler, not by these registration operations. These declarations create storage metadata,
 not native accessor callbacks. Names already used by native properties or
-methods are rejected. `Runtime::registerProperty` remains a compatibility
-entry point that delegates to the appropriate manager operation.
+methods are rejected. Register stored fields through TypeManager's explicit
+class or struct operation; the owner category is selected by the host.
 
 `Runtime::getProperty(id)` returns metadata for native or script properties;
 `getNativeProperty(id)` returns only native properties. Invalid or unregistered
