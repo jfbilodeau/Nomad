@@ -11,6 +11,7 @@
 namespace nomad::test {
 
 LanguageTestFixture::LanguageTestFixture() :
+    m_virtualMachine(m_runtime.createVirtualMachine()),
     m_compiler(m_runtime.createCompiler()),
     m_context(std::make_unique<CompilerContext>(m_compiler.get())) {
     registerSystemFunctions(&m_runtime);
@@ -20,6 +21,10 @@ LanguageTestFixture::~LanguageTestFixture() = default;
 
 Runtime& LanguageTestFixture::getRuntime() {
     return m_runtime;
+}
+
+VirtualMachine& LanguageTestFixture::getVirtualMachine() {
+    return *m_virtualMachine;
 }
 
 Compiler& LanguageTestFixture::getCompiler() {
@@ -100,7 +105,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
 
     try {
         m_runtime.initializeScripts();
-        m_runtime.executeFunction(functionId, arguments, result);
+        m_virtualMachine->executeFunction(functionId, arguments, result);
     } catch (const VirtualMachineException& exception) {
         outcome.fault = exception.what();
 

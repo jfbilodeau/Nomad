@@ -1,7 +1,8 @@
 # Runtime improvement plan
 
-Status: Step 5 is implemented and validated, awaiting review.
-Step 6 has not started and requires a concrete helper-design review.
+Status: Step 6 is implemented and validated, awaiting review.
+Runtime retains temporary-VM startup initialization. Step 7 has not started
+and is not approved for implementation.
 
 Approved planning decisions:
 
@@ -403,27 +404,64 @@ Completion evidence (2026-11-10, Windows Debug):
 
 ### Step 6: Reduce execution adapter plumbing
 
-Keep the public closure/function overloads and their ownership contracts.
-Before implementation, review a small concrete proposal for sharing VM
-acquisition and result finalization.
+Revised direction approved on 2026-11-10: remove cached ordinary execution
+from Runtime instead of adding cached-VM helpers. Runtime is a factory for
+caller-owned VMs. Each VM borrows its Runtime, which must outlive it.
+No new friendship is introduced.
 
-- Share startup validation and lazy VM acquisition without moving their
-  observable timing.
-- Preserve distinct discard and owned-copy result paths; discarding must not
-  copy a result first.
-- Keep explicit arguments/results scalar-only in these raw adapters while
-  preserving supported struct captures.
-- Preserve invalid-input logging, initialization reentry checks, and existing
-  yield/reentry behavior.
+Initialization clarification: retain `Runtime::initializeScripts`. Runtime
+owns initialization of its shared state: it creates a temporary VM, executes
+the initializer, then discards that VM. This short-lived bootstrap dependency
+is intentional and distinct from retaining a general-purpose execution VM.
+Keep once-only execution, sticky failure, and reentry state private to Runtime.
+Do not add VM initialization orchestration or public begin/complete/fail hooks.
+
+#### Move ordinary execution to host-owned VMs
+
+- Move execution adapters and result-ownership handling to the VM, retaining
+  separate discard and owned-copy paths with no copy on discard.
+- Remove Runtime's cached VM and execution adapters. Hosts retain and reuse VMs
+  created by the runtime factory; do not allocate a new VM for every call.
+- Migrate game/module execution and test consumers, preserving invalid-input
+  logging, yield/reentry behavior, and ownership.
+- Preserve scalar-only raw arguments/results and supported struct captures.
+- Retain Runtime lookup/catalog APIs and its temporary-VM initialization flow.
+  Initialization is the host's responsibility; remove the readiness guard
+  rather than expose it publicly. VM execution neither runs initializers nor
+  checks initialization state. Hosts stop execution if initialization fails.
 
 Acceptance: successful calls copy only when requested and release results
 exactly once. Exercise strings/class references, void results, closures,
 struct captures, initialization failures, and aggregate rejection.
 
-Do not introduce a universal execution request, receiver variant, or behavior
-flags. If a proposed extraction adds indirection without a net clarity/code
-benefit, retain the small specialized implementations. Fault recovery remains
-outside scope.
+Do not introduce a universal execution request, receiver variant, behavior flags,
+or friendship. Fault recovery remains outside scope.
+
+Completion evidence (2026-11-10, Windows Debug):
+
+- Moved the five ordinary execution overloads to VirtualMachine and removed
+  Runtime's cached VM and closure runner. Hosts retain factory-created VMs;
+  Game and the language fixture reuse their own VM. VMs are destroyed before
+  the Runtime they borrow. Naming consistently uses `virtualMachine`.
+- Retained `Runtime::initializeScripts` unchanged: a temporary VM runs the
+  initializer and is discarded, with lifecycle state private to Runtime.
+- Removed the startup-readiness guard at the user's request. Initialization
+  is a host precondition, not a VM execution check. Module-host and fixture
+  initialization remain explicit; hosts must stop after initialization failure.
+- Removed VirtualMachine's unused Runtime friendship; no friends were added.
+  Discard and owned-copy result paths, scalar adapter limits, struct captures,
+  yielding, and reentry retain their existing behavior.
+- Added independent factory-VM result/lifetime coverage and updated the
+  initialization regression for host-owned VMs. It confirms executing an
+  unrelated function does not implicitly initialize shared state, and both VMs
+  observe the once-only initializer's value after the host calls it.
+- Invoked CTest directly without a separate build. Freshly rebuilt binaries
+  passed language, remaining-unit, tooling, bindings, audio, and module-runtime
+  integration CTests. All four documentation preparation tests, built-tool
+  reference generation, strict MkDocs, retired-guard searches, and whitespace
+  checks passed. Production code decreased by 27 lines across all touched files.
+- Other platforms, full packaging/distribution integration, and manual gameplay
+  were not validated.
 
 ### Step 7: Borrow metadata instead of copying callback snapshots
 
@@ -495,5 +533,5 @@ performance results from Windows Debug checks.
 - Net production-code reduction is reported across all touched files.
 - All executed checks and remaining limitations are recorded before sign-off.
 
-Next after Step 5 review: approve a small Step 6 proposal for shared VM
-acquisition and result finalization before implementing execution-adapter cleanup.
+Next after Step 6 review: Step 7, borrowing native member/indexer metadata
+instead of copying callback snapshots.

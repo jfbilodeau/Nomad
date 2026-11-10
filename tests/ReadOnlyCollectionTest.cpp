@@ -37,9 +37,9 @@ bool compile(Runtime& runtime, const NomadString& source) {
     return compiled;
 }
 
-void execute(Runtime& runtime, const NomadString& source) {
+void execute(Runtime& runtime, VirtualMachine& machine, const NomadString& source) {
     BOOST_REQUIRE(compile(runtime, source));
-    runtime.executeFunction(runtime.getFunctionId("main"));
+    machine.executeFunction(runtime.getFunctionId("main"));
 }
 
 void reject(const NomadString& setup, const NomadString& expression) {
@@ -93,8 +93,9 @@ BOOST_AUTO_TEST_CASE(list_snapshots_copy_containers_share_nested_values_and_rele
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         registerCollections(runtime);
-        execute(runtime,
+        execute(runtime, *virtualMachine,
             "items = new List<string>\n"
             "items.append \"first\"\nitems.append \"second\"\n"
             "snapshot = items.toReadOnly\n"
@@ -134,6 +135,7 @@ BOOST_AUTO_TEST_CASE(list_mutators_and_constructors_are_unavailable_in_both_exec
 
 BOOST_AUTO_TEST_CASE(native_lists_can_be_exposed_directly_as_read_only) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     registerCollections(runtime);
     const auto* type = runtime.getTypeManager().getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
     auto list = std::make_unique<ListObject>(runtime.getIntegerType());
@@ -142,7 +144,7 @@ BOOST_AUTO_TEST_CASE(native_lists_can_be_exposed_directly_as_read_only) {
     value.setObjectValue(list.get());
     BOOST_REQUIRE(runtime.registerConstant("snapshot", value, type).isValid());
     list.release()->releaseRef();
-    execute(runtime, "assert snapshot.count == 1\nassert snapshot[0] == 42");
+    execute(runtime, *virtualMachine, "assert snapshot.count == 1\nassert snapshot[0] == 42");
 }
 
 BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
@@ -151,8 +153,9 @@ BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         registerCollections(runtime);
-        execute(runtime,
+        execute(runtime, *virtualMachine,
             "items = new Map<string string>\nitems[\"key\"] = \"value\"\n"
             "snapshot = items.toReadOnly\nitems[\"key\"] = \"changed\"\nitems.clear\n"
             "assert snapshot.count == 1\nassert snapshot.contains \"key\"\n"
@@ -189,8 +192,9 @@ BOOST_AUTO_TEST_CASE(array_snapshots_preserve_rank_dimensions_and_shallow_values
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         registerCollections(runtime);
-        execute(runtime,
+        execute(runtime, *virtualMachine,
             "line = new Array<string> 2\nline[0] = \"first\"\nline[1] = \"second\"\n"
             "lineCopy = line.toReadOnly\nline[0] = \"changed\"\n"
             "assert lineCopy.count == 2\nassert lineCopy[0] == \"first\"\n"

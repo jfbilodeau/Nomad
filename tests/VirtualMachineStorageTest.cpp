@@ -55,6 +55,62 @@ int countCallAllocations(
 
 BOOST_AUTO_TEST_SUITE(virtual_machine_storage)
 
+BOOST_AUTO_TEST_CASE(factory_virtual_machines_keep_results_and_return_ownership_independent) {
+    Runtime runtime;
+    auto firstMachine = runtime.createVirtualMachine();
+    auto secondMachine = runtime.createVirtualMachine();
+    BOOST_TEST(firstMachine.get() != secondMachine.get());
+    BOOST_TEST(firstMachine->getRuntime() == &runtime);
+    BOOST_TEST(secondMachine->getRuntime() == &runtime);
+    {
+        auto compiler = runtime.createCompiler();
+        CompilerContext context(compiler.get());
+        compiler->registerSources(&context, {{{"main", {"main.nomad",
+            "fun increment value:int\nreturn value + 1\nend\n"
+            "fun echo value:string\nreturn value\nend\n"
+            "return \"discarded\""}}}, {}});
+        BOOST_REQUIRE(compiler->compileFunctions(&context));
+    }
+
+    const auto increment = runtime.getFunctionId("increment");
+    const auto echo = runtime.getFunctionId("echo");
+    secondMachine->setIntegerResult(19);
+    RuntimeValue firstInteger;
+    firstMachine->executeFunction(increment, {RuntimeValue{NomadInteger{41}}}, firstInteger);
+    BOOST_TEST(firstInteger.getIntegerValue() == 42);
+    BOOST_TEST(secondMachine->getIntegerResult() == 19);
+    RuntimeValue secondInteger;
+    secondMachine->executeFunction(increment, {RuntimeValue{NomadInteger{6}}}, secondInteger);
+    BOOST_TEST(secondInteger.getIntegerValue() == 7);
+    BOOST_TEST(firstMachine->getIntegerResult() == 42);
+
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    RuntimeValue argument{NomadString{"owned argument"}};
+    RuntimeValue firstResult;
+    RuntimeValue secondResult;
+    firstMachine->executeFunction(echo, {argument}, firstResult);
+    BOOST_TEST(firstResult.getObjectValue() == argument.getObjectValue());
+    BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 2U);
+    secondMachine->executeFunction(echo, {argument}, secondResult);
+    BOOST_TEST(secondResult.getObjectValue() == argument.getObjectValue());
+    BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 3U);
+    firstMachine->executeFunction(increment, {RuntimeValue{NomadInteger{8}}});
+    firstMachine->executeFunction(runtime.getFunctionId("main"));
+    firstMachine.reset();
+    argument.freeObjectValue();
+    BOOST_TEST(firstResult.getStringValue() == "owned argument");
+    BOOST_TEST(secondResult.getStringValue() == "owned argument");
+    BOOST_TEST(firstResult.getObjectValue()->getReferenceCount() == 2U);
+    secondMachine->executeFunction(echo, {firstResult});
+    BOOST_TEST(firstResult.getObjectValue()->getReferenceCount() == 2U);
+    secondMachine.reset();
+    BOOST_TEST(secondResult.getStringValue() == "owned argument");
+    runtime.getStringType()->freeValue(&firstResult);
+    BOOST_TEST(secondResult.getObjectValue()->getReferenceCount() == 1U);
+    runtime.getStringType()->freeValue(&secondResult);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
 BOOST_AUTO_TEST_CASE(contiguous_parameter_blocks_and_local_views_keep_physical_order) {
     Runtime runtime;
     VirtualMachine machine(&runtime, 32);
@@ -422,6 +478,7 @@ BOOST_AUTO_TEST_CASE(hidden_pointers_survive_nested_calls_and_host_reentry_failu
 BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_owned_fields) {
     const auto before = RuntimeValue::getLiveStringCount();
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto typeId = runtime.getTypeManager().registerStruct("CallStorage");
     const auto* type = runtime.getTypeByName("CallStorage")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
@@ -497,7 +554,7 @@ BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_own
     caller->setFunctionEnd(runtime.getInstructions().size());
     for (auto index = 0; index < 3; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(callerId, {}, result);
+        virtualMachine->executeFunction(callerId, {}, result);
         BOOST_TEST(result.getIntegerValue() == 19);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
     }

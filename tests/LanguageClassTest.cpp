@@ -618,7 +618,7 @@ BOOST_AUTO_TEST_CASE(field_initializers_reject_receiver_reads_captures_and_forma
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     RuntimeValue result;
-    fixture.getRuntime().executeFunction(fixture.getRuntime().getFunctionId("main"), {}, result);
+    fixture.getVirtualMachine().executeFunction(fixture.getRuntime().getFunctionId("main"), {}, result);
     auto* object = result.asObject<ScriptObject>();
     BOOST_TEST(object->getField(0).getIntegerValue() == 10);
     BOOST_TEST(object->getField(1).getIntegerValue() == 23);

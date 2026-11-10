@@ -49,6 +49,7 @@ BOOST_AUTO_TEST_CASE(interpreter_rejects_creating_unknown_qualified_identifier) 
 
 BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
 
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
@@ -62,7 +63,7 @@ BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
     BOOST_TEST(result.getStringValue() == "J-F");
     runtime.getStringType()->freeValue(&result);
 }

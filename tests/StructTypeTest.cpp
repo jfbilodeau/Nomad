@@ -464,6 +464,7 @@ BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {
 
 BOOST_AUTO_TEST_CASE(stored_property_address_opcode_borrows_nested_storage_from_a_retained_stack_owner) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto innerId = runtime.getTypeManager().registerStruct("AddressInner");
     const auto payloadId = runtime.getTypeManager().registerStruct("AddressPayload");
     const auto ownerId = runtime.getTypeManager().registerClass("AddressOwner", ClassMode::Closed);
@@ -562,7 +563,7 @@ BOOST_AUTO_TEST_CASE(stored_property_address_opcode_borrows_nested_storage_from_
             caller->setFunctionEnd(runtime.getInstructions().size());
             for (auto index = 0; index < 2; ++index) {
                 RuntimeValue result;
-                runtime.executeFunction(callerId, {}, result);
+                virtualMachine->executeFunction(callerId, {}, result);
                 BOOST_TEST(result.getIntegerValue() == 42);
                 BOOST_TEST(object.getReferenceCount() == 1U);
             }
@@ -724,6 +725,7 @@ BOOST_AUTO_TEST_CASE(local_cleanup_emits_only_owned_fields_at_full_width_nested_
 BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves_scalar_neighbors) {
     const auto before = RuntimeValue::getLiveStringCount();
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue emptyDefault;
     runtime.getStringType()->initValue(&emptyDefault);
     const auto emptyReferences = emptyDefault.getObjectValue()->getReferenceCount();
@@ -780,7 +782,7 @@ BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves
     function->setFunctionEnd(runtime.getInstructions().size());
     for (auto index = 0; index < 2; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        virtualMachine->executeFunction(id, {}, result);
         BOOST_TEST(result.getIntegerValue() == 29);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
         BOOST_TEST(emptyDefault.getObjectValue()->getReferenceCount() == emptyReferences);
@@ -848,6 +850,7 @@ BOOST_AUTO_TEST_CASE(local_copy_emission_preserves_full_width_offsets_and_empty_
 
 BOOST_AUTO_TEST_CASE(local_copy_and_assignment_preserve_nested_values_and_reference_ownership) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto emptyId = runtime.getTypeManager().registerStruct("CopyMarker");
     const auto innerId = runtime.getTypeManager().registerStruct("CopyPayload");
     const auto outerId = runtime.getTypeManager().registerStruct("CopyWrapper");
@@ -931,7 +934,7 @@ BOOST_AUTO_TEST_CASE(local_copy_and_assignment_preserve_nested_values_and_refere
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 2; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        virtualMachine->executeFunction(id, {}, result);
         BOOST_TEST(result.getIntegerValue() == 17);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -942,6 +945,7 @@ BOOST_AUTO_TEST_CASE(local_copy_and_assignment_preserve_nested_values_and_refere
 
 BOOST_AUTO_TEST_CASE(local_assignment_stages_overlapping_reference_ranges_in_both_directions) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto pairId = runtime.getTypeManager().registerStruct("OverlapPair");
     const auto backingId = runtime.getTypeManager().registerStruct("OverlapBacking");
     const auto* pair = runtime.getTypeByName("OverlapPair")->asStructType();
@@ -1010,13 +1014,14 @@ BOOST_AUTO_TEST_CASE(local_assignment_stages_overlapping_reference_ranges_in_bot
     function->setFunctionEnd(runtime.getInstructions().size());
     for (auto index = 0; index < 2; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        virtualMachine->executeFunction(id, {}, result);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     }
 }
 
 BOOST_AUTO_TEST_CASE(expressions_compile_into_local_storage_without_aggregate_registers) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto innerId = runtime.getTypeManager().registerStruct("ExpressionPayload");
     const auto outerId = runtime.getTypeManager().registerStruct("ExpressionWrapper");
     const auto* inner = runtime.getTypeByName("ExpressionPayload")->asStructType();
@@ -1084,7 +1089,7 @@ BOOST_AUTO_TEST_CASE(expressions_compile_into_local_storage_without_aggregate_re
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     for (auto index = 0; index < 2; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        virtualMachine->executeFunction(id, {}, result);
         BOOST_TEST(result.getIntegerValue() == 47);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     }
@@ -1128,6 +1133,7 @@ BOOST_AUTO_TEST_CASE(local_expression_destinations_handle_empty_structs_and_reje
 
 BOOST_AUTO_TEST_CASE(struct_local_assignments_allocate_staging_before_entry_and_release_it_after_use) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto innerId = runtime.getTypeManager().registerStruct("AssignmentPayload");
     const auto outerId = runtime.getTypeManager().registerStruct("AssignmentWrapper");
     const auto* inner = runtime.getTypeByName("AssignmentPayload")->asStructType();
@@ -1222,7 +1228,7 @@ BOOST_AUTO_TEST_CASE(struct_local_assignments_allocate_staging_before_entry_and_
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     for (auto index = 0; index < 2; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        virtualMachine->executeFunction(id, {}, result);
         BOOST_TEST(result.getIntegerValue() == 47);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(emptyDefault.getObjectValue()->getReferenceCount() == emptyReferences);
@@ -1267,6 +1273,7 @@ BOOST_AUTO_TEST_CASE(empty_struct_assignment_staging_occupies_no_physical_slots)
 
 BOOST_AUTO_TEST_CASE(scalar_parameter_bytecode_uses_offsets_after_wide_parameters) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto paddingId = runtime.getTypeManager().registerStruct("ParameterPadding");
     const auto* padding = runtime.getTypeByName("ParameterPadding")->asStructType();
     for (const auto* name : {"x", "y", "z"}) {
@@ -1350,7 +1357,7 @@ BOOST_AUTO_TEST_CASE(scalar_parameter_bytecode_uses_offsets_after_wide_parameter
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     for (auto index = 0; index < 2; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(outerId, {}, result);
+        virtualMachine->executeFunction(outerId, {}, result);
         BOOST_TEST(result.getIntegerValue() == 47);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     }
@@ -1451,6 +1458,7 @@ BOOST_AUTO_TEST_CASE(parameter_copy_and_cleanup_use_reversed_nested_field_offset
 
 BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutating_caller_storage) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto innerTypeId = runtime.getTypeManager().registerStruct("BorrowedPayload");
     const auto outerTypeId = runtime.getTypeManager().registerStruct("BorrowedWrapper");
     const auto ownerId = runtime.getTypeManager().registerClass("ParameterOwner", ClassMode::Closed);
@@ -1626,7 +1634,7 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 2; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(callerId, {}, result);
+        virtualMachine->executeFunction(callerId, {}, result);
         BOOST_TEST(result.getIntegerValue() == 47);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -1635,6 +1643,7 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
 
 BOOST_AUTO_TEST_CASE(mixed_struct_and_empty_arguments_keep_right_to_left_evaluation_and_cleanup) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto emptyId = runtime.getTypeManager().registerStruct("EmptyArgument");
     const auto pairId = runtime.getTypeManager().registerStruct("PairArgument");
     const auto* empty = runtime.getTypeByName("EmptyArgument")->asStructType();
@@ -1714,7 +1723,7 @@ BOOST_AUTO_TEST_CASE(mixed_struct_and_empty_arguments_keep_right_to_left_evaluat
     for (auto index = 0; index < 2; ++index) {
         order.clear();
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        virtualMachine->executeFunction(id, {}, result);
         BOOST_TEST(result.getIntegerValue() == 47);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     }
@@ -1939,6 +1948,7 @@ BOOST_AUTO_TEST_CASE(borrowed_destination_copies_preserve_nested_values_and_rele
 BOOST_AUTO_TEST_CASE(compiler_destination_calls_emit_only_required_hidden_pointers) {
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto pointId = runtime.getTypeManager().registerStruct("DestinationPoint");
     const auto emptyId = runtime.getTypeManager().registerStruct("DestinationEmpty");
     const auto* point = runtime.getTypeByName("DestinationPoint");
@@ -2055,7 +2065,7 @@ BOOST_AUTO_TEST_CASE(compiler_destination_calls_emit_only_required_hidden_pointe
     compiler->linkFunctions();
     for (auto index = 0; index < 3; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(callerId, {}, result);
+        virtualMachine->executeFunction(callerId, {}, result);
         BOOST_TEST(result.getIntegerValue() == 77);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     }
@@ -2067,6 +2077,7 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_borrow_locals_parameters_and_e
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto typeId = runtime.getTypeManager().registerStruct("BorrowedPoint");
     const auto* type = runtime.getTypeByName("BorrowedPoint");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
@@ -2226,7 +2237,7 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_borrow_locals_parameters_and_e
     compiler->linkFunctions();
     for (auto index = 0; index < 3; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(callerId, {}, result);
+        virtualMachine->executeFunction(callerId, {}, result);
         BOOST_TEST(result.getIntegerValue() == 22);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -2240,6 +2251,7 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_borrow_locals_parameters_and_e
 BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_omit_empty_storage_and_preserve_void_and_reference_results) {
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto emptyId = runtime.getTypeManager().registerStruct("BorrowedEmpty");
     const auto textId = runtime.getTypeManager().registerStruct("BorrowedText");
     const auto* empty = runtime.getTypeByName("BorrowedEmpty");
@@ -2328,7 +2340,7 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_omit_empty_storage_and_preserv
     BOOST_TEST(caller->getVariableStorageSize() == 1U);
     for (auto index = 0; index < 3; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(callerId, {}, result);
+        virtualMachine->executeFunction(callerId, {}, result);
         BOOST_TEST(NomadString(result.getStringValue()) == "borrowed text");
         result.freeObjectValue();
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
@@ -4328,6 +4340,7 @@ BOOST_AUTO_TEST_CASE(registered_native_struct_constructors_create_nonempty_and_e
     for (const auto empty : {false, true}) {
         nomad::test::LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
+        auto* virtualMachine = &fixture.getVirtualMachine();
         const auto id = runtime.getTypeManager().registerStruct("PendingConstruction");
         if (!empty) {
             BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(id, "number", runtime.getIntegerType()).isValid());
@@ -4342,7 +4355,7 @@ BOOST_AUTO_TEST_CASE(registered_native_struct_constructors_create_nonempty_and_e
         fixture.addFunction("main", "value = new PendingConstruction");
         BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
         RuntimeValue result;
-        runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
         BOOST_TEST(calls == 1);
     }
 }
@@ -4350,6 +4363,7 @@ BOOST_AUTO_TEST_CASE(registered_native_struct_constructors_create_nonempty_and_e
 BOOST_AUTO_TEST_CASE(registered_empty_script_struct_constructor_bodies_create_values_without_object_initializers) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     const auto id = runtime.getTypeManager().registerStruct("PendingBody");
     runtime.getTypeManager().finalizeCompositeFieldLayout(id);
     const auto constructorId = runtime.getTypeManager().registerScriptStructConstructor(id, {}, "pending.nomad", "");
@@ -4365,12 +4379,13 @@ BOOST_AUTO_TEST_CASE(registered_empty_script_struct_constructor_bodies_create_va
     });
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
 }
 
 BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_preserves_copy_ownership) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     const auto nativeId = runtime.getTypeManager().registerStruct("NativeCreated");
     const auto scriptId = runtime.getTypeManager().registerStruct("ScriptCreated");
     const auto emptyId = runtime.getTypeManager().registerStruct("EmptyCreated");
@@ -4494,7 +4509,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
         BOOST_TEST(result.getIntegerValue() == 1);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);

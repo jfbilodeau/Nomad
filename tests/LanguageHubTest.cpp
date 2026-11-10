@@ -1160,6 +1160,8 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
 BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_lifetime)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
+    auto secondVirtualMachine = runtime.createVirtualMachine();
     auto calls = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "initialValue", [&calls](VirtualMachine* machine) { ++calls; machine->setIntegerResult(42); },
@@ -1177,7 +1179,11 @@ BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_life
             (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     }
     BOOST_TEST(calls == 0);
-    BOOST_CHECK_THROW(runtime.executeFunction(runtime.getFunctionId("main")), VirtualMachineException);
+    virtualMachine->executeFunction(runtime.getFunctionId("noop"));
+    BOOST_TEST(virtualMachine->getIntegerResult() == 1);
+    RuntimeValue secondResult{NomadInteger{19}};
+    secondVirtualMachine->executeFunction(runtime.getFunctionId("noop"), {}, secondResult);
+    BOOST_TEST(secondResult.getIntegerValue() == 1);
     auto machine = runtime.createVirtualMachine();
     machine->run(runtime.getScriptFunction(runtime.getFunctionId("noop")), {});
     BOOST_TEST(machine->getIntegerResult() == 1);
@@ -1186,8 +1192,11 @@ BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_life
     runtime.initializeScripts();
     BOOST_TEST(calls == 1);
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
+    secondVirtualMachine->executeFunction(runtime.getFunctionId("main"), {}, secondResult);
+    BOOST_TEST(secondResult.getIntegerValue() == 42);
+    BOOST_TEST(calls == 1);
     const auto* hub = runtime.getHub(runtime.getHubId("example"));
     BOOST_REQUIRE(hub != nullptr);
     BOOST_REQUIRE(hub->getMember("x") != nullptr);
@@ -1374,6 +1383,7 @@ BOOST_AUTO_TEST_CASE(initializer_diagnostics_keep_the_original_source)
 BOOST_AUTO_TEST_CASE(embedding_initializes_before_executing_functions)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{
@@ -1384,7 +1394,7 @@ BOOST_AUTO_TEST_CASE(embedding_initializes_before_executing_functions)
     BOOST_REQUIRE(compiler->compileScripts(&context));
     compiler.reset();
     runtime.initializeScripts();
-    runtime.executeFunction(runtime.getFunctionId("main"));
+    virtualMachine->executeFunction(runtime.getFunctionId("main"));
     RuntimeValue value;
     runtime.getContextVariableValue(runtime.getContextVariableId("example.value"), value);
     BOOST_TEST(value.getIntegerValue() == 43);

@@ -6,6 +6,7 @@
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -19,6 +20,7 @@ BOOST_AUTO_TEST_SUITE(compiler_hooks)
 BOOST_AUTO_TEST_CASE(executable_hooks_follow_phase_and_registration_order)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     const auto instructionCount = runtime.getInstructions().size();
@@ -60,7 +62,7 @@ BOOST_AUTO_TEST_CASE(executable_hooks_follow_phase_and_registration_order)
     }
     BOOST_CHECK(calls == expected);
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("answer"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("answer"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 }
 
@@ -216,6 +218,7 @@ BOOST_AUTO_TEST_CASE(semantic_errors_prevent_emission_and_completion_hooks)
 BOOST_AUTO_TEST_CASE(absent_optional_hooks_are_no_ops_and_compatibility_compiles)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerPhaseHook({});
@@ -223,7 +226,7 @@ BOOST_AUTO_TEST_CASE(absent_optional_hooks_are_no_ops_and_compatibility_compiles
 
     BOOST_REQUIRE(compiler->compileFunctions(&context));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("answer"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("answer"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 }
 

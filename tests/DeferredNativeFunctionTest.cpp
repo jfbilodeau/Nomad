@@ -242,6 +242,7 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
 
 BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_script_native_cycle) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     const auto types = deferTypes(*compiler);
     ScriptBindings bindings(runtime);
@@ -306,7 +307,7 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(declaration->getReturnType() == runtime.getTypeByName("log.SinkConfiguration"));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("exerciseDeferred"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("exerciseDeferred"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
     BOOST_TEST(calls == 1);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -319,7 +320,7 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_REQUIRE(later.succeeded());
     BOOST_TEST(runtime.getCallableOverloadCount("updateConfiguration") == 1U);
     BOOST_TEST(runtime.getNativeFunctionId("updateConfiguration") == id);
-    runtime.executeFunction(runtime.getFunctionId("later"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("later"), {}, result);
     BOOST_TEST(result.getBooleanValue());
     BOOST_TEST(calls == 2);
 }
@@ -436,6 +437,7 @@ BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_ar
 
 BOOST_AUTO_TEST_CASE(concrete_and_deferred_overloads_share_ordinary_resolution) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     const auto objectId = runtime.registerNativeFunction("choose",
         [](VirtualMachine* machine) { machine->setIntegerResult(20); },
@@ -451,7 +453,7 @@ BOOST_AUTO_TEST_CASE(concrete_and_deferred_overloads_share_ordinary_resolution) 
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getTypeByName("Number")}).id == objectId);
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getIntegerType()}).id == integerId);
     RuntimeValue value;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, value);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, value);
     BOOST_TEST(value.getIntegerValue() == 42);
 }
 

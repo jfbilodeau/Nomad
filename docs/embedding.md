@@ -28,6 +28,25 @@ Types and callables used by a context must remain valid.
 Neither the interpreter nor its context creates or owns a VM. Interpreters are
 noncopyable, and `interpreter.getVirtualMachine()` returns the borrowed VM by reference.
 
+`Runtime::createVirtualMachine()` returns a new caller-owned VM. Retain that VM
+for repeated execution; Runtime does not cache or own an ordinary execution VM.
+Each VM has independent stacks, results, receivers, and suspension state, while
+registered APIs and shared variables belong to their common runtime.
+
+Use `machine->executeFunction(functionId, arguments)` to execute and discard a
+scalar/reference/void result without copying it. The overload taking a
+`RuntimeValue& returnValue` supplies an owned copy; free that copy through the
+function's return type. Supply separate output storage, not the VM's result
+register. Closure-pointer overloads provide the same ownership contract.
+Explicit struct arguments/results require typed interpreter calls instead.
+
+The host is responsible for calling `Runtime::initializeScripts()` before
+executing scripts that need shared initialization. VM execution does not
+perform initialization or check whether it has run.
+Runtime executes that once-only initialization using a temporary VM, then
+discards it.
+Raw VM `run` and prepared-frame execution retain their lower-level contracts.
+
 ## Experimental generated script bindings
 
 `nomad generate-bindings <module-directory>` produces a C++ header, source, and
@@ -2166,7 +2185,7 @@ observe typed defaults or the value assigned so far.
 After compilation and resource preparation, call `ModuleHost::run()` to
 initialize scripts and invoke the runnable module. The module receives fully
 initialized scripting state and owns its entry-point convention. The game
-module executes `game.entry` through `Runtime::executeFunction`.
+module executes `game.entry` through its retained caller-owned VM.
 
 Use `ModuleHost::compileProject()` to load configured script roots and compile them.
 It returns a `CompilationResult` containing diagnostics and error/warning counts;
@@ -2235,9 +2254,9 @@ repeated successful calls do nothing. `VirtualMachine::run` never performs
 initialization automatically. Analysis resolves initializers but installs neither
 initial values nor executable initialization. `initializeScripts` rejects
 analysis-only hub variables.
-Initialization failure propagates to the caller, is not retried, and prevents
-subsequent high-level script execution. Use a fresh runtime for a new application
-execution.
+Initialization failure propagates to the caller and is not retried. The host
+must stop script execution after such a failure; VM execution does not enforce
+that precondition. Use a fresh runtime for a new application execution.
 
 ## Source input and compilation
 
@@ -2985,7 +3004,7 @@ script suspension behavior. Copying/execution failures propagate to the host;
 temporary argument/result cleanup occurs, but shared-object side effects are
 not rolled back. Fatal VM fault recovery remains unsupported.
 
-`Runtime::executeFunction(closure, rawArguments)` and its raw-result overload
+`VirtualMachine::executeFunction(closure, rawArguments)` and its raw-result overload
 also accept struct captures, so existing event/game callback adapters can invoke
 them without reading captures as scalars. These adapters retain their scalar/
 reference explicit-argument and scalar/reference/void result limits. Use the typed

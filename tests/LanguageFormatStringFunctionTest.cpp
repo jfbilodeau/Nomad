@@ -438,6 +438,7 @@ BOOST_AUTO_TEST_CASE(interpreter_struct_formatting_handles_empty_values_and_reta
 BOOST_AUTO_TEST_CASE(format_expressions_read_complete_struct_receiver_captures_in_callbacks) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     std::unique_ptr<Closure> callback;
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "test.keepFormatCallback",
@@ -465,7 +466,7 @@ BOOST_AUTO_TEST_CASE(format_expressions_read_complete_struct_receiver_captures_i
         BOOST_REQUIRE(callback != nullptr);
         for (auto invocation = 0; invocation < 2; ++invocation) {
             RuntimeValue result;
-            runtime.executeFunction(callback.get(), {}, result);
+            virtualMachine->executeFunction(callback.get(), {}, result);
             BOOST_TEST(result.getStringValue() == "FormatCapturedPoint 8 owned");
             runtime.getStringType()->freeValue(&result);
         }

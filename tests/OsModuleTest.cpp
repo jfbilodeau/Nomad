@@ -129,6 +129,7 @@ BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "must not be captured"}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     BOOST_TEST(constant(runtime, "os.argv").asObject<Array1dObject>()->getCount() == 0U);
     BOOST_TEST(constant(runtime, "os.env").asObject<MapObject>()->getCount() == 0U);
     BOOST_TEST(runtime.getConstantType(runtime.getConstantId("os.argv"))->getTypeName() == "ReadOnlyArray1<string>");
@@ -178,7 +179,7 @@ BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
         "assert os.argv.count == 0\n"
         "assert os.env.count == 0\n"));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
 }
 
 BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_execution_modes) {
@@ -211,11 +212,12 @@ BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_exec
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "original"}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     BOOST_REQUIRE(compile(runtime,
         "assert os.argv[0] == \"original\"\n"
         "for argument in os.argv\nassert argument == \"original\"\nend\n"));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
 }
 
 BOOST_AUTO_TEST_CASE(no_separator_means_no_application_arguments_and_packaging_has_no_runtime) {
@@ -265,8 +267,9 @@ BOOST_AUTO_TEST_CASE(snapshot_objects_are_released_with_the_runtime) {
         auto host = ModuleHost::create({}, directory.getPath(), modules,
             {"--", "owned 日本語"}, ModuleMode::Application);
         BOOST_REQUIRE(compile(*host->getRuntime(), "assert os.argv[0] == \"owned 日本語\""));
+        auto virtualMachine = host->getRuntime()->createVirtualMachine();
         RuntimeValue result;
-        host->getRuntime()->executeFunction(host->getRuntime()->getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(host->getRuntime()->getFunctionId("main"), {}, result);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -277,6 +280,7 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
     auto host = ModuleHost::create({}, directory.getPath(), modules,
         {"--", "original"}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue environmentValue(NomadString("original"));
     constant(runtime, "os.env").asObject<MapObject>()->setValue("interpreter", environmentValue);
     environmentValue.freeObjectValue();
@@ -289,7 +293,7 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
     auto* arguments = argumentsValue.asObject<Array1dObject>();
     const auto references = arguments->getReferenceCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getObjectValue() == arguments);
     runtime.getConstantType(runtime.getConstantId("os.argv"))->freeValue(&result);
     BOOST_TEST(arguments->getReferenceCount() == references);

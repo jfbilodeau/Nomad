@@ -8,6 +8,7 @@
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <array>
 #include <limits>
@@ -468,6 +469,7 @@ BOOST_AUTO_TEST_CASE(statement_parsers_register_without_interpreter_metadata)
 BOOST_AUTO_TEST_CASE(registered_source_batches_are_owned_by_the_compiler)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     {
@@ -478,13 +480,14 @@ BOOST_AUTO_TEST_CASE(registered_source_batches_are_owned_by_the_compiler)
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("answer"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("answer"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 }
 
 BOOST_AUTO_TEST_CASE(context_variables_compile_and_execute_with_global_ids)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"contextVariable", {"contextVariable.nomad",
@@ -493,7 +496,7 @@ BOOST_AUTO_TEST_CASE(context_variables_compile_and_execute_with_global_ids)
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getIntegerValue() == 17);
 }
@@ -501,6 +504,7 @@ BOOST_AUTO_TEST_CASE(context_variables_compile_and_execute_with_global_ids)
 BOOST_AUTO_TEST_CASE(context_variables_in_format_strings_use_global_ids)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"contextFormatString", {"contextFormatString.nomad",
@@ -509,7 +513,7 @@ BOOST_AUTO_TEST_CASE(context_variables_in_format_strings_use_global_ids)
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getStringValue() == "value 17");
 
@@ -519,6 +523,7 @@ BOOST_AUTO_TEST_CASE(context_variables_in_format_strings_use_global_ids)
 BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_and_sorting)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     const auto path = std::filesystem::path{"not-on-disk"} / "z.nomad";
@@ -559,7 +564,7 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     }
     BOOST_TEST(generatedCount == 1U);
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("z"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("z"), {}, result);
     BOOST_TEST(result.getStringValue() == "42");
     runtime.getStringType()->freeValue(&result);
 }

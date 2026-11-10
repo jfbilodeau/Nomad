@@ -39,6 +39,7 @@ public:
     ~LanguageTestFixture();
 
     [[nodiscard]] Runtime& getRuntime();
+    [[nodiscard]] VirtualMachine& getVirtualMachine();
     [[nodiscard]] Compiler& getCompiler();
 
     void addFunction(const NomadString& name, const NomadString& source);
@@ -55,6 +56,7 @@ public:
 
 private:
     Runtime m_runtime;
+    std::unique_ptr<VirtualMachine> m_virtualMachine;
     std::unique_ptr<Compiler> m_compiler;
     std::unique_ptr<CompilerContext> m_context;
     bool m_compiled = false;

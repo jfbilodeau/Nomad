@@ -40,6 +40,7 @@ BOOST_AUTO_TEST_SUITE(native_deferred_properties)
 BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_callbacks_and_keep_stable_ids) {
     for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         auto compiler = runtime.createCompiler();
         const auto ownerId = registerPropertyOwner(runtime);
         const auto* placeholder = compiler->deferType({"example.Level"});
@@ -121,7 +122,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
             BOOST_TEST(runtime.getInstructions().size() == instructionCount);
         } else {
             RuntimeValue answer;
-            runtime.executeFunction(runtime.getFunctionId("main"), {}, answer);
+            virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, answer);
             BOOST_TEST(answer.getBooleanValue());
             BOOST_TEST(stored == 2);
             BOOST_TEST(getterCalls == 1);
@@ -136,6 +137,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
 
 BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
     RuntimeValue stored;
@@ -160,7 +162,7 @@ BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership
         (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     RuntimeValue answer;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, answer);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, answer);
     BOOST_TEST(answer.getIntegerValue() == 3);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 1U);
     stored.freeObjectValue();

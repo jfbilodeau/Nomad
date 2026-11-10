@@ -222,6 +222,7 @@ BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     std::unique_ptr<Closure> closure;
 
     runtime.registerNativeFunction(
@@ -242,7 +243,7 @@ BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
     BOOST_REQUIRE(closure != nullptr);
 
     const auto before = RuntimeValue::getLiveStringCount();
-    runtime.executeFunction(closure.get(), {});
+    virtualMachine->executeFunction(closure.get(), {});
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
 }
 
@@ -336,6 +337,7 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     std::unique_ptr<Closure> closure;
     std::vector<NomadString> consumed;
 
@@ -376,7 +378,7 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
 #endif
 
     RuntimeValue result;
-    runtime.executeFunction(closure.get(), {}, result);
+    virtualMachine->executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getStringValue() == "name");
     runtime.getStringType()->freeValue(&result);
 

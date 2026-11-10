@@ -121,10 +121,11 @@ BOOST_AUTO_TEST_CASE(returning_a_temporary_receiver_retains_it_and_releases_fina
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     const auto before = NomadObject::getLiveObjectCount();
     for (auto attempt = 0; attempt < 2; ++attempt) {
         RuntimeValue result;
-        runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
         auto* object = result.asObject<ScriptObject>();
         BOOST_REQUIRE(object != nullptr);
         BOOST_TEST(object->getReferenceCount() == 1u);
@@ -214,6 +215,7 @@ BOOST_AUTO_TEST_CASE(native_method_reentry_restores_receiver_and_parameter_bindi
 BOOST_AUTO_TEST_CASE(method_callbacks_and_format_expressions_capture_the_method_receiver) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     std::unique_ptr<Closure> closure;
     const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     BOOST_REQUIRE(runtime.registerNativeFunction(
@@ -231,11 +233,11 @@ BOOST_AUTO_TEST_CASE(method_callbacks_and_format_expressions_capture_the_method_
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "value 8 number 5");
     result.freeObjectValue();
     BOOST_REQUIRE(closure != nullptr);
-    runtime.executeFunction(closure.get(), {}, result);
+    virtualMachine->executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getIntegerValue() == 16);
     closure.reset();
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -244,6 +246,7 @@ BOOST_AUTO_TEST_CASE(method_callbacks_and_format_expressions_capture_the_method_
 BOOST_AUTO_TEST_CASE(dynamic_formatting_reads_constructor_method_and_captured_receiver_frames) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     std::unique_ptr<Closure> closure;
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "save", [&](VirtualMachine* machine) {
@@ -264,11 +267,11 @@ BOOST_AUTO_TEST_CASE(dynamic_formatting_reads_constructor_method_and_captured_re
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "method 3 8 5");
     result.freeObjectValue();
     BOOST_REQUIRE(closure != nullptr);
-    runtime.executeFunction(closure.get(), {}, result);
+    virtualMachine->executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "captured 5 3 8");
     result.freeObjectValue();
     closure.reset();

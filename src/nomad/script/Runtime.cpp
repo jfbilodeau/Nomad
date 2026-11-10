@@ -541,20 +541,6 @@ HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
     return getHubId(name);
 }
 
-void Runtime::validateScriptExecution() const {
-    if (m_scriptInitialization.state == ScriptInitializationState::Failed) {
-        throw VirtualMachineException("Script initialization failed: " + m_scriptInitialization.error);
-    }
-    if (m_scriptInitialization.state == ScriptInitializationState::Pending) {
-        if (m_scriptInitialization.functionId != CallableId{} ||
-            std::ranges::any_of(m_hubs, [](const auto& hub) {
-                return hub->m_variables->getVariableCount() != 0;
-            })) {
-            throw VirtualMachineException("Call Runtime::initializeScripts before executing scripts with hub variables");
-        }
-    }
-}
-
 CallableId Runtime::registerNativeFunction(
     const NomadString& name,
     NativeFunctionFn fn,
@@ -2467,103 +2453,6 @@ void Runtime::registerCompilerSetup(std::function<void(Compiler*)> setup) {
 
 std::unique_ptr<VirtualMachine> Runtime::createVirtualMachine() {
     return std::make_unique<VirtualMachine>(this);
-}
-
-void Runtime::executeFunction(const CallableId functionId) {
-    executeFunction(functionId, {});
-}
-
-const ScriptFunction* Runtime::runClosure(
-    const Closure* closure, 
-    const std::vector<RuntimeValue>& args
-) {
-    validateScriptExecution();
-    if (m_virtualMachine == nullptr) {
-        m_virtualMachine = std::make_unique<VirtualMachine>(this);
-    }
-
-    const auto function = closure != nullptr ? closure->getFunction() : nullptr;
-
-    if (function == nullptr) {
-        log::error("Invalid function in closure");
-        return nullptr;
-    }
-
-    m_virtualMachine->run(*closure, args);
-
-    return function;
-}
-
-void Runtime::executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args) {
-    const auto function = runClosure(closure, args);
-
-    if (function == nullptr) {
-        return;
-    }
-
-    // The result is discarded.
-    if (const auto returnType = function->getReturnType()) {
-        returnType->freeValue(&m_virtualMachine->getResult());
-    }
-}
-
-void Runtime::executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue) {
-    const auto function = runClosure(closure, args);
-
-    if (function == nullptr) {
-        return;
-    }
-
-    if (const auto returnType = function->getReturnType()) {
-        // The caller receives its own copy; the virtual machine's result is released.
-        returnType->copyValue(&m_virtualMachine->getResult(), &returnValue);
-        returnType->freeValue(&m_virtualMachine->getResult());
-    }  // Else keep existing value
-}
-
-void Runtime::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args) {
-    validateScriptExecution();
-    if (m_virtualMachine == nullptr) {
-        m_virtualMachine = std::make_unique<VirtualMachine>(this);
-    }
-
-    const auto function = getScriptFunction(functionId);
-
-    if (function == nullptr) {
-        log::error("Invalid function id");
-        return;
-    }
-
-    m_virtualMachine->run(function, args);
-
-    // The result is discarded.
-    if (const auto returnType = function->getReturnType()) {
-        returnType->freeValue(&m_virtualMachine->getResult());
-    }
-}
-
-void Runtime::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue) {
-    validateScriptExecution();
-    if (m_virtualMachine == nullptr) {
-        m_virtualMachine = std::make_unique<VirtualMachine>(this);
-    }
-
-    const auto function = getScriptFunction(functionId);
-
-    if (function == nullptr) {
-        log::error("Invalid function id");
-        return;
-    }
-
-    m_virtualMachine->run(function, args);
-
-    const auto returnType = function->getReturnType();
-
-    if (returnType) {
-        // The caller receives its own copy; the virtual machine's result is released.
-        returnType->copyValue(&m_virtualMachine->getResult(), &returnValue);
-        returnType->freeValue(&m_virtualMachine->getResult());
-    }  // Else keep existing value
 }
 
 } // namespace nomad

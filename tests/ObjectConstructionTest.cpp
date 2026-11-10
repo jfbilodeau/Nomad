@@ -139,6 +139,7 @@ BOOST_AUTO_TEST_CASE(call_opcodes_have_specialized_operands) {
 
 BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_bytecode) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "nativeEcho", [](VirtualMachine* machine) {
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
@@ -185,7 +186,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_byt
     const auto before = NomadObject::getLiveObjectCount();
     for (const auto* name : {"callScript", "callNative", "newScript", "newNative", "methodScript", "methodNative"}) {
         RuntimeValue result;
-        runtime.executeFunction(runtime.getFunctionId(name), {}, result);
+        virtualMachine->executeFunction(runtime.getFunctionId(name), {}, result);
         BOOST_REQUIRE(result.getObjectValue() != nullptr);
         result.freeObjectValue();
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -197,6 +198,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_byt
 
 BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary_returns) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto id = compileConstruction(runtime,
         "hub model\nclass Point\nvalue = 10\n"
         "init value:int\nthis.value = value\nend\nend\nend\n"
@@ -239,7 +241,7 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
     }
     BOOST_TEST(foundConstructorCall);
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     auto* object = dynamic_cast<ScriptObject*>(result.getObjectValue());
     BOOST_REQUIRE(object != nullptr);
     BOOST_TEST(object->getField(0).getIntegerValue() == 42);
@@ -255,6 +257,7 @@ BOOST_AUTO_TEST_CASE(script_returns_select_compact_opcodes_and_release_owned_loc
     for (auto localCount = NomadIndex{0}; localCount < returnNames.size(); ++localCount) {
         BOOST_TEST_CONTEXT("Local count: " << localCount) {
             Runtime runtime;
+            auto virtualMachine = runtime.createVirtualMachine();
             const auto* type = registerClass(runtime, "LocalObject");
             RuntimeValue owner;
             owner.setObjectValue(new ConstructedObject());
@@ -283,7 +286,7 @@ BOOST_AUTO_TEST_CASE(script_returns_select_compact_opcodes_and_release_owned_loc
             const auto before = NomadObject::getLiveObjectCount();
             RuntimeValue result;
             for (auto attempt = 0; attempt < 2; ++attempt) {
-                runtime.executeFunction(id, {}, result);
+                virtualMachine->executeFunction(id, {}, result);
                 BOOST_TEST(result.getIntegerValue() == 23);
                 BOOST_TEST(owner.getObjectValue()->getReferenceCount() == 1u);
                 BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -359,6 +362,7 @@ BOOST_AUTO_TEST_CASE(nested_script_constructor_fault_is_fatal_and_preserves_the_
 
 BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overloaded_bodies) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto calls = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "nextValue", [&](VirtualMachine* machine) { machine->setIntegerResult(++calls); },
@@ -382,7 +386,7 @@ BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overlo
     BOOST_TEST(calls == 0);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_TEST(result.getIntegerValue() == 8);
     BOOST_TEST(calls == 3);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -390,6 +394,7 @@ BOOST_AUTO_TEST_CASE(script_construction_orders_defaults_initializers_and_overlo
 
 BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_constructor) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     std::unique_ptr<Closure> closure;
     const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     BOOST_REQUIRE(runtime.registerNativeFunction(
@@ -406,11 +411,11 @@ BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_co
     );
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_REQUIRE(closure != nullptr);
     BOOST_TEST(closure->getCaptureCount() == 1u);
     BOOST_TEST(closure->getCaptureValue(0).getObjectValue()->getReferenceCount() == 1u);
-    runtime.executeFunction(closure.get(), {}, result);
+    virtualMachine->executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getIntegerValue() == 17);
     closure.reset();
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -418,6 +423,7 @@ BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_co
 
 BOOST_AUTO_TEST_CASE(native_methods_capture_the_enclosing_receiver_not_the_bound_native_receiver) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     std::unique_ptr<Closure> closure;
     const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     const auto* sinkType = registerClass(runtime, "Sink");
@@ -446,11 +452,11 @@ BOOST_AUTO_TEST_CASE(native_methods_capture_the_enclosing_receiver_not_the_bound
     );
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_REQUIRE(closure != nullptr);
     BOOST_TEST(closure->getCaptureValue(0).asObject<ScriptObject>()->getClassType()->getTypeName() == "Owner");
     BOOST_TEST(closure->getCaptureValue(0).getObjectValue()->getReferenceCount() == 1u);
-    runtime.executeFunction(closure.get(), {}, result);
+    virtualMachine->executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getIntegerValue() == 29);
     closure.reset();
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -458,6 +464,7 @@ BOOST_AUTO_TEST_CASE(native_methods_capture_the_enclosing_receiver_not_the_bound
 
 BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots_are_reassigned) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     compileConstruction(runtime,
         "class Item\nvalue = 7\nend\n"
         "fun mutate number:int text:string item:Item\n"
@@ -474,7 +481,7 @@ BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots
     text.setStringValue("original");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(function->getId(), {RuntimeValue{NomadInteger{5}}, text, item}, result);
+    virtualMachine->executeFunction(function->getId(), {RuntimeValue{NomadInteger{5}}, text, item}, result);
     BOOST_TEST(NomadString(text.getStringValue()) == "original");
     BOOST_TEST(text.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(item.getObjectValue()->getReferenceCount() == 1u);
@@ -488,6 +495,7 @@ BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots
 
 BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_reentry) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     std::unique_ptr<Closure> closure;
     const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getIntegerType());
     const auto relayId = runtime.registerNativeFunction(
@@ -518,10 +526,10 @@ BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_re
     const auto before = NomadObject::getLiveObjectCount();
     for (auto attempt = 0; attempt < 2; ++attempt) {
         RuntimeValue result;
-        runtime.executeFunction(id, {}, result);
+        virtualMachine->executeFunction(id, {}, result);
         BOOST_REQUIRE(closure != nullptr);
         BOOST_TEST(closure->getCaptureCount() == 3u);
-        runtime.executeFunction(closure.get(), {}, result);
+        virtualMachine->executeFunction(closure.get(), {}, result);
         BOOST_TEST(result.getIntegerValue() == 41);
         closure.reset();
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -530,6 +538,7 @@ BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_re
 
 BOOST_AUTO_TEST_CASE(script_construction_returns_the_instance_after_early_return_and_retains_arguments) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto id = compileConstruction(runtime,
         "class Label\n"
         "name = \"default\"\n"
@@ -538,7 +547,7 @@ BOOST_AUTO_TEST_CASE(script_construction_returns_the_instance_after_early_return
     );
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     auto* object = dynamic_cast<ScriptObject*>(result.getObjectValue());
     BOOST_REQUIRE(object != nullptr);
     BOOST_TEST(object->getReferenceCount() == 1u);
@@ -577,6 +586,7 @@ BOOST_AUTO_TEST_CASE(interpreter_constructs_compiled_classes_and_uses_shared_ove
 
 BOOST_AUTO_TEST_CASE(void_constructor_exit_transfers_instance_and_releases_nested_locals) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto id = compileConstruction(runtime,
         "class Child\nvalue = 5\nend\n"
         "class Owner\nvalue = 1\ninit early:bool\n"
@@ -593,7 +603,7 @@ BOOST_AUTO_TEST_CASE(void_constructor_exit_transfers_instance_and_releases_neste
     BOOST_TEST(constructor->getConstructedType() == type);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
     BOOST_TEST(result.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before + 2);
@@ -618,6 +628,7 @@ BOOST_AUTO_TEST_CASE(void_constructor_exit_transfers_instance_and_releases_neste
 
 BOOST_AUTO_TEST_CASE(constructor_arguments_use_the_outer_receiver_before_allocating_nested_instances) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto id = compileConstruction(runtime,
         "class Child\ninit value:int\nthis.value = value\nend\nend\n"
         "class Owner\nvalue = 42\n"
@@ -630,7 +641,7 @@ BOOST_AUTO_TEST_CASE(constructor_arguments_use_the_outer_receiver_before_allocat
     );
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_TEST(result.getIntegerValue() == 126);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
@@ -648,6 +659,7 @@ BOOST_AUTO_TEST_CASE(script_constructor_fault_terminates_compiled_host_and_inter
     for (auto entry = 0; entry < 3; ++entry) {
         BOOST_TEST_CONTEXT("Entry point " << entry) {
             Runtime runtime;
+            auto virtualMachine = runtime.createVirtualMachine();
             auto failureCalls = 0;
             auto continuedCalls = 0;
             BOOST_REQUIRE(runtime.registerNativeFunction(
@@ -668,7 +680,7 @@ BOOST_AUTO_TEST_CASE(script_constructor_fault_terminates_compiled_host_and_inter
             );
             if (entry == 0) {
                 RuntimeValue result;
-                BOOST_CHECK_EXCEPTION(runtime.executeFunction(id, {}, result), VirtualMachineException,
+                BOOST_CHECK_EXCEPTION(virtualMachine->executeFunction(id, {}, result), VirtualMachineException,
                     [](const VirtualMachineException& exception) {
                         return NomadString(exception.what()) == "Constructor failed";
                     });
@@ -718,9 +730,10 @@ BOOST_AUTO_TEST_CASE(script_constructor_defaults_are_synthesized_only_without_so
         BOOST_TEST(type->getConstructors()[0]->getParameters().size() == 1u);
     }
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto id = compileConstruction(runtime, "class Empty\nend\nreturn new Empty");
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
     BOOST_TEST(result.getObjectValue()->getReferenceCount() == 1u);
     result.freeObjectValue();
@@ -729,6 +742,7 @@ BOOST_AUTO_TEST_CASE(script_constructor_defaults_are_synthesized_only_without_so
 BOOST_AUTO_TEST_CASE(script_construction_resolves_hub_types_across_files_in_either_order) {
     for (const auto reversed : {false, true}) {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         auto compiler = runtime.createCompiler();
         CompilerContext context(compiler.get());
         compiler->registerSources(&context, {{
@@ -743,7 +757,7 @@ BOOST_AUTO_TEST_CASE(script_construction_resolves_hub_types_across_files_in_eith
             (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
         const auto before = NomadObject::getLiveObjectCount();
         RuntimeValue result;
-        runtime.executeFunction(runtime.getFunctionId(reversed ? "z" : "a"), {}, result);
+        virtualMachine->executeFunction(runtime.getFunctionId(reversed ? "z" : "a"), {}, result);
         BOOST_TEST(result.getIntegerValue() == 42);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     }
@@ -800,6 +814,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_resolves_ids_and_owns_metadata_and_callback
 
 BOOST_AUTO_TEST_CASE(add_constructor_preserves_distinct_created_types_and_shared_overload_rules) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* owner = registerClass(runtime, "DefinitionFactory");
     const auto* createdType = registerClass(runtime, "DefinitionResult");
     const auto callback = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ConstructedObject); };
@@ -845,7 +860,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_preserves_distinct_created_types_and_shared
     const auto functionId = compileConstruction(runtime, "return new DefinitionFactory");
     BOOST_TEST(runtime.getFunction(functionId)->getReturnType() == createdType);
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
     createdType->freeValue(&result);
 
@@ -891,6 +906,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_rejects_invalid_definitions_without_partial
 
 BOOST_AUTO_TEST_CASE(add_constructor_preserves_compiler_supplied_parameters) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerClass(runtime, "DefinitionLocated");
     NomadInteger line = 0;
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
@@ -903,13 +919,14 @@ BOOST_AUTO_TEST_CASE(add_constructor_preserves_compiler_supplied_parameters) {
     }).isValid());
     const auto functionId = compileConstruction(runtime, "\nreturn new DefinitionLocated");
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
     BOOST_TEST(line == 2);
     type->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializations) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto specializations = NomadIndex{0};
     auto constructions = NomadIndex{0};
     BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
@@ -950,7 +967,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_resolve_execute_and_reuse_specializat
             BOOST_TEST(runtime.getScriptFunction(id)->getReturnType() == expectedType);
             const auto before = NomadObject::getLiveObjectCount();
             RuntimeValue result;
-            runtime.executeFunction(id, {}, result);
+            virtualMachine->executeFunction(id, {}, result);
             BOOST_REQUIRE(result.getObjectValue() != nullptr);
             expectedType->freeValue(&result);
             {
@@ -1034,6 +1051,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
 
 BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_match_compiled_evaluation_order) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     std::vector<NomadInteger> markers;
     runtime.registerNativeFunction(
         "mark",
@@ -1070,7 +1088,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_arguments_match_compiled_evaluation_or
     const auto id = compileConstruction(runtime, "return new Pair (mark 1) (mark 2)");
     BOOST_TEST(markers.empty());
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     result.freeObjectValue();
     BOOST_REQUIRE(markers.size() == 2u);
     BOOST_TEST(markers[0] == 2);
@@ -1198,6 +1216,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_
 
 BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_parameter_shapes) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto calls = NomadIndex{0};
     BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Located", 1, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
@@ -1247,7 +1266,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reuses_concrete_and_hidden_par
     BOOST_TEST(runtime.getTypeByName("Located<string>") == nullptr);
     const auto inferredId = compileConstruction(runtime, "return new Located \"value\" true", "located");
     RuntimeValue result;
-    runtime.executeFunction(inferredId, {}, result);
+    virtualMachine->executeFunction(inferredId, {}, result);
     result.freeObjectValue();
     {
         auto machine = runtime.createVirtualMachine();
@@ -1356,6 +1375,7 @@ BOOST_AUTO_TEST_CASE(constructor_templates_reject_invalid_definitions_without_re
 
 BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_construction) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto calls = NomadIndex{0};
     BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Box", 1,
@@ -1383,7 +1403,7 @@ BOOST_AUTO_TEST_CASE(constructor_template_registration_preserves_explicit_constr
     ));
     const auto id = compileConstruction(runtime, "return new Box<int> 42");
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     result.freeObjectValue();
     {
         auto machine = runtime.createVirtualMachine();
@@ -1541,6 +1561,7 @@ BOOST_AUTO_TEST_CASE(constructor_inference_reports_failures_without_partial_bind
 
 BOOST_AUTO_TEST_CASE(constructors_accept_heterogeneous_arguments_and_type_specific_zero_values) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto calls = NomadIndex{0};
     const auto* type = registerClass(runtime, "Example");
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
@@ -1561,7 +1582,7 @@ BOOST_AUTO_TEST_CASE(constructors_accept_heterogeneous_arguments_and_type_specif
     const auto id = compileConstruction(runtime, "return new Example 0 \"hello\" true");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
     result.freeObjectValue();
     BOOST_TEST(calls == 1u);
@@ -1612,6 +1633,7 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_results_release_object_argument
 
 BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerClass(runtime, "Plain");
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
         .parameters = {},
@@ -1625,7 +1647,7 @@ BOOST_AUTO_TEST_CASE(parameterless_constructors_are_explicitly_registered) {
     BOOST_TEST(runtime.getInstructions()[start + 1].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_create_native_object)));
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
 }
 
@@ -1669,6 +1691,7 @@ BOOST_AUTO_TEST_CASE(native_constructor_host_calls_preserve_registers_and_borrow
 
 BOOST_AUTO_TEST_CASE(host_script_construction_preserves_native_method_context_and_borrowed_arguments) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* childType = registerClass(runtime, "NativeChild");
     BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(childType->getId(), {
         .parameters = {{runtime.getStringType()->getId(), "text", ""}},
@@ -1728,7 +1751,7 @@ BOOST_AUTO_TEST_CASE(host_script_construction_preserves_native_method_context_an
     constructorId = runtime.getTypeByName("ScriptOwned")->asClassType()->getConstructors()[0]->getId();
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_TEST(calls == 1);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
@@ -1781,6 +1804,7 @@ BOOST_AUTO_TEST_CASE(native_constructor_failure_releases_published_result_and_re
 
 BOOST_AUTO_TEST_CASE(native_constructor_reentry_restores_the_stack_parameter_frame) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* innerType = registerClass(runtime, "InnerNative");
     const auto innerId = runtime.getTypeManager().registerNativeClassConstructor(innerType->getId(), {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
@@ -1806,7 +1830,7 @@ BOOST_AUTO_TEST_CASE(native_constructor_reentry_restores_the_stack_parameter_fra
     const auto id = compileConstruction(runtime, "return new OuterNative (\"outer\".toLower)");
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     result.freeObjectValue();
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
@@ -1820,6 +1844,7 @@ BOOST_AUTO_TEST_CASE(native_constructor_reentry_restores_the_stack_parameter_fra
 
 BOOST_AUTO_TEST_CASE(source_parameters_are_supplied_by_the_compiler) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerClass(runtime, "Located");
     NomadString file;
     NomadString functionName;
@@ -1844,7 +1869,7 @@ BOOST_AUTO_TEST_CASE(source_parameters_are_supplied_by_the_compiler) {
 
     const auto id = compileConstruction(runtime, "\nreturn new Located 42");
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_REQUIRE(result.getObjectValue() != nullptr);
     result.freeObjectValue();
     BOOST_TEST(file == "main.nomad");
@@ -1939,6 +1964,7 @@ BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_f
 
 BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_return_types) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* singleType = registerClass(runtime, "Single");
     const auto* pairType = registerClass(runtime, "Pair");
     const auto* textType = registerClass(runtime, "Text");
@@ -1979,7 +2005,7 @@ BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_
     );
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     result.freeObjectValue();
     BOOST_TEST(calls == "EIPSI");
     {
@@ -2004,6 +2030,7 @@ BOOST_AUTO_TEST_CASE(overloads_select_by_argument_types_and_count_with_distinct_
 
 BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses_specializations) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     Runtime other;
     auto calls = NomadIndex{0};
     const auto initializer = [&](const NomadString& name, const std::vector<const Type*>& arguments) {
@@ -2043,7 +2070,7 @@ BOOST_AUTO_TEST_CASE(parameterized_constructor_registration_validates_and_reuses
     BOOST_TEST(calls == 1u);
     const auto id = compileConstruction(runtime, "return new Create<int> 42");
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     result.freeObjectValue();
     BOOST_TEST(calls == 1u);
 }

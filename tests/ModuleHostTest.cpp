@@ -529,6 +529,7 @@ BOOST_AUTO_TEST_CASE(missing_game_entry_is_reported_during_startup)
 
 BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_interpreter) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const NomadString source =
         "total = 0\n"
         "sequence = range 4\n"
@@ -567,7 +568,7 @@ BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_inte
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 40);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
@@ -584,6 +585,7 @@ BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_inte
 
 BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runtime) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext compilation(compiler.get());
     const NomadString source =
@@ -606,9 +608,9 @@ BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runti
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 4);
-    BOOST_CHECK_EXCEPTION(runtime.executeFunction(runtime.getFunctionId("invalid"), {}, result),
+    BOOST_CHECK_EXCEPTION(virtualMachine->executeFunction(runtime.getFunctionId("invalid"), {}, result),
         NomadException, [](const NomadException& error) {
             return NomadString(error.what()).find("Range step must not be zero") != NomadString::npos;
         });
@@ -630,6 +632,7 @@ BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runti
 
 BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_normal_iteration) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto calls = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "test.bound",
@@ -654,7 +657,7 @@ BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_no
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 5);
     BOOST_TEST(calls == 3);
     calls = 0;
@@ -672,6 +675,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const NomadString source =
         "items = new List<int>\n"
         "items.append 1\nitems.append 2\nitems.append 3\n"
@@ -708,7 +712,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 349);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
@@ -732,6 +736,7 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     RuntimeValue empty;
     runtime.getStringType()->initValue(&empty);
     runtime.getStringType()->freeValue(&empty);
@@ -768,7 +773,7 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("earlyReturn"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("earlyReturn"), {}, result);
     BOOST_TEST(result.getStringValue() == "kept");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -779,6 +784,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutat
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const NomadString source =
         "items = new List<int>\nitems.append 1\nitems.append 2\n"
         "total = 0\n"
@@ -802,7 +808,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutat
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 11);
     auto machine = runtime.createVirtualMachine();
     const Interpreter contextEvaluator(*machine);
@@ -857,6 +863,7 @@ BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassign
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const NomadString source =
         "items = new List<string>\n"
         "items.append \"first\"\nitems.append \"last\"\n"
@@ -892,7 +899,7 @@ BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassign
     runtime.getStringType()->freeValue(&emptyString);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringValue() == "LASTbreak20 0 6 100");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -916,6 +923,7 @@ BOOST_AUTO_TEST_CASE(object_parameter_reassignment_preserves_caller_references_a
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext compilation(compiler.get());
     const NomadString source =
@@ -935,7 +943,7 @@ BOOST_AUTO_TEST_CASE(object_parameter_reassignment_preserves_caller_references_a
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 221);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -945,6 +953,7 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const std::vector<NomadString> sources = {
         "entry = new KeyValue<string int> \"score\" 100",
         "assert entry.key == \"score\"",
@@ -1002,7 +1011,7 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -1037,6 +1046,7 @@ BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const std::vector<NomadString> sources = {
         "entry = new KeyValue \"score\" 100",
         "assert entry.key == \"score\"",
@@ -1084,7 +1094,7 @@ BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -1164,6 +1174,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     BOOST_REQUIRE(dynamic_cast<const Array1Type*>(
         runtime.getTypeManager().getParameterizedType("Array1", {runtime.getIntegerType()})
     ) != nullptr);
@@ -1210,7 +1221,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(calls == "32");
     const auto* outer = result.asObject<Array1dObject>();
     BOOST_TEST(outer->getCount() == 2u);
@@ -1288,6 +1299,7 @@ BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     NomadString calls;
     runtime.registerNativeFunction(
         "size",
@@ -1320,7 +1332,7 @@ BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
     const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
     BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.asObject<Array2dObject>()->getCount() == 12u);
     result.freeObjectValue();
     BOOST_TEST(calls == "243765");
@@ -1381,6 +1393,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaul
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto* mapType = runtime.getTypeManager().getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
     BOOST_REQUIRE(dynamic_cast<const MapType*>(mapType) != nullptr);
     BOOST_TEST(mapType->getTypeName() == "Map<string int>");
@@ -1429,7 +1442,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaul
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto compiledObjects = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 0);
     BOOST_TEST(NomadObject::getLiveObjectCount() == compiledObjects);
     {
@@ -1461,6 +1474,7 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
         "scores[\"hero\"] = 100",
@@ -1522,7 +1536,7 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "updated");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -1568,6 +1582,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
         "emptyKeys = scores.keys",
@@ -1713,7 +1728,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
         ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -1759,6 +1774,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const std::vector<NomadString> sources = {
         "scores = new Map<string int>",
         "scores.clear",
@@ -1848,7 +1864,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
         ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -2111,6 +2127,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -2139,7 +2156,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
         (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 3);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 
@@ -2212,6 +2229,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const std::vector<NomadString> sources = {
         "items = new List<int>",
         "removed = items.removeFirst",
@@ -2313,7 +2331,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
         ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -2378,6 +2396,7 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -2426,7 +2445,7 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
         (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "updated:9");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -2437,6 +2456,7 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -2480,7 +2500,7 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 130);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -2490,6 +2510,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_sem
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad",
@@ -2545,7 +2566,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_sem
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "changed:46");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -2616,6 +2637,7 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     const std::vector<NomadString> statements = {
         "volume = new Array<int> 2 3 4",
         "assert volume.count == 24",
@@ -2668,7 +2690,7 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -2783,6 +2805,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
     auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     BOOST_TEST(runtime.getKeywordId("new").isValid());
     const auto* listType = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
@@ -2826,18 +2849,18 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue first;
     RuntimeValue second;
-    runtime.executeFunction(runtime.getFunctionId("init"), {}, first);
+    virtualMachine->executeFunction(runtime.getFunctionId("init"), {}, first);
     BOOST_REQUIRE(first.getObjectValue() != nullptr);
     BOOST_TEST(first.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before + 1);
-    runtime.executeFunction(runtime.getFunctionId("init"), {}, second);
+    virtualMachine->executeFunction(runtime.getFunctionId("init"), {}, second);
     BOOST_TEST(first.getObjectValue() != second.getObjectValue());
     BOOST_TEST(second.getObjectValue()->getReferenceCount() == 1u);
     RuntimeValue distinct;
-    runtime.executeFunction(runtime.getFunctionId("distinct"), {}, distinct);
+    virtualMachine->executeFunction(runtime.getFunctionId("distinct"), {}, distinct);
     BOOST_TEST(distinct.getBooleanValue());
     RuntimeValue postfix;
-    runtime.executeFunction(runtime.getFunctionId("postfix"), {}, postfix);
+    virtualMachine->executeFunction(runtime.getFunctionId("postfix"), {}, postfix);
     BOOST_TEST(postfix.getBooleanValue());
     listType->freeValue(&first);
     listType->freeValue(&second);
@@ -2884,6 +2907,7 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
 
 BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("Broken", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
@@ -2898,7 +2922,7 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     BOOST_REQUIRE(compiler->compileScripts(&context, CompilationTarget::Executable));
     RuntimeValue result;
     BOOST_CHECK_EXCEPTION(
-        runtime.executeFunction(runtime.getFunctionId("main"), {}, result),
+        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result),
         NomadException,
         [](const NomadException& exception) {
             return NomadString(exception.what()).find("returned null") != NomadString::npos;

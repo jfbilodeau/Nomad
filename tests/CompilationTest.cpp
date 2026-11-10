@@ -7,6 +7,7 @@
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -111,6 +112,7 @@ BOOST_AUTO_TEST_CASE(instruction_dump_keeps_struct_signatures_logical_without_ex
 BOOST_AUTO_TEST_CASE(configured_compilation_preserves_targets_hooks_diagnostics_and_execution_boundaries) {
     for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         auto compiler = runtime.createCompiler();
         auto calls = 0;
         runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++calls; }, {}, runtime.getVoidType(), "");
@@ -146,7 +148,7 @@ BOOST_AUTO_TEST_CASE(configured_compilation_preserves_targets_hooks_diagnostics_
             BOOST_TEST(function->getFunctionStart() == NOMAD_INVALID_INDEX);
         } else {
             RuntimeValue value;
-            runtime.executeFunction(function->getId(), {}, value);
+            virtualMachine->executeFunction(function->getId(), {}, value);
             BOOST_TEST(value.getIntegerValue() == 42);
             BOOST_TEST(calls == 1);
         }

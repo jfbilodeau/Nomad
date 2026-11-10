@@ -27,6 +27,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <utility>
 
@@ -39,6 +40,7 @@ struct LogConfigurationFixture {
     boost::dll::shared_library library;
     Logger logger;
     Runtime runtime;
+    std::unique_ptr<VirtualMachine> virtualMachine = runtime.createVirtualMachine();
     LogSinkId memoryId;
     RuntimeValue savedSink;
     NomadString savedSinkType = "log.ConsoleSink";
@@ -108,7 +110,7 @@ struct LogConfigurationFixture {
 
     RuntimeValue execute(const NomadString& source) {
         RuntimeValue result;
-        runtime.executeFunction(compile(source), {savedSink}, result);
+        virtualMachine->executeFunction(compile(source), {savedSink}, result);
         return result;
     }
 
@@ -620,7 +622,7 @@ BOOST_AUTO_TEST_CASE(configuration_lifetimes_do_not_retain_objects_after_executi
     const auto before = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 20; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {savedSink}, result);
+        virtualMachine->executeFunction(id, {savedSink}, result);
         BOOST_TEST(result.getIntegerValue() == 10);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);

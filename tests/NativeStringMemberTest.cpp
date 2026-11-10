@@ -191,20 +191,22 @@ BOOST_AUTO_TEST_CASE(textmate_grammar_supports_expression_interpolation_and_form
 
 BOOST_AUTO_TEST_CASE(compiled_length_counts_unicode_code_points) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto functionId = compileFunction(runtime, "return \"J-F \xF0\x9F\x98\x80\".length");
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getIntegerValue() == 5);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_to_upper_uses_unicode_casing) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto functionId = compileFunction(runtime, "return \"h\xC3\xA9llo\".toUpper");
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getStringValue() == "H\xC3\x89LLO");
     runtime.getStringType()->freeValue(&result);
@@ -246,10 +248,11 @@ BOOST_AUTO_TEST_CASE(exposes_byte_length_and_empty_properties) {
 
 BOOST_AUTO_TEST_CASE(to_lower_uses_unicode_casing) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto functionId = compileFunction(runtime, "return \"H\xC3\x89LLO\".toLower");
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getStringValue() == "h\xC3\xA9llo");
     runtime.getStringType()->freeValue(&result);

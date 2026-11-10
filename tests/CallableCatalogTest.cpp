@@ -111,6 +111,7 @@ BOOST_AUTO_TEST_SUITE(callable_catalog)
 
 BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wide_storage) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     ClassType* padding = nullptr;
     BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
@@ -149,7 +150,7 @@ BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wi
     compiler->addFunctionReturn(function);
     function->setFunctionEnd(runtime.getInstructions().size());
     RuntimeValue result;
-    runtime.executeFunction(id, {}, result);
+    virtualMachine->executeFunction(id, {}, result);
     BOOST_TEST(result.getIntegerValue() == 44);
     std::ostringstream dump;
     dumpInstructions(runtime, *function, dump);

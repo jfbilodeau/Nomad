@@ -38,7 +38,6 @@ namespace nomad {
 
 // Forward declarations
 class Compiler;
-class Closure;
 class FormatString;
 class Hub;
 class VirtualMachine;
@@ -476,14 +475,6 @@ public:
     void registerCompilerSetup(std::function<void(Compiler*)> setup);
 
     std::unique_ptr<VirtualMachine> createVirtualMachine();
-    // Overloads taking `returnValue` hand the caller an owned copy of the result; the caller must free it
-    // through the function's return type. Overloads without `returnValue` discard (and free) the result.
-    // Closure adapters accept struct captures, but explicit arguments/results remain scalar-only.
-    void executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args);
-    void executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
-    void executeFunction(CallableId functionId);
-    void executeFunction(CallableId functionId, const std::vector<RuntimeValue> &args);
-    void executeFunction(CallableId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue);
 
 private:
     // Nested types
@@ -548,11 +539,6 @@ private:
     ContextVariableId internContextVariable(VariableContextId contextId, VariableId localVariableId);
     [[nodiscard]] const ContextVariable* getContextVariable(ContextVariableId contextVariableId) const;
 
-    // Script execution
-    void validateScriptExecution() const;
-    // Runs the closure's function and returns it, or nullptr when the closure is invalid.
-    const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
-
     // Instruction registration
     void registerDefaultInstructions();
 
@@ -581,7 +567,6 @@ private:
     std::vector<const NativeIndexerInfo*> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<MemberReference>> m_nativeMembersByName;
     bool m_debug = false;
-    std::unique_ptr<VirtualMachine> m_virtualMachine;
     std::vector<std::function<void(Compiler*)>> m_compilerSetups;
 };
 } // namespace nomad

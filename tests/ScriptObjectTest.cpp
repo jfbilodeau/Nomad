@@ -421,6 +421,7 @@ BOOST_AUTO_TEST_CASE(layout_does_not_resize_and_invalid_access_is_rejected) {
 BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_preserve_ownership) {
     for (const auto interpreted : {false, true}) {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         const auto* type = createTestType(runtime, "Stored");
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "text", runtime.getStringType()).isValid());
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "next", type).isValid());
@@ -489,7 +490,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
                 BOOST_REQUIRE(compiler->compileFunctions(&context));
                 const auto beforeExecution = NomadObject::getLiveObjectCount();
                 RuntimeValue result;
-                runtime.executeFunction(runtime.getFunctionId("test"), {}, result);
+                virtualMachine->executeFunction(runtime.getFunctionId("test"), {}, result);
                 BOOST_TEST(NomadString(result.getStringValue()) == "hello");
                 runtime.getStringType()->freeValue(&result);
                 BOOST_TEST(NomadObject::getLiveObjectCount() == beforeExecution);
@@ -605,6 +606,7 @@ BOOST_AUTO_TEST_CASE(generated_initializers_run_per_instance_and_preserve_fresh_
 BOOST_AUTO_TEST_CASE(initializer_source_order_is_independent_of_property_registration_order) {
     test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     auto calls = NomadInteger{0};
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "nextValue", [&](VirtualMachine* machine) { machine->setIntegerResult(++calls); },
@@ -623,7 +625,7 @@ BOOST_AUTO_TEST_CASE(initializer_source_order_is_independent_of_property_registr
     BOOST_TEST(type->getProperty("second")->hasExplicitInitializer());
     BOOST_TEST(!type->getProperty("late")->hasExplicitInitializer());
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     const auto* object = result.asObject<ScriptObject>();
     BOOST_TEST(calls == 2);
     BOOST_TEST(object->getField(type->getFieldIndex(type->getProperty("first")->getId())).getIntegerValue() == 7);
@@ -637,6 +639,7 @@ BOOST_AUTO_TEST_CASE(initializer_source_order_is_independent_of_property_registr
 BOOST_AUTO_TEST_CASE(generated_defaults_honor_type_initialization_only_for_fields_without_initializers) {
     test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     auto initialized = NomadIndex{0};
     auto destroyed = NomadIndex{0};
     auto explicitCalls = NomadIndex{0};
@@ -660,7 +663,7 @@ BOOST_AUTO_TEST_CASE(generated_defaults_honor_type_initialization_only_for_field
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(initialized == 0u);
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(explicitCalls == 1u);
     BOOST_TEST(initialized == 2u);
     auto* object = result.asObject<ScriptObject>();

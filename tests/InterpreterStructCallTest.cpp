@@ -1186,6 +1186,7 @@ BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_
 BOOST_AUTO_TEST_CASE(closure_arguments_and_captures_are_copied_once_directly_into_vm_storage) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     FailingCallCopyType* field = nullptr;
     const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>(
         "DirectClosureField",
@@ -1283,7 +1284,7 @@ BOOST_AUTO_TEST_CASE(closure_arguments_and_captures_are_copied_once_directly_int
                     field->copyCount = 0;
                     explicitSource = rawArguments.data();
                     RuntimeValue result;
-                    runtime.executeFunction(callback.get(), rawArguments, result);
+                    virtualMachine->executeFunction(callback.get(), rawArguments, result);
                     BOOST_TEST(result.getIntegerValue() == 17);
                     BOOST_TEST(field->copyCount == expectedCopies);
                     BOOST_TEST(argument.getValue().getStringValue() == "explicit argument");
@@ -1304,7 +1305,7 @@ BOOST_AUTO_TEST_CASE(closure_arguments_and_captures_are_copied_once_directly_int
                     );
                     field->copyCount = 0;
                     RuntimeValue result{NomadInteger{71}};
-                    BOOST_CHECK_THROW(runtime.executeFunction(callback.get(), rawArguments, result), NomadException);
+                    BOOST_CHECK_THROW(virtualMachine->executeFunction(callback.get(), rawArguments, result), NomadException);
                     BOOST_TEST(result.getIntegerValue() == 71);
                     BOOST_TEST(argument.getValue().getObjectValue()->getReferenceCount() == 1U);
                     BOOST_TEST(RuntimeValue::getLiveStringCount() == live);

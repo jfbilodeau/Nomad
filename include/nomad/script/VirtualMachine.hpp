@@ -58,6 +58,16 @@ public:
 
     [[nodiscard]] Runtime* getRuntime() const { return m_runtime; }
 
+    // The host initializes shared script state through Runtime::initializeScripts before execution.
+    // With returnValue, the caller receives an owned copy and must free it through the return type.
+    // Without returnValue, the result is discarded without copying. Explicit arguments/results
+    // remain scalar-only; closures can contain struct captures.
+    void executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args);
+    void executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
+    void executeFunction(CallableId functionId);
+    void executeFunction(CallableId functionId, const std::vector<RuntimeValue>& args);
+    void executeFunction(CallableId functionId, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue);
+
     void setFunctionVariableValue(VariableId variableId, const RuntimeValue& value);
     [[nodiscard]] const RuntimeValue& getFunctionVariableValue(VariableId variableId) const;
     // Borrows complete local slots from the active script frame; zero-sized locals use an empty view.
@@ -328,8 +338,9 @@ public:
     [[nodiscard]] size_t getInstructionIndex() const { return m_instructionIndex; }
 
 private:
-    friend class Runtime;
     friend class InterpreterContext;
+
+    const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
 
     struct NativeCallFrame {
         NomadIndex parameterIndex;
