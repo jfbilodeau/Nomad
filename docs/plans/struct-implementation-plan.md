@@ -1,12 +1,17 @@
 # Struct implementation plan
 
-Status: implementation proceeds only in separately approved, reviewable slices.
-Current review stop: Steps 5, 6, and 7A are approved within their agreed scope.
+Status: implementation and Windows Debug completion checks are complete within
+the approved scope; final review/sign-off remains.
+Current review stop: Steps 5, 6, 7A, and 7B are approved within their agreed scope.
 Conservative compiled tail-pair NRVO includes live return-backed frame inspection;
 interpreter evaluation keeps ordinary copies and does not need NRVO.
-Step 7B's language/embedding documentation reconciliation and separately approved
-receiver-resolution fix are implemented and validated, awaiting review.
-Next is Step 7C final integrated completion checks.
+Step 7C's integrated completion checks and acceptance regressions are implemented
+and validated, awaiting final review. No further implementation slice is planned
+within this scope. No commit or push without a separate request.
+
+Historical slice notes follow; earlier awaiting-review labels describe those
+slice-time stops rather than the current status above.
+
 Steps 1A through 1AM have been reviewed. Step 1AO is an approved ABI design;
 Steps 1AP through 1BB, Step 2 source declaration analysis, and statement-owned
 block discovery have been reviewed. The first compiled source execution slice
@@ -4828,24 +4833,89 @@ checks, and records final limitations or blockers. Broader NRVO, struct generic
 collections, built-in struct equality, and aggregate suspension remain outside
 the approved implementation scope. No commit or push.
 
+### Step 7C: Integrated completion checks and acceptance evidence
+
+Implemented within this slice:
+
+- Ran every configured Windows Debug CTest, including the binding/audio groups,
+  compiler/LSP process checks, module integration, SDK distribution, and packaging.
+- Reconciled the acceptance matrix below with the existing regression evidence.
+  The audit found scalar recursion coverage but no explicit recursive struct-frame
+  case, so added a focused runtime acceptance regression rather than inferring
+  aggregate recursion correctness from scalar or nested-call tests.
+- That regression checks the original `Point`/`Player` logical and physical
+  counts, executes `printPoint` and `updatePoint`, and verifies caller copy
+  isolation. Recursive calls mix multi-slot values, an empty argument, and a
+  trailing scalar; caller-frame values survive nested returns. Strings remain
+  independent, contained class references stay shared, and repeated execution
+  restores live string/object counts.
+- Added permanent `==`/`!=` diagnostic coverage for empty, one-slot, and multi-slot
+  structs, complementing the existing direct/nested/inferred generic rejection
+  coverage and Step 7B CLI checks.
+- No production code, language behavior, VM instruction, or public API changed.
+
+Validation on 2026-11-09:
+
+- All 13 configured CTests passed: `nomad_value_cleanup_contract`,
+  `nomad_test_bindings`, `nomad_test_audio`, `nomad_test_language`,
+  `nomad_test_tooling`, `nomad_test_remaining`, `nomad_module_script_staging`,
+  `nomad_compiler_exports`, `nomad_lsp_process`,
+  `nomad_module_runtime_integration`, `nomad_distribution_integration`,
+  `nomad_package_graphical_smoke`, and `nomad_package_integration`.
+- After adding the two test-only acceptance cases, the `nomad-development` build
+  passed and the language group passed again with the new runtime and diagnostic
+  assertions. Unchanged engine/tool binaries retain the full integration results.
+- All ten editor checks and four documentation preparation tests passed.
+  SDK reference regeneration, strict MkDocs, and whitespace checks passed.
+- The packaged graphical smoke actually launches the extracted runtime and checks
+  its completion marker with SDL dummy video/audio drivers. It is not a manual
+  gameplay, real-GPU, or physical-audio-device validation.
+
+Scope and remaining limitations:
+
+- These are local Windows Debug results. Other configurations/platforms and
+  ASan/UBSan were not run here; their results must come from the corresponding
+  existing presets/CI before making broader validation claims.
+- In-repository module, SDK, and packaged consuming fixtures passed. No separate
+  user game project was supplied or manually validated. Interactive VS Code UI
+  validation and timing benchmarks were not performed.
+- Copy-elision evidence is structural/instruction-count evidence, not a measured
+  runtime speedup. NRVO remains the approved conservative compiled free-function
+  tail-pair optimization; interpreter-owned evaluation keeps ordinary copies.
+- Structs remain closed. Struct generic arguments/collections, built-in struct
+  equality, struct binding wrappers, and aggregate suspension are outside scope.
+  Complete host values use typed storage/invocation APIs, not scalar/raw adapters.
+- Ordinary typed/lifecycle failure cleanup is covered. Fatal VM faults retain the
+  existing stop-and-do-not-reuse contract; general fault unwinding and a strong
+  rollback guarantee for all assignments are not claimed.
+
+Review stop: final acceptance evidence and the limitations above. No failing local
+check remains. After final approval, the agreed implementation plan is complete;
+additional features, external-game validation, or broader platform/performance
+work require separately agreed scope. No commit or push.
+
 ## 5. Acceptance and regression matrix
 
-| Area | Required evidence |
-| --- | --- |
-| Original example | `Point` has three logical fields/slots; `Player` has two logical fields/four slots; `printPoint` has one logical parameter/three slots; `updatePoint` has three logical parameters/five slots. Do not assume field order before the layout decision. |
-| Copy isolation | Local copies, parameters, returned values, and captures do not alias their source struct; `updatePoint` leaves its caller's original unchanged. |
-| Reference members | Copied structs retain shared class/collection references with correct reference counts; nested structs remain independent values. |
-| Mutation | Direct and deeply nested stored fields mutate in place; methods restore the correct receiver after nested calls; temporary mutation executes and cleans up. |
-| Empty structs | Zero-slot locals, fields, parameters, captures, returns, and receivers preserve logical type identity and constructor/method side effects. Arguments are still evaluated. Empty-only aggregates remain zero-sized. |
-| Construction | Explicit initializers execute once in source order; remaining fields receive agreed defaults; selected constructor bodies and early returns follow class-style behavior. Copying does not invoke constructors. |
-| Initialization safety | Partial initialization and failing calls do not leak, double-free, or access uninitialized fields. No new strong exception guarantee for all assignments is assumed without discussion. |
-| Lifetimes | Repeated construction/copy/assignment/return/capture of strings and class references returns ownership counters to baseline; self/overlapping assignment is safe. |
-| Frames and arity | Mixed zero/one/many-slot parameters and locals, recursion, nested calls, special callback argument shapes, and native reentry preserve values, stack balance, and logical signatures. |
-| Return destinations | Callees work with caller-local, temporary, and safe object-field destinations; owners remain alive; alias-observable assignment preserves the previous value until RHS completion. |
-| Optimization | Direct-construction and approved NRVO cases omit the redundant materialization/return-copy operations; ineligible cases remain correct. |
-| Restrictions | Direct/nested struct generic arguments and unsupported equality produce compiler diagnostics. Ordinary non-struct generics and reference fields still work. |
-| Existing consumers | Existing scalar/class programs, bindings, interpreter inspection, callbacks, formats, and tools retain behavior. Validate an affected consuming project when available. |
-| Performance structure | No per-instance struct boxes or repeated runtime type validation; no new aggregate-dispatch cost on unchanged scalar paths without an approved justification. |
+The evidence below passed in the integrated run or the subsequent language rerun
+after adding acceptance coverage. This is representative evidence, not a claim
+that every possible program or failure mode was exhaustively verified.
+
+| Area | Required evidence | Completion evidence |
+| --- | --- | --- |
+| Original example | `Point` has three logical fields/slots; `Player` has two logical fields/four slots; `printPoint` has one logical parameter/three slots; `updatePoint` has three logical parameters/five slots. Do not assume field order before the layout decision. | `original_layout_and_recursive_struct_frames_preserve_copies_references_and_empty_arguments` in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp) asserts the exact counts and executes the original-shaped calls. |
+| Copy isolation | Local copies, parameters, returned values, and captures do not alias their source struct; `updatePoint` leaves its caller's original unchanged. | Runtime original-example and parameter/return cases in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp); nested/repeated capture snapshots in [LanguageCallbackEventTest.cpp](../../tests/LanguageCallbackEventTest.cpp). |
+| Reference members | Copied structs retain shared class/collection references with correct reference counts; nested structs remain independent values. | Nested ownership/copy regressions in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp), shared-reference source cases in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp), and capture ownership in [LanguageCallbackEventTest.cpp](../../tests/LanguageCallbackEventTest.cpp). |
+| Mutation | Direct and deeply nested stored fields mutate in place; methods restore the correct receiver after nested calls; temporary mutation executes and cleans up. | Stored/temporary receiver cases in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp), [InterpreterStructMethodTest.cpp](../../tests/InterpreterStructMethodTest.cpp), and [InterpreterStructAssignmentTest.cpp](../../tests/InterpreterStructAssignmentTest.cpp). |
+| Empty structs | Zero-slot locals, fields, parameters, captures, returns, and receivers preserve logical type identity and constructor/method side effects. Arguments are still evaluated. Empty-only aggregates remain zero-sized. | Empty layout, source execution, and capture cases in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp), [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp), and [LanguageCallbackEventTest.cpp](../../tests/LanguageCallbackEventTest.cpp). |
+| Construction | Explicit initializers execute once in source order; remaining fields receive agreed defaults; selected constructor bodies and early returns follow class-style behavior. Copying does not invoke constructors. | Constructor-order/direct-return regressions in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp) and lifecycle/construction cases in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp). |
+| Initialization safety | Partial initialization and failing calls do not leak, double-free, or access uninitialized fields. No new strong exception guarantee for all assignments is assumed without discussion. | Partial lifecycle/copy tests in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp), typed call failure tests in [InterpreterStructCallTest.cpp](../../tests/InterpreterStructCallTest.cpp), and cleanup contract process test. Fatal VM fault unwinding is excluded as noted above. |
+| Lifetimes | Repeated construction/copy/assignment/return/capture of strings and class references returns ownership counters to baseline; self/overlapping assignment is safe. | Repeated live-counter checks in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp) and [InterpreterStructCallTest.cpp](../../tests/InterpreterStructCallTest.cpp); overlapping assignment tests in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp). |
+| Frames and arity | Mixed zero/one/many-slot parameters and locals, recursion, nested calls, special callback argument shapes, and native reentry preserve values, stack balance, and logical signatures. | New recursive aggregate acceptance case in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp); native reentry/frame inspection in [InterpreterStructCallTest.cpp](../../tests/InterpreterStructCallTest.cpp); typed closures/event adapters in [LanguageCallbackEventTest.cpp](../../tests/LanguageCallbackEventTest.cpp). |
+| Return destinations | Callees work with caller-local, temporary, and safe object-field destinations; owners remain alive; alias-observable assignment preserves the previous value until RHS completion. | Native forwarding, owner retention, and staged replacement regressions in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp); object/temporary assignments in [InterpreterStructAssignmentTest.cpp](../../tests/InterpreterStructAssignmentTest.cpp). |
+| Optimization | Direct-construction and approved NRVO cases omit the redundant materialization/return-copy operations; ineligible cases remain correct. | Tail-pair eligibility/emission tests in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp), forwarding tests in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp), and actual return-backed versus separate-local frame inspection in [InterpreterStructCallTest.cpp](../../tests/InterpreterStructCallTest.cpp). |
+| Restrictions | Direct/nested struct generic arguments and unsupported equality produce compiler diagnostics. Ordinary non-struct generics and reference fields still work. | Generic rejection and new zero/one/many-slot equality diagnostics in [LanguageStructTest.cpp](../../tests/LanguageStructTest.cpp); ordinary collection behavior in the full unit/module run. |
+| Existing consumers | Existing scalar/class programs, bindings, interpreter inspection, callbacks, formats, and tools retain behavior. Validate an affected consuming project when available. | All six unit CTests plus compiler/LSP, module, distribution, and package checks passed. Separate external-game validation was not available. |
+| Performance structure | No per-instance struct boxes or repeated runtime type validation; no new aggregate-dispatch cost on unchanged scalar paths without an approved justification. | Flat-slot/hidden-pointer, cached-layout cleanup, ownership, and emitted-operation regressions in [StructTypeTest.cpp](../../tests/StructTypeTest.cpp). Structural evidence only; no timing or exhaustive performance-audit claim. |
 
 ## 6. Validation workflow
 

@@ -1223,6 +1223,91 @@ BOOST_AUTO_TEST_CASE(fields_methods_overloads_and_nested_layouts_resolve_after_i
     BOOST_TEST(updatePoint->getParameterStorageSize() == 5U);
 }
 
+BOOST_AUTO_TEST_CASE(original_layout_and_recursive_struct_frames_preserve_copies_references_and_empty_arguments) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    fixture.addFunction("main",
+        "struct Point\nx = 0.0\ny = 0.0\nz = 0.0\n"
+        "init x:float y:float z:float\nthis.x = x\nthis.y = y\nthis.z = z\nend\nend\n"
+        "class Player\nname = \"player\"\nlocation = new Point 0.0 0.0 0.0\nend\n"
+        "class SharedVisits\ncount = 0\nend\n"
+        "struct Empty\nfun touch\nreturn 1\nend\nend\n"
+        "struct Payload\npoint = new Point 0.0 0.0 0.0\ntext = \"root\"\nowner = new SharedVisits\nend\n"
+        "fun printPoint point:Point\nreturn point.x + point.y + point.z\nend\n"
+        "fun updatePoint point:Point x:float y:float\npoint.x = x\npoint.y = y\nend\n"
+        "fun walk value:Payload empty:Empty depth:int\n"
+        "assert empty.touch == 1\n"
+        "if depth == 0\nreturn value\nend\n"
+        "value.point.x = value.point.x + 1.0\nvalue.text = $\"{depth}\"\n"
+        "value.owner.count = value.owner.count + 1\n"
+        "parentX = value.point.x\nparentText = value.text\n"
+        "result = walk value empty (depth - 1)\n"
+        "assert value.point.x == parentX\nassert value.text == parentText\n"
+        "assert depth > 0\nreturn result\nend\n"
+        "original = new Point 1.0 2.0 3.0\nupdatePoint original 20.0 30.0\n"
+        "assert original.x == 1.0\nassert original.y == 2.0\nassert original.z == 3.0\n"
+        "assert (printPoint original) == 6.0\n"
+        "player = new Player\nplayer.location = original\ncopy = player.location\ncopy.x = 99.0\n"
+        "assert player.location.x == 1.0\n"
+        "source = new Payload\nsource.point = original\n"
+        "returned = walk source (new Empty) 4\n"
+        "assert source.point.x == 1.0\nassert source.text == \"root\"\n"
+        "assert returned.point.x == 5.0\nassert returned.point.y == 2.0\nassert returned.point.z == 3.0\n"
+        "assert returned.text == \"1\"\nassert source.owner.count == 4\n"
+        "assert returned.owner.count == 4\nassert (printPoint original) == 6.0\n"
+        "return returned.point.x");
+    const auto compiled = fixture.compile();
+    BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
+    const auto* point = runtime.getTypeByName("Point")->asStructType();
+    const auto* player = runtime.getTypeByName("Player")->asCompositeType();
+    BOOST_REQUIRE(point != nullptr);
+    BOOST_REQUIRE(player != nullptr);
+    BOOST_TEST(point->getPropertyCount() == 3U);
+    BOOST_TEST(point->getSize() == 3U);
+    BOOST_TEST(player->getPropertyCount() == 2U);
+    BOOST_TEST(player->getFieldStorageSize() == 4U);
+    const auto* printPoint = runtime.getScriptFunction(runtime.getFunctionId("printPoint"));
+    const auto* updatePoint = runtime.getScriptFunction(runtime.getFunctionId("updatePoint"));
+    BOOST_REQUIRE(printPoint != nullptr);
+    BOOST_REQUIRE(updatePoint != nullptr);
+    BOOST_TEST(printPoint->getParameterCount() == 1U);
+    BOOST_TEST(printPoint->getParameterStorageSize() == 3U);
+    BOOST_TEST(updatePoint->getParameterCount() == 3U);
+    BOOST_TEST(updatePoint->getParameterStorageSize() == 5U);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.floatValue == 5.0f);
+        BOOST_TEST(outcome.leakedStrings == 0);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(struct_equality_rejects_empty_one_slot_and_multi_slot_values) {
+    for (const auto* fields : {"", "number = 0\n", "text = \"owned\"\nnumber = 0\n"}) {
+        for (const auto* operation : {"==", "!="}) {
+            BOOST_TEST_CONTEXT("fields: " << fields << ", operator: " << operation) {
+                Runtime runtime;
+                auto compiler = runtime.createCompiler();
+                const auto source = NomadString{"struct Value\n"} + fields +
+                    "end\nfirst = new Value\nsecond = new Value\nreturn first " + operation + " second";
+                const auto result = compileSources({{{"main", {"equality.nomad", source}}}, {}},
+                    *compiler, CompilationTarget::Analysis);
+                BOOST_TEST(!result.succeeded());
+                BOOST_TEST(std::ranges::any_of(result.diagnostics, [&](const auto& diagnostic) {
+                    return diagnostic.sourceName == "equality.nomad" &&
+                        diagnostic.message.find(NomadString{"Invalid binary operator '"} + operation + "'") !=
+                            NomadString::npos &&
+                        diagnostic.message.find("Value") != NomadString::npos;
+                }));
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(inline_cycles_are_source_diagnostics_but_class_references_break_cycles) {
     for (const auto* source : {
         "struct Loop\nvalue = new Loop\nend",
