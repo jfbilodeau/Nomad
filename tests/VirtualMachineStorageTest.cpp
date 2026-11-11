@@ -183,6 +183,280 @@ BOOST_AUTO_TEST_CASE(native_calls_and_reentry_preserve_enclosing_script_storage)
     machine.popN(3);
 }
 
+BOOST_AUTO_TEST_CASE(native_method_and_function_frames_restore_nested_receivers_and_parameters) {
+    Runtime runtime;
+    const auto ownerId = runtime.getTypeManager().registerClass("GuardedNativeFrame", ClassMode::Closed);
+    const auto* owner = runtime.getType(ownerId).value();
+    RuntimeValue receiver;
+    const RuntimeValueGuard receiverGuard(*owner, &receiver);
+    receiver.setObjectValue(new NomadObject);
+    auto failFunction = false;
+    auto failMethod = false;
+    const auto functionId = runtime.registerNativeFunction(
+        "guardedNestedFunction",
+        [&](VirtualMachine* active) {
+            BOOST_TEST(active->getIntegerParameter(0) == 43);
+            BOOST_TEST(active->captureExecutionState().receiver.getObjectValue() == nullptr);
+            if (failFunction) {
+                throw NomadException("Expected nested function failure");
+            }
+        },
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(functionId.isValid());
+    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "guardedMethod",
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [&](VirtualMachine* active) {
+            BOOST_TEST(active->getThis() == receiver.getObjectValue());
+            BOOST_TEST(active->getIntegerParameter(0) == 41);
+            const auto methodFrame = active->captureExecutionState();
+            active->pushInteger(43);
+            {
+                BOOST_SCOPE_EXIT_ALL(&) {
+                    active->pop1();
+                };
+
+                if (failFunction) {
+                    BOOST_CHECK_THROW(active->callNativeFunction(functionId), NomadException);
+                } else {
+                    active->callNativeFunction(functionId);
+                }
+            }
+
+            BOOST_TEST(active->captureExecutionState().parameterIndex == methodFrame.parameterIndex);
+            BOOST_TEST(active->getIntegerParameter(0) == 41);
+            BOOST_TEST(active->getThis() == receiver.getObjectValue());
+            if (failMethod) {
+                throw NomadException("Expected outer method failure");
+            }
+        }
+    });
+    BOOST_REQUIRE(methodId.isValid());
+    for (const auto functionFailure : {false, true}) {
+        failFunction = functionFailure;
+        for (const auto methodFailure : {false, true}) {
+            failMethod = methodFailure;
+            VirtualMachine machine(&runtime, 64);
+            machine.pushInteger(29);
+            machine.enterNativeFrame(receiver);
+            const auto enclosing = machine.captureExecutionState();
+            machine.pushInteger(41);
+            const auto preparedStack = machine.captureExecutionState().stackIndex;
+            if (failMethod) {
+                BOOST_CHECK_THROW(machine.callNativeMethod(methodId), NomadException);
+            } else {
+                machine.callNativeMethod(methodId);
+            }
+
+            const auto restored = machine.captureExecutionState();
+            BOOST_TEST(restored.parameterIndex == enclosing.parameterIndex);
+            BOOST_TEST(restored.receiver.getObjectValue() == receiver.getObjectValue());
+            BOOST_TEST(restored.stackIndex == preparedStack);
+            BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+            machine.pop1();
+            BOOST_TEST(machine.getIntegerParameter(0) == 29);
+            BOOST_TEST(machine.captureExecutionState().stackIndex == enclosing.stackIndex);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(native_indexer_frames_restore_enclosing_receivers_and_parameters) {
+    Runtime runtime;
+    const auto ownerId = runtime.getTypeManager().registerClass("GuardedNativeIndexer", ClassMode::Closed);
+    const auto* owner = runtime.getType(ownerId).value();
+    RuntimeValue enclosingReceiver;
+    const RuntimeValueGuard enclosingGuard(*owner, &enclosingReceiver);
+    enclosingReceiver.setObjectValue(new NomadObject);
+    RuntimeValue indexedReceiver;
+    const RuntimeValueGuard indexedGuard(*owner, &indexedReceiver);
+    indexedReceiver.setObjectValue(new NomadObject);
+    auto fail = false;
+    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getIntegerType()->getId()},
+        .getter = [&](VirtualMachine* active) {
+            BOOST_TEST(active->getThis() == indexedReceiver.getObjectValue());
+            BOOST_TEST(active->getIntegerParameter(0) == 41);
+            active->setIntegerResult(71);
+            if (fail) {
+                throw NomadException("Expected indexer read failure");
+            }
+        },
+        .setter = [&](VirtualMachine* active) {
+            BOOST_TEST(active->getThis() == indexedReceiver.getObjectValue());
+            BOOST_TEST(active->getIntegerParameter(0) == 41);
+            BOOST_TEST(active->getIntegerParameter(1) == 99);
+            if (fail) {
+                throw NomadException("Expected indexer write failure");
+            }
+        }
+    });
+    BOOST_REQUIRE(indexerId.isValid());
+    for (const auto write : {false, true}) {
+        for (const auto failure : {false, true}) {
+            fail = failure;
+            VirtualMachine machine(&runtime, 64);
+            machine.pushInteger(29);
+            machine.enterNativeFrame(enclosingReceiver);
+            const auto enclosing = machine.captureExecutionState();
+            if (write) {
+                machine.pushInteger(99);
+            }
+
+            machine.pushInteger(41);
+            const auto preparedStack = machine.captureExecutionState().stackIndex;
+            if (fail) {
+                BOOST_CHECK_THROW(machine.callNativeIndexer(indexerId, indexedReceiver, write), NomadException);
+            } else {
+                machine.callNativeIndexer(indexerId, indexedReceiver, write);
+            }
+
+            const auto restored = machine.captureExecutionState();
+            BOOST_TEST(restored.parameterIndex == enclosing.parameterIndex);
+            BOOST_TEST(restored.receiver.getObjectValue() == enclosingReceiver.getObjectValue());
+            BOOST_TEST(restored.stackIndex == preparedStack);
+            BOOST_TEST(indexedReceiver.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(enclosingReceiver.getObjectValue()->getReferenceCount() == 1U);
+            machine.popN(write ? 2 : 1);
+            BOOST_TEST(machine.getIntegerParameter(0) == 29);
+            BOOST_TEST(machine.captureExecutionState().stackIndex == enclosing.stackIndex);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(native_struct_creation_restores_hidden_slots_frames_and_owned_registers) {
+    enum class Failure {
+        None = 1,
+        Initializer,
+        Constructor
+    };
+
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto failure = Failure::None;
+    auto defaultCalls = 0;
+    auto valueConstructorCalls = 0;
+    auto emptyConstructorCalls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("guardedDefault", [&](VirtualMachine* active) {
+        ++defaultCalls;
+        if (failure == Failure::Initializer) {
+            throw NomadException("Expected struct initializer failure");
+        }
+
+        active->setIntegerResult(17);
+    }, {}, runtime.getIntegerType(), "").isValid());
+    fixture.addFunction("guardedTypes",
+        "struct GuardedNativeValue\nnumber = guardedDefault\nend\n"
+        "struct GuardedNativeEmpty\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* valueType = runtime.getTypeByName("GuardedNativeValue")->asStructType();
+    const auto* emptyType = runtime.getTypeByName("GuardedNativeEmpty")->asStructType();
+    BOOST_REQUIRE(valueType->getSize() == 1U);
+    BOOST_REQUIRE(emptyType->getSize() == 0U);
+    BOOST_REQUIRE(valueType->getInitializer() != nullptr);
+    BOOST_REQUIRE(emptyType->getInitializer() != nullptr);
+    const auto valueConstructor = runtime.getTypeManager().registerNativeStructConstructor(valueType->getId(), {
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .function = [&](VirtualMachine* active) {
+            ++valueConstructorCalls;
+            BOOST_TEST(active->getIntegerParameter(0) == 23);
+            BOOST_TEST(active->captureExecutionState().receiver.getObjectValue() == nullptr);
+            BOOST_TEST(active->getStorageParameter(1, 0).getIntegerValue() == 17);
+            active->getStorageParameter(1, 0).setIntegerValue(23);
+            active->setIntegerResult(991);
+            active->setIntegerIntermediate(997);
+            if (failure == Failure::Constructor) {
+                throw NomadException("Expected native struct failure");
+            }
+        }
+    });
+    const auto emptyConstructor = runtime.getTypeManager().registerNativeStructConstructor(emptyType->getId(), {
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .function = [&](VirtualMachine* active) {
+            ++emptyConstructorCalls;
+            BOOST_TEST(active->getIntegerParameter(0) == 23);
+            BOOST_TEST(active->captureExecutionState().receiver.getObjectValue() == nullptr);
+            active->setIntegerResult(991);
+            active->setIntegerIntermediate(997);
+            if (failure == Failure::Constructor) {
+                throw NomadException("Expected empty native struct failure");
+            }
+        }
+    });
+    BOOST_REQUIRE(valueConstructor.isValid() && emptyConstructor.isValid());
+    runtime.initializeScripts();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        RuntimeValue receiver{NomadString{"enclosing receiver"}};
+        const RuntimeValueGuard receiverGuard(*runtime.getStringType(), &receiver);
+        RuntimeValue savedResult{NomadString{"enclosing result"}};
+        const RuntimeValueGuard resultGuard(*runtime.getStringType(), &savedResult);
+        RuntimeValue savedIntermediate{NomadString{"enclosing intermediate"}};
+        const RuntimeValueGuard intermediateGuard(*runtime.getStringType(), &savedIntermediate);
+        for (const auto empty : {false, true}) {
+            for (const auto stage : {Failure::None, Failure::Initializer, Failure::Constructor}) {
+                if (empty && stage == Failure::Initializer) {
+                    continue;
+                }
+
+                failure = stage;
+                const auto* type = empty ? emptyType : valueType;
+                const auto constructor = empty ? emptyConstructor : valueConstructor;
+                std::array<RuntimeValue, 3> storage{
+                    RuntimeValue{NomadInteger{37}},
+                    RuntimeValue{NomadInteger{83}},
+                    RuntimeValue{NomadInteger{41}}
+                };
+                auto* destination = empty ? nullptr : storage.data() + 1;
+                const RuntimeValueGuard storageGuard(*type, destination);
+                VirtualMachine machine(&runtime, 128);
+                machine.pushInteger(29);
+                machine.enterNativeFrame(receiver);
+                machine.setResult(savedResult);
+                machine.setIntermediate(savedIntermediate);
+                if (!empty) {
+                    machine.pushStorageAddress(destination);
+                }
+
+                machine.pushInteger(23);
+                const auto before = machine.captureExecutionState();
+                if (stage == Failure::None) {
+                    machine.createNativeStruct(destination, constructor);
+                } else {
+                    BOOST_CHECK_THROW(machine.createNativeStruct(destination, constructor), NomadException);
+                }
+
+                const auto after = machine.captureExecutionState();
+                BOOST_TEST(after.stackIndex == before.stackIndex);
+                BOOST_TEST(after.parameterIndex == before.parameterIndex);
+                BOOST_TEST(after.receiver.getObjectValue() == receiver.getObjectValue());
+                BOOST_TEST(machine.getResult().getObjectValue() == savedResult.getObjectValue());
+                BOOST_TEST(machine.getIntermediate().getObjectValue() == savedIntermediate.getObjectValue());
+                BOOST_TEST(savedResult.getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(savedIntermediate.getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(storage.front().getIntegerValue() == 37);
+                BOOST_TEST(storage.back().getIntegerValue() == 41);
+                BOOST_TEST(storage[1].getIntegerValue() ==
+                    (empty ? 83 : stage == Failure::Initializer ? 0 : 23));
+                machine.popN(empty ? 1 : 2);
+                BOOST_TEST(machine.getIntegerParameter(0) == 29);
+            }
+        }
+    }
+
+    BOOST_TEST(defaultCalls == 3);
+    BOOST_TEST(valueConstructorCalls == 2);
+    BOOST_TEST(emptyConstructorCalls == 2);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
 BOOST_AUTO_TEST_CASE(empty_views_do_not_require_storage_or_address_arithmetic) {
     Runtime runtime;
     VirtualMachine machine(&runtime, 16);

@@ -1,13 +1,13 @@
 # RAII cleanup plan
 
-Status: Step 2 is implemented and validated on Windows Debug, awaiting review.
-Next slice: Step 3A; implementation requires separate approval.
+Status: Step 3A is implemented and validated on Windows Debug, awaiting review.
+Next slice: Step 3B; implementation requires separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
-work. Preserve unrelated worktree changes. Steps 1A, 1B, and 2, the concrete
-value-guard contract, and using Boost.ScopeExit macros have been approved. Later slices,
-commits, and pushes are not authorized.
+work. Preserve unrelated worktree changes. Steps 1A, 1B, 2, and 3A, the concrete
+value-guard contract, and using Boost.ScopeExit macros have been approved. Later
+slices, commits, and pushes are not authorized.
 
 Implement one approved slice at a time. After each slice, report the changes,
 validation, remaining catches, and next slice, then stop for review.
@@ -289,6 +289,37 @@ restoration. Transfer the object only after successful validation.
 
 Acceptance: nested native reentry, exceptions after result allocation, receiver
 restoration, zero-sized storage, and existing zero-allocation checks all pass.
+
+Step 3A outcome:
+
+- Replaced the six targeted handlers in
+  [VirtualMachine.cpp](../../src/nomad/script/VirtualMachine.cpp): native
+  function/method/indexer calls, native object/struct construction, and the
+  temporary storage-address push used by script struct initialization.
+- Used separate `BOOST_SCOPE_EXIT_ALL` blocks for native frames and saved
+  registers, keeping captures small and preserving restoration order.
+  `RuntimeValueGuard` releases a failed native object's partial result before
+  restoring the enclosing frame/registers; successful construction explicitly
+  transfers the result.
+- Added three direct-call regressions in
+  [VirtualMachineStorageTest.cpp](../../tests/VirtualMachineStorageTest.cpp).
+  They cover nested function/method success and failure, indexer read/write
+  frame restoration, and empty/nonempty struct initialization and construction
+  failures with owned enclosing registers and balanced caller stack slots.
+- The new cases and existing struct/object/native-call allocation tests ran and
+  passed with freshly built Windows Debug binaries. Native object failure and
+  reentry regressions also passed. No bookkeeping allocation increase was
+  detected.
+- `nomad_test_remaining` and `nomad_test_tooling` passed on their initial runs.
+  `nomad_test_language` initially reported a Boost.JSON out-of-range exception
+  in the existing `language_server/signature_help_lists_overloads_and_filters_member_receivers`
+  test in [LanguageServerTest.cpp](../../tests/LanguageServerTest.cpp).
+  The language group passed on an unchanged rerun. The intermittent LSP failure
+  was not hidden or fixed as part of this VM cleanup slice; its cause remains
+  uninvestigated beyond inspecting the failing test and diagnostic.
+- The first-party catch-all count is now 28, down from 34. No public API,
+  opcode, execution-state/suspension, argument-block, or filesystem changes from
+  later slices were included.
 
 Stop for review.
 

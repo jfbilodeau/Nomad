@@ -11,6 +11,7 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
@@ -531,17 +532,14 @@ void VirtualMachine::initializeStructStorage(RuntimeValue* destination, const Ty
     if (size != 0) {
         pushStorageAddress(destination);
     }
-    try {
-        executeCreationBody(script, RuntimeValue{});
-    } catch (...) {
+
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         if (size != 0) {
             pop1();
         }
-        throw;
-    }
-    if (size != 0) {
-        pop1();
-    }
+    };
+
+    executeCreationBody(script, RuntimeValue{});
 }
 
 void VirtualMachine::createScriptStruct(RuntimeValue* destination, const CallableId constructorId) {
@@ -556,18 +554,17 @@ void VirtualMachine::createNativeStruct(RuntimeValue* destination, const Callabl
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
-    m_this = RuntimeValue{};
-    try {
-        constructor->getFn()(this);
-    } catch (...) {
-        endNativeCall(frame);
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         m_result = savedResult;
         m_intermediate = savedIntermediate;
-        throw;
-    }
-    endNativeCall(frame);
-    m_result = savedResult;
-    m_intermediate = savedIntermediate;
+    };
+
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        endNativeCall(frame);
+    };
+
+    m_this = RuntimeValue{};
+    constructor->getFn()(this);
 }
 
 void VirtualMachine::yield(const RuntimeValue& result) {
@@ -637,14 +634,12 @@ void VirtualMachine::pushScriptFrame() {
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
     const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
     const auto frame = beginNativeCall();
-    m_this = RuntimeValue{};
-    try {
-        function->getFn()(this);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
-        throw;
-    }
-    endNativeCall(frame);
+    };
+
+    m_this = RuntimeValue{};
+    function->getFn()(this);
 }
 
 NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) {
@@ -652,24 +647,24 @@ NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) 
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
-    m_this = RuntimeValue{};
-    m_result = RuntimeValue{};
-    try {
-        constructor->getFn()(this);
-        if (m_result.getObjectValue() == nullptr) {
-            fault("Native constructor for '" + constructor->getName() + "' returned null");
-        }
-    } catch (...) {
-        constructor->getReturnType()->freeValue(&m_result);
-        endNativeCall(frame);
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         m_result = savedResult;
         m_intermediate = savedIntermediate;
-        throw;
+        endNativeCall(frame);
+    };
+
+    m_this = RuntimeValue{};
+    m_result = RuntimeValue{};
+    // Release partial results before restoring the enclosing frame and registers.
+    RuntimeValueGuard resultGuard(*constructor->getReturnType(), &m_result);
+    constructor->getFn()(this);
+    if (m_result.getObjectValue() == nullptr) {
+        fault("Native constructor for '" + constructor->getName() + "' returned null");
     }
+
     auto* object = m_result.getObjectValue();
-    endNativeCall(frame);
-    m_result = savedResult;
-    m_intermediate = savedIntermediate;
+    resultGuard.release();
+
     return object;
 }
 
@@ -687,13 +682,11 @@ void VirtualMachine::endNativeCall(const NativeCallFrame& frame) {
 void VirtualMachine::callNativeMethod(const CallableId memberId) {
     const auto* method = m_runtime->getNativeMemberMethod(memberId);
     const auto frame = beginNativeCall();
-    try {
-        method->getFn()(this);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
-        throw;
-    }
-    endNativeCall(frame);
+    };
+
+    method->getFn()(this);
 }
 
 NomadObject* VirtualMachine::getScriptReceiver() const {
@@ -824,14 +817,12 @@ void VirtualMachine::callNativeIndexer(
     }
     m_result = RuntimeValue{};
     const auto frame = beginNativeCall();
-    m_this = receiver;
-    try {
-        callback(this);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
-        throw;
-    }
-    endNativeCall(frame);
+    };
+
+    m_this = receiver;
+    callback(this);
 }
 
 void VirtualMachine::runNativeIndexer(
