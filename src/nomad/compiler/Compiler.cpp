@@ -2567,9 +2567,6 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         postCompile(context);
     });
 
-    if (!beginPhase(CompilationPhase::Completed)) {
-        return false;
-    }
     if (m_scriptInitializerId.isValid()) {
         reportExceptions({}, [&] {
             installScriptInitialValues();
@@ -2578,6 +2575,9 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         if (hasNewErrors()) {
             return false;
         }
+    }
+    if (!beginPhase(CompilationPhase::Completed)) {
+        return false;
     }
     log::info("Functions compiled");
 

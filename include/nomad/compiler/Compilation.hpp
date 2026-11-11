@@ -20,6 +20,7 @@ enum class CompilationPhase {
     Emit,
     Link,
     Verify,
+    // Executable setup is installed before this phase; analysis reports completion after resolution.
     Completed,
 };
 

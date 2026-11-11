@@ -46,7 +46,7 @@ continue to cover lexical `this` precedence and closure/format-expression use.
 Verified with the Windows Debug `nomad_test_language` CTest group and the
 workspace CMake build.
 
-## 4. Define completion-phase semantics
+## 4. Define completion-phase semantics (completed)
 
 - Decide whether `Completed` callbacks run before or after script initial values
   are installed.
@@ -56,6 +56,13 @@ workspace CMake build.
   failure, and analysis compilation, including game startup behavior.
 - Validate compiler-hook, hub-initialization, module-host, and game-startup
   tests.
+
+Contract chosen: executable `Completed` callbacks run only after static hub
+values and the script initializer have been installed; installation failures
+skip completion callbacks. Analysis compilation retains its existing completion
+behavior without installing executable state. Verified with the Windows Debug
+`nomad_test_remaining` and `nomad_test_language` CTest groups and workspace
+CMake build.
 
 ## 5. Reduce call-emission duplication
 

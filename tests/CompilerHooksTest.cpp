@@ -169,6 +169,67 @@ BOOST_AUTO_TEST_CASE(analysis_hooks_skip_emission_linking_and_verification)
     BOOST_TEST(increment->getFunctionStart() == NOMAD_INVALID_INDEX);
 }
 
+BOOST_AUTO_TEST_CASE(completed_hooks_observe_installed_static_hub_values)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{
+        {"main", {"editor:main",
+            "hub startup\n"
+            "title = \"Initialized\"\n"
+            "end\n"
+            "return startup.title"}
+    }}, {}});
+    auto completed = false;
+    compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Completed) {
+            return;
+        }
+        const auto titleId = runtime.getContextVariableId("startup.title");
+        BOOST_REQUIRE(titleId.isValid());
+        RuntimeValue title;
+        runtime.getContextVariableValue(titleId, title);
+        BOOST_TEST(title.getStringValue() == "Initialized");
+        completed = true;
+    });
+
+    BOOST_REQUIRE(compiler->compileScripts(&context));
+    BOOST_TEST(completed);
+}
+
+BOOST_AUTO_TEST_CASE(completed_hooks_are_skipped_when_initializer_installation_fails)
+{
+    Runtime runtime;
+    const auto existingInitializerId = runtime.registerScriptFunction("existingInitializer", "existing.nomad", "");
+    BOOST_REQUIRE(existingInitializerId.isValid());
+    auto* existingInitializer = runtime.getScriptFunction(existingInitializerId);
+    BOOST_REQUIRE(existingInitializer != nullptr);
+    existingInitializer->setReturnType(runtime.getVoidType());
+    existingInitializer->setFunctionStart(runtime.getInstructions().size());
+    runtime.setScriptInitializer(existingInitializerId);
+
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{
+        {"main", {"editor:main",
+            "hub startup\n"
+            "title = \"Initialized\"\n"
+            "end\n"
+            "return startup.title"}
+    }}, {}});
+    auto completed = false;
+    compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        completed = completed || phase == CompilationPhase::Completed;
+    });
+
+    BOOST_TEST(!compiler->compileScripts(&context));
+    BOOST_TEST(!completed);
+    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_TEST(context.getFirstError()->message ==
+        "Script initialization requires a compiled, parameterless void function before startup");
+}
+
 BOOST_AUTO_TEST_CASE(hook_errors_stop_remaining_hooks_and_phases)
 {
     const std::vector<CompilationPhase> phases{
