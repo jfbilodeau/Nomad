@@ -1034,6 +1034,28 @@ NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, Sc
     return m_instructions.size() - 1;
 }
 
+void Compiler::addFunctionCallInstruction(const Function* function) {
+    if (function->asScriptFunction() != nullptr) {
+        addOpCode(OpCodes::op_call_script_function);
+        addFunctionLink(function->getId(), m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_function);
+        addId(function->getId().id);
+    }
+}
+
+void Compiler::addMethodCallInstruction(const Method* method) {
+    if (method->asScriptMethod() != nullptr) {
+        addOpCode(OpCodes::op_call_script_method);
+        addFunctionLink(method->getId(), m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_method);
+        addId(method->getId().id);
+    }
+}
+
 void Compiler::addFunctionCallIntoLocal(
     const CallableId targetFunctionId,
     ScriptCallableBase* function,
@@ -1058,14 +1080,7 @@ void Compiler::addFunctionCallIntoLocal(
         addIndex(destinationOffset);
     }
     arguments->compile(this, function);
-    if (target->asScriptFunction() != nullptr) {
-        addOpCode(OpCodes::op_call_script_function);
-        addFunctionLink(targetFunctionId, m_instructions.size());
-        addIndex(0);
-    } else {
-        addOpCode(OpCodes::op_call_native_function);
-        addId(targetFunctionId.id);
-    }
+    addFunctionCallInstruction(target);
     addFreeArguments(arguments);
     if (layout.returnOffset.has_value()) {
         addOpCode(OpCodes::op_pop_1);
@@ -1099,14 +1114,7 @@ void Compiler::addFunctionCallIntoReturn(
         addIndex(0);
     }
     arguments->compile(this, function);
-    if (target->asScriptFunction() != nullptr) {
-        addOpCode(OpCodes::op_call_script_function);
-        addFunctionLink(targetFunctionId, m_instructions.size());
-        addIndex(0);
-    } else {
-        addOpCode(OpCodes::op_call_native_function);
-        addId(targetFunctionId.id);
-    }
+    addFunctionCallInstruction(target);
     addFreeArguments(arguments);
     if (layout.returnOffset.has_value()) {
         addOpCode(OpCodes::op_pop_1);
@@ -1178,14 +1186,7 @@ void Compiler::addStructMethodCall(
         receiver.emitAddress(*this, function, layout.returnOffset.has_value() ? 1 : 0);
     }
     arguments->compile(this, function);
-    if (method->asScriptMethod() != nullptr) {
-        addOpCode(OpCodes::op_call_script_method);
-        addFunctionLink(methodId, m_instructions.size());
-        addIndex(0);
-    } else {
-        addOpCode(OpCodes::op_call_native_method);
-        addId(methodId.id);
-    }
+    addMethodCallInstruction(method);
     addFreeArguments(arguments);
     const auto hiddenSlotCount = layout.stackSlotCount - layout.argumentSlotCount;
     if (hiddenSlotCount == 1) {
@@ -1230,14 +1231,7 @@ void Compiler::addStructMethodCallIntoReturn(
         receiver.emitAddress(*this, function, layout.returnOffset.has_value() ? 1 : 0);
     }
     arguments->compile(this, function);
-    if (method->asScriptMethod() != nullptr) {
-        addOpCode(OpCodes::op_call_script_method);
-        addFunctionLink(methodId, m_instructions.size());
-        addIndex(0);
-    } else {
-        addOpCode(OpCodes::op_call_native_method);
-        addId(methodId.id);
-    }
+    addMethodCallInstruction(method);
     addFreeArguments(arguments);
     const auto hiddenSlotCount = layout.stackSlotCount - layout.argumentSlotCount;
     if (hiddenSlotCount == 1) {
@@ -1280,14 +1274,7 @@ void Compiler::addObjectMethodCallIntoLocal(
     arguments->compile(this, function);
     addOpCode(OpCodes::op_bind_this_from_stack);
     addIndex(layout.stackSlotCount);
-    if (method->asScriptMethod() != nullptr) {
-        addOpCode(OpCodes::op_call_script_method);
-        addFunctionLink(methodId, m_instructions.size());
-        addIndex(0);
-    } else {
-        addOpCode(OpCodes::op_call_native_method);
-        addId(methodId.id);
-    }
+    addMethodCallInstruction(method);
     addFreeArguments(arguments);
     if (layout.returnOffset.has_value()) {
         addOpCode(OpCodes::op_pop_1);
@@ -1332,14 +1319,7 @@ void Compiler::addObjectMethodCallIntoReturn(
     arguments->compile(this, function);
     addOpCode(OpCodes::op_bind_this_from_stack);
     addIndex(layout.stackSlotCount);
-    if (method->asScriptMethod() != nullptr) {
-        addOpCode(OpCodes::op_call_script_method);
-        addFunctionLink(methodId, m_instructions.size());
-        addIndex(0);
-    } else {
-        addOpCode(OpCodes::op_call_native_method);
-        addId(methodId.id);
-    }
+    addMethodCallInstruction(method);
     addFreeArguments(arguments);
     if (layout.returnOffset.has_value()) {
         addOpCode(OpCodes::op_pop_1);
@@ -1387,14 +1367,7 @@ void Compiler::addObjectSetterCall(
     }
     addOpCode(OpCodes::op_bind_this_from_stack);
     addIndex(method->getParameterStorageSize());
-    if (method->asScriptMethod() != nullptr) {
-        addOpCode(OpCodes::op_call_script_method);
-        addFunctionLink(methodId, m_instructions.size());
-        addIndex(0);
-    } else {
-        addOpCode(OpCodes::op_call_native_method);
-        addId(methodId.id);
-    }
+    addMethodCallInstruction(method);
     valueType->emitFreeStackValue(*this, 0);
     const auto size = valueType->getSize();
     if (size != 0) {

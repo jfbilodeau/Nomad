@@ -30,6 +30,8 @@ namespace nomad {
 // Forward declarations
 class Compiler;
 enum class BuildPhase;
+class Function;
+class Method;
 class Tokenizer;
 class FunctionBuilder;
 
@@ -381,6 +383,8 @@ private:
     void prepareNamedReturn(const FunctionCompilation& function);
     void compilePropertyInitializer(const FunctionCompilation& initializer);
     void compileConstructor(const FunctionCompilation& constructor);
+    void addFunctionCallInstruction(const Function* function);
+    void addMethodCallInstruction(const Method* method);
 
     Runtime* m_runtime;
 

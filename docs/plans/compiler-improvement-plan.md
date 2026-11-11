@@ -64,7 +64,7 @@ behavior without installing executable state. Verified with the Windows Debug
 `nomad_test_remaining` and `nomad_test_language` CTest groups and workspace
 CMake build.
 
-## 5. Reduce call-emission duplication
+## 5. Reduce call-emission duplication (completed)
 
 - Extract only small emission operations that are genuinely shared by local
   and return-destination call paths.
@@ -72,6 +72,13 @@ CMake build.
   specialized where receiver layout or ownership differs.
 - Validate script/native dispatch, local/return destinations, slot cleanup,
   empty and multi-slot structs, and runtime results.
+
+Added shared script/native dispatch emitters for functions and methods and
+replaced the repeated dispatch blocks in local/return function calls,
+struct/object method calls, and object setters. Receiver binding, argument
+compilation, and cleanup remain in their specialized call paths. Verified with
+the Windows Debug `nomad_test_remaining` and `nomad_test_language` CTest groups,
+the workspace CMake build, and `git diff --check`.
 
 ## 6. Define duplicate statement-registration behavior
 
