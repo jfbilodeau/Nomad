@@ -61,8 +61,8 @@ void ListObject::insert(const NomadInteger index, const RuntimeValue& value) {
             " is out of bounds for size " + toString(m_values.size()));
     }
     RuntimeValue storedValue;
+    m_elementType->copyValue(&value, &storedValue);
     try {
-        m_elementType->copyValue(&value, &storedValue);
         m_values.insert(m_values.begin() + static_cast<std::vector<RuntimeValue>::difference_type>(index), storedValue);
         ++m_structuralVersion;
     } catch (...) {

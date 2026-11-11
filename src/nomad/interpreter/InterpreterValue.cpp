@@ -38,13 +38,7 @@ InterpreterValue::InterpreterValue(const Type* type, const std::span<const Runti
     if (storage.empty()) {
         return;
     }
-    try {
-        m_type->copyValue(storage.data(), m_storage.data());
-    } catch (...) {
-        m_type->freeValue(m_storage.data());
-        m_type = nullptr;
-        throw;
-    }
+    m_type->copyValue(storage.data(), m_storage.data());
 }
 
 InterpreterValue::InterpreterValue(const InterpreterValue& other):

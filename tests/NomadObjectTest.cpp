@@ -60,6 +60,9 @@ public:
     NomadString getTypeName() const override;
     void toString(const RuntimeValue* value, NomadString& string) const override;
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
+    void freeValue(RuntimeValue* value) const noexcept override;
+
+    mutable NomadIndex freeCalls = 0;
 };
 
 class UnmanagedType final : public ValueType {
@@ -106,6 +109,11 @@ void FailingCopyType::copyValue(const RuntimeValue* source, RuntimeValue* destin
     ClassType::copyValue(source, destination);
     freeValue(destination);
     throw NomadException("Copy failed");
+}
+
+void FailingCopyType::freeValue(RuntimeValue* value) const noexcept {
+    ++freeCalls;
+    ClassType::freeValue(value);
 }
 
 class AssignmentStorageType final : public ValueType {
@@ -337,7 +345,7 @@ BOOST_AUTO_TEST_CASE(MultiSlotAssignmentSupportsForwardBackwardOverlapAndSelfAss
     }
 }
 
-BOOST_AUTO_TEST_CASE(SingleSlotCopyFailurePreservesOwnedDestinationWithoutExternalScratch) {
+BOOST_AUTO_TEST_CASE(SingleSlotCopyFailurePreservesOwnedDestinationWithoutRepeatedCleanup) {
     Runtime runtime;
     FailingCopyType type(&runtime, TypeId::INVALID);
     NomadIndex sourceDestroyed = 0;
@@ -349,6 +357,11 @@ BOOST_AUTO_TEST_CASE(SingleSlotCopyFailurePreservesOwnedDestinationWithoutExtern
     const auto* originalDestination = destination.getObjectValue();
     BOOST_TEST(type.getAssignmentScratchSize() == 0U);
     BOOST_CHECK_THROW(type.assignValue(&source, &destination), NomadException);
+    BOOST_TEST(type.freeCalls == 1U);
+    RuntimeValue scratch;
+    BOOST_CHECK_THROW(type.assignValue(&source, &destination, &scratch), NomadException);
+    BOOST_TEST(type.freeCalls == 2U);
+    BOOST_TEST(scratch.getObjectValue() == nullptr);
     BOOST_TEST(destination.getObjectValue() == originalDestination);
     BOOST_TEST(source.getObjectValue()->getReferenceCount() == 1U);
     BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
@@ -475,9 +488,11 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartialCopiesWhenEitherArgumentFails) {
     key.setObjectValue(new CountingObject(destroyed));
     value.setObjectValue(new CountingObject(destroyed));
     BOOST_CHECK_THROW(KeyValueObject(&failingType, &type, key, value), NomadException);
+    BOOST_TEST(failingType.freeCalls == 1U);
     BOOST_TEST(key.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
     BOOST_CHECK_THROW(KeyValueObject(&type, &failingType, key, value), NomadException);
+    BOOST_TEST(failingType.freeCalls == 2U);
     BOOST_TEST(key.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
     type.freeValue(&key);

@@ -56,14 +56,8 @@ void Type::assignValue(
         }
         scratch = &localScratch;
     }
-    try {
-        copyValue(sourceValue, scratch);
-        freeValue(destinationValue);
-    } catch (...) {
-        freeValue(scratch);
-        std::fill_n(scratch, size, RuntimeValue{});
-        throw;
-    }
+    copyValue(sourceValue, scratch);
+    freeValue(destinationValue);
     std::copy_n(scratch, size, destinationValue);
     std::fill_n(scratch, size, RuntimeValue{});
 }

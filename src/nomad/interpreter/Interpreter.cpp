@@ -655,20 +655,12 @@ InterpreterValue Interpreter::setProperty(
         throw std::invalid_argument("Stored property assignment requires a matching value type");
     }
     const auto* receiverType = receiver.getType();
-    std::vector<RuntimeValue> storage(receiver.getStorage().size());
-    try {
-        receiverType->copyValue(receiver.getStorage().data(), storage.data());
-        std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
-        type->assignValue(value.getStorage().data(),
-            type->getSize() == 0 ? nullptr : storage.data() + offset,
-            scratch.empty() ? nullptr : scratch.data());
-        InterpreterValue result(receiverType, storage);
-        receiverType->freeValue(storage.data());
-        return result;
-    } catch (...) {
-        receiverType->freeValue(storage.data());
-        throw;
-    }
+    InterpreterStorage storage(receiverType, receiver.getStorage());
+    std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+    type->assignValue(value.getStorage().data(),
+        type->getSize() == 0 ? nullptr : storage.getMutableStorage().data() + offset,
+        scratch.empty() ? nullptr : scratch.data());
+    return InterpreterValue(receiverType, storage.getStorage());
 }
 
 std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(

@@ -370,6 +370,65 @@ BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_original_and_caller_
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
+BOOST_AUTO_TEST_CASE(owned_property_replacement_failures_release_staging_and_preserve_sources) {
+    Runtime runtime;
+    FailingCompositeCopyType* field = nullptr;
+    const auto fieldId = runtime.getTypeManager().registerClass<FailingCompositeCopyType>(
+        "OwnedCompositeCopy", ClassMode::Closed, field);
+    BOOST_REQUIRE(fieldId.isValid());
+    const auto pairId = runtime.getTypeManager().registerStruct("OwnedCompositeCopyPair");
+    const auto* pair = runtime.getTypeByName("OwnedCompositeCopyPair")->asStructType();
+    const auto firstProperty = runtime.getTypeManager().registerScriptStructProperty(pairId, "first", field);
+    BOOST_REQUIRE(firstProperty.isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pairId, "second", field).isValid());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(pairId);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        std::array<RuntimeValue, 2> source{
+            RuntimeValue{NomadString{"old first"}}, RuntimeValue{NomadString{"old second"}}
+        };
+        const InterpreterValue receiver(pair, source);
+        pair->freeValue(source.data());
+        RuntimeValue replacementSource{NomadString{"replacement"}};
+        const InterpreterValue replacement(field, replacementSource);
+        replacementSource.freeObjectValue();
+
+        field->copyCount = 0;
+        auto copyStages = NomadIndex{0};
+        {
+            const auto updated = interpreter.setProperty(receiver, firstProperty, replacement);
+            copyStages = field->copyCount;
+            BOOST_TEST(updated.getStorage()[0].getStringValue() == "replacement");
+            BOOST_TEST(updated.getStorage()[1].getStringValue() == "old second");
+            BOOST_TEST(receiver.getStorage()[0].getStringValue() == "old first");
+        }
+        BOOST_REQUIRE(copyStages > 0);
+        const auto liveStrings = RuntimeValue::getLiveStringCount();
+        const auto liveObjects = NomadObject::getLiveObjectCount();
+        for (auto failAt = NomadIndex{1}; failAt <= copyStages; ++failAt) {
+            field->copyCount = 0;
+            field->failCopyAt = failAt;
+            BOOST_CHECK_THROW(
+                static_cast<void>(interpreter.setProperty(receiver, firstProperty, replacement)),
+                NomadException
+            );
+            BOOST_TEST(receiver.getStorage()[0].getStringValue() == "old first");
+            BOOST_TEST(receiver.getStorage()[1].getStringValue() == "old second");
+            BOOST_TEST(receiver.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(receiver.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(replacement.getValue().getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == liveStrings);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == liveObjects);
+        }
+        field->failCopyAt = 0;
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
 BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_and_validate_frame_access) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();

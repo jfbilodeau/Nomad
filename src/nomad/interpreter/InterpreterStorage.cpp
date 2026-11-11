@@ -24,12 +24,7 @@ InterpreterStorage::InterpreterStorage(
     if (source.empty()) {
         return;
     }
-    try {
-        m_type->copyValue(source.data(), m_storage.data());
-    } catch (...) {
-        m_type->freeValue(m_storage.data());
-        throw;
-    }
+    m_type->copyValue(source.data(), m_storage.data());
 }
 
 InterpreterStorage::~InterpreterStorage() {

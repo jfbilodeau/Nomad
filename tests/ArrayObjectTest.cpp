@@ -33,14 +33,7 @@ public:
     ArrayValue(const Array& array, Indices... indices):
         m_type(array.getElementType())
     {
-        try {
-            array.getValue(indices..., *this);
-        } catch (...) {
-            if (m_type->needsFree()) {
-                m_type->freeValue(this);
-            }
-            throw;
-        }
+        array.getValue(indices..., *this);
     }
 
     ~ArrayValue() {
@@ -166,6 +159,7 @@ BOOST_AUTO_TEST_CASE(invalid_read_default_initialization_failure_releases_partia
         elements.failInitialization = 1;
         BOOST_CHECK_THROW(ArrayValue(array, 0), NomadException);
         BOOST_TEST(elements.destroyed == 1u);
+        BOOST_TEST(elements.freed == 1u);
         elements.failInitialization = 0;
         BOOST_TEST(ArrayValue(array, 0).getObjectValue() != nullptr);
     }

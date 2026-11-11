@@ -159,8 +159,8 @@ void MapObject::setValue(const NomadStringView key, const RuntimeValue& value) {
         return;
     }
     RuntimeValue storedValue;
+    m_valueType->copyValue(&value, &storedValue);
     try {
-        m_valueType->copyValue(&value, &storedValue);
         m_values.emplace(NomadString(key), storedValue);
     } catch (...) {
         m_valueType->freeValue(&storedValue);
