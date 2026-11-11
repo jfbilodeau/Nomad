@@ -80,12 +80,18 @@ compilation, and cleanup remain in their specialized call paths. Verified with
 the Windows Debug `nomad_test_remaining` and `nomad_test_language` CTest groups,
 the workspace CMake build, and `git diff --check`.
 
-## 6. Define duplicate statement-registration behavior
+## 6. Define duplicate statement-registration behavior (completed)
 
 - Decide whether duplicate statement names are errors or intentional no-ops.
 - Make the behavior explicit in `registerParseStatementFn` and add a focused
   regression test.
 - Validate compiler and parser tests.
+
+Contract chosen: registering an existing statement name throws `NomadBug`
+instead of silently retaining the original registration. Added a regression
+test confirming the duplicate is rejected and the original metadata remains
+unchanged. Verified with the Windows Debug `nomad_test_remaining` CTest group,
+the workspace CMake build, and `git diff --check`.
 
 ## 7. Clean up the compiler interface
 

@@ -466,6 +466,24 @@ BOOST_AUTO_TEST_CASE(statement_parsers_register_without_interpreter_metadata)
     BOOST_TEST(compiler->isStatement("console.test"));
 }
 
+BOOST_AUTO_TEST_CASE(duplicate_statement_registrations_are_rejected)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    compiler->registerParseStatementFn("custom", StatementAvailability::Compiler, nullptr);
+
+    BOOST_CHECK_THROW(
+        compiler->registerParseStatementFn("custom", StatementAvailability::Interpreter, nullptr),
+        NomadBug
+    );
+
+    ParseStatementFn statementFn;
+    StatementAvailability availability;
+    BOOST_REQUIRE(compiler->getParseStatementFn("custom", statementFn, availability));
+    BOOST_CHECK(availability == StatementAvailability::Compiler);
+    BOOST_TEST(statementFn == nullptr);
+}
+
 BOOST_AUTO_TEST_CASE(registered_source_batches_are_owned_by_the_compiler)
 {
     Runtime runtime;

@@ -237,7 +237,11 @@ void Compiler::registerParseStatementFn(
     const StatementBlockMode blockMode,
     const StatementBlockFn blockFn
 ) {
-    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability, blockMode, blockFn });
+    const auto [registration, inserted] =
+        m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability, blockMode, blockFn });
+    if (!inserted) {
+        throw NomadBug("Statement '" + name + "' is already registered");
+    }
 }
 
 bool Compiler::statementOpensBlock(const Tokenizer* tokens, const NomadIndex tokenIndex) const {
