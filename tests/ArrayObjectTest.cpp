@@ -101,6 +101,7 @@ void FailingElementType::toString(const RuntimeValue*, NomadString& text) const 
 void FailingElementType::initValue(RuntimeValue* value) const {
     value->setObjectValue(new TrackedArrayElement(destroyed));
     if (++initialized == failInitialization) {
+        freeValue(value);
         throw NomadException("Element initialization failed");
     }
 }
@@ -113,6 +114,7 @@ void FailingElementType::freeValue(RuntimeValue* value) const noexcept {
 void FailingElementType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
     ClassType::copyValue(source, destination);
     if (failCopy) {
+        freeValue(destination);
         throw NomadException("Element copy failed");
     }
 }
@@ -487,7 +489,7 @@ BOOST_AUTO_TEST_CASE(partial_initialization_and_failed_replacement_release_owned
     type.failInitialization = 3;
     BOOST_CHECK_THROW(Array1dObject(&type, 5), NomadException);
     BOOST_TEST(type.initialized == 3u);
-    BOOST_TEST(type.freed == 3u);
+    BOOST_TEST(type.freed == 4u);
     BOOST_TEST(type.destroyed == 3u);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 

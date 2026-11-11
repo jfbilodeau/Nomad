@@ -2,6 +2,7 @@
 
 #include <nomad/script/StructType.hpp>
 
+#include <algorithm>
 #include <utility>
 
 namespace nomad {
@@ -61,40 +62,54 @@ bool StructType::needsFree() const {
 }
 
 void StructType::initValue(RuntimeValue* value) const {
-    if (getSize() == 0) {
+    const auto size = getSize();
+    if (size == 0) {
         return;
     }
-    auto offset = NomadIndex{0};
-    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
-        const auto* property = getPropertyAt(index);
-        if (property->asNativeProperty() != nullptr) {
-            continue;
+    try {
+        auto offset = NomadIndex{0};
+        for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+            const auto* property = getPropertyAt(index);
+            if (property->asNativeProperty() != nullptr) {
+                continue;
+            }
+            const auto* type = property->getValueType();
+            const auto fieldSize = type->getSize();
+            if (fieldSize != 0) {
+                type->initValue(value + offset);
+            }
+            offset += fieldSize;
         }
-        const auto* type = property->getValueType();
-        const auto size = type->getSize();
-        if (size != 0) {
-            type->initValue(value + offset);
-        }
-        offset += size;
+    } catch (...) {
+        freeValue(value);
+        std::fill_n(value, size, RuntimeValue{});
+        throw;
     }
 }
 
 void StructType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
-    if (getSize() == 0 || source == destination) {
+    const auto size = getSize();
+    if (size == 0 || source == destination) {
         return;
     }
-    auto offset = NomadIndex{0};
-    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
-        const auto* property = getPropertyAt(index);
-        if (property->asNativeProperty() != nullptr) {
-            continue;
+    try {
+        auto offset = NomadIndex{0};
+        for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+            const auto* property = getPropertyAt(index);
+            if (property->asNativeProperty() != nullptr) {
+                continue;
+            }
+            const auto* type = property->getValueType();
+            const auto fieldSize = type->getSize();
+            if (fieldSize != 0) {
+                type->copyValue(source + offset, destination + offset);
+            }
+            offset += fieldSize;
         }
-        const auto* type = property->getValueType();
-        const auto size = type->getSize();
-        if (size != 0) {
-            type->copyValue(source + offset, destination + offset);
-        }
-        offset += size;
+    } catch (...) {
+        freeValue(destination);
+        std::fill_n(destination, size, RuntimeValue{});
+        throw;
     }
 }
 

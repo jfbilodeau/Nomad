@@ -98,6 +98,7 @@ public:
     void initValue(RuntimeValue* value) const override {
         value->setStringValue("partial");
         if (++m_initializationCount == failInitializationAt) {
+            freeValue(value);
             throw NomadException("Field initialization failed");
         }
     }
@@ -105,6 +106,7 @@ public:
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
         ClassType::copyValue(source, destination);
         if (++m_copyCount == failCopyAt) {
+            freeValue(destination);
             throw NomadException("Field copy failed");
         }
     }
@@ -399,7 +401,7 @@ BOOST_AUTO_TEST_CASE(nested_owned_fields_copy_and_release_references_without_con
     BOOST_TEST(destination[2].getObjectValue() == nullptr);
 }
 
-BOOST_AUTO_TEST_CASE(partially_initialized_and_copied_nested_storage_remains_releasable) {
+BOOST_AUTO_TEST_CASE(failed_nested_initialization_and_assignment_clear_partial_storage) {
     Runtime runtime;
     FailingFieldType* field = nullptr;
     BOOST_REQUIRE(runtime.getTypeManager().registerClass<FailingFieldType>(
@@ -417,11 +419,13 @@ BOOST_AUTO_TEST_CASE(partially_initialized_and_copied_nested_storage_remains_rel
     std::array<RuntimeValue, 3> source{};
     std::array<RuntimeValue, 3> destination{};
     std::array<RuntimeValue, 3> scratch{};
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
     field->failInitializationAt = 2;
     BOOST_CHECK_THROW(outer->initValue(source.data()), NomadException);
-    outer->freeValue(source.data());
-    BOOST_TEST(source[0].getObjectValue() == nullptr);
-    BOOST_TEST(source[1].getObjectValue() == nullptr);
+    for (const auto& value : source) {
+        BOOST_TEST(value.getIntegerValue() == 0);
+    }
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     field->failInitializationAt = 0;
     outer->initValue(source.data());
     outer->initValue(destination.data());
@@ -437,6 +441,93 @@ BOOST_AUTO_TEST_CASE(partially_initialized_and_copied_nested_storage_remains_rel
     outer->assignValue(source.data(), destination.data(), scratch.data());
     outer->freeValue(source.data());
     outer->freeValue(destination.data());
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(nested_lifecycle_failures_release_resources_and_clear_every_destination_slot) {
+    for (const auto failureAt : {NomadIndex{1}, NomadIndex{2}, NomadIndex{3}}) {
+        for (const auto ownsDestination : {false, true}) {
+            BOOST_TEST_CONTEXT("failure at field " << failureAt << ", owned destination " << ownsDestination) {
+                Runtime runtime;
+                auto& manager = runtime.getTypeManager();
+                FailingFieldType* field = nullptr;
+                BOOST_REQUIRE(manager.registerClass<FailingFieldType>(
+                    "Failure", ClassMode::Closed, field
+                ).isValid());
+                const auto innerId = manager.registerStruct("Inner");
+                const auto outerId = manager.registerStruct("Outer");
+                const auto* inner = manager.getTypeByName("Inner")->asStructType();
+                const auto* outer = manager.getTypeByName("Outer")->asStructType();
+                BOOST_REQUIRE(manager.registerScriptStructProperty(innerId, "reference", field).isValid());
+                BOOST_REQUIRE(manager.registerScriptStructProperty(innerId, "text", runtime.getStringType()).isValid());
+                BOOST_REQUIRE(manager.registerScriptStructProperty(outerId, "before", field).isValid());
+                BOOST_REQUIRE(manager.registerScriptStructProperty(outerId, "number", runtime.getIntegerType()).isValid());
+                BOOST_REQUIRE(manager.registerScriptStructProperty(outerId, "inner", inner).isValid());
+                BOOST_REQUIRE(manager.registerScriptStructProperty(outerId, "after", field).isValid());
+                manager.finalizeCompositeFieldLayout(outerId);
+                BOOST_REQUIRE(outer->getSize() == 5U);
+
+                RuntimeValue emptyString;
+                runtime.getStringType()->initValue(&emptyString);
+                const auto emptyReferences = emptyString.getObjectValue()->getReferenceCount();
+                const auto stringsBefore = RuntimeValue::getLiveStringCount();
+                const auto objectsBefore = NomadObject::getLiveObjectCount();
+                std::array<RuntimeValue, 7> destination{};
+                destination.front().setIntegerValue(37);
+                destination.back().setIntegerValue(41);
+
+                field->failInitializationAt = failureAt;
+                BOOST_CHECK_THROW(outer->initValue(destination.data() + 1), NomadException);
+                for (auto index = NomadIndex{1}; index <= outer->getSize(); ++index) {
+                    BOOST_TEST(destination[index].getIntegerValue() == 0);
+                }
+                BOOST_TEST(destination.front().getIntegerValue() == 37);
+                BOOST_TEST(destination.back().getIntegerValue() == 41);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+                BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+                BOOST_TEST(emptyString.getObjectValue()->getReferenceCount() == emptyReferences);
+                field->failInitializationAt = 0;
+
+                std::array<RuntimeValue, 5> source{};
+                source[0].setStringValue("source before");
+                source[1].setIntegerValue(17);
+                source[2].setStringValue("source inner reference");
+                source[3].setStringValue("source inner text");
+                source[4].setStringValue("source after");
+                if (ownsDestination) {
+                    outer->initValue(destination.data() + 1);
+                    destination[2].setIntegerValue(99);
+                }
+                field->failCopyAt = failureAt;
+                BOOST_CHECK_THROW(outer->copyValue(source.data(), destination.data() + 1), NomadException);
+                for (auto index = NomadIndex{1}; index <= outer->getSize(); ++index) {
+                    BOOST_TEST(destination[index].getIntegerValue() == 0);
+                }
+                for (const auto index : {NomadIndex{0}, NomadIndex{2}, NomadIndex{3}, NomadIndex{4}}) {
+                    BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 1U);
+                }
+                BOOST_TEST(source[0].getStringValue() == "source before");
+                BOOST_TEST(source[1].getIntegerValue() == 17);
+                BOOST_TEST(source[2].getStringValue() == "source inner reference");
+                BOOST_TEST(source[3].getStringValue() == "source inner text");
+                BOOST_TEST(source[4].getStringValue() == "source after");
+                BOOST_TEST(destination.front().getIntegerValue() == 37);
+                BOOST_TEST(destination.back().getIntegerValue() == 41);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 4);
+                BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 4);
+                BOOST_TEST(emptyString.getObjectValue()->getReferenceCount() == emptyReferences);
+
+                field->failCopyAt = 0;
+                outer->copyValue(source.data(), destination.data() + 1);
+                outer->freeValue(destination.data() + 1);
+                outer->freeValue(destination.data() + 1);
+                outer->freeValue(source.data());
+                runtime.getStringType()->freeValue(&emptyString);
+                BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+                BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+            }
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {

@@ -104,6 +104,7 @@ void FailingCopyType::toString(const RuntimeValue*, NomadString& string) const {
 
 void FailingCopyType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
     ClassType::copyValue(source, destination);
+    freeValue(destination);
     throw NomadException("Copy failed");
 }
 
@@ -142,6 +143,7 @@ public:
         for (auto index = NomadIndex{0}; index < m_size; ++index) {
             m_slotType.copyValue(source + index, destination + index);
             if (index + 1 == failCopyAfterSlot) {
+                freeValue(destination);
                 throw NomadException("Slot copy failed");
             }
         }
@@ -494,6 +496,7 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
         void initValue(RuntimeValue* value) const override {
             value->setObjectValue(new CountingObject(m_destroyed));
             if (failInitialization) {
+                freeValue(value);
                 throw NomadException("Initialization failed");
             }
         }
@@ -697,6 +700,7 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
         void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (failCopy) {
+                freeValue(destination);
                 throw NomadException("Copy failed");
             }
         }

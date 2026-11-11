@@ -47,6 +47,7 @@ public:
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
         ClassType::copyValue(source, destination);
         if (++copyCount == failCopyAt) {
+            freeValue(destination);
             throw NomadException("Assignment copy failed");
         }
     }

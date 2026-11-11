@@ -66,6 +66,7 @@ public:
         ++m_initialized;
         value->setObjectValue(new CountingObject(m_destroyed));
         if (m_fail) {
+            freeValue(value);
             throw NomadException("Field initialization failed");
         }
     }

@@ -1451,8 +1451,10 @@ Supply contiguous, cleared `RuntimeValue` storage for initialization or copying
 into fresh storage. Initialization applies field defaults without running script
 constructors. Copying preserves inline scalar values and retains references held
 by string and class fields. `freeValue` releases stored fields, including nested
-structs; native properties are not storage. After a partial initialization or
-copy failure, call `freeValue` on the partial destination before discarding it.
+structs; native properties are not storage. Failed initialization or copying
+releases destination resources and clears every destination slot; no caller
+cleanup is needed for the failed operation. Failed copying does not preserve
+the previous destination value.
 Cleanup is `noexcept` and requires finalized metadata, even for an empty struct;
 unfinalized struct cleanup terminates rather than throwing.
 Direct copying requires disjoint source and destination, except self-copy;
@@ -3191,9 +3193,13 @@ it does not run script constructors or release existing contents.
 `copyValue(&source, &destination)` copies into cleared storage or replaces an
 owned value. Class and string copies retain their existing reference semantics,
 and self-copy is supported. Release owned contents through `freeValue(&value)`;
-this does not release the storage itself. If initialization or copying fails
-after acquiring resources, release the partial destination through `freeValue`.
-All `freeValue` overrides must be `noexcept`. Cleanup requires valid runtime
+this does not release the storage itself. If initialization or copying throws,
+the operation releases all destination resources and clears every destination
+slot before propagating the exception. No caller cleanup is needed for that
+failed operation. Failed copying may discard the previous destination value;
+use `assignValue` when it must be preserved. All lifecycle overrides must honor
+these guarantees, including host-defined types.
+All `freeValue` overrides must be `noexcept`. Lifecycle operations require valid runtime
 metadata: using an unresolved compiler placeholder or an unfinalized struct
 for cleanup terminates the process. Checked layout queries continue to report
 invalid metadata with exceptions. Initialization, copying, and assignment may
@@ -3223,10 +3229,8 @@ raises `NomadException` with the type name and required slot count.
 
 Assignment copies into scratch before releasing the destination, preserving the
 previous value if copying fails. The prepared contents transfer into destination
-storage, and scratch is cleared after success or successful failure cleanup.
-Initialization and script constructors do not run during copying. If destination
-cleanup throws, the prepared copy is also released and the error propagates;
-the destination may already have been partially released.
+storage, and scratch is cleared after success or failure.
+Initialization and script constructors do not run during copying.
 
 This API manages existing slot storage; it does not reserve VM frames or enable
 struct declarations. An already-owned staged return result can transfer directly

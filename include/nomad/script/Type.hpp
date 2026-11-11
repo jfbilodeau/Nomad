@@ -39,10 +39,12 @@ public:
     [[nodiscard]] const NomadString& getDocumentation() const;
     // Storage points to getSize() contiguous RuntimeValue slots. Zero-size types access no slots.
     // Initializes cleared, unowned storage with an owned default value. Does not run script constructors.
+    // On failure, releases acquired resources and clears every slot. All overrides must honor this.
     virtual void initValue(RuntimeValue* value) const = 0;
     // Releases valid owned or cleared storage; invalid runtime metadata is a fatal invariant violation.
     virtual void freeValue(RuntimeValue* value) const noexcept;
     // Copies into empty RuntimeValue storage or replaces an owned value; does not require initValue first.
+    // On failure, releases destination resources and clears every slot; the previous value is not preserved.
     virtual void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const = 0;
 
     [[nodiscard]] NomadIndex getAssignmentScratchSize() const;

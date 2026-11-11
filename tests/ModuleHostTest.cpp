@@ -1930,6 +1930,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_release_partial_copies_and_preserve_entrie
         void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (failCopy) {
+                freeValue(destination);
                 throw NomadException("Map value copy failed");
             }
         }
@@ -1976,6 +1977,7 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
         void initValue(RuntimeValue* value) const override {
             if (failInitialization) {
                 value->setObjectValue(new NomadObject);
+                freeValue(value);
                 throw NomadException("Snapshot value initialization failed");
             }
             ClassType::initValue(value);
@@ -1983,6 +1985,7 @@ BOOST_AUTO_TEST_CASE(collections_map_snapshots_own_references_and_release_partia
         void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (copiesUntilFailure == 0) {
+                freeValue(destination);
                 throw NomadException("Snapshot value copy failed");
             }
             if (copiesUntilFailure > 0) {

@@ -33,6 +33,7 @@ public:
 
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
         ClassType::copyValue(source, destination);
+        freeValue(destination);
         throw NomadException("Interpreter value copy failed");
     }
 };

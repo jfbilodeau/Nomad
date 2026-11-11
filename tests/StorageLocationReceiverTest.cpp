@@ -44,6 +44,7 @@ public:
         ClassType::copyValue(source, destination);
         ++copyCount;
         if (failCopies) {
+            freeValue(destination);
             throw NomadException("Unexpected receiver copy");
         }
     }

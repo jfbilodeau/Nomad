@@ -65,6 +65,7 @@ public:
     void initValue(RuntimeValue* value) const override {
         if (failInitialization) {
             value->setStringValue("partial initialization");
+            freeValue(value);
             throw NomadException("Call initialization failed");
         }
         ClassType::initValue(value);
@@ -78,6 +79,7 @@ public:
 
         ClassType::copyValue(source, destination);
         if (++copyCount == failCopyAt) {
+            freeValue(destination);
             throw NomadException("Call copy failed");
         }
     }

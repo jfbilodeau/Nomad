@@ -198,6 +198,7 @@ public:
     void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
         ClassType::copyValue(source, destination);
         if (++copyCount == failCopyAt) {
+            freeValue(destination);
             throw NomadException("Interpreter storage copy failed");
         }
     }
