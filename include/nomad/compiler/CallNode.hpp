@@ -35,6 +35,7 @@ public:
     // Evaluates right-to-left, retaining values in logical parameter order.
     [[nodiscard]] std::vector<InterpreterValue> evaluate(InterpreterContext& context) const;
 
+    // Number of stack slots used by explicit arguments; excludes an optional receiver.
     [[nodiscard]]
     NomadIndex getArgumentCount() const;
 

@@ -93,7 +93,7 @@ test confirming the duplicate is rejected and the original metadata remains
 unchanged. Verified with the Windows Debug `nomad_test_remaining` CTest group,
 the workspace CMake build, and `git diff --check`.
 
-## 7. Clean up the compiler interface
+## 7. Clean up the compiler interface (completed)
 
 - Remove only declarations confirmed unused across the repository; preserve
   externally consumed public APIs unless compatibility is addressed.
@@ -101,6 +101,15 @@ the workspace CMake build, and `git diff --check`.
   clarify that `ArgumentList::getArgumentCount` counts stack slots.
 - Consider changing load-emitter return types only after checking all API users.
 - Validate the complete C++ build and relevant compiler tests.
+
+Repository-wide call-site checks confirmed the candidate public compiler
+methods are used, so no public declarations or load-emitter return types were
+removed. Removed the duplicate `[[noreturn]]` and stale commented-out member,
+corrected the integer-load invalid-target diagnostic, and documented that
+`ArgumentList::getArgumentCount` counts explicit argument stack slots and
+excludes the optional receiver. Added a regression assertion for the corrected
+diagnostic. Verified with the Windows Debug workspace CMake build,
+`nomad_test_remaining`, `nomad_test_language`, and `git diff --check`.
 
 ## Validation policy
 

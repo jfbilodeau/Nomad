@@ -12,6 +12,7 @@
 
 #include <array>
 #include <limits>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -79,6 +80,20 @@ BOOST_AUTO_TEST_CASE(type_load_emission_preserves_every_target_and_operand) {
         NomadBug
     );
     BOOST_TEST(instructions.empty());
+}
+
+BOOST_AUTO_TEST_CASE(integer_load_reports_an_integer_target_error) {
+    Runtime runtime;
+    std::vector<Instruction> instructions;
+    Compiler compiler(&runtime, instructions);
+
+    BOOST_CHECK_EXCEPTION(
+        compiler.addLoadIntegerValue(42, static_cast<ExpressionTarget>(99)),
+        NomadBug,
+        [](const NomadBug& error) {
+            return std::string(error.what()).find("integer value") != std::string::npos;
+        }
+    );
 }
 
 BOOST_AUTO_TEST_CASE(local_operands_preserve_full_width_offsets) {

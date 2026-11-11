@@ -909,7 +909,7 @@ NomadIndex Compiler::addLoadIntegerValue(const NomadInteger value, const Express
         return addInteger(value);
     }
 
-    this->reportInternalError("BUG: Invalid expression target for float value");
+    this->reportInternalError("BUG: Invalid expression target for integer value");
 }
 
 NomadIndex Compiler::addLoadFloatValue(NomadFloat value, const ExpressionTarget target) {

@@ -62,7 +62,6 @@ public:
     void reportError(const NomadString& message, const ScriptCallableBase* function, const Tokenizer* tokenizer) const;
     [[noreturn]]
     void reportError(const NomadString& message, const NomadString& functionName, NomadIndex line, NomadIndex column) const;
-    [[noreturn]]
     [[noreturn]] void reportInternalError(const NomadString& message) const;
 
     // Statements
@@ -407,7 +406,6 @@ private:
         NomadIndex callIndex;
     };
 
-//    Function* m_current_function;
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
     std::deque<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
