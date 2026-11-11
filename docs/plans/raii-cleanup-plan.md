@@ -1,11 +1,11 @@
 # RAII cleanup plan
 
-Status: Step 1A is implemented and validated on Windows Debug, awaiting review.
-Next slice: Step 1B; implementation requires separate approval.
+Status: Step 1B is implemented and validated on Windows Debug, awaiting review.
+Next slice: Step 2; implementation requires separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
-work. Preserve unrelated worktree changes. Only Step 1A and its concrete guard
+work. Preserve unrelated worktree changes. Steps 1A and 1B and the concrete guard
 contract have been approved; later slices, commits, and pushes are not authorized.
 
 Implement one approved slice at a time. After each slice, report the changes,
@@ -169,8 +169,8 @@ Step 1A outcome:
 - The workspace CTest action built current Windows Debug binaries.
   `nomad_test_bindings` and `nomad_test_remaining` passed; the test log confirms
   all seven new guard/allocation cases executed. Whitespace validation passed.
-- The first-party catch-all count is now 62, down from 63. The remaining 21
-  owned-value/reference candidates belong to Step 1B.
+- After Step 1A, the first-party catch-all count was 62, down from 63. The
+  remaining 21 owned-value/reference candidates were assigned to Step 1B.
 
 Stop for review before migrating more sites.
 
@@ -192,6 +192,30 @@ Do not assume the containing object's destructor runs if its constructor throws.
 Acceptance: cover first/second-field failures, each staged copy failure, partial
 getter output, source reference counts, and successful ownership transfer.
 Existing assignment-preservation and container failure tests must still pass.
+
+Step 1B outcome:
+
+- Replaced all 21 targeted cleanup handlers across collections, compiler and
+  interpreter expressions, format evaluation, OS snapshots, logger registration,
+  and binding construction.
+- Typed temporaries use `RuntimeValueGuard`; constructor and container guards
+  disarm only after successful ownership transfer. Binding construction uses
+  `std::unique_ptr` with a `releaseRef` deleter for its temporary object reference.
+- Conditional guards protect only owned dynamic-getter and indexer-read
+  results. Borrowed variables, receivers, and indexer-write results remain
+  unguarded. Existing VM restoration and yield policies were not changed.
+- Compiled formatting now protects the dynamic getter invocation itself, not
+  just conversion, so output acquired before a getter throws is also released.
+- Added regressions for partial dynamic-getter failure in compiled formatting,
+  dynamic formatting, and direct interpreter reads, plus interpreter indexer
+  read/write failure with owned operands and partial read results.
+- `nomad_test_bindings`, `nomad_test_language`, `nomad_test_tooling`, and
+  `nomad_test_remaining` passed on freshly built Windows Debug core, module, and
+  test binaries. Test logs confirm both new regression cases ran. Existing
+  constructor, aliased-insertion, snapshot, getter, and ownership tests passed.
+- Updated the embedding formatting contract. Whitespace validation passed.
+  The first-party catch-all count is now 41, down from 62; all remaining cleanup
+  handlers belong to later slices, alongside the five intentional boundaries.
 
 Stop for review.
 

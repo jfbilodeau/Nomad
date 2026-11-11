@@ -307,6 +307,49 @@ BOOST_AUTO_TEST_CASE(conversion_failures_release_owned_dynamic_getter_values_in_
 
 }
 
+BOOST_AUTO_TEST_CASE(partial_dynamic_getter_failures_release_owned_outputs_in_all_read_paths) {
+    Runtime runtime;
+    auto getterCalls = 0;
+    const auto variableId = runtime.registerDynamicVariable(
+        "partialGetterValue",
+        {},
+        [&](VirtualMachine*, RuntimeValue& value) {
+            ++getterCalls;
+            value.setStringValue("partial dynamic getter output");
+            throw NomadException("Expected partial getter failure");
+        },
+        runtime.getStringType(),
+        ""
+    );
+    BOOST_REQUIRE(variableId.isValid());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    FormatString compiled("", CallableId{});
+    compiled.addVariable(IdentifierType::DynamicVariable, runtime.getStringType(), variableId.id);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto iteration = 0; iteration < 3; ++iteration) {
+        BOOST_CHECK_THROW(static_cast<void>(compiled.format(machine.get())), NomadException);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        BOOST_CHECK_THROW(
+            static_cast<void>(interpreter.formatString("{partialGetterValue}", context, "getter.nomad", 1, 1)),
+            NomadException
+        );
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        BOOST_TEST(!interpreter.execute("partialGetterValue", context));
+        BOOST_REQUIRE(context.getError() != nullptr);
+        BOOST_TEST(context.getError()->find("Expected partial getter failure") != NomadString::npos);
+        BOOST_TEST(context.getResult() == nullptr);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+
+    BOOST_TEST(getterCalls == 9);
+}
+
 BOOST_AUTO_TEST_CASE(struct_formatting_uses_type_names_and_complete_field_captures_in_both_modes) {
     const NomadString declarations =
         "struct FormatEmpty\nend\n"

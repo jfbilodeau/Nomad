@@ -8,6 +8,7 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <utility>
@@ -54,13 +55,8 @@ std::unique_ptr<Array1dObject> MapObject::getKeys(const Type* keyType) const {
     for (const auto& [key, value] : m_values) {
         RuntimeValue storedKey;
         storedKey.setStringValue(key);
-        try {
-            keys->setValue(index, storedKey);
-        } catch (...) {
-            keyType->freeValue(&storedKey);
-            throw;
-        }
-        keyType->freeValue(&storedKey);
+        const RuntimeValueGuard keyGuard(*keyType, &storedKey);
+        keys->setValue(index, storedKey);
         ++index;
     }
     return keys;
@@ -99,17 +95,11 @@ std::unique_ptr<Array1dObject> MapObject::getEntries(const KeyValueType* entryTy
     for (const auto& [key, value] : m_values) {
         RuntimeValue storedKey;
         storedKey.setStringValue(key);
+        const RuntimeValueGuard keyGuard(*keyType, &storedKey);
         RuntimeValue entry;
-        try {
-            entry.setObjectValue(new KeyValueObject(keyType, m_valueType, storedKey, value));
-            entries->setValue(index, entry);
-        } catch (...) {
-            entryType->freeValue(&entry);
-            keyType->freeValue(&storedKey);
-            throw;
-        }
-        entryType->freeValue(&entry);
-        keyType->freeValue(&storedKey);
+        const RuntimeValueGuard entryGuard(*entryType, &entry);
+        entry.setObjectValue(new KeyValueObject(keyType, m_valueType, storedKey, value));
+        entries->setValue(index, entry);
         ++index;
     }
     return entries;
@@ -160,12 +150,9 @@ void MapObject::setValue(const NomadStringView key, const RuntimeValue& value) {
     }
     RuntimeValue storedValue;
     m_valueType->copyValue(&value, &storedValue);
-    try {
-        m_values.emplace(NomadString(key), storedValue);
-    } catch (...) {
-        m_valueType->freeValue(&storedValue);
-        throw;
-    }
+    RuntimeValueGuard guard(*m_valueType, &storedValue);
+    m_values.emplace(NomadString(key), storedValue);
+    guard.release();
 }
 
 } // namespace nomad

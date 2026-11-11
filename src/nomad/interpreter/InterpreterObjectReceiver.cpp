@@ -7,6 +7,7 @@
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/Type.hpp>
@@ -65,15 +66,10 @@ InterpreterValue InterpreterObjectReceiver::getProperty(const PropertyId propert
     RuntimeValue receiver;
     receiver.setObjectValue(m_object);
     RuntimeValue result;
-    try {
-        getInterpreter().getVirtualMachine().getProperty(propertyId, receiver, result);
-        InterpreterValue value(type, result);
-        type->freeValue(&result);
-        return value;
-    } catch (...) {
-        type->freeValue(&result);
-        throw;
-    }
+    const RuntimeValueGuard guard(*type, &result);
+    getInterpreter().getVirtualMachine().getProperty(propertyId, receiver, result);
+
+    return InterpreterValue(type, result);
 }
 
 void InterpreterObjectReceiver::setProperty(const PropertyId propertyId, const InterpreterValue& value) {

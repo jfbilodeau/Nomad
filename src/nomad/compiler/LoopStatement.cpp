@@ -10,6 +10,7 @@
 #include <nomad/interpreter/InterpreterContext.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 
 namespace nomad {
 
@@ -140,13 +141,8 @@ protected:
             if (m_valueType->isString()) {
                 m_valueType->initValue(&initial);
             }
-            try {
-                context.setVariable(m_binding, m_valueType, initial);
-            } catch (...) {
-                m_valueType->freeValue(&initial);
-                throw;
-            }
-            m_valueType->freeValue(&initial);
+            const RuntimeValueGuard guard(*m_valueType, &initial);
+            context.setVariable(m_binding, m_valueType, initial);
         }
         context.setVariable(m_iterator, m_iteratorType, iteratorValue.getValue());
         while (true) {

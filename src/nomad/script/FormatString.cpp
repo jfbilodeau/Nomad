@@ -5,10 +5,13 @@
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
+
+#include <optional>
 
 namespace nomad {
 
@@ -111,6 +114,11 @@ NomadString FormatString::format(VirtualMachine* machine) const {
                     break;
                 }
 
+                std::optional<RuntimeValueGuard> valueGuard;
+                if (segment.variableType == IdentifierType::DynamicVariable) {
+                    valueGuard.emplace(*segment.valueType, &value);
+                }
+
                 const auto* function = machine->getCurrentCallable();
                 const auto size = segment.valueType->getSize();
                 const RuntimeValue* storage = nullptr;
@@ -164,20 +172,7 @@ NomadString FormatString::format(VirtualMachine* machine) const {
                         break;
                 }
 
-                try {
-                    string += segment.valueType->toString(storage);
-                } catch (...) {
-                    if (segment.variableType == IdentifierType::DynamicVariable) {
-                        segment.valueType->freeValue(&value);
-                    }
-
-                    throw;
-                }
-
-                // Dynamic getters hand over an owned value; other variables are shared.
-                if (segment.variableType == IdentifierType::DynamicVariable) {
-                    segment.valueType->freeValue(&value);
-                }
+                string += segment.valueType->toString(storage);
 
                 break;
             }

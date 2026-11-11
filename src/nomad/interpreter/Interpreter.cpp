@@ -20,6 +20,7 @@
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/Type.hpp>
@@ -299,14 +300,9 @@ InterpreterValue Interpreter::runFunction(
         const RegisterRestoration registers(machine);
         machine.setResult(RuntimeValue{});
         machine.run(script, values);
-        try {
-            InterpreterValue result(type, machine.getResult());
-            type->freeValue(&machine.getResult());
-            return result;
-        } catch (...) {
-            type->freeValue(&machine.getResult());
-            throw;
-        }
+        const RuntimeValueGuard resultGuard(*type, &machine.getResult());
+
+        return InterpreterValue(type, machine.getResult());
     }
     InterpreterCallFrame frame(machine, *function, arguments, type);
     if (!runScriptCallable(*script)) {

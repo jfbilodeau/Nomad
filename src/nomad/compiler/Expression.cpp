@@ -19,6 +19,7 @@
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -28,6 +29,7 @@
 #include <algorithm>
 #include <any>
 #include <cctype>
+#include <optional>
 #include <ranges>
 
 namespace nomad {
@@ -343,15 +345,10 @@ InterpreterValue DynamicFormatExpression::onEvaluate(InterpreterContext& context
     const auto format = value.getType()->toString(value.getStorage().data());
     const auto result = formatDynamicString(format, context, context.getCallable()->getPath(), getLine(), getColumn());
     RuntimeValue formatted;
+    const RuntimeValueGuard guard(*getType(), &formatted);
     formatted.setStringValue(result.text);
-    try {
-        InterpreterValue formattedValue(getType(), formatted);
-        getType()->freeValue(&formatted);
-        return formattedValue;
-    } catch (...) {
-        getType()->freeValue(&formatted);
-        throw;
-    }
+
+    return InterpreterValue(getType(), formatted);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1276,20 +1273,17 @@ InterpreterValue IndexerExpression::evaluateIndexer(InterpreterContext& context,
         values.push_back(argument.getValue());
     }
     auto* machine = context.getVirtualMachine();
-    try {
-        machine->runNativeIndexer(m_indexerId, values, receiver.getValue(), assigned != nullptr);
-        if (assigned != nullptr) {
-            return arguments.front();
-        }
-        InterpreterValue result(getType(), machine->getResult());
-        getType()->freeValue(&machine->getResult());
-        return result;
-    } catch (...) {
-        if (assigned == nullptr) {
-            getType()->freeValue(&machine->getResult());
-        }
-        throw;
+    std::optional<RuntimeValueGuard> resultGuard;
+    if (assigned == nullptr) {
+        resultGuard.emplace(*getType(), &machine->getResult());
     }
+    machine->runNativeIndexer(m_indexerId, values, receiver.getValue(), assigned != nullptr);
+    if (assigned != nullptr) {
+
+        return arguments.front();
+    }
+
+    return InterpreterValue(getType(), machine->getResult());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1758,15 +1752,10 @@ InterpreterValue FormatStringLiteral::onEvaluate(InterpreterContext& context) co
     const auto result = formatDynamicString(m_formatString, context, context.getCallable()->getPath(),
         getLine(), getColumn());
     RuntimeValue value;
+    const RuntimeValueGuard guard(*getType(), &value);
     value.setStringValue(result.text);
-    try {
-        InterpreterValue formattedValue(getType(), value);
-        getType()->freeValue(&value);
-        return formattedValue;
-    } catch (...) {
-        getType()->freeValue(&value);
-        throw;
-    }
+
+    return InterpreterValue(getType(), value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2105,23 +2094,18 @@ InterpreterValue IdentifierExpression::onEvaluate(InterpreterContext& context) c
         }
 
         RuntimeValue value;
-        try {
-            runtime->getDynamicVariableValue(
-                context.getVirtualMachine(),
-                m_identifierDefinition.dynamicVariableId,
-                value
-            );
-            // Getters may leave a string untouched when the value is unavailable.
-            if (type->isString() && value.getObjectValue() == nullptr) {
-                value.initStringValue();
-            }
-            InterpreterValue result(type, value);
-            type->freeValue(&value);
-            return result;
-        } catch (...) {
-            type->freeValue(&value);
-            throw;
+        const RuntimeValueGuard guard(*type, &value);
+        runtime->getDynamicVariableValue(
+            context.getVirtualMachine(),
+            m_identifierDefinition.dynamicVariableId,
+            value
+        );
+        // Getters may leave a string untouched when the value is unavailable.
+        if (type->isString() && value.getObjectValue() == nullptr) {
+            value.initStringValue();
         }
+
+        return InterpreterValue(type, value);
     }
 
     case IdentifierType::ContextVariable: {
@@ -2142,15 +2126,10 @@ InterpreterValue IdentifierExpression::onEvaluate(InterpreterContext& context) c
 
         if (type->isString() && value.getObjectValue() == nullptr) {
             RuntimeValue emptyValue;
+            const RuntimeValueGuard guard(*type, &emptyValue);
             emptyValue.initStringValue();
-            try {
-                InterpreterValue result(type, emptyValue);
-                emptyValue.freeObjectValue();
-                return result;
-            } catch (...) {
-                emptyValue.freeObjectValue();
-                throw;
-            }
+
+            return InterpreterValue(type, emptyValue);
         }
 
         return InterpreterValue(type, value);

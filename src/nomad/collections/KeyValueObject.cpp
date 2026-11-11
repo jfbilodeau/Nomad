@@ -2,6 +2,7 @@
 
 #include <nomad/collections/KeyValueObject.hpp>
 
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/Type.hpp>
 
 namespace nomad {
@@ -15,12 +16,9 @@ KeyValueObject::KeyValueObject(const Type* keyType, const Type* valueType):
         throw NomadException("KeyValue types must be public, non-void types");
     }
     m_keyType->initValue(&m_key);
-    try {
-        m_valueType->initValue(&m_value);
-    } catch (...) {
-        m_keyType->freeValue(&m_key);
-        throw;
-    }
+    RuntimeValueGuard keyGuard(*m_keyType, &m_key);
+    m_valueType->initValue(&m_value);
+    keyGuard.release();
 }
 
 KeyValueObject::KeyValueObject(
@@ -37,12 +35,9 @@ KeyValueObject::KeyValueObject(
         throw NomadException("KeyValue types must be public, non-void types");
     }
     m_keyType->copyValue(&key, &m_key);
-    try {
-        m_valueType->copyValue(&value, &m_value);
-    } catch (...) {
-        m_keyType->freeValue(&m_key);
-        throw;
-    }
+    RuntimeValueGuard keyGuard(*m_keyType, &m_key);
+    m_valueType->copyValue(&value, &m_value);
+    keyGuard.release();
 }
 
 KeyValueObject::~KeyValueObject() {

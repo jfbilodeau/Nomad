@@ -4,6 +4,7 @@
 #include <nomad/collections/MapObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/system/Module.hpp>
@@ -60,15 +61,10 @@ NomadInteger getArchitecture() {
 
 // registerConstant retains object values; release the original reference even if registration fails.
 void registerSnapshot(Runtime* runtime, const NomadString& name, RuntimeValue value, const Type* type) {
-    try {
-        if (runtime->registerConstant(name, value, type).isInvalid()) {
-            throw NomadException("Failed to register " + name);
-        }
-    } catch (...) {
-        type->freeValue(&value);
-        throw;
+    const RuntimeValueGuard guard(*type, &value);
+    if (runtime->registerConstant(name, value, type).isInvalid()) {
+        throw NomadException("Failed to register " + name);
     }
-    type->freeValue(&value);
 }
 
 void setEnvironmentEntry(MapObject& environment, const NomadStringView entry) {
@@ -78,13 +74,8 @@ void setEnvironmentEntry(MapObject& environment, const NomadStringView entry) {
         return;
     }
     RuntimeValue value(NomadString(entry.substr(separator + 1)));
-    try {
-        environment.setValue(entry.substr(0, separator), value);
-    } catch (...) {
-        value.freeObjectValue();
-        throw;
-    }
-    value.freeObjectValue();
+    const RuntimeValueGuard guard(*environment.getValueType(), &value);
+    environment.setValue(entry.substr(0, separator), value);
 }
 
 void captureEnvironment(MapObject& environment) {
@@ -138,13 +129,8 @@ std::unique_ptr<Array1dObject> captureArguments(const ModuleContext& context, co
         );
     for (auto index = NomadIndex{0}; index < applicationArguments.size(); ++index) {
         RuntimeValue value(applicationArguments[index]);
-        try {
-            arguments->setValue(static_cast<NomadInteger>(index), value);
-        } catch (...) {
-            value.freeObjectValue();
-            throw;
-        }
-        value.freeObjectValue();
+        const RuntimeValueGuard guard(*stringType, &value);
+        arguments->setValue(static_cast<NomadInteger>(index), value);
     }
     return arguments;
 }

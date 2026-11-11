@@ -23,6 +23,7 @@
 
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/StructType.hpp>
 
 #include <nomad/system/String.hpp>
@@ -2285,13 +2286,8 @@ void Compiler::installScriptInitialValues() {
         } else {
             RuntimeValue value;
             type->initValue(&value);
-            try {
-                m_runtime->setContextVariableValue(id, value);
-            } catch (...) {
-                type->freeValue(&value);
-                throw;
-            }
-            type->freeValue(&value);
+            const RuntimeValueGuard guard(*type, &value);
+            m_runtime->setContextVariableValue(id, value);
         }
     }
 }

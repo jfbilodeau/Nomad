@@ -538,6 +538,41 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
     }
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_indexer_failures_release_operands_and_partial_read_results) {
+    for (const auto* source : {"(new TestObject)[0]", "(new TestObject)[0] = \"assigned\""}) {
+        Runtime runtime;
+        const auto* type = registerTestObject(runtime);
+        auto indexerCalls = 0;
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+            .valueTypeId = runtime.getStringType()->getId(),
+            .indexTypes = {runtime.getIntegerType()->getId()},
+            .getter = [&](VirtualMachine* machine) {
+                ++indexerCalls;
+                machine->setStringResult("partial indexer result");
+                throw NomadException("Expected interpreter indexer failure");
+            },
+            .setter = [&](VirtualMachine*) {
+                ++indexerCalls;
+                throw NomadException("Expected interpreter indexer failure");
+            },
+            .documentation = ""
+        }).isValid());
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        InterpreterContext context(interpreter);
+        const auto stringsBefore = RuntimeValue::getLiveStringCount();
+        const auto objectsBefore = NomadObject::getLiveObjectCount();
+        BOOST_TEST(!interpreter.execute(source, context));
+        BOOST_REQUIRE(context.getError() != nullptr);
+        BOOST_TEST(context.getError()->find("Expected interpreter indexer failure") != NomadString::npos);
+        BOOST_TEST(context.getResult() == nullptr);
+        BOOST_TEST(indexerCalls == 1);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters) {
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();

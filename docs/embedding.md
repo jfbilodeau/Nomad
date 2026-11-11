@@ -1471,6 +1471,10 @@ pass the beginning of their complete storage. Do not pass a default value or
 copy just the first slot of a struct. The caller must keep storage and referenced
 objects alive throughout conversion. Conversion does not consume ownership.
 
+Format evaluation releases owned dynamic-getter results even if the getter or
+conversion throws. Borrowed context variables and frame storage remain owned
+by their source.
+
 Custom type overrides must use the pointer signature rather than the previous
 `const RuntimeValue&` signature. Existing class/struct defaults still print
 the type name, but value-dependent overrides can inspect every slot. Rebuild

@@ -10,6 +10,7 @@
 #include <nomad/log/LogSinkObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Module.hpp>
@@ -270,15 +271,9 @@ void registerLogConstants(ModuleContext* context, const HubId hubId) {
     auto* runtime = context->runtime;
     const auto* loggerType = runtime->getTypeByName("log.Logger");
     RuntimeValue loggerValue;
+    const RuntimeValueGuard guard(*loggerType, &loggerValue);
     loggerValue.setObjectValue(new LoggerObject(*context->logger));
-    ConstantId loggerId;
-    try {
-        loggerId = runtime->registerHubConstant(hubId, "logger", loggerValue, loggerType);
-    } catch (...) {
-        loggerValue.freeObjectValue();
-        throw;
-    }
-    loggerValue.freeObjectValue();
+    const auto loggerId = runtime->registerHubConstant(hubId, "logger", loggerValue, loggerType);
     if (loggerId.isInvalid()) {
         throw NomadException("Failed to register log.logger");
     }

@@ -7,6 +7,7 @@
 #include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptObject.hpp>
 
+#include <memory>
 #include <utility>
 
 namespace nomad {
@@ -59,15 +60,10 @@ ScriptBindingObject ScriptBindingObject::construct(
     const ScriptClassBinding& binding,
     VirtualMachine& machine
 ) {
-    auto* object = binding.construct(machine);
-    try {
-        auto result = ScriptBindingObject(binding, object);
-        releaseRef(object);
-        return result;
-    } catch (...) {
-        releaseRef(object);
-        throw;
-    }
+    const auto release = [](NomadObject* object) noexcept { nomad::releaseRef(object); };
+    const auto object = std::unique_ptr<NomadObject, decltype(release)>(binding.construct(machine), release);
+
+    return ScriptBindingObject(binding, object.get());
 }
 
 ScriptBindingObject ScriptBindingObject::construct(
