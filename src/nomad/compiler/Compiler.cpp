@@ -1785,10 +1785,10 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
              variableId = variableContext->getNextVariableId(variableId)) {
             types.push_back(variableContext->getVariableType(variableId));
         }
+    }
 
-        for (const auto& field : m_externalFields) {
-            types.push_back(m_runtime->getProperty(field.id)->getValueType());
-        }
+    for (const auto& field : m_externalFields) {
+        types.push_back(m_runtime->getProperty(field.id)->getValueType());
     }
 
     return types;

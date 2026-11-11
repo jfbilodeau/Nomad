@@ -18,6 +18,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -822,6 +823,33 @@ BOOST_AUTO_TEST_CASE(external_open_class_fields_are_shared_across_functions_and_
         BOOST_REQUIRE(write != nullptr);
         BOOST_TEST(write->getVariableId("alias.extra").isInvalid());
         BOOST_TEST(context.getErrorCount() == 0u);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(external_field_inference_is_stable_across_variable_context_counts)
+{
+    for (const auto contextCount : {NomadIndex{0}, NomadIndex{5}}) {
+        LanguageTestFixture fixture;
+        for (auto contextIndex = NomadIndex{0}; contextIndex < contextCount; ++contextIndex) {
+            const auto contextName = "extra" + std::to_string(contextIndex);
+            BOOST_REQUIRE(fixture.getRuntime().registerVariableContext(
+                contextName, contextName + ".", std::make_unique<SimpleVariableContext>()
+            ).isValid());
+        }
+
+        fixture.addFunction("types", "open class Point\nend");
+        fixture.addFunction("aRead", "fun read point:Point\nreturn point.extra\nend");
+        fixture.addFunction("zWrite", "fun write point:Point\npoint.extra = inferredValue\nend");
+        fixture.addFunction("zzValue", "fun inferredValue\nreturn 42\nend");
+
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+        const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
+        BOOST_REQUIRE(type->getProperty("extra") != nullptr);
+        BOOST_TEST(type->getProperty("extra")->getValueType() == fixture.getRuntime().getIntegerType());
+        const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("read"));
+        BOOST_REQUIRE(read != nullptr);
+        BOOST_TEST(read->getReturnType() == fixture.getRuntime().getIntegerType());
     }
 }
 

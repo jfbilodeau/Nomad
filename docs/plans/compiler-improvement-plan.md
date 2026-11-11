@@ -18,13 +18,16 @@ affected behavior, and stop for review before proceeding to the next step.
 Verified with the Windows Debug `nomad_test_remaining` CTest group, including
 the new compiler-hook regression, and the workspace CMake build.
 
-## 2. Correct inferred-type collection
+## 2. Correct inferred-type collection (completed)
 
 - Collect externally introduced fields once, independently of variable-context
   enumeration in `collectInferredTypes`.
 - Add focused coverage showing external field inference does not depend on how
   many variable contexts are registered.
 - Validate the relevant language tests and build.
+
+Verified with the Windows Debug `nomad_test_language` CTest group and the
+workspace CMake build.
 
 ## 3. Clarify identifier lookup contracts
 
