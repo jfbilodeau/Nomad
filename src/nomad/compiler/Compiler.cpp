@@ -389,6 +389,10 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::ScriptFunction;
     }
 
+    if (m_runtime->getEventId(name).isValid()) {
+        return IdentifierType::Event;
+    }
+
     if (m_runtime->getDynamicVariableId(name).isValid()) {
         return IdentifierType::DynamicVariable;
     }

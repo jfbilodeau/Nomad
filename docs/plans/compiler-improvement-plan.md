@@ -29,7 +29,7 @@ the new compiler-hook regression, and the workspace CMake build.
 Verified with the Windows Debug `nomad_test_language` CTest group and the
 workspace CMake build.
 
-## 3. Clarify identifier lookup contracts
+## 3. Clarify identifier lookup contracts (completed)
 
 - Add characterization coverage for events, context prefixes/members,
   declarations, and lexical `this`.
@@ -39,6 +39,12 @@ workspace CMake build.
 - Preserve lexical class/struct receiver precedence over runtime `this.*`
   contexts, including closures and format expressions.
 - Validate compiler, parser, event, context-variable, class, and struct tests.
+
+Added event classification and tests that distinguish context-prefix
+classification from exact member resolution. Existing class and callback tests
+continue to cover lexical `this` precedence and closure/format-expression use.
+Verified with the Windows Debug `nomad_test_language` CTest group and the
+workspace CMake build.
 
 ## 4. Define completion-phase semantics
 

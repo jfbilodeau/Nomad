@@ -1409,6 +1409,7 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
 
     const auto compiler = runtime.createCompiler();
     IdentifierDefinition identifier{};
+    BOOST_TEST((compiler->getIdentifierType("example.changed", nullptr) == IdentifierType::Event));
     compiler->getIdentifierDefinition("example.changed", nullptr, identifier);
     BOOST_TEST((identifier.identifierType == IdentifierType::Event));
     BOOST_TEST(identifier.eventId == id);

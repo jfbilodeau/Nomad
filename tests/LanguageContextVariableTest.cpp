@@ -72,6 +72,35 @@ BOOST_AUTO_TEST_CASE(context_ids_support_lookup_iteration_and_catalog_growth)
     BOOST_TEST(runtime.getNextVariableContextId(lastId) == VariableContextId::INVALID);
 }
 
+BOOST_AUTO_TEST_CASE(identifier_classification_distinguishes_context_prefixes_from_registered_variables)
+{
+    Runtime runtime;
+    const auto contextId = runtime.registerVariableContext(
+        "values", "values.", std::make_unique<SimpleVariableContext>()
+    );
+    BOOST_REQUIRE(contextId.isValid());
+    const auto variableId = runtime.registerContextVariable(contextId, "values.answer", runtime.getIntegerType());
+    BOOST_REQUIRE(variableId.isValid());
+    const auto compiler = runtime.createCompiler();
+
+    BOOST_TEST((compiler->getIdentifierType("values.", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition prefix{};
+    compiler->getIdentifierDefinition("values.", nullptr, prefix);
+    BOOST_TEST((prefix.identifierType == IdentifierType::Unknown));
+
+    BOOST_TEST((compiler->getIdentifierType("values.missing", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition missing{};
+    compiler->getIdentifierDefinition("values.missing", nullptr, missing);
+    BOOST_TEST((missing.identifierType == IdentifierType::Unknown));
+
+    BOOST_TEST((compiler->getIdentifierType("values.answer", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition answer{};
+    compiler->getIdentifierDefinition("values.answer", nullptr, answer);
+    BOOST_TEST((answer.identifierType == IdentifierType::ContextVariable));
+    BOOST_TEST(answer.contextVariableId == variableId);
+    BOOST_TEST(answer.valueType == runtime.getIntegerType());
+}
+
 BOOST_AUTO_TEST_CASE(global_handles_preserve_context_and_local_identity_after_growth)
 {
     Runtime runtime;

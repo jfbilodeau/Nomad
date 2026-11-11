@@ -108,7 +108,9 @@ public:
     ) const;
 
     // Identifier identification
+    // Classification recognizes variable-context prefixes even when the name is not a registered member.
     IdentifierType getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const;
+    // Definition resolution identifies exact members; unknown context members remain Unknown.
     void getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const;
     [[nodiscard]] const Property* resolveClassField(
         CompilerContext* context,
