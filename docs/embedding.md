@@ -3205,6 +3205,28 @@ for cleanup terminates the process. Checked layout queries continue to report
 invalid metadata with exceptions. Initialization, copying, and assignment may
 still throw; mutable collection defaults remain independently allocated.
 
+Use `RuntimeValueGuard` from `<nomad/script/RuntimeValueGuard.hpp>` to release
+owned contents of existing typed storage automatically on scope exit:
+
+```cpp
+const auto* type = runtime.getStringType();
+RuntimeValue value;
+const RuntimeValueGuard guard(*type, &value);
+value.setStringValue("hello");
+```
+
+The guard adopts cleanup without initializing, copying, retaining, or allocating.
+It calls the type's `freeValue` on normal exit, early return, or exception;
+it never releases the slot storage itself. The type and `getSize()` contiguous
+slots must outlive the guard. Storage must contain cleared or valid owned
+contents, and null storage is permitted only for zero-slot types with valid
+metadata. Do not guard borrowed references.
+
+After transferring ownership elsewhere, call `guard.release()` on a non-const
+guard to disarm cleanup. This does not clear or modify the slots or change
+reference counts. The guard cannot be copied or moved, and its constructor,
+destructor, and `release()` do not throw. `RuntimeValue` itself remains non-owning.
+
 Assignment uses one API with optional external scratch:
 
 ```cpp

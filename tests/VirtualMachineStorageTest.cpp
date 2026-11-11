@@ -6,6 +6,7 @@
 
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -580,6 +581,28 @@ BOOST_AUTO_TEST_CASE(calls_need_only_existing_frames_and_requested_pointer_slots
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(runtime_value_guard_bookkeeping_does_not_allocate) {
+    Runtime runtime;
+    const auto* type = runtime.getIntegerType();
+    RuntimeValue value{NomadInteger{17}};
+    callAllocations = 0;
+    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+    for (auto index = 0; index < 100; ++index) {
+        {
+            const RuntimeValueGuard guard(*type, &value);
+        }
+
+        {
+            RuntimeValueGuard guard(*type, &value);
+            guard.release();
+        }
+    }
+
+    _CrtSetAllocHook(previousAllocationHook);
+    BOOST_TEST(callAllocations == 0U);
+    BOOST_TEST(value.getIntegerValue() == 17);
+}
+
 BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocating) {
     Runtime runtime;
     const auto typeId = runtime.getTypeManager().registerStruct("AllocationFreeStruct");

@@ -1,11 +1,12 @@
 # RAII cleanup plan
 
-Status: proposed; implementation has not started.
+Status: Step 1A is implemented and validated on Windows Debug, awaiting review.
+Next slice: Step 1B; implementation requires separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
-This plan follows the completed lifecycle exception-safety work and the current
-caller-cleanup changes. Preserve those existing worktree changes. Saving this
-plan does not authorize implementation, commits, or pushes.
+This plan follows the completed lifecycle exception-safety and caller-cleanup
+work. Preserve unrelated worktree changes. Only Step 1A and its concrete guard
+contract have been approved; later slices, commits, and pushes are not authorized.
 
 Implement one approved slice at a time. After each slice, report the changes,
 validation, remaining catches, and next slice, then stop for review.
@@ -75,8 +76,9 @@ C++23 facility and cannot be assumed available.
 
 ## 3. Design decisions to settle before migration
 
-Review these contracts with the first implementation slice. Names below describe
-roles, not approved public APIs.
+Step 1A's concrete `RuntimeValueGuard` contract is approved and recorded below.
+Review remaining contracts before their implementation slices. Other names below
+describe roles, not approved public APIs.
 
 ### Owned temporaries
 
@@ -147,6 +149,28 @@ filesystem slice, not an implicit behavior change.
 
 Acceptance: original references are released exactly once, borrowed references
 are untouched, and arranging single-slot cleanup allocates nothing.
+
+Step 1A outcome:
+
+- Added [RuntimeValueGuard](../../include/nomad/script/RuntimeValueGuard.hpp) with
+  `RuntimeValueGuard(const Type&, RuntimeValue*) noexcept`. It adopts cleanup of
+  existing cleared/owned slots; it does not allocate, copy, retain, or own the
+  storage itself.
+- Its `noexcept` destructor calls `freeValue`. `release()` only disarms cleanup
+  and does not change slot contents or reference counts. Copying and moving are
+  deleted; the type and storage must outlive the guard.
+- Migrated only the temporary string in the binding setter. No other production
+  cleanup handlers changed.
+- Added six ownership tests covering adoption, normal/early/exceptional exit,
+  transfer, borrowed-source references, nested full-width storage, and cleared
+  and zero-slot values. Added a Windows Debug CRT allocation check that measured
+  zero allocations for guard bookkeeping, and checked the generated string
+  setter's retained-reference count.
+- The workspace CTest action built current Windows Debug binaries.
+  `nomad_test_bindings` and `nomad_test_remaining` passed; the test log confirms
+  all seven new guard/allocation cases executed. Whitespace validation passed.
+- The first-party catch-all count is now 62, down from 63. The remaining 21
+  owned-value/reference candidates belong to Step 1B.
 
 Stop for review before migrating more sites.
 

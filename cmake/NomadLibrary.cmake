@@ -82,6 +82,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValueGuard.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptCallableBase.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptConstructor.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptMethod.cpp

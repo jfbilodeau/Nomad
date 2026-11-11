@@ -131,6 +131,10 @@ BOOST_AUTO_TEST_CASE(actual_generated_log_cpp_constructs_and_reads_and_writes_st
         BOOST_TEST(configuration.getMaxSizeBytes() == 120);
         auto* object = dynamic_cast<ScriptObject*>(configuration.getObject());
         BOOST_REQUIRE(object != nullptr);
+        const auto* nameField = object->getClassType()->getProperty("name");
+        BOOST_TEST(object->getField(
+            object->getClassType()->getFieldIndex(nameField->getId())
+        ).getObjectValue()->getReferenceCount() == 1U);
         const auto* field = object->getClassType()->getProperty("maxFiles");
         BOOST_TEST(object->getField(object->getClassType()->getFieldIndex(field->getId())).getIntegerValue() == 4);
         object->setField(object->getClassType()->getFieldIndex(field->getId()), RuntimeValue(NomadInteger{7}));
