@@ -6,7 +6,7 @@
 #include <nomad/log/FileSink.hpp>
 #include <nomad/log/MemorySink.hpp>
 
-#include <boost/scope/defer.hpp>
+#include <boost/scope_exit.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -177,9 +177,10 @@ void Logger::flush() {
     std::vector<LogEntry> entries;
     entries.swap(m_entries);
     const auto sinkCount = m_sinks.size();
-    const auto resetDelivery = boost::scope::defer_guard([this]() noexcept {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         m_delivering = false;
-    });
+    };
+
     m_delivering = true;
     for (auto index = NomadIndex{0}; index < sinkCount; ++index) {
         auto* sink = m_sinks[index].sink.get();

@@ -6,7 +6,7 @@ Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
 work. Preserve unrelated worktree changes. Steps 1A, 1B, and 2, the concrete
-value-guard contract, and reusing Boost.Scope have been approved. Later slices,
+value-guard contract, and using Boost.ScopeExit macros have been approved. Later slices,
 commits, and pushes are not authorized.
 
 Implement one approved slice at a time. After each slice, report the changes,
@@ -75,8 +75,8 @@ Standard C++ has no Java-style `finally`. Destruction at scope exit is the
 appropriate mechanism here. The project remains C++20.
 `std::experimental::scope_exit` belongs to the Library Fundamentals TS, not
 ISO C++23, and cannot be assumed available across supported toolchains.
-Boost.Scope supplies compatible scope guards, including `defer_guard` for
-unconditional cleanup and `scope_exit` for cleanup that can be disabled.
+Boost.ScopeExit supplies the `BOOST_SCOPE_EXIT` and `BOOST_SCOPE_EXIT_ALL`
+macros for unconditional cleanup on the project's existing C++20 baseline.
 
 ## 3. Design decisions to settle before migration
 
@@ -106,11 +106,16 @@ describe roles, not approved public APIs.
   operation can require cleanup that would be wrong on success.
 - Prefer specialized VM guards over a universal guard with mode flags and
   type-condition branches.
-- For unconditional simple local restoration, use Boost.Scope's `defer_guard`
-  from `<boost/scope/defer.hpp>`. Step 2 enables the header-only `scope` component
+- For unconditional simple local restoration, use `BOOST_SCOPE_EXIT` or
+  `BOOST_SCOPE_EXIT_ALL` from `<boost/scope_exit.hpp>`. Step 2 uses
+  `BOOST_SCOPE_EXIT_ALL` to avoid MSVC shadowing diagnostics from the legacy
+  macro form and enables the header-only `scope_exit` component
   in the existing pinned [Boost dependency](../../cmake/Dependencies.cmake),
   privately linked to the language library and tests. Do not add a custom
   `ScopeExit` template for this purpose.
+- `BOOST_SCOPE_EXIT_ALL` stores its callable through Boost.Function. Keep
+  captures small and retain allocation checks when changing them; do not assume
+  arbitrary capture lists are allocation-free.
 - Do not use `std::function` or heap allocation just to store a cleanup action.
 - Delete copying; introduce moving only when required, preserving exactly-once
   cleanup. Make discardable guard temporaries difficult to misuse.
@@ -242,15 +247,18 @@ allocation-measurement scope.
 
 Step 2 outcome:
 
-- Reused `boost::scope::defer_guard` rather than implementing a new utility.
+- At the user's request, use `BOOST_SCOPE_EXIT_ALL` rather than
+  `boost::scope::defer_guard` or a custom utility. Explicit snapshot/reference
+  captures preserve cleanup lifetimes; all saved allocation hooks remain
+  captured by value.
   The existing Boost package and C++20 baseline are unchanged; the newly selected
-  component is header-only. Corrected the earlier standard-library note:
+  `scope_exit` component is header-only. Corrected the earlier standard-library note:
   `std::experimental::scope_exit` is in the Library Fundamentals TS, not ISO C++23.
 - Replaced all seven targeted catches: logger delivery state, the temporary
   compilation callback, the VM's temporary receiver, and four CRT hook handlers.
   The guard-allocation benchmark's existing hook now uses the same restoration
   mechanism.
-- Every cleanup callback is `noexcept`. Logger state resets while its mutex is
+- Every cleanup action is nonthrowing. Logger state resets while its mutex is
   held; the compilation callback is cleared before checking invocation and
   before its captured locals expire. Receiver restoration does not retain or
   release borrowed objects.
@@ -258,7 +266,7 @@ Step 2 outcome:
   restoration order, coordinator success/before/after/skipped compilation,
   nested property receiver success/failure, and actual CRT-hook restoration
   during unwinding. Extended the allocation benchmark to include scope guards;
-  guard bookkeeping measured zero allocations.
+  macro guard bookkeeping measured zero allocations after the requested switch.
 - `nomad_test_language`, `nomad_test_tooling`, and `nomad_test_remaining` passed
   with freshly built Windows Debug core, fixture, and test binaries. Existing
   logger failure/reentry recovery and allocation-count tests passed.

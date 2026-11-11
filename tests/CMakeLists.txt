@@ -143,7 +143,7 @@ target_link_libraries(
     Nomad::CliOptions
     archive
     Boost::nowide
-    Boost::scope
+    Boost::scope_exit
     Boost::unit_test_framework
 )
 

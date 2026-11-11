@@ -11,7 +11,7 @@
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
-#include <boost/scope/defer.hpp>
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <array>
@@ -590,9 +590,11 @@ BOOST_AUTO_TEST_CASE(runtime_value_and_scope_exit_guard_bookkeeping_does_not_all
     callAllocations = 0;
     previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
     {
-        const auto resetHook = boost::scope::defer_guard([previousHook = previousAllocationHook]() noexcept {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
             _CrtSetAllocHook(previousHook);
-        });
+        };
+
         for (auto index = 0; index < 100; ++index) {
             {
                 const RuntimeValueGuard guard(*type, &value);
@@ -603,9 +605,9 @@ BOOST_AUTO_TEST_CASE(runtime_value_and_scope_exit_guard_bookkeeping_does_not_all
                 guard.release();
             }
 
-            const auto cleanup = boost::scope::defer_guard([&scopeCleanups]() noexcept {
+            BOOST_SCOPE_EXIT_ALL(&) {
                 ++scopeCleanups;
-            });
+            };
         }
     }
 
@@ -616,19 +618,22 @@ BOOST_AUTO_TEST_CASE(runtime_value_and_scope_exit_guard_bookkeeping_does_not_all
 
 BOOST_AUTO_TEST_CASE(allocation_hook_restoration_runs_before_failure_escapes) {
     const auto originalHook = _CrtSetAllocHook(nullptr);
-    const auto resetOriginalHook = boost::scope::defer_guard([originalHook]() noexcept {
+    BOOST_SCOPE_EXIT_ALL(=) {
         _CrtSetAllocHook(originalHook);
-    });
+    };
+
     const auto originalChain = previousAllocationHook;
     previousAllocationHook = nullptr;
-    const auto resetOriginalChain = boost::scope::defer_guard([originalChain]() noexcept {
+    BOOST_SCOPE_EXIT_ALL(=) {
         previousAllocationHook = originalChain;
-    });
+    };
+
     const auto failWithHook = [] {
         const auto previousHook = _CrtSetAllocHook(countCallAllocations);
-        const auto resetHook = boost::scope::defer_guard([previousHook]() noexcept {
+        BOOST_SCOPE_EXIT_ALL(=) {
             _CrtSetAllocHook(previousHook);
-        });
+        };
+
         throw NomadException("Expected allocation-hook scope failure");
     };
 
@@ -673,9 +678,11 @@ BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocat
     callAllocations = 0;
     previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
     {
-        const auto resetHook = boost::scope::defer_guard([previousHook = previousAllocationHook]() noexcept {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
             _CrtSetAllocHook(previousHook);
-        });
+        };
+
         for (auto index = 0; index < 100; ++index) {
             machine.pushStorageAddress(storage.data());
             machine.pushInteger(17);
@@ -718,9 +725,11 @@ BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) 
     callAllocations = 0;
     previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
     {
-        const auto resetHook = boost::scope::defer_guard([previousHook = previousAllocationHook]() noexcept {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
             _CrtSetAllocHook(previousHook);
-        });
+        };
+
         for (auto index = 0; index < 100; ++index) {
             (new ScriptObject(nativeType))->releaseRef();
             (new ScriptObject(scriptType))->releaseRef();
@@ -731,9 +740,11 @@ BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) 
     callAllocations = 0;
     previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
     {
-        const auto resetHook = boost::scope::defer_guard([previousHook = previousAllocationHook]() noexcept {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
             _CrtSetAllocHook(previousHook);
-        });
+        };
+
         for (auto index = 0; index < 100; ++index) {
             machine.createNativeObject(nativeId)->releaseRef();
             machine.createScriptObject(scriptId)->releaseRef();
@@ -755,9 +766,11 @@ BOOST_AUTO_TEST_CASE(script_and_native_call_bookkeeping_does_not_allocate) {
     callAllocations = 0;
     previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
     {
-        const auto resetHook = boost::scope::defer_guard([previousHook = previousAllocationHook]() noexcept {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
             _CrtSetAllocHook(previousHook);
-        });
+        };
+
         for (auto index = 0; index < 100; ++index) {
             machine.callScriptFunction(0);
             machine.pushStorageAddress(storage.data());

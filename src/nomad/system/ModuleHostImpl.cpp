@@ -12,7 +12,7 @@
 
 #include <nomad/system/Path.hpp>
 
-#include <boost/scope/defer.hpp>
+#include <boost/scope_exit.hpp>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -323,9 +323,10 @@ void ModuleHostImpl::prepareCompilation(const std::function<void()>& compileScri
         compileScripts();
     };
     {
-        const auto resetCompilation = boost::scope::defer_guard([coordinator]() noexcept {
+        BOOST_SCOPE_EXIT_ALL(=) {
             coordinator->context.compileScripts = nullptr;
-        });
+        };
+
         coordinator->callbacks.prepareCompilation();
     }
 

@@ -6,35 +6,27 @@
 #include "nomad/system/TempHeap.hpp"
 #include "nomad/system/Memory.hpp"
 
-#include <boost/scope/defer.hpp>
+#include <boost/scope_exit.hpp>
 
 #include <array>
 #include <cstdint>
 #include <new>
 #include <string>
-#include <type_traits>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 using namespace nomad;
-
-using ScopeCleanup = decltype([]() noexcept {});
-using ScopeGuard = boost::scope::defer_guard<ScopeCleanup>;
-static_assert(std::is_nothrow_constructible_v<ScopeGuard, ScopeCleanup>);
-static_assert(std::is_nothrow_destructible_v<ScopeGuard>);
-static_assert(!std::is_copy_constructible_v<ScopeGuard>);
-static_assert(!std::is_move_constructible_v<ScopeGuard>);
 
 BOOST_AUTO_TEST_CASE(scope_exit_restores_state_on_return_and_exception) {
     auto state = 7;
     auto cleanups = 0;
     const auto execute = [&](const bool fail) {
         const auto previous = state;
-        const auto restore = boost::scope::defer_guard([&state, &cleanups, previous]() noexcept {
+        BOOST_SCOPE_EXIT_ALL(&, previous) {
             state = previous;
             ++cleanups;
-        });
+        };
+
         state = 17;
         if (fail) {
             throw NomadException("Expected scoped state failure");
@@ -55,19 +47,23 @@ BOOST_AUTO_TEST_CASE(scope_exit_restores_nested_state_in_reverse_order) {
     auto state = 7;
     auto cleanups = NomadIndex{0};
     std::array<int, 2> cleanupOrder{};
+    const auto restore = [&](const int previous) noexcept {
+        cleanupOrder[cleanups++] = state;
+        state = previous;
+    };
     {
         const auto previous = state;
-        const auto outer = boost::scope::defer_guard([&state, &cleanups, &cleanupOrder, previous]() noexcept {
-            cleanupOrder[cleanups++] = state;
-            state = previous;
-        });
+        BOOST_SCOPE_EXIT_ALL(&, previous) {
+            restore(previous);
+        };
+
         state = 11;
         {
             const auto innerPrevious = state;
-            const auto inner = boost::scope::defer_guard([&state, &cleanups, &cleanupOrder, innerPrevious]() noexcept {
-                cleanupOrder[cleanups++] = state;
-                state = innerPrevious;
-            });
+            BOOST_SCOPE_EXIT_ALL(&, innerPrevious) {
+                restore(innerPrevious);
+            };
+
             state = 17;
         }
 
