@@ -1,12 +1,13 @@
 # RAII cleanup plan
 
-Status: Step 1B is implemented and validated on Windows Debug, awaiting review.
-Next slice: Step 2; implementation requires separate approval.
+Status: Step 2 is implemented and validated on Windows Debug, awaiting review.
+Next slice: Step 3A; implementation requires separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
-work. Preserve unrelated worktree changes. Steps 1A and 1B and the concrete guard
-contract have been approved; later slices, commits, and pushes are not authorized.
+work. Preserve unrelated worktree changes. Steps 1A, 1B, and 2, the concrete
+value-guard contract, and reusing Boost.Scope have been approved. Later slices,
+commits, and pushes are not authorized.
 
 Implement one approved slice at a time. After each slice, report the changes,
 validation, remaining catches, and next slice, then stop for review.
@@ -71,8 +72,11 @@ templates, and tests. Exclude generated, build, and vendored code.
   rather than deleting reference-counted objects directly.
 
 Standard C++ has no Java-style `finally`. Destruction at scope exit is the
-appropriate mechanism here. The project remains C++20; `std::scope_exit` is a
-C++23 facility and cannot be assumed available.
+appropriate mechanism here. The project remains C++20.
+`std::experimental::scope_exit` belongs to the Library Fundamentals TS, not
+ISO C++23, and cannot be assumed available across supported toolchains.
+Boost.Scope supplies compatible scope guards, including `defer_guard` for
+unconditional cleanup and `scope_exit` for cleanup that can be disabled.
 
 ## 3. Design decisions to settle before migration
 
@@ -102,11 +106,11 @@ describe roles, not approved public APIs.
   operation can require cleanup that would be wrong on success.
 - Prefer specialized VM guards over a universal guard with mode flags and
   type-condition branches.
-- For simple local state only, consider a small non-allocating scope-exit
-  template. Check existing dependency support before adding one; Boost is
-  already pinned, but Scope is not explicitly selected in
-  [Dependencies.cmake](../../cmake/Dependencies.cmake). Discuss any dependency
-  change instead of assuming it is available.
+- For unconditional simple local restoration, use Boost.Scope's `defer_guard`
+  from `<boost/scope/defer.hpp>`. Step 2 enables the header-only `scope` component
+  in the existing pinned [Boost dependency](../../cmake/Dependencies.cmake),
+  privately linked to the language library and tests. Do not add a custom
+  `ScopeExit` template for this purpose.
 - Do not use `std::function` or heap allocation just to store a cleanup action.
 - Delete copying; introduce moving only when required, preserving exactly-once
   cleanup. Make discardable guard temporaries difficult to misuse.
@@ -235,6 +239,32 @@ compilation callback before its captured local variables expire.
 Acceptance: nested/reentrant calls and failures restore prior state; the CRT hook
 is restored before assertions or unrelated work, without allocating inside the
 allocation-measurement scope.
+
+Step 2 outcome:
+
+- Reused `boost::scope::defer_guard` rather than implementing a new utility.
+  The existing Boost package and C++20 baseline are unchanged; the newly selected
+  component is header-only. Corrected the earlier standard-library note:
+  `std::experimental::scope_exit` is in the Library Fundamentals TS, not ISO C++23.
+- Replaced all seven targeted catches: logger delivery state, the temporary
+  compilation callback, the VM's temporary receiver, and four CRT hook handlers.
+  The guard-allocation benchmark's existing hook now uses the same restoration
+  mechanism.
+- Every cleanup callback is `noexcept`. Logger state resets while its mutex is
+  held; the compilation callback is cleared before checking invocation and
+  before its captured locals expire. Receiver restoration does not retain or
+  release borrowed objects.
+- Added five focused regression cases for normal/exceptional exit, nested
+  restoration order, coordinator success/before/after/skipped compilation,
+  nested property receiver success/failure, and actual CRT-hook restoration
+  during unwinding. Extended the allocation benchmark to include scope guards;
+  guard bookkeeping measured zero allocations.
+- `nomad_test_language`, `nomad_test_tooling`, and `nomad_test_remaining` passed
+  with freshly built Windows Debug core, fixture, and test binaries. Existing
+  logger failure/reentry recovery and allocation-count tests passed.
+- The first-party catch-all count is now 34, down from 41. No native-call frame,
+  execution-state, rollback, or filesystem migration from later slices was
+  included.
 
 Stop for review.
 

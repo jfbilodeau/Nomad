@@ -3179,6 +3179,30 @@ BOOST_AUTO_TEST_CASE(loads_registers_compiles_and_shuts_down_in_lifetime_order) 
     BOOST_TEST(events(directory) == "register\npreParse\nemit\ncompleted\nrun\nexit\nshutdown\ndestroy\n");
 }
 
+BOOST_AUTO_TEST_CASE(compilation_coordinator_clears_temporary_callbacks_on_all_exits) {
+    for (const auto* outcome : {"success", "before", "after", "skip"}) {
+        BOOST_TEST_CONTEXT(outcome) {
+            TestDirectory directory("nomad_host_compilation_callback");
+            const auto configuration = NomadConfiguration::parse(
+                "[fixture]\ncoordinate-compilation = true\nprepare-outcome = '" + NomadString(outcome) + "'\n"
+            );
+            auto host = ModuleHost::create(configuration, directory.getPath(), fixtureModules(), {}, ModuleMode::Application);
+            BOOST_TEST(host->checkResources() == "compilation callback inactive");
+            if (NomadStringView(outcome) == "success") {
+                BOOST_REQUIRE(compileFixture(*host, CompilationTarget::Executable));
+            } else {
+                BOOST_CHECK_THROW(
+                    static_cast<void>(compileFixture(*host, CompilationTarget::Executable)),
+                    NomadException
+                );
+            }
+
+            BOOST_TEST(events(directory).find("prepare\n") != NomadString::npos);
+            BOOST_TEST(host->checkResources() == "compilation callback inactive");
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(analysis_skips_emission_and_execution) {
     TestDirectory directory("nomad_host_analysis");
     {

@@ -17,6 +17,8 @@
 
 #include <nomad/system/String.hpp>
 
+#include <boost/scope/defer.hpp>
+
 #include <algorithm>
 #include <ranges>
 #include <stdexcept>
@@ -708,15 +710,12 @@ NomadObject* VirtualMachine::getThis() const {
 
 void VirtualMachine::invokeNativeMember(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
     const auto previousThis = m_this;
-    m_this = receiver;
-    try {
-        (void)getThis();
-        callback(this);
-    } catch (...) {
+    const auto resetReceiver = boost::scope::defer_guard([this, previousThis]() noexcept {
         m_this = previousThis;
-        throw;
-    }
-    m_this = previousThis;
+    });
+    m_this = receiver;
+    (void)getThis();
+    callback(this);
 }
 
 void VirtualMachine::getNativeProperty(

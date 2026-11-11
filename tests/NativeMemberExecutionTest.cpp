@@ -11,6 +11,7 @@
 #include <nomad/compiler/Expression.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -808,6 +809,72 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
         }
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(native_property_reentry_restores_outer_receivers_on_success_and_exception) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    RuntimeValue outerReceiver;
+    const RuntimeValueGuard outerGuard(*type, &outerReceiver);
+    outerReceiver.setObjectValue(new TestObject);
+    RuntimeValue innerReceiver;
+    const RuntimeValueGuard innerGuard(*type, &innerReceiver);
+    innerReceiver.setObjectValue(new TestObject);
+    auto failInner = false;
+    auto failOuter = false;
+    const auto innerProperty = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "innerState",
+        .getter = [&](VirtualMachine* machine, RuntimeValue& result) {
+            BOOST_TEST(machine->getThis() == innerReceiver.getObjectValue());
+            if (failInner) {
+                throw NomadException("Expected inner property failure");
+            }
+
+            result.setIntegerValue(17);
+        }
+    });
+    BOOST_REQUIRE(innerProperty.isValid());
+    const auto outerProperty = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "outerState",
+        .getter = [&](VirtualMachine* machine, RuntimeValue& result) {
+            BOOST_TEST(machine->getThis() == outerReceiver.getObjectValue());
+            RuntimeValue nested;
+            if (failInner) {
+                BOOST_CHECK_THROW(machine->getProperty(innerProperty, innerReceiver, nested), NomadException);
+            } else {
+                machine->getProperty(innerProperty, innerReceiver, nested);
+                BOOST_TEST(nested.getIntegerValue() == 17);
+            }
+
+            BOOST_TEST(machine->getThis() == outerReceiver.getObjectValue());
+            if (failOuter) {
+                throw NomadException("Expected outer property failure");
+            }
+
+            result.setIntegerValue(41);
+        }
+    });
+    BOOST_REQUIRE(outerProperty.isValid());
+    for (const auto innerFailure : {false, true}) {
+        failInner = innerFailure;
+        for (const auto outerFailure : {false, true}) {
+            failOuter = outerFailure;
+            auto machine = runtime.createVirtualMachine();
+            RuntimeValue result;
+            if (failOuter) {
+                BOOST_CHECK_THROW(machine->getProperty(outerProperty, outerReceiver, result), NomadException);
+            } else {
+                machine->getProperty(outerProperty, outerReceiver, result);
+                BOOST_TEST(result.getIntegerValue() == 41);
+            }
+
+            BOOST_TEST(outerReceiver.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(innerReceiver.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
+        }
     }
 }
 
