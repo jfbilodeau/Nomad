@@ -22,6 +22,8 @@ add_executable(
     ./EventRegistrationTest.cpp
     ./ExpressionEvaluationTest.cpp
     ./ExpressionResolveTest.cpp
+    ./FailingArgumentCopyType.cpp
+    ./FailingArgumentCopyType.hpp
     ./FileSinkTest.cpp
     ./FormatStringCompilerTest.cpp
     ./GameConfigurationTest.cpp

@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <FailingArgumentCopyType.hpp>
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
@@ -325,6 +326,200 @@ BOOST_AUTO_TEST_CASE(native_indexer_frames_restore_enclosing_receivers_and_param
             machine.popN(write ? 2 : 1);
             BOOST_TEST(machine.getIntegerParameter(0) == 29);
             BOOST_TEST(machine.captureExecutionState().stackIndex == enclosing.stackIndex);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(host_indexer_arguments_release_every_partial_copy_and_callback_failure) {
+    auto copyCount = NomadIndex{0};
+    auto failCopyAt = NomadIndex{0};
+    Runtime runtime;
+    const auto argumentId = runtime.getTypeManager().registerClass<nomad::test::FailingArgumentCopyType>(
+        "IndexerArgument", ClassMode::Closed, copyCount, failCopyAt
+    );
+    BOOST_REQUIRE(argumentId.isValid());
+    const auto* argumentType = runtime.getType(argumentId).value();
+    const auto ownerId = runtime.getTypeManager().registerClass("ArgumentIndexer", ClassMode::Closed);
+    BOOST_REQUIRE(ownerId.isValid());
+    const auto* owner = runtime.getType(ownerId).value();
+    RuntimeValue receiver;
+    const RuntimeValueGuard receiverGuard(*owner, &receiver);
+    receiver.setObjectValue(new NomadObject);
+    RuntimeValue enclosingReceiver;
+    const RuntimeValueGuard enclosingGuard(*owner, &enclosingReceiver);
+    enclosingReceiver.setObjectValue(new NomadObject);
+    std::array<RuntimeValue, 4> values;
+    for (auto& value : values) {
+        value.setObjectValue(new NomadObject);
+    }
+
+    BOOST_SCOPE_EXIT_ALL(&) {
+        for (auto& value : values) {
+            argumentType->freeValue(&value);
+        }
+    };
+
+    auto failCallback = false;
+    auto callbackCalls = 0;
+    const auto inspectArguments = [&](VirtualMachine* active, const bool write) {
+        ++callbackCalls;
+        BOOST_TEST(active->getThis() == receiver.getObjectValue());
+        for (auto index = NomadIndex{0}; index < (write ? 4U : 3U); ++index) {
+            BOOST_TEST(active->getParameter(index).getObjectValue() == values[index].getObjectValue());
+            BOOST_TEST(values[index].getObjectValue()->getReferenceCount() == 2U);
+        }
+
+        BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 2U);
+        if (!write) {
+            active->getResult().copyObjectValue(values[3]);
+        }
+
+        if (failCallback) {
+            throw NomadException("Expected host indexer failure");
+        }
+    };
+    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+        .valueTypeId = argumentId,
+        .indexTypes = {argumentId, argumentId, argumentId},
+        .getter = [&](VirtualMachine* active) { inspectArguments(active, false); },
+        .setter = [&](VirtualMachine* active) { inspectArguments(active, true); }
+    });
+    BOOST_REQUIRE(indexerId.isValid());
+    for (const auto write : {false, true}) {
+        const auto argumentCount = write ? NomadIndex{4} : NomadIndex{3};
+        const std::vector<RuntimeValue> arguments(values.begin(), values.begin() + argumentCount);
+        for (auto failure = NomadIndex{0}; failure <= argumentCount + 1; ++failure) {
+            copyCount = 0;
+            failCopyAt = failure <= argumentCount ? failure : 0;
+            failCallback = failure == argumentCount + 1;
+            callbackCalls = 0;
+            VirtualMachine machine(&runtime, 64);
+            machine.pushInteger(29);
+            machine.enterNativeFrame(enclosingReceiver);
+            const auto before = machine.captureExecutionState();
+            if (failure == 0) {
+                machine.runNativeIndexer(indexerId, arguments, receiver, write);
+            } else {
+                BOOST_CHECK_THROW(
+                    machine.runNativeIndexer(indexerId, arguments, receiver, write),
+                    NomadException
+                );
+            }
+
+            BOOST_TEST(copyCount == (failCopyAt == 0 ? argumentCount : failCopyAt));
+            BOOST_TEST(callbackCalls == (failCopyAt == 0 ? 1 : 0));
+            const auto after = machine.captureExecutionState();
+            BOOST_TEST(after.stackIndex == before.stackIndex);
+            BOOST_TEST(after.parameterIndex == before.parameterIndex);
+            BOOST_TEST(after.variableIndex == before.variableIndex);
+            BOOST_TEST(after.receiver.getObjectValue() == enclosingReceiver.getObjectValue());
+            BOOST_TEST(machine.getIntegerParameter(0) == 29);
+            BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(enclosingReceiver.getObjectValue()->getReferenceCount() == 1U);
+            if (!write && failCopyAt == 0) {
+                BOOST_TEST(machine.getResult().getObjectValue() == values[3].getObjectValue());
+                BOOST_TEST(values[3].getObjectValue()->getReferenceCount() == 2U);
+            }
+
+            argumentType->freeValue(&machine.getResult());
+            for (const auto& value : values) {
+                BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1U);
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(indexer_opcodes_release_arguments_and_only_discard_failed_read_results) {
+    Runtime runtime;
+    const auto ownerId = runtime.getTypeManager().registerClass("OpcodeIndexer", ClassMode::Closed);
+    BOOST_REQUIRE(ownerId.isValid());
+    const auto* owner = runtime.getType(ownerId).value();
+    RuntimeValue receiver;
+    const RuntimeValueGuard receiverGuard(*owner, &receiver);
+    receiver.setObjectValue(new NomadObject);
+    RuntimeValue enclosingReceiver;
+    const RuntimeValueGuard enclosingGuard(*owner, &enclosingReceiver);
+    enclosingReceiver.setObjectValue(new NomadObject);
+    RuntimeValue argument{NomadString{"index"}};
+    const RuntimeValueGuard argumentGuard(*runtime.getStringType(), &argument);
+    RuntimeValue output{NomadString{"value"}};
+    const RuntimeValueGuard outputGuard(*runtime.getStringType(), &output);
+    auto fail = false;
+    auto callbackCalls = 0;
+    const auto inspectArguments = [&](VirtualMachine* active, const bool write) {
+        ++callbackCalls;
+        BOOST_TEST(active->getThis() == receiver.getObjectValue());
+        for (auto index = NomadIndex{0}; index < 3; ++index) {
+            BOOST_TEST(active->getParameter(index).getObjectValue() == argument.getObjectValue());
+        }
+
+        if (write) {
+            BOOST_TEST(active->getParameter(3).getObjectValue() == output.getObjectValue());
+        } else {
+            active->getResult().copyObjectValue(output);
+        }
+
+        if (fail) {
+            throw NomadException("Expected opcode indexer failure");
+        }
+    };
+    const auto stringId = runtime.getStringType()->getId();
+    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+        .valueTypeId = stringId,
+        .indexTypes = {stringId, stringId, stringId},
+        .getter = [&](VirtualMachine* active) { inspectArguments(active, false); },
+        .setter = [&](VirtualMachine* active) { inspectArguments(active, true); }
+    });
+    BOOST_REQUIRE(indexerId.isValid());
+    auto compiler = runtime.createCompiler();
+    const auto readAddress = compiler->addOpCode(OpCodes::op_native_index_get);
+    compiler->addId(indexerId.id);
+    const auto writeAddress = compiler->addOpCode(OpCodes::op_native_index_set);
+    compiler->addId(indexerId.id);
+    for (const auto write : {false, true}) {
+        for (const auto failure : {false, true}) {
+            fail = failure;
+            callbackCalls = 0;
+            VirtualMachine machine(&runtime, 64);
+            machine.pushInteger(29);
+            machine.enterNativeFrame(enclosingReceiver);
+            const auto before = machine.captureExecutionState();
+            machine.pushThis();
+            machine.pushObjectValue(receiver);
+            if (write) {
+                machine.pushObjectValue(output);
+            }
+
+            for (auto index = 0; index < 3; ++index) {
+                machine.pushObjectValue(argument);
+            }
+
+            const auto address = write ? writeAddress : readAddress;
+            if (fail) {
+                BOOST_CHECK_THROW(executeInstruction(runtime, machine, address), NomadException);
+            } else {
+                executeInstruction(runtime, machine, address);
+            }
+
+            BOOST_TEST(callbackCalls == 1);
+            const auto after = machine.captureExecutionState();
+            BOOST_TEST(after.stackIndex == before.stackIndex);
+            BOOST_TEST(after.parameterIndex == before.parameterIndex);
+            BOOST_TEST(after.variableIndex == before.variableIndex);
+            BOOST_TEST(after.receiver.getObjectValue() == enclosingReceiver.getObjectValue());
+            BOOST_TEST(machine.getIntegerParameter(0) == 29);
+            BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(enclosingReceiver.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
+            if (!write && !fail) {
+                BOOST_TEST(machine.getResult().getObjectValue() == output.getObjectValue());
+                BOOST_TEST(output.getObjectValue()->getReferenceCount() == 2U);
+                runtime.getStringType()->freeValue(&machine.getResult());
+            } else {
+                BOOST_TEST(machine.getResult().getObjectValue() == nullptr);
+            }
+
+            BOOST_TEST(output.getObjectValue()->getReferenceCount() == 1U);
         }
     }
 }
@@ -987,6 +1182,62 @@ BOOST_AUTO_TEST_CASE(prepared_script_execution_guards_do_not_allocate) {
     BOOST_TEST(suspendedCalls == 0);
     BOOST_TEST(callAllocations == 0U);
     BOOST_TEST(machine.getIntegerResult() == 17);
+}
+
+BOOST_AUTO_TEST_CASE(indexer_argument_guards_do_not_allocate) {
+    Runtime runtime;
+    const auto ownerId = runtime.getTypeManager().registerClass("AllocationIndexer", ClassMode::Closed);
+    BOOST_REQUIRE(ownerId.isValid());
+    const auto* owner = runtime.getType(ownerId).value();
+    RuntimeValue receiver;
+    const RuntimeValueGuard receiverGuard(*owner, &receiver);
+    receiver.setObjectValue(new NomadObject);
+    const auto integerId = runtime.getIntegerType()->getId();
+    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+        .valueTypeId = integerId,
+        .indexTypes = {integerId},
+        .getter = [](VirtualMachine* active) { active->setIntegerResult(71); },
+        .setter = [](VirtualMachine*) {}
+    });
+    BOOST_REQUIRE(indexerId.isValid());
+    auto compiler = runtime.createCompiler();
+    const auto readAddress = compiler->addOpCode(OpCodes::op_native_index_get);
+    compiler->addId(indexerId.id);
+    const auto writeAddress = compiler->addOpCode(OpCodes::op_native_index_set);
+    compiler->addId(indexerId.id);
+    const std::vector<RuntimeValue> readArguments{RuntimeValue{NomadInteger{17}}};
+    const std::vector<RuntimeValue> writeArguments{
+        RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadInteger{23}}
+    };
+    VirtualMachine machine(&runtime, 64);
+    callAllocations = 0;
+    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+    {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
+            _CrtSetAllocHook(previousHook);
+        };
+
+        for (auto index = 0; index < 100; ++index) {
+            for (const auto write : {false, true}) {
+                machine.runNativeIndexer(
+                    indexerId, write ? writeArguments : readArguments, receiver, write
+                );
+                machine.pushThis();
+                machine.pushObjectValue(receiver);
+                if (write) {
+                    machine.pushInteger(23);
+                }
+
+                machine.pushInteger(17);
+                executeInstruction(runtime, machine, write ? writeAddress : readAddress);
+            }
+        }
+    }
+
+    BOOST_TEST(callAllocations == 0U);
+    BOOST_TEST(machine.captureExecutionState().stackIndex == 0U);
+    BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_value_and_scope_exit_guard_bookkeeping_does_not_allocate) {

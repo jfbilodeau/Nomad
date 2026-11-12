@@ -850,7 +850,7 @@ void VirtualMachine::runNativeIndexer(
     const auto parameterType = [&](const NomadIndex index) {
         return index < info->indexTypes.size() ? info->indexTypes[index] : info->valueType;
     };
-    const auto releaseArguments = [&]() {
+    const auto releaseArguments = [&]() noexcept {
         while (m_stackIndex > initialStackIndex + 2) {
             const auto index = args.size() - (m_stackIndex - initialStackIndex - 2);
             parameterType(index)->freeValue(&m_stack[m_stackIndex]);
@@ -862,21 +862,21 @@ void VirtualMachine::runNativeIndexer(
         m_stackIndex = initialStackIndex;
         m_this = savedThis;
     };
-    m_result = RuntimeValue{};
-    try {
-        pushThis();
-        pushObjectValue(receiver);
-        for (auto index = args.size(); index > 0; --index) {
-            ++m_stackIndex;
-            m_stack[m_stackIndex] = RuntimeValue{};
-            parameterType(index - 1)->copyValue(&args[index - 1], &m_stack[m_stackIndex]);
-        }
-        callNativeIndexer(indexerId, receiver, write);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&) {
         releaseArguments();
-        throw;
+    };
+
+    m_result = RuntimeValue{};
+    pushThis();
+    pushObjectValue(receiver);
+    for (auto index = args.size(); index > 0; --index) {
+        auto* destination = &m_stack[m_stackIndex + 1];
+        *destination = RuntimeValue{};
+        parameterType(index - 1)->copyValue(&args[index - 1], destination);
+        ++m_stackIndex;
     }
-    releaseArguments();
+
+    callNativeIndexer(indexerId, receiver, write);
 }
 
 std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(

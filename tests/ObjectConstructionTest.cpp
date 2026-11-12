@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <FailingArgumentCopyType.hpp>
+
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Parser.hpp>
@@ -9,9 +11,11 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <initializer_list>
@@ -78,24 +82,24 @@ NomadObject* createTestObject(
             parameters[index].type->freeValue(&value);
         }
     };
-    NomadObject* object;
-    try {
-        auto argument = arguments.end();
-        while (argument != arguments.begin()) {
-            --argument;
-            RuntimeValue copy;
-            parameters[arguments.size() - pushed - 1].type->copyValue(argument, &copy);
-            machine.pushValue(copy);
-            ++pushed;
-        }
-        object = constructor->asNativeConstructor() != nullptr
-            ? machine.createNativeObject(constructorId) : machine.createScriptObject(constructorId);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&) {
         releaseArguments();
-        throw;
+    };
+
+    auto argument = arguments.end();
+    while (argument != arguments.begin()) {
+        --argument;
+        const auto* type = parameters[arguments.size() - pushed - 1].type;
+        RuntimeValue copy;
+        RuntimeValueGuard copyGuard(*type, &copy);
+        type->copyValue(argument, &copy);
+        machine.pushValue(copy);
+        ++pushed;
+        copyGuard.release();
     }
-    releaseArguments();
-    return object;
+
+    return constructor->asNativeConstructor() != nullptr
+        ? machine.createNativeObject(constructorId) : machine.createScriptObject(constructorId);
 }
 
 } // namespace
@@ -1687,6 +1691,84 @@ BOOST_AUTO_TEST_CASE(native_constructor_host_calls_preserve_registers_and_borrow
     object->releaseRef();
     runtime.getStringType()->freeValue(&text);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
+}
+
+BOOST_AUTO_TEST_CASE(host_constructor_arguments_release_every_partial_copy_and_callback_failure) {
+    auto copyCount = NomadIndex{0};
+    auto failCopyAt = NomadIndex{0};
+    Runtime runtime;
+    const auto argumentId = runtime.getTypeManager().registerClass<nomad::test::FailingArgumentCopyType>(
+        "ConstructorArgument", ClassMode::Closed, copyCount, failCopyAt
+    );
+    BOOST_REQUIRE(argumentId.isValid());
+    const auto* argumentType = runtime.getType(argumentId).value();
+    const auto* owner = registerClass(runtime, "GuardedHostConstructor");
+    auto failCallback = false;
+    auto callbackCalls = 0;
+    RuntimeValue first;
+    const RuntimeValueGuard firstGuard(*argumentType, &first);
+    first.setObjectValue(new NomadObject);
+    RuntimeValue second;
+    const RuntimeValueGuard secondGuard(*argumentType, &second);
+    second.setObjectValue(new NomadObject);
+    RuntimeValue third;
+    const RuntimeValueGuard thirdGuard(*argumentType, &third);
+    third.setObjectValue(new NomadObject);
+    const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(owner->getId(), {
+        .parameters = {
+            {argumentId, "first", ""},
+            {argumentId, "second", ""},
+            {argumentId, "third", ""}
+        },
+        .function = [&](VirtualMachine* active) {
+            ++callbackCalls;
+            BOOST_TEST(active->getParameter(0).getObjectValue() == first.getObjectValue());
+            BOOST_TEST(active->getParameter(1).getObjectValue() == second.getObjectValue());
+            BOOST_TEST(active->getParameter(2).getObjectValue() == third.getObjectValue());
+            BOOST_TEST(first.getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(second.getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(third.getObjectValue()->getReferenceCount() == 2U);
+            active->getResult().setObjectValue(new ConstructedObject);
+            if (failCallback) {
+                throw NomadException("Expected guarded host construction failure");
+            }
+        },
+        .documentation = ""
+    });
+    BOOST_REQUIRE(constructorId.isValid());
+    for (auto failure = NomadIndex{0}; failure <= 4; ++failure) {
+        copyCount = 0;
+        failCopyAt = failure < 4 ? failure : 0;
+        failCallback = failure == 4;
+        callbackCalls = 0;
+        auto machine = runtime.createVirtualMachine();
+        machine->pushInteger(29);
+        const auto before = machine->captureExecutionState();
+        const auto objectsBefore = NomadObject::getLiveObjectCount();
+        if (failure == 0) {
+            auto* object = createTestObject(*machine, constructorId, {first, second, third});
+            BOOST_REQUIRE(object != nullptr);
+            BOOST_TEST(object->getReferenceCount() == 1U);
+            object->releaseRef();
+        } else {
+            BOOST_CHECK_THROW(
+                static_cast<void>(createTestObject(*machine, constructorId, {first, second, third})),
+                NomadException
+            );
+        }
+
+        BOOST_TEST(copyCount == (failCopyAt == 0 ? NomadIndex{3} : failCopyAt));
+        BOOST_TEST(callbackCalls == (failCopyAt == 0 ? 1 : 0));
+        const auto after = machine->captureExecutionState();
+        BOOST_TEST(after.stackIndex == before.stackIndex);
+        BOOST_TEST(after.parameterIndex == before.parameterIndex);
+        BOOST_TEST(after.variableIndex == before.variableIndex);
+        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 29);
+        BOOST_TEST(first.getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(second.getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(third.getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(host_script_construction_preserves_native_method_context_and_borrowed_arguments) {

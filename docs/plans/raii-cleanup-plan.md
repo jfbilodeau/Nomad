@@ -1,11 +1,11 @@
 # RAII cleanup plan
 
-Status: Step 3A is implemented and validated on Windows Debug, awaiting review.
-Next slice: Step 3B; implementation requires separate approval.
+Status: Step 3C is implemented and validated on Windows Debug, awaiting review.
+Next slice: Step 4; implementation requires separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
-work. Preserve unrelated worktree changes. Steps 1A, 1B, 2, and 3A, the concrete
+work. Preserve unrelated worktree changes. Steps 1A, 1B, 2, 3A, 3B, and 3C, the concrete
 value-guard contract, and using Boost.ScopeExit macros have been approved. Later
 slices, commits, and pushes are not authorized.
 
@@ -341,6 +341,26 @@ suspended frame. Ensure format-call restoration occurs before value conversion.
 Acceptance: test success, exception, stop, yield/resume where supported, forbidden
 yield, nested callbacks, and exact register/stack/receiver restoration.
 
+Outcome:
+
+- Replaced eight cleanup catches in script invocation, creation-body execution,
+  interpreter callable helpers, and compiled format-expression invocation with
+  Boost.ScopeExit macros.
+- Scalar suspension retains live frames and owned arguments for resumption.
+  Synchronous aggregate calls restore the full execution state; native scalar
+  callbacks retain their stop/yield effects, including when they subsequently
+  throw. Compiled format calls restore state before converting their results.
+- Added regressions for owned arguments across suspension/resumption, errors
+  after yield, native errors after stop/yield, conversion-time state restoration
+  and conversion failure, and allocation-free prepared script execution.
+- Windows Debug CMake Tools CTest passed `nomad_test_language` (35.10 s),
+  `nomad_test_remaining` (40.23 s), and `nomad_test_tooling` (21.74 s).
+  The rebuilt language DLL is newer than the current VM source; the test binary
+  is newer than the changed test sources. These are unit-test results, not
+  gameplay or cross-platform validation.
+- The first-party catch-all count is now 20, down from 28. Invocation argument
+  ownership and failure-only rollback remain assigned to later slices.
+
 Stop for review.
 
 ### Step 3C: own invocation argument blocks
@@ -354,6 +374,33 @@ successful return. Do not conflate argument release with stack/register restore.
 
 Acceptance: fail at every argument-copy position and inside the callback;
 verify reference counts and original stack position after each failure.
+
+Outcome:
+
+- Replaced the three duplicated argument-cleanup catches in host native indexer
+  invocation, native indexer opcodes, and the object-construction test helper
+  with Boost.ScopeExit macros. Each macro captures its cleanup action by
+  reference rather than capturing all of the action's dependencies.
+- Host indexer argument ownership advances only after each successful copy.
+  The construction helper guards a copied value until its ownership transfers
+  to the argument stack. Both paths release all previously acquired arguments
+  when a later copy or callback throws.
+- Indexer opcodes guard read results until successful return, preserving
+  successful result ownership while discarding partial results on failure.
+  Host indexer invocation retains its existing caller-owned result contract,
+  including when a callback throws after setting a result.
+- Added a shared test-only failing-copy descriptor and first/middle/last
+  argument-copy failure coverage for host indexers and construction. Regressions
+  also verify callback failure, receiver and argument reference counts, enclosing
+  frame restoration, original stack positions, and opcode result ownership.
+- Windows Debug CMake Tools CTest passed `nomad_test_language` (34.06 s) and
+  `nomad_test_remaining` (38.04 s) with fresh library and test binaries.
+  After adding the allocation regression, `nomad_test_remaining` passed again
+  (38.78 s); its log confirms execution of both new indexer ownership tests and
+  the zero-allocation test. The latter covers 100 iterations of host and opcode
+  reads/writes. These are unit tests, not gameplay or cross-platform validation.
+- The first-party catch-all count is now 17, down from 20. Failure-only rollback
+  and filesystem transactions are unchanged and remain assigned to later slices.
 
 Stop for review.
 

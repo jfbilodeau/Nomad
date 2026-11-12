@@ -12,10 +12,14 @@
 #include <nomad/script/NomadStringObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <cassert>
+#include <optional>
 
 namespace nomad {
 
@@ -51,7 +55,7 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
 
     const auto argumentCount = info->indexTypes.size() + (write ? 1 : 0);
     const auto receiver = machine->peekStack(argumentCount);
-    const auto releaseArguments = [&]() {
+    const auto releaseArguments = [&]() noexcept {
         for (const auto* type : info->indexTypes) {
             auto value = machine->popValue();
             type->freeValue(&value);
@@ -64,17 +68,19 @@ void callNativeIndexer(VirtualMachine* machine, const bool write) {
         info->classType->freeValue(&savedReceiver);
         machine->popThis();
     };
-
-    try {
-        machine->callNativeIndexer(indexerId, receiver, write);
-    } catch (...) {
-        releaseArguments();
-        if (!write) {
-            info->valueType->freeValue(&machine->getResult());
-        }
-        throw;
+    std::optional<RuntimeValueGuard> resultGuard;
+    if (!write) {
+        resultGuard.emplace(*info->valueType, &machine->getResult());
     }
-    releaseArguments();
+
+    BOOST_SCOPE_EXIT_ALL(&) {
+        releaseArguments();
+    };
+
+    machine->callNativeIndexer(indexerId, receiver, write);
+    if (resultGuard) {
+        resultGuard->release();
+    }
 }
 
 } // namespace
