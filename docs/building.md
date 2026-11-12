@@ -61,6 +61,10 @@ into `nomad_test_audio`, `nomad_test_language`, `nomad_test_tooling`, and
 the same `nomad_test` executable. Tests not assigned to a named group run in the
 remaining group, including newly added tests.
 
+Assertions that require live-string allocation tracking run only in Debug
+builds. Release builds still run the corresponding behavioral and
+reference-count assertions.
+
 In VS Code, select the relevant CTest group for focused validation, or run all
 tests for full validation. The `unit` label selects all unit-test groups without
 the separate integration tests. Suite and case timings are included in the unit

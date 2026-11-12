@@ -153,21 +153,6 @@ private:
         NomadIndex sourceLine
     ) const;
 
-    [[nodiscard]] InterpreterValue getStoredProperty(
-        const InterpreterValue& receiver,
-        std::span<const PropertyId> properties
-    ) const;
-    [[nodiscard]] InterpreterValue setProperty(
-        const InterpreterValue& receiver,
-        std::span<const PropertyId> properties,
-        const InterpreterValue& value
-    ) const;
-    void setProperty(
-        const StructType& type,
-        std::span<RuntimeValue> receiverStorage,
-        std::span<const PropertyId> properties,
-        const InterpreterValue& value
-    ) const;
 };
 
 } // namespace nomad
