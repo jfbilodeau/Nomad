@@ -1,8 +1,8 @@
 # RAII cleanup plan
 
-Status: Step 4 review corrections are implemented and validated on Windows Debug.
-Next slice: Step 5A; implementation and filesystem cleanup-error policy require
-separate approval.
+Status: Step 5A reviewed; retain the existing failure-only initialization catch.
+Next slice: Step 5B review against the clarified deduplication goal. Filesystem
+cleanup-error behavior changes require separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
@@ -453,15 +453,26 @@ Reviewed outcome (supersedes the initial guard conversion):
 
 Stop for review.
 
-### Step 5A: make project initialization transactional
+### Step 5A: review project initialization cleanup
 
-Track created temporary files, published files, and new directories in an
-operation-owned rollback object. Remove only those artifacts on failure and
-commit after all files are published. Preserve reverse directory removal order
-and executable-wrapper permissions.
+Reviewed outcome:
 
-Acceptance: failures at each creation/publication stage remove owned artifacts
-without changing pre-existing files; cleanup failures follow the approved policy.
+- `initializeProject` already tracks temporary files, published files, and newly
+  created directories. Its single catch removes those artifacts only on failure,
+  then rethrows. Successful initialization retains the files and returns their
+  paths; there is no duplicated normal-path cleanup to extract.
+- Retain this catch under the Step 4 review decision. Introducing an RAII
+  transaction and commit flag solely to replace it would not serve the clarified
+  goal. No production or test changes are needed for this slice.
+- Existing tests cover successful project creation, wrapper omission, preserving
+  pre-existing project files, and rollback after an unknown template placeholder.
+  Coverage was inspected, not rerun for this documentation-only decision; it does
+  not establish failure injection at every filesystem stage.
+- The existing rollback uses error-code filesystem operations and does not
+  report secondary removal errors. Changing that reporting policy is separate
+  work requiring approval, not part of cleanup deduplication.
+- Catch-all count remains 13. Only the plan changed; no C++ build or runtime
+  validation was performed for this review.
 
 Stop for review.
 
@@ -558,7 +569,7 @@ Classify by the handler's behavior when revisiting a site, not its line alone.
 | [Logger.cpp](../../src/nomad/log/Logger.cpp) | 193 | Step 2: delivery-state restoration |
 | [ScriptBindingObject.cpp](../../src/nomad/modules/ScriptBindingObject.cpp) | 65; 144 | Step 1B: object ownership; Step 1A pilot: string ownership |
 | [OsModule.cpp](../../src/nomad/os/OsModule.cpp) | 67, 83, 143 | Step 1B: snapshot/string ownership |
-| [ProjectInitializer.cpp](../../src/nomad/project/ProjectInitializer.cpp) | 425 | Step 5A: filesystem rollback |
+| [ProjectInitializer.cpp](../../src/nomad/project/ProjectInitializer.cpp) | 425 | Keep after Step 5A review: distinct failure-only filesystem rollback |
 | [ProjectPackager.cpp](../../src/nomad/project/ProjectPackager.cpp) | 856 | Step 5B: publication/emergency cleanup |
 | [CompositeType.cpp](../../src/nomad/script/CompositeType.cpp) | 291 | Step 4: layout-state rollback |
 | [FormatString.cpp](../../src/nomad/script/FormatString.cpp) | 88; 169 | Step 3B: call-state restoration; Step 1B: dynamic getter ownership |
