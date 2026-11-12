@@ -11,6 +11,8 @@
 
 #include <nomad/system/String.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <optional>
 
 namespace nomad {
@@ -84,16 +86,16 @@ NomadString FormatString::format(VirtualMachine* machine) const {
 
         InterpreterCallFrame frame(*machine, *function);
         const auto state = machine->captureExecutionState();
-        try {
+        {
+            BOOST_SCOPE_EXIT_ALL(&) {
+                machine->restoreExecutionState(state);
+            };
+
             if (!machine->executeFunction(*function)) {
                 machine->fault("Format expression calls cannot yield");
             }
-        } catch (...) {
-            machine->restoreExecutionState(state);
-            throw;
         }
 
-        machine->restoreExecutionState(state);
         string += segment.valueType->toString(frame.getResult());
     };
 

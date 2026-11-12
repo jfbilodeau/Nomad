@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -235,6 +236,93 @@ BOOST_AUTO_TEST_CASE(compiled_and_dynamic_converters_receive_complete_storage_no
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     }
 
+}
+
+BOOST_AUTO_TEST_CASE(compiled_format_restores_execution_state_before_conversion_and_conversion_failure) {
+    class ObservedFormatType final : public ClassType {
+    public:
+        using ClassType::ClassType;
+
+        void toString(const RuntimeValue* value, NomadString& text) const override {
+            inspect(value);
+            text = "checked";
+        }
+
+        std::function<void(const RuntimeValue*)> inspect;
+    };
+
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto typeId = manager.reserveTypeId();
+    auto type = std::make_unique<ObservedFormatType>(&runtime, typeId, "ObservedFormatValue", ClassMode::Closed);
+    auto* descriptor = type.get();
+    manager.registerType(std::move(type));
+    const auto makeValue = runtime.registerNativeFunction("makeObservedFormat", [](VirtualMachine* active) {
+        active->setStringResult("owned format state result");
+    }, {}, descriptor, "");
+    BOOST_REQUIRE(makeValue.isValid());
+    const auto functionId = runtime.registerScriptFunction("observedFormatExpression", "observed.nomad", "");
+    auto* function = runtime.getScriptFunction(functionId);
+    function->setReturnType(descriptor);
+    auto compiler = runtime.createCompiler();
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(makeValue.id);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    runtime.initializeScripts();
+    FormatString format("", CallableId{});
+    format.addExpression(descriptor, functionId);
+    auto conversions = 0;
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (const auto previouslyYielded : {false, true}) {
+        for (const auto failConversion : {false, true}) {
+            auto machine = runtime.createVirtualMachine();
+            machine->pushInteger(1234);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            auto before = machine->captureExecutionState();
+            before.running = true;
+            before.yielded = previouslyYielded;
+            machine->restoreExecutionState(before);
+            const auto expectRestored = [&]() {
+                const auto after = machine->captureExecutionState();
+                BOOST_TEST(after.instructionIndex == before.instructionIndex);
+                BOOST_TEST(after.stackIndex == before.stackIndex);
+                BOOST_TEST(after.parameterIndex == before.parameterIndex);
+                BOOST_TEST(after.variableIndex == before.variableIndex);
+                BOOST_TEST(after.running == before.running);
+                BOOST_TEST(after.yielded == before.yielded);
+                BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+            };
+            descriptor->inspect = [&](const RuntimeValue* value) {
+                ++conversions;
+                expectRestored();
+                BOOST_TEST(value->getStringValue() == "owned format state result");
+                if (failConversion) {
+                    throw NomadException("Expected observed format conversion failure");
+                }
+            };
+            if (failConversion) {
+                BOOST_CHECK_THROW(static_cast<void>(format.format(machine.get())), NomadException);
+            } else {
+                BOOST_TEST(format.format(machine.get()) == "checked");
+            }
+
+            descriptor->inspect = nullptr;
+            expectRestored();
+            BOOST_TEST(machine->getIntegerResult() == 41);
+            BOOST_TEST(machine->getIntegerIntermediate() == 43);
+            BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+            machine->pop1();
+        }
+    }
+
+    BOOST_TEST(conversions == 4);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_literals_do_not_create_runtime_compilers_but_dynamic_templates_do) {

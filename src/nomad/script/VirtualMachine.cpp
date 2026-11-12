@@ -267,50 +267,55 @@ void VirtualMachine::run(
     const auto releaseArguments = [&]() {
         freeHostArguments(state.stackIndex + 2, argumentTypes);
     };
-
-    try {
-        if (function == nullptr || args.size() + closures.size() != function->getParameterCount() ||
-            closures.size() != function->getCaptureCount()) {
-            fault("Incorrect script argument or capture count");
-        }
-        if (function->getReturnType() != nullptr && function->getReturnType()->isStruct()) {
-            fault("Host script calls do not support struct return storage");
-        }
-        if (m_stackIndex >= m_stack.size() ||
-            m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 2 ||
-            function->getParameterCount() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 2) {
-            fault("Stack overflow");
-        }
-        pushThis();
-        argumentTypes.reserve(function->getParameterCount());
-        for (auto index = closures.size(); index > 0; --index) {
-            pushHostArgument(
-                function->getParameterType(toNomadId(args.size() + index - 1)),
-                closures[index - 1],
-                argumentTypes
-            );
-        }
-        for (auto index = args.size(); index > 0; --index) {
-            pushHostArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
+    auto retainSuspendedFrame = false;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        if (!retainSuspendedFrame) {
+            m_yielded = false;
+            restoreScriptRun(state);
         }
 
-        callScriptFunction(function->getFunctionStart());
-        executeScript();
-        if (m_yielded && m_this.getObjectValue() != nullptr) {
-            fault("Class initialization or construction cannot yield");
+        if (!retainSuspendedFrame) {
+            releaseArguments();
         }
-    } catch (...) {
-        releaseArguments();
-        m_yielded = false;
-        restoreScriptRun(state);
+    };
 
-        throw;
+    if (function == nullptr || args.size() + closures.size() != function->getParameterCount() ||
+        closures.size() != function->getCaptureCount()) {
+        fault("Incorrect script argument or capture count");
     }
 
-    if (!m_yielded) {
-        releaseArguments();
-        restoreScriptRun(state);
-    } else {
+    if (function->getReturnType() != nullptr && function->getReturnType()->isStruct()) {
+        fault("Host script calls do not support struct return storage");
+    }
+
+    if (m_stackIndex >= m_stack.size() ||
+        m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 2 ||
+        function->getParameterCount() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 2) {
+        fault("Stack overflow");
+    }
+
+    pushThis();
+    argumentTypes.reserve(function->getParameterCount());
+    for (auto index = closures.size(); index > 0; --index) {
+        pushHostArgument(
+            function->getParameterType(toNomadId(args.size() + index - 1)),
+            closures[index - 1],
+            argumentTypes
+        );
+    }
+
+    for (auto index = args.size(); index > 0; --index) {
+        pushHostArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
+    }
+
+    callScriptFunction(function->getFunctionStart());
+    executeScript();
+    if (m_yielded && m_this.getObjectValue() != nullptr) {
+        fault("Class initialization or construction cannot yield");
+    }
+
+    if (m_yielded) {
+        retainSuspendedFrame = true;
         m_running = false;
     }
 }
@@ -396,35 +401,34 @@ bool VirtualMachine::executeFunction(const ScriptFunction& function) {
         }
     );
     const auto state = beginScriptRun();
-    try {
-        callScriptFunction(function.getFunctionStart());
-        executeScript();
-        if (m_yielded && synchronous) {
-            fault("Aggregate closure calls cannot yield");
-        }
-
-        if (m_yielded && m_this.getObjectValue() != nullptr) {
-            fault("Class initialization or construction cannot yield");
-        }
-    } catch (...) {
+    const auto restore = [&]() noexcept {
         if (synchronous) {
             restoreExecutionState(state);
         } else {
             m_yielded = false;
             restoreScriptRun(state);
         }
+    };
+    auto retainSuspendedFrame = false;
+    BOOST_SCOPE_EXIT_ALL(&) {
+        if (!retainSuspendedFrame) {
+            restore();
+        }
+    };
 
-        throw;
+    callScriptFunction(function.getFunctionStart());
+    executeScript();
+    if (m_yielded && synchronous) {
+        fault("Aggregate closure calls cannot yield");
+    }
+
+    if (m_yielded && m_this.getObjectValue() != nullptr) {
+        fault("Class initialization or construction cannot yield");
     }
 
     const auto completed = !m_yielded;
-    if (completed) {
-        if (synchronous) {
-            restoreExecutionState(state);
-        } else {
-            restoreScriptRun(state);
-        }
-    } else {
+    if (!completed) {
+        retainSuspendedFrame = true;
         m_running = false;
     }
 
@@ -485,25 +489,24 @@ void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, con
     const auto state = beginScriptRun();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        m_result = savedResult;
+        m_intermediate = savedIntermediate;
+    };
+
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        m_yielded = false;
+        restoreScriptRun(state);
+    };
+
     m_result = RuntimeValue{};
     m_intermediate = RuntimeValue{};
     m_this = receiver;
-    try {
-        callScriptMethod(callable->getFunctionStart());
-        executeScript();
-        if (m_yielded) {
-            fault("Initialization or construction cannot yield");
-        }
-    } catch (...) {
-        m_yielded = false;
-        restoreScriptRun(state);
-        m_result = savedResult;
-        m_intermediate = savedIntermediate;
-        throw;
+    callScriptMethod(callable->getFunctionStart());
+    executeScript();
+    if (m_yielded) {
+        fault("Initialization or construction cannot yield");
     }
-    restoreScriptRun(state);
-    m_result = savedResult;
-    m_intermediate = savedIntermediate;
 }
 
 NomadObject* VirtualMachine::createScriptObject(const CallableId constructorId) {

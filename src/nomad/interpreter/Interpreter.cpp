@@ -26,6 +26,8 @@
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
@@ -374,16 +376,14 @@ bool Interpreter::runScriptCallable(
     const RuntimeValue& receiver
 ) const {
     const auto state = m_virtualMachine.captureExecutionState();
-    try {
-        m_virtualMachine.enterScriptFrame(callable.getFunctionStart(), receiver);
-        m_virtualMachine.executeScript();
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         m_virtualMachine.restoreExecutionState(state);
-        throw;
-    }
-    const auto completed = !m_virtualMachine.hasYielded();
-    m_virtualMachine.restoreExecutionState(state);
-    return completed;
+    };
+
+    m_virtualMachine.enterScriptFrame(callable.getFunctionStart(), receiver);
+    m_virtualMachine.executeScript();
+
+    return !m_virtualMachine.hasYielded();
 }
 
 void Interpreter::runNativeCallable(
@@ -391,37 +391,30 @@ void Interpreter::runNativeCallable(
     const RuntimeValue& receiver
 ) const {
     auto state = m_virtualMachine.captureExecutionState();
-    const auto restore = [&]() {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         // Scalar native calls retain their existing yield/stop behavior.
         state.running = m_virtualMachine.isRunning();
         state.yielded = m_virtualMachine.hasYielded();
         m_virtualMachine.restoreExecutionState(state);
     };
+
     m_virtualMachine.enterNativeFrame(receiver);
-    try {
-        callback(&m_virtualMachine);
-    } catch (...) {
-        restore();
-        throw;
-    }
-    restore();
+    callback(&m_virtualMachine);
 }
 
 void Interpreter::runNativeStructMethod(const NativeMethod& method) const {
     const auto state = m_virtualMachine.captureExecutionState();
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        m_virtualMachine.restoreExecutionState(state);
+    };
+
     auto invocation = state;
     invocation.yielded = false;
     m_virtualMachine.restoreExecutionState(invocation);
-    try {
-        runNativeCallable(method.getFn());
-        if (m_virtualMachine.hasYielded()) {
-            m_virtualMachine.fault("Struct method calls cannot yield");
-        }
-    } catch (...) {
-        m_virtualMachine.restoreExecutionState(state);
-        throw;
+    runNativeCallable(method.getFn());
+    if (m_virtualMachine.hasYielded()) {
+        m_virtualMachine.fault("Struct method calls cannot yield");
     }
-    m_virtualMachine.restoreExecutionState(state);
 }
 
 void Interpreter::runStructMethod(const Method& method) const {
@@ -473,19 +466,17 @@ InterpreterValue Interpreter::runObjectMethod(
     } else if (method.getReturnType()->isStruct() ||
         std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
         const auto state = m_virtualMachine.captureExecutionState();
+        BOOST_SCOPE_EXIT_ALL(&, this) {
+            m_virtualMachine.restoreExecutionState(state);
+        };
+
         auto invocation = state;
         invocation.yielded = false;
         m_virtualMachine.restoreExecutionState(invocation);
-        try {
-            runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
-            if (m_virtualMachine.hasYielded()) {
-                m_virtualMachine.fault("Aggregate object methods cannot yield");
-            }
-        } catch (...) {
-            m_virtualMachine.restoreExecutionState(state);
-            throw;
+        runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
+        if (m_virtualMachine.hasYielded()) {
+            m_virtualMachine.fault("Aggregate object methods cannot yield");
         }
-        m_virtualMachine.restoreExecutionState(state);
     } else {
         runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
     }
