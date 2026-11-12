@@ -49,8 +49,8 @@ public:
     };
 
     // Raw execution state borrows storage and receiver references; it does not own call values.
-    [[nodiscard]] ExecutionState captureExecutionState() const;
-    void restoreExecutionState(const ExecutionState& state);
+    [[nodiscard]] ExecutionState captureExecutionState() const noexcept;
+    void restoreExecutionState(const ExecutionState& state) noexcept;
     // Arguments are already on the stack; their owner releases them after restoring execution state.
     void enterScriptFrame(NomadIndex address, const RuntimeValue& receiver = RuntimeValue{});
     void enterNativeFrame(const RuntimeValue& receiver = RuntimeValue{});
@@ -350,7 +350,7 @@ private:
     [[nodiscard]] NativeCallFrame beginNativeCall();
     void endNativeCall(const NativeCallFrame& frame);
     [[nodiscard]] ExecutionState beginScriptRun();
-    void restoreScriptRun(const ExecutionState& state);
+    void restoreScriptRun(const ExecutionState& state) noexcept;
     void pushHostArgument(
         const Type* type,
         const RuntimeValue& value,

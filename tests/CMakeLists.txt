@@ -20,6 +20,7 @@ add_executable(
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./EventRegistrationTest.cpp
+    ./ExecutionStateGuardTest.cpp
     ./ExpressionEvaluationTest.cpp
     ./ExpressionResolveTest.cpp
     ./FailingArgumentCopyType.cpp

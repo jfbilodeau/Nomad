@@ -4,14 +4,13 @@
 
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
 
+#include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
-
-#include <boost/scope_exit.hpp>
 
 #include <optional>
 
@@ -85,11 +84,8 @@ NomadString FormatString::format(VirtualMachine* machine) const {
         }
 
         InterpreterCallFrame frame(*machine, *function);
-        const auto state = machine->captureExecutionState();
         {
-            BOOST_SCOPE_EXIT_ALL(&) {
-                machine->restoreExecutionState(state);
-            };
+            const ExecutionStateGuard state(*machine);
 
             if (!machine->executeFunction(*function)) {
                 machine->fault("Format expression calls cannot yield");

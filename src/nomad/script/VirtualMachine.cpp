@@ -227,7 +227,7 @@ void VirtualMachine::pushStorage(const std::span<const RuntimeValue> storage) {
     }
 }
 
-VirtualMachine::ExecutionState VirtualMachine::captureExecutionState() const {
+VirtualMachine::ExecutionState VirtualMachine::captureExecutionState() const noexcept {
     return {
         m_instructionIndex,
         m_stackIndex, 
@@ -239,7 +239,7 @@ VirtualMachine::ExecutionState VirtualMachine::captureExecutionState() const {
     };
 }
 
-void VirtualMachine::restoreExecutionState(const ExecutionState& state) {
+void VirtualMachine::restoreExecutionState(const ExecutionState& state) noexcept {
     restoreScriptRun(state);
     m_yielded = state.yielded;
 }
@@ -444,7 +444,7 @@ VirtualMachine::ExecutionState VirtualMachine::beginScriptRun() {
     return state;
 }
 
-void VirtualMachine::restoreScriptRun(const ExecutionState& state) {
+void VirtualMachine::restoreScriptRun(const ExecutionState& state) noexcept {
     m_instructionIndex = state.instructionIndex;
     m_stackIndex = state.stackIndex;
     m_parameterIndex = state.parameterIndex;

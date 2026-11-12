@@ -62,6 +62,7 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/EnumType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ExecutionStateGuard.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Hub.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InstructionDump.cpp

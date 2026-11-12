@@ -1304,6 +1304,18 @@ receiver, running, and yield state. Snapshots borrow receiver/storage references
 they do not retain values or preserve result/intermediate registers.
 Restoration does not release values in discarded stack slots.
 
+For scoped restoration, include `<nomad/script/ExecutionStateGuard.hpp>` and
+create `const ExecutionStateGuard state(machine)` before changing the VM state.
+The guard restores the complete execution snapshot on normal scope exit and
+exception unwinding. It cannot be copied or moved. The VM and borrowed receiver
+and storage must outlive the guard. `release()` leaves the current execution
+state active without restoring the snapshot.
+
+The guard does not preserve result/intermediate registers or release stack
+values. When using `InterpreterCallFrame`, construct the guard after preparing
+the frame so execution state is restored before the frame releases its arguments.
+Keep a narrower scope when restoration must happen before consuming the result.
+
 `enterScriptFrame(address, receiver)` requires a validated compiled entry address
 and arguments/hidden pointers already on the stack. It starts script execution,
 clears the yield flag, and enters a frame. `executeScript()` executes bytecode

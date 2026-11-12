@@ -18,6 +18,7 @@
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/CompositeType.hpp>
+#include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
@@ -432,10 +433,7 @@ bool Interpreter::runScriptCallable(
     const ScriptCallableBase& callable,
     const RuntimeValue& receiver
 ) const {
-    const auto state = m_virtualMachine.captureExecutionState();
-    BOOST_SCOPE_EXIT_ALL(&, this) {
-        m_virtualMachine.restoreExecutionState(state);
-    };
+    const ExecutionStateGuard state(m_virtualMachine);
 
     m_virtualMachine.enterScriptFrame(callable.getFunctionStart(), receiver);
     m_virtualMachine.executeScript();
@@ -464,12 +462,8 @@ void Interpreter::runSynchronousNativeCallable(
     const RuntimeValue& receiver,
     const NomadStringView yieldMessage
 ) const {
-    const auto state = m_virtualMachine.captureExecutionState();
-    BOOST_SCOPE_EXIT_ALL(&, this) {
-        m_virtualMachine.restoreExecutionState(state);
-    };
-
-    auto invocation = state;
+    const ExecutionStateGuard state(m_virtualMachine);
+    auto invocation = m_virtualMachine.captureExecutionState();
     invocation.yielded = false;
     m_virtualMachine.restoreExecutionState(invocation);
     m_virtualMachine.enterNativeFrame(receiver);
