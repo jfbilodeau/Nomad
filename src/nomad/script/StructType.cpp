@@ -2,8 +2,6 @@
 
 #include <nomad/script/StructType.hpp>
 
-#include <boost/scope_exit.hpp>
-
 #include <algorithm>
 #include <utility>
 
@@ -68,34 +66,27 @@ void StructType::initValue(RuntimeValue* value) const {
     if (size == 0) {
         return;
     }
-    auto committed = false;
-    const auto rollback = [&]() noexcept {
-        if (!committed) {
-            freeValue(value);
-            std::fill_n(value, size, RuntimeValue{});
-        }
-    };
-    BOOST_SCOPE_EXIT_ALL(&) {
-        rollback();
-    };
+    try {
+        auto offset = NomadIndex{0};
+        for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+            const auto* property = getPropertyAt(index);
+            if (property->asNativeProperty() != nullptr) {
+                continue;
+            }
 
-    auto offset = NomadIndex{0};
-    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
-        const auto* property = getPropertyAt(index);
-        if (property->asNativeProperty() != nullptr) {
-            continue;
-        }
+            const auto* type = property->getValueType();
+            const auto fieldSize = type->getSize();
+            if (fieldSize != 0) {
+                type->initValue(value + offset);
+            }
 
-        const auto* type = property->getValueType();
-        const auto fieldSize = type->getSize();
-        if (fieldSize != 0) {
-            type->initValue(value + offset);
+            offset += fieldSize;
         }
-
-        offset += fieldSize;
+    } catch (...) {
+        freeValue(value);
+        std::fill_n(value, size, RuntimeValue{});
+        throw;
     }
-
-    committed = true;
 }
 
 void StructType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
@@ -103,34 +94,27 @@ void StructType::copyValue(const RuntimeValue* source, RuntimeValue* destination
     if (size == 0 || source == destination) {
         return;
     }
-    auto committed = false;
-    const auto rollback = [&]() noexcept {
-        if (!committed) {
-            freeValue(destination);
-            std::fill_n(destination, size, RuntimeValue{});
-        }
-    };
-    BOOST_SCOPE_EXIT_ALL(&) {
-        rollback();
-    };
+    try {
+        auto offset = NomadIndex{0};
+        for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
+            const auto* property = getPropertyAt(index);
+            if (property->asNativeProperty() != nullptr) {
+                continue;
+            }
 
-    auto offset = NomadIndex{0};
-    for (auto index = NomadIndex{0}; index < getPropertyCount(); ++index) {
-        const auto* property = getPropertyAt(index);
-        if (property->asNativeProperty() != nullptr) {
-            continue;
-        }
+            const auto* type = property->getValueType();
+            const auto fieldSize = type->getSize();
+            if (fieldSize != 0) {
+                type->copyValue(source + offset, destination + offset);
+            }
 
-        const auto* type = property->getValueType();
-        const auto fieldSize = type->getSize();
-        if (fieldSize != 0) {
-            type->copyValue(source + offset, destination + offset);
+            offset += fieldSize;
         }
-
-        offset += fieldSize;
+    } catch (...) {
+        freeValue(destination);
+        std::fill_n(destination, size, RuntimeValue{});
+        throw;
     }
-
-    committed = true;
 }
 
 void StructType::freeValue(RuntimeValue* value) const noexcept {

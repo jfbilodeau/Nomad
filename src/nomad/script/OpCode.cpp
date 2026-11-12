@@ -251,33 +251,9 @@ void op_call_script_method(VirtualMachine* interpreter) {
     interpreter->callScriptMethod(interpreter->nextIndex());
 }
 
-namespace {
-
-void freeCreationArguments(VirtualMachine* machine, const Constructor* constructor) {
-    auto distance = NomadIndex{0};
-    for (const auto& parameter : constructor->getParameters()) {
-        const auto size = parameter.type->getSize();
-        if (size != 0) {
-            parameter.type->freeValue(machine->getStackAddress(distance + size - 1));
-        }
-        distance += size;
-    }
-}
-
-} // namespace
-
 void op_create_script_object(VirtualMachine* interpreter) {
     const auto constructorId = CallableId{interpreter->nextId()};
-    const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
-    auto committed = false;
-    BOOST_SCOPE_EXIT_ALL(&) {
-        if (!committed) {
-            freeCreationArguments(interpreter, constructor);
-        }
-    };
-
     interpreter->getResult().setObjectValue(interpreter->createScriptObject(constructorId));
-    committed = true;
 }
 
 void op_create_script_struct(VirtualMachine* interpreter) {
@@ -286,17 +262,9 @@ void op_create_script_struct(VirtualMachine* interpreter) {
     auto* destination = distance == NOMAD_INVALID_INDEX
         ? nullptr : interpreter->peekStack(distance).getStorageAddress();
     const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
-    auto committed = false;
-    BOOST_SCOPE_EXIT_ALL(&) {
-        if (!committed) {
-            freeCreationArguments(interpreter, constructor);
-        }
-    };
-
     RuntimeValueGuard destinationGuard(*constructor->getConstructedType(), destination);
     interpreter->createScriptStruct(destination, constructorId);
     destinationGuard.release();
-    committed = true;
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -309,16 +277,7 @@ void op_call_native_method(VirtualMachine* interpreter) {
 
 void op_create_native_object(VirtualMachine* interpreter) {
     const auto constructorId = CallableId{interpreter->nextId()};
-    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
-    auto committed = false;
-    BOOST_SCOPE_EXIT_ALL(&) {
-        if (!committed) {
-            freeCreationArguments(interpreter, constructor);
-        }
-    };
-
     interpreter->getResult().setObjectValue(interpreter->createNativeObject(constructorId));
-    committed = true;
 }
 
 void op_create_native_struct(VirtualMachine* interpreter) {
@@ -327,17 +286,9 @@ void op_create_native_struct(VirtualMachine* interpreter) {
     auto* destination = distance == NOMAD_INVALID_INDEX
         ? nullptr : interpreter->peekStack(distance).getStorageAddress();
     const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
-    auto committed = false;
-    BOOST_SCOPE_EXIT_ALL(&) {
-        if (!committed) {
-            freeCreationArguments(interpreter, constructor);
-        }
-    };
-
     RuntimeValueGuard destinationGuard(*constructor->getConstructedType(), destination);
     interpreter->createNativeStruct(destination, constructorId);
     destinationGuard.release();
-    committed = true;
 }
 
 void op_native_property_get(VirtualMachine* interpreter) {

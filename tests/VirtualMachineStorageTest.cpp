@@ -654,7 +654,7 @@ BOOST_AUTO_TEST_CASE(native_struct_creation_restores_hidden_slots_frames_and_own
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
-BOOST_AUTO_TEST_CASE(constructor_opcode_rollback_releases_only_failed_destinations_and_arguments) {
+BOOST_AUTO_TEST_CASE(constructor_opcodes_preserve_arguments_and_release_failed_struct_destinations) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     auto fail = false;
@@ -765,8 +765,8 @@ BOOST_AUTO_TEST_CASE(constructor_opcode_rollback_releases_only_failed_destinatio
                         return NomadString{error.what()} == "Expected constructor rollback failure";
                     }
                 );
-                BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
-                BOOST_TEST(machine.peekStack(0).getObjectValue() == nullptr);
+                BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 2U);
+                BOOST_TEST(machine.peekStack(0).getObjectValue() == argument.getObjectValue());
                 if (structure && type->getSize() != 0) {
                     BOOST_TEST(destination[1].getObjectValue() == nullptr);
                 }
@@ -786,13 +786,10 @@ BOOST_AUTO_TEST_CASE(constructor_opcode_rollback_releases_only_failed_destinatio
                     type->freeValue(&machine.getResult());
                 }
 
-                auto copiedArgument = machine.popValue();
-                runtime.getStringType()->freeValue(&copiedArgument);
             }
 
-            if (fail) {
-                machine.pop1();
-            }
+            auto copiedArgument = machine.popValue();
+            runtime.getStringType()->freeValue(&copiedArgument);
 
             if (layout.receiverOffset.has_value()) {
                 machine.pop1();

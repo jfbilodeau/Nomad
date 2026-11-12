@@ -1600,32 +1600,44 @@ BOOST_AUTO_TEST_CASE(constructors_accept_heterogeneous_arguments_and_type_specif
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 
-BOOST_AUTO_TEST_CASE(constructor_faults_and_null_results_release_object_arguments) {
+BOOST_AUTO_TEST_CASE(constructor_faults_and_null_results_do_not_unwind_bytecode_arguments) {
     for (const auto returnsNull : {false, true}) {
         Runtime runtime;
         const auto* type = registerClass(runtime, "Example");
+        RuntimeValue* failedArgument = nullptr;
         BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
             .parameters = {{runtime.getStringType()->getId(), "text", ""}},
-            .function = [returnsNull](VirtualMachine*) {
+            .function = [&](VirtualMachine* active) {
+                failedArgument = active->getParameterStorage(0, 1).data();
                 if (returnsNull) {
                     return;
                 }
+
                 throw NomadException("Constructor failed");
             },
             .documentation = ""
         }).isValid());
         const auto id = compileConstruction(runtime, "return new Example (\"hello\".toUpper)");
         const auto before = NomadObject::getLiveObjectCount();
-        auto machine = runtime.createVirtualMachine();
         for (auto attempt = 0; attempt < 2; ++attempt) {
+            auto machine = runtime.createVirtualMachine();
+            failedArgument = nullptr;
             if (returnsNull) {
                 BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), VirtualMachineException);
             } else {
                 BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(id), {}), NomadException);
             }
+
+            BOOST_REQUIRE(failedArgument != nullptr);
+            BOOST_TEST(failedArgument->getStringValue() == "HELLO");
+            BOOST_TEST(failedArgument->getObjectValue()->getReferenceCount() == 1U);
+            // Fatal execution leaves bytecode arguments behind; reclaim this test's abandoned slot.
+            runtime.getStringType()->freeValue(failedArgument);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
+
         {
+            auto machine = runtime.createVirtualMachine();
             const Interpreter contextEvaluator(*machine);
             InterpreterContext context(contextEvaluator);
             BOOST_TEST(!context.getInterpreter().execute("new Example (\"hello\".toUpper)", context));

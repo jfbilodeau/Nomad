@@ -1317,6 +1317,9 @@ and restores the enclosing execution state before releasing and popping argument
 The typed Interpreter APIs perform these steps and enforce existing yield rules.
 Scalar script calls retain their suspension-capable scheduler path. VM faults
 remain fatal; these primitives are not fault-recovery or value-unwinding APIs.
+Execution exceptions do not unwind bytecode-owned arguments, including arguments
+to a failed constructor. Do not resume a failed execution or assume all abandoned
+stack values have been released.
 
 `pushStorage(storage)` copies contiguous raw slots onto the VM stack without
 retaining references. The caller supplies ownership for those slots and must

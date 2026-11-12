@@ -1,6 +1,6 @@
 # RAII cleanup plan
 
-Status: Step 4 is implemented and validated on Windows Debug, awaiting review.
+Status: Step 4 review corrections are implemented and validated on Windows Debug.
 Next slice: Step 5A; implementation and filesystem cleanup-error policy require
 separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
@@ -15,9 +15,10 @@ validation, remaining catches, and next slice, then stop for review.
 
 ## 1. Goal and scope
 
-Replace cleanup-only `catch (...)` handlers with automatic ownership, scoped
-state restoration, or explicit rollback/commit objects. In particular, remove
-the duplicated cleanup performed in both a catch handler and the success path.
+Remove duplicated cleanup performed in both a catch handler and the success
+path through automatic ownership or scoped state restoration. Retain ordinary
+`try`/`catch` when success and exception paths perform distinct work; replacing
+every catch-all is not a goal.
 
 The review found 63 handlers in 26 first-party C++ files:
 
@@ -105,6 +106,10 @@ describe roles, not approved public APIs.
 
 - Separate unconditional scope exit from rollback-unless-committed. A failed
   operation can require cleanup that would be wrong on success.
+- Keep exception-only rollback in readable `try`/`catch` blocks rather than
+  introducing scope guards and commit flags solely to remove a catch.
+- Execution exceptions remain fatal. Constructor opcodes do not unwind argument
+  ownership on failure; ordinary successful bytecode still releases arguments.
 - Prefer specialized VM guards over a universal guard with mode flags and
   type-condition branches.
 - For unconditional simple local restoration, use `BOOST_SCOPE_EXIT` or
@@ -405,61 +410,46 @@ Outcome:
 
 Stop for review.
 
-### Step 4: replace failure-only rollback handlers
+### Step 4: retain distinct exception paths
 
-Use explicit commit/disarm transactions for:
+Review decision: retain the original exception-only `try`/`catch` in struct
+initialization/copy, field-layout finalization, iterator advancement, closure
+creation, and format-expression evaluation. These paths do not duplicate normal
+cleanup, so scope guards and commit flags make them less readable.
 
-- Struct initialization/copy rollback and clearing all destination slots.
-- Composite layout state while resolving recursive layouts.
-- Partial iterator-current values when virtual advancement throws.
-- Constructor opcode arguments and partial struct destinations.
-- Heterogeneous closure capture buffers before transfer into a closure.
-- Clearing an interpreter evaluation result only when evaluation fails.
-
-Successful constructor bytecode still owns its normal cleanup; do not free its
-arguments twice. Partial capture cleanup needs trusted type/offset metadata and
-must remain safe if construction or allocation fails.
+Remove `freeCreationArguments` and constructor-opcode failure cleanup of
+arguments: execution exceptions remain fatal, not recoverable argument-unwinding
+paths. Preserve partial struct-destination guards and ordinary successful
+bytecode argument cleanup. Indexer scope guards still deduplicate normal and
+exceptional cleanup and are unchanged.
 
 Acceptance: first/middle/last failure positions, nested and empty structs,
 recursive layout failure/retry, iterator failure, closure transfer, and direct
 clear-on-failure lifecycle checks pass without changing successful behavior.
 
-Outcome:
+Reviewed outcome (supersedes the initial guard conversion):
 
-- Replaced all ten failure-only rollback catches with Boost.ScopeExit
-  commit/disarm guards and existing typed value guards. Struct lifecycle failure
-  still releases resources and clears every destination slot. Successful
-  constructor bytecode retains ownership of its ordinary argument cleanup.
-- Recursive field-layout failure resets unresolved state. Iterator advancement
-  releases partial output on exceptions without marking iteration completed.
-  Dynamic format evaluation clears partial context results on failure and
-  preserves successful output and existing post-format context cleanup.
-- Closure creation prevalidates and caches capture sizes before acquiring owned
-  values. Rollback uses that cache rather than querying potentially throwing
-  metadata. Ownership transfers only after successful closure construction.
-  The cache adds one metadata-buffer allocation for a nonempty capture list.
-- Added regressions for nested layout failure/retry, recursive layout rollback,
-  iterator partial-output failure and retry, constructor opcode success/failure
-  for native/script classes and nonempty/empty structs, closure construction
-  rejection after capture copying, and partial interpreter-result cleanup.
-  Existing first/middle/last nested lifecycle and capture-copy failures also pass.
-- Windows Debug CMake Tools CTest passed `nomad_test_language` (35.29 s),
-  `nomad_test_remaining` (32.23 s on the final run), and
-  `nomad_value_cleanup_contract` (0.29 s). The tested library is newer than the
-  changed production sources; the final test binary is newer than all changed
-  test sources. The remaining-group log confirms the new rollback regressions
-  and existing nested lifecycle/capture-copy cases executed.
-- The initial language run exposed an incorrect new test expectation about
-  successful post-format context cleanup; corrected the assertion without
-  changing production behavior. An optional Windows CRT allocation-denial probe
-  caused diagnostic recursion and then a stalled test run. Removed the probe
-  and its hook changes; no test process remained running before final validation.
-  Direct out-of-memory fault injection is not validated. Constructor rejection
-  after copying and ordinary ownership transfer are covered. These results are
-  unit tests, not gameplay or cross-platform validation.
-- The first-party catch-all count is now 7, down from 17: two filesystem
-  transactions remain for Steps 5A/5B, plus five intentional exception-handling
-  boundaries. No filesystem behavior was changed in this slice.
+- Restored all six exception-only catches, preserving lifecycle resource release
+  and destination clearing, layout retry, iterator partial-output cleanup,
+  closure capture rollback, and evaluation-result clearing.
+- Removed closure capture-size caching and its extra allocation, and removed the
+  test that required metadata queries to fail after copying.
+- Removed constructor-opcode argument rollback. Native/script class and
+  nonempty/empty struct opcode tests verify that arguments remain owned after
+  failure; the test harness explicitly reclaims them without resuming execution.
+  Successful argument cleanup and partial struct-destination cleanup still pass.
+- Retained layout-retry, iterator-failure, interpreter-result, nested lifecycle,
+  and closure-copy regression coverage. The compiled constructor-failure test
+  now uses a fresh VM per failed execution and checks abandoned argument ownership
+  rather than asserting automatic unwinding.
+- Windows Debug CMake Tools CTest passed `nomad_test_language` (85.08 s),
+  `nomad_test_remaining` (65.96 s), and `nomad_value_cleanup_contract` (0.24 s).
+  Direct out-of-memory injection, gameplay, and cross-platform behavior are not
+  validated.
+- The first-party catch-all count is 13: six intentionally retained exception-only
+  paths, two filesystem transactions for Steps 5A/5B, and five diagnostic or
+  exception-handling boundaries. Catch count is an inventory, not a completion
+  target. No filesystem behavior was changed.
 
 Stop for review.
 

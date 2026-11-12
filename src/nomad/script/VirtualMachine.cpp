@@ -986,8 +986,6 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(
 
     const auto& captures = function->getCaptures();
     std::vector<RuntimeValue> storage;
-    std::vector<NomadIndex> captureSizes;
-    captureSizes.reserve(captures.size());
     auto storageSize = NomadIndex{0};
     for (const auto& capture : captures) {
         if (capture.type == nullptr || capture.type->isVoid()) {
@@ -999,97 +997,86 @@ std::unique_ptr<Closure> VirtualMachine::createClosure(
             fault("Closure capture storage exceeds the maximum slot count");
         }
 
-        captureSizes.push_back(size);
         storageSize += size;
     }
 
     storage.resize(storageSize);
-    auto committed = false;
-    const auto rollback = [&]() noexcept {
-        if (committed) {
-            return;
-        }
-
+    try {
         auto offset = NomadIndex{0};
-        for (auto index = NomadIndex{0}; index < captures.size(); ++index) {
-            const auto size = captureSizes[index];
+        for (const auto& capture : captures) {
+            const auto size = capture.type->getSize();
+            std::span<const RuntimeValue> source;
+            switch (capture.source) {
+                case CaptureSource::Parameter: {
+                    if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
+                        fault("Invalid parameter for closure capture");
+                    }
+
+                    source = getEnclosingParameterStorage(
+                        parent->getParameterOffset(capture.parameterId),
+                        size
+                    );
+                    break;
+                }
+
+                case CaptureSource::Variable: {
+                    if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
+                        fault("Invalid variable for closure capture");
+                    }
+
+                    source = getFunctionVariableStorage(capture.variableId);
+                    break;
+                }
+
+                case CaptureSource::Receiver: {
+                    if (capture.type->isStruct()) {
+                        if (size != 0) {
+                            const auto layout = parent->getCallStorageLayout();
+                            if (!layout.receiverOffset.has_value()) {
+                                fault("Struct receiver capture has no borrowed receiver storage");
+                            }
+
+                            const auto pointer = getEnclosingParameterStorage(*layout.receiverOffset, 1);
+                            source = {pointer[0].getStorageAddress(), size};
+                        }
+
+                        break;
+                    }
+
+                    const auto& receiver = m_stack[m_variableIndex - 1];
+                    if (receiver.getObjectValue() == nullptr) {
+                        fault("Cannot capture a missing enclosing receiver");
+                    }
+
+                    source = {&receiver, 1};
+                    break;
+                }
+
+                default:
+                    fault("Invalid source for closure capture");
+            }
+
             if (size != 0) {
-                captures[index].type->freeValue(storage.data() + offset);
+                capture.type->copyValue(source.data(), storage.data() + offset);
             }
 
             offset += size;
         }
-    };
-    BOOST_SCOPE_EXIT_ALL(&) {
-        rollback();
-    };
 
-    auto offset = NomadIndex{0};
-    for (auto index = NomadIndex{0}; index < captures.size(); ++index) {
-        const auto& capture = captures[index];
-        const auto size = captureSizes[index];
-        std::span<const RuntimeValue> source;
-        switch (capture.source) {
-            case CaptureSource::Parameter: {
-                if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
-                    fault("Invalid parameter for closure capture");
-                }
-
-                source = getEnclosingParameterStorage(
-                    parent->getParameterOffset(capture.parameterId),
-                    size
-                );
-                break;
+        return std::make_unique<Closure>(function, std::move(storage));
+    } catch (...) {
+        auto offset = NomadIndex{0};
+        for (const auto& capture : captures) {
+            const auto size = capture.type->getSize();
+            if (size != 0) {
+                capture.type->freeValue(storage.data() + offset);
             }
 
-            case CaptureSource::Variable: {
-                if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
-                    fault("Invalid variable for closure capture");
-                }
-
-                source = getFunctionVariableStorage(capture.variableId);
-                break;
-            }
-
-            case CaptureSource::Receiver: {
-                if (capture.type->isStruct()) {
-                    if (size != 0) {
-                        const auto layout = parent->getCallStorageLayout();
-                        if (!layout.receiverOffset.has_value()) {
-                            fault("Struct receiver capture has no borrowed receiver storage");
-                        }
-
-                        const auto pointer = getEnclosingParameterStorage(*layout.receiverOffset, 1);
-                        source = {pointer[0].getStorageAddress(), size};
-                    }
-
-                    break;
-                }
-
-                const auto& receiver = m_stack[m_variableIndex - 1];
-                if (receiver.getObjectValue() == nullptr) {
-                    fault("Cannot capture a missing enclosing receiver");
-                }
-
-                source = {&receiver, 1};
-                break;
-            }
-
-            default:
-                fault("Invalid source for closure capture");
+            offset += size;
         }
 
-        if (size != 0) {
-            capture.type->copyValue(source.data(), storage.data() + offset);
-        }
-
-        offset += size;
+        throw;
     }
-
-    auto closure = std::make_unique<Closure>(function, std::move(storage));
-    committed = true;
-
-    return closure;
 }
 
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {
