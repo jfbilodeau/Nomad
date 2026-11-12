@@ -1,8 +1,8 @@
 # RAII cleanup plan
 
-Status: Step 5A reviewed; retain the existing failure-only initialization catch.
-Next slice: Step 5B review against the clarified deduplication goal. Filesystem
-cleanup-error behavior changes require separate approval.
+Status: Steps 5A/5B reviewed; retain the existing filesystem exception paths.
+Next slice: Step 6, inventory reconciliation and integrated validation.
+Filesystem cleanup-error behavior changes require separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
@@ -476,18 +476,32 @@ Reviewed outcome:
 
 Stop for review.
 
-### Step 5B: separate package finalization from emergency cleanup
+### Step 5B: review package finalization and emergency cleanup
 
-Use a package transaction to own staging, temporary archives, and publication
-state. Keep checked publication and previous-output restoration explicit.
+Reviewed outcome:
 
-Do not simply move the existing throwing catch body into a destructor. Preserve
-backup recovery, overwrite and dry-run behavior, and diagnostic visibility for
-both the primary error and secondary cleanup failure.
-
-Acceptance: test staging/archive/publication failure, restoration failure,
-cleanup failure, successful replacement, and dry runs. No destructor throws;
-existing outputs and recovery backups remain safe.
+- Retain the catch in `packageProject`. Normal finalization removes staging
+  after creating the temporary archive and before preserving/replacing an
+  existing output. Failure cleanup removes staging and any temporary archive
+  after an interrupted operation. These are distinct checked phases, despite
+  both attempting staging removal.
+- Moving removal into a scope-exit destructor would change its timing or require
+  a separate decision about reporting filesystem errors without throwing.
+  Extracting a callback merely to wrap the two differently diagnosed removal
+  attempts would not simplify ownership or error handling.
+- Preserve explicit archive publication, backup restoration on publication
+  failure, backup retention when restoration fails, and dry-run behavior.
+  No production or test changes are needed under the clarified goal.
+- Existing tests cover dry runs, successful packaging, forced replacement,
+  staging cleanup after a missing runtime file, and preservation of a previous
+  archive when a module-generation hook fails. Coverage was inspected, not
+  rerun for this documentation-only decision; it does not establish injected
+  publication, backup-restoration, or filesystem-cleanup failure coverage.
+- The existing catch can replace the original exception with a cleanup error
+  and stop before attempting subsequent cleanup. That reporting/recovery policy
+  remains unchanged; revising it is separate work requiring approval.
+- Catch-all count remains 13. Only the plan changed; no C++ build or runtime
+  validation was performed for this review.
 
 Stop for review.
 
@@ -570,7 +584,7 @@ Classify by the handler's behavior when revisiting a site, not its line alone.
 | [ScriptBindingObject.cpp](../../src/nomad/modules/ScriptBindingObject.cpp) | 65; 144 | Step 1B: object ownership; Step 1A pilot: string ownership |
 | [OsModule.cpp](../../src/nomad/os/OsModule.cpp) | 67, 83, 143 | Step 1B: snapshot/string ownership |
 | [ProjectInitializer.cpp](../../src/nomad/project/ProjectInitializer.cpp) | 425 | Keep after Step 5A review: distinct failure-only filesystem rollback |
-| [ProjectPackager.cpp](../../src/nomad/project/ProjectPackager.cpp) | 856 | Step 5B: publication/emergency cleanup |
+| [ProjectPackager.cpp](../../src/nomad/project/ProjectPackager.cpp) | 856 | Keep after Step 5B review: checked finalization and distinct emergency cleanup |
 | [CompositeType.cpp](../../src/nomad/script/CompositeType.cpp) | 291 | Step 4: layout-state rollback |
 | [FormatString.cpp](../../src/nomad/script/FormatString.cpp) | 88; 169 | Step 3B: call-state restoration; Step 1B: dynamic getter ownership |
 | [IteratorObject.cpp](../../src/nomad/script/IteratorObject.cpp) | 26 | Step 4: partial-current rollback |
