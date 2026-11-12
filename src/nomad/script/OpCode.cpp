@@ -268,12 +268,16 @@ void freeCreationArguments(VirtualMachine* machine, const Constructor* construct
 
 void op_create_script_object(VirtualMachine* interpreter) {
     const auto constructorId = CallableId{interpreter->nextId()};
-    try {
-        interpreter->getResult().setObjectValue(interpreter->createScriptObject(constructorId));
-    } catch (...) {
-        freeCreationArguments(interpreter, interpreter->getRuntime()->getConstructor(constructorId));
-        throw;
-    }
+    const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
+    auto committed = false;
+    BOOST_SCOPE_EXIT_ALL(&) {
+        if (!committed) {
+            freeCreationArguments(interpreter, constructor);
+        }
+    };
+
+    interpreter->getResult().setObjectValue(interpreter->createScriptObject(constructorId));
+    committed = true;
 }
 
 void op_create_script_struct(VirtualMachine* interpreter) {
@@ -281,14 +285,18 @@ void op_create_script_struct(VirtualMachine* interpreter) {
     const auto distance = interpreter->nextIndex();
     auto* destination = distance == NOMAD_INVALID_INDEX
         ? nullptr : interpreter->peekStack(distance).getStorageAddress();
-    try {
-        interpreter->createScriptStruct(destination, constructorId);
-    } catch (...) {
-        const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
-        constructor->getConstructedType()->freeValue(destination);
-        freeCreationArguments(interpreter, constructor);
-        throw;
-    }
+    const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
+    auto committed = false;
+    BOOST_SCOPE_EXIT_ALL(&) {
+        if (!committed) {
+            freeCreationArguments(interpreter, constructor);
+        }
+    };
+
+    RuntimeValueGuard destinationGuard(*constructor->getConstructedType(), destination);
+    interpreter->createScriptStruct(destination, constructorId);
+    destinationGuard.release();
+    committed = true;
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -301,13 +309,16 @@ void op_call_native_method(VirtualMachine* interpreter) {
 
 void op_create_native_object(VirtualMachine* interpreter) {
     const auto constructorId = CallableId{interpreter->nextId()};
-    try {
-        interpreter->getResult().setObjectValue(interpreter->createNativeObject(constructorId));
-    } catch (...) {
-        const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
-        freeCreationArguments(interpreter, constructor);
-        throw;
-    }
+    const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
+    auto committed = false;
+    BOOST_SCOPE_EXIT_ALL(&) {
+        if (!committed) {
+            freeCreationArguments(interpreter, constructor);
+        }
+    };
+
+    interpreter->getResult().setObjectValue(interpreter->createNativeObject(constructorId));
+    committed = true;
 }
 
 void op_create_native_struct(VirtualMachine* interpreter) {
@@ -315,14 +326,18 @@ void op_create_native_struct(VirtualMachine* interpreter) {
     const auto distance = interpreter->nextIndex();
     auto* destination = distance == NOMAD_INVALID_INDEX
         ? nullptr : interpreter->peekStack(distance).getStorageAddress();
-    try {
-        interpreter->createNativeStruct(destination, constructorId);
-    } catch (...) {
-        const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
-        constructor->getConstructedType()->freeValue(destination);
-        freeCreationArguments(interpreter, constructor);
-        throw;
-    }
+    const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
+    auto committed = false;
+    BOOST_SCOPE_EXIT_ALL(&) {
+        if (!committed) {
+            freeCreationArguments(interpreter, constructor);
+        }
+    };
+
+    RuntimeValueGuard destinationGuard(*constructor->getConstructedType(), destination);
+    interpreter->createNativeStruct(destination, constructorId);
+    destinationGuard.release();
+    committed = true;
 }
 
 void op_native_property_get(VirtualMachine* interpreter) {

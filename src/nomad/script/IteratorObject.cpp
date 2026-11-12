@@ -2,6 +2,8 @@
 
 #include <nomad/script/IteratorObject.hpp>
 
+#include <boost/scope_exit.hpp>
+
 namespace nomad {
 
 IteratorObject::IteratorObject(const Type* valueType): m_valueType(valueType) {
@@ -21,14 +23,18 @@ bool IteratorObject::moveNext() {
     if (m_completed) {
         return false;
     }
-    try {
-        m_valid = onMoveNext(m_current);
-    } catch (...) {
-        m_valueType->freeValue(&m_current);
-        m_current = RuntimeValue{};
-        throw;
-    }
+    auto committed = false;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        if (!committed) {
+            m_valueType->freeValue(&m_current);
+            m_current = RuntimeValue{};
+        }
+    };
+
+    m_valid = onMoveNext(m_current);
     m_completed = !m_valid;
+    committed = true;
+
     return m_valid;
 }
 

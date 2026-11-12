@@ -71,7 +71,15 @@ public:
         return ClassType::needsFree();
     }
 
-    bool rejectQueries = false;
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
+        ClassType::copyValue(source, destination);
+        if (rejectQueriesAfterCopy) {
+            rejectQueries = true;
+        }
+    }
+
+    mutable bool rejectQueries = false;
+    bool rejectQueriesAfterCopy = false;
 
 private:
     void requireQueriesAllowed() const {
@@ -541,6 +549,14 @@ BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {
     BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(firstId), NomadException);
     BOOST_TEST(!first->isFieldLayoutFinalized());
     BOOST_TEST(!second->isFieldLayoutFinalized());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(
+        firstId, "firstTail", runtime.getIntegerType()
+    ).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(
+        secondId, "secondTail", runtime.getIntegerType()
+    ).isValid());
+    BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(firstId), NomadException);
+
     const auto recordId = runtime.getTypeManager().registerStruct("Record");
     const auto ownerId = runtime.getTypeManager().registerClass("Owner", ClassMode::Closed);
     const auto* record = runtime.getTypeByName("Record")->asStructType();
@@ -551,6 +567,87 @@ BOOST_AUTO_TEST_CASE(inline_cycles_fail_but_reference_cycles_do_not) {
     BOOST_TEST(record->getSize() == 1U);
     BOOST_TEST(record->needsFree());
     BOOST_TEST(!owner->asCompositeType()->isFieldLayoutFinalized());
+}
+
+BOOST_AUTO_TEST_CASE(nested_layout_failure_can_be_retried_without_stale_resolving_state) {
+    Runtime runtime;
+    CleanupLayoutProbeType* field = nullptr;
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<CleanupLayoutProbeType>(
+        "RetryLayoutField", ClassMode::Closed, field
+    ).isValid());
+    const auto innerId = runtime.getTypeManager().registerStruct("RetryLayoutInner");
+    const auto outerId = runtime.getTypeManager().registerStruct("RetryLayoutOuter");
+    const auto* inner = runtime.getTypeByName("RetryLayoutInner")->asStructType();
+    const auto* outer = runtime.getTypeByName("RetryLayoutOuter")->asStructType();
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(innerId, "field", field).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(outerId, "inner", inner).isValid());
+    field->rejectQueries = true;
+    BOOST_CHECK_THROW(runtime.getTypeManager().finalizeCompositeFieldLayout(outerId), NomadException);
+    BOOST_TEST(!inner->isFieldLayoutFinalized());
+    BOOST_TEST(!outer->isFieldLayoutFinalized());
+    field->rejectQueries = false;
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(
+        innerId, "tail", runtime.getIntegerType()
+    ).isValid());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
+    BOOST_TEST(inner->isFieldLayoutFinalized());
+    BOOST_TEST(outer->isFieldLayoutFinalized());
+    BOOST_TEST(inner->getSize() == 2U);
+    BOOST_TEST(outer->getSize() == 2U);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(outerId);
+    BOOST_TEST(outer->getFieldLayouts().size() == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(closure_construction_failure_rolls_back_using_prevalidated_capture_sizes) {
+    Runtime runtime;
+    CleanupLayoutProbeType* field = nullptr;
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass<CleanupLayoutProbeType>(
+        "ClosureLayoutField", ClassMode::Closed, field
+    ).isValid());
+    const auto parentId = runtime.registerScriptFunction("layoutCaptureParent", "captures.nomad", "");
+    auto* parent = runtime.getScriptFunction(parentId);
+    const auto variable = parent->registerVariable("value", field);
+    parent->setReturnType(runtime.getVoidType());
+    auto compiler = runtime.createCompiler();
+    const auto address = compiler->addOpCode(OpCodes::op_nop);
+    parent->setFunctionStart(address);
+    parent->setFunctionEnd(address + 1);
+    const auto descriptorId = runtime.registerScriptFunction("layoutCapture", "captures.nomad", "");
+    auto* descriptor = runtime.getScriptFunction(descriptorId);
+    descriptor->setParentId(parentId);
+    descriptor->createCapture(variable, "value", field);
+    RuntimeValue source{NomadString{"captured layout probe"}};
+    VirtualMachine machine(&runtime, 32);
+    machine.callScriptFunction(address);
+    machine.reserveLocals(1);
+    machine.getLocalStorage(0, 1)[0].copyObjectValue(source);
+    machine.jump(address);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    field->rejectQueriesAfterCopy = true;
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(machine.createClosure(&runtime, descriptorId)),
+        NomadException,
+        [](const auto& error) {
+
+            return NomadString{error.what()} == "Cleanup must not query field metadata";
+        }
+    );
+    BOOST_TEST(field->rejectQueries);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    field->rejectQueries = false;
+    field->rejectQueriesAfterCopy = false;
+    {
+        const auto closure = machine.createClosure(&runtime, descriptorId);
+        BOOST_TEST(closure->getCaptureValue(0).getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == 3U);
+    }
+
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    field->freeValue(machine.getLocalStorage(0, 1).data());
+    machine.returnFunction(1);
+    field->freeValue(&source);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore - 1);
 }
 
 BOOST_AUTO_TEST_CASE(stored_property_address_opcode_borrows_nested_storage_from_a_retained_stack_owner) {

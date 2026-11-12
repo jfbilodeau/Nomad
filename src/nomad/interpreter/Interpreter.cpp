@@ -689,12 +689,17 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     }
     auto* machine = evaluation.getVirtualMachine();
     const RegisterRestoration registers(*machine);
-    try {
-        return expression->evaluate(evaluation);
-    } catch (...) {
-        evaluation.clearResult();
-        throw;
-    }
+    auto committed = false;
+    BOOST_SCOPE_EXIT_ALL(&) {
+        if (!committed) {
+            evaluation.clearResult();
+        }
+    };
+
+    auto result = expression->evaluate(evaluation);
+    committed = true;
+
+    return result;
 }
 
 DynamicFormatResult formatDynamicString(

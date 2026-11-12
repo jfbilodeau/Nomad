@@ -1,13 +1,14 @@
 # RAII cleanup plan
 
-Status: Step 3C is implemented and validated on Windows Debug, awaiting review.
-Next slice: Step 4; implementation requires separate approval.
+Status: Step 4 is implemented and validated on Windows Debug, awaiting review.
+Next slice: Step 5A; implementation and filesystem cleanup-error policy require
+separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
-work. Preserve unrelated worktree changes. Steps 1A, 1B, 2, 3A, 3B, and 3C, the concrete
-value-guard contract, and using Boost.ScopeExit macros have been approved. Later
-slices, commits, and pushes are not authorized.
+work. Preserve unrelated worktree changes. Steps 1A, 1B, 2, 3A, 3B, 3C, and 4,
+the concrete value-guard contract, and using Boost.ScopeExit macros have been
+approved. Later slices, commits, and pushes are not authorized.
 
 Implement one approved slice at a time. After each slice, report the changes,
 validation, remaining catches, and next slice, then stop for review.
@@ -422,6 +423,43 @@ must remain safe if construction or allocation fails.
 Acceptance: first/middle/last failure positions, nested and empty structs,
 recursive layout failure/retry, iterator failure, closure transfer, and direct
 clear-on-failure lifecycle checks pass without changing successful behavior.
+
+Outcome:
+
+- Replaced all ten failure-only rollback catches with Boost.ScopeExit
+  commit/disarm guards and existing typed value guards. Struct lifecycle failure
+  still releases resources and clears every destination slot. Successful
+  constructor bytecode retains ownership of its ordinary argument cleanup.
+- Recursive field-layout failure resets unresolved state. Iterator advancement
+  releases partial output on exceptions without marking iteration completed.
+  Dynamic format evaluation clears partial context results on failure and
+  preserves successful output and existing post-format context cleanup.
+- Closure creation prevalidates and caches capture sizes before acquiring owned
+  values. Rollback uses that cache rather than querying potentially throwing
+  metadata. Ownership transfers only after successful closure construction.
+  The cache adds one metadata-buffer allocation for a nonempty capture list.
+- Added regressions for nested layout failure/retry, recursive layout rollback,
+  iterator partial-output failure and retry, constructor opcode success/failure
+  for native/script classes and nonempty/empty structs, closure construction
+  rejection after capture copying, and partial interpreter-result cleanup.
+  Existing first/middle/last nested lifecycle and capture-copy failures also pass.
+- Windows Debug CMake Tools CTest passed `nomad_test_language` (35.29 s),
+  `nomad_test_remaining` (32.23 s on the final run), and
+  `nomad_value_cleanup_contract` (0.29 s). The tested library is newer than the
+  changed production sources; the final test binary is newer than all changed
+  test sources. The remaining-group log confirms the new rollback regressions
+  and existing nested lifecycle/capture-copy cases executed.
+- The initial language run exposed an incorrect new test expectation about
+  successful post-format context cleanup; corrected the assertion without
+  changing production behavior. An optional Windows CRT allocation-denial probe
+  caused diagnostic recursion and then a stalled test run. Removed the probe
+  and its hook changes; no test process remained running before final validation.
+  Direct out-of-memory fault injection is not validated. Constructor rejection
+  after copying and ordinary ownership transfer are covered. These results are
+  unit tests, not gameplay or cross-platform validation.
+- The first-party catch-all count is now 7, down from 17: two filesystem
+  transactions remain for Steps 5A/5B, plus five intentional exception-handling
+  boundaries. No filesystem behavior was changed in this slice.
 
 Stop for review.
 

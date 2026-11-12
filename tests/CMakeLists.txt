@@ -24,6 +24,8 @@ add_executable(
     ./ExpressionResolveTest.cpp
     ./FailingArgumentCopyType.cpp
     ./FailingArgumentCopyType.hpp
+    ./FailingIteratorObject.cpp
+    ./FailingIteratorObject.hpp
     ./FileSinkTest.cpp
     ./FormatStringCompilerTest.cpp
     ./GameConfigurationTest.cpp
@@ -38,6 +40,7 @@ add_executable(
     ./InterpreterStructPropertyTest.cpp
     ./InterpreterTest.cpp
     ./InterpreterValueTest.cpp
+    ./IteratorObjectTest.cpp
     ./LanguageCallbackEventTest.cpp
     ./LanguageClassTest.cpp
     ./LanguageConstantTest.cpp

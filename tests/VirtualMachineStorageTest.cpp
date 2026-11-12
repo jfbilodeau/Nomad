@@ -50,6 +50,7 @@ int countCallAllocations(
     if (operation == _HOOK_ALLOC || operation == _HOOK_REALLOC) {
         ++callAllocations;
     }
+
     return previousAllocationHook == nullptr ||
         previousAllocationHook(operation, data, size, blockType, request, file, line);
 }
@@ -651,6 +652,165 @@ BOOST_AUTO_TEST_CASE(native_struct_creation_restores_hidden_slots_frames_and_own
     BOOST_TEST(emptyConstructorCalls == 2);
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(constructor_opcode_rollback_releases_only_failed_destinations_and_arguments) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto fail = false;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "rollbackConstructorProbe",
+        [&](VirtualMachine*) {
+            if (fail) {
+                throw NomadException("Expected constructor rollback failure");
+            }
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction("rollbackConstructorTypes",
+        "class ScriptRollbackObject\ntext = \"\"\n"
+        "init input:string\nthis.text = input\nrollbackConstructorProbe\nend\nend\n"
+        "struct ScriptRollbackStruct\ntext = \"\"\n"
+        "init input:string\nthis.text = input\nrollbackConstructorProbe\nend\nend\n"
+        "struct ScriptRollbackEmpty\n"
+        "init input:string\nrollbackConstructorProbe\nend\nend\n"
+        "class NativeRollbackObject\ntext = \"\"\nend\n"
+        "struct NativeRollbackStruct\ntext = \"\"\nend\n"
+        "struct NativeRollbackEmpty\nend\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    const auto* objectType = runtime.getTypeByName("NativeRollbackObject")->asClassType();
+    const auto* structType = runtime.getTypeByName("NativeRollbackStruct")->asStructType();
+    const auto* emptyType = runtime.getTypeByName("NativeRollbackEmpty")->asStructType();
+    const auto stringId = runtime.getStringType()->getId();
+    const auto nativeObjectId = runtime.getTypeManager().registerNativeClassConstructor(objectType->getId(), {
+        .parameters = {{stringId, "input", ""}},
+        .function = [&](VirtualMachine* active) {
+            auto* object = new ScriptObject(objectType);
+            active->getResult().setObjectValue(object);
+            runtime.getStringType()->copyValue(&active->getParameter(0), &object->getStorageValue(0));
+            if (fail) {
+                throw NomadException("Expected constructor rollback failure");
+            }
+        }
+    });
+    const auto nativeStructId = runtime.getTypeManager().registerNativeStructConstructor(structType->getId(), {
+        .parameters = {{stringId, "input", ""}},
+        .function = [&](VirtualMachine* active) {
+            runtime.getStringType()->copyValue(
+                &active->getParameter(0), &active->getStorageParameter(1, 0)
+            );
+            if (fail) {
+                throw NomadException("Expected constructor rollback failure");
+            }
+        }
+    });
+    const auto nativeEmptyId = runtime.getTypeManager().registerNativeStructConstructor(emptyType->getId(), {
+        .parameters = {{stringId, "input", ""}},
+        .function = [&](VirtualMachine*) {
+            if (fail) {
+                throw NomadException("Expected constructor rollback failure");
+            }
+        }
+    });
+    BOOST_REQUIRE(nativeObjectId.isValid() && nativeStructId.isValid() && nativeEmptyId.isValid());
+    runtime.initializeScripts();
+    auto compiler = runtime.createCompiler();
+    const std::array constructors{
+        runtime.getTypeByName("ScriptRollbackObject")->asCompositeType()->getConstructors()[0]->getId(),
+        runtime.getTypeByName("ScriptRollbackStruct")->asCompositeType()->getConstructors()[0]->getId(),
+        runtime.getTypeByName("ScriptRollbackEmpty")->asCompositeType()->getConstructors()[0]->getId(),
+        nativeObjectId,
+        nativeStructId,
+        nativeEmptyId
+    };
+    for (const auto constructorId : constructors) {
+        const auto* constructor = runtime.getConstructor(constructorId);
+        const auto* type = constructor->getConstructedType();
+        const auto structure = type->isStruct();
+        const auto native = constructor->asNativeConstructor() != nullptr;
+        const auto layout = constructor->getCallStorageLayout();
+        const auto address = compiler->addOpCode(structure
+            ? (native ? OpCodes::op_create_native_struct : OpCodes::op_create_script_struct)
+            : (native ? OpCodes::op_create_native_object : OpCodes::op_create_script_object));
+        compiler->addId(constructorId.id);
+        if (structure) {
+            compiler->addIndex(layout.receiverOffset.value_or(NOMAD_INVALID_INDEX));
+        }
+
+        for (const auto failure : {false, true}) {
+            fail = failure;
+            RuntimeValue argument{NomadString{"constructor argument"}};
+            const RuntimeValueGuard argumentGuard(*runtime.getStringType(), &argument);
+            std::array<RuntimeValue, 3> destination;
+            destination.front().setIntegerValue(37);
+            destination.back().setIntegerValue(41);
+            const auto objectsBefore = NomadObject::getLiveObjectCount();
+            VirtualMachine machine(&runtime, 64);
+            machine.pushInteger(29);
+            machine.pushThis();
+            if (layout.receiverOffset.has_value()) {
+                machine.pushStorageAddress(&destination[1]);
+            }
+
+            machine.pushObjectValue(argument);
+            const auto prepared = machine.captureExecutionState();
+            if (fail) {
+                BOOST_CHECK_EXCEPTION(
+                    executeInstruction(runtime, machine, address),
+                    NomadException,
+                    [](const auto& error) {
+
+                        return NomadString{error.what()} == "Expected constructor rollback failure";
+                    }
+                );
+                BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
+                BOOST_TEST(machine.peekStack(0).getObjectValue() == nullptr);
+                if (structure && type->getSize() != 0) {
+                    BOOST_TEST(destination[1].getObjectValue() == nullptr);
+                }
+            } else {
+                executeInstruction(runtime, machine, address);
+                BOOST_TEST(machine.peekStack(0).getObjectValue() == argument.getObjectValue());
+                const auto empty = structure && type->getSize() == 0;
+                BOOST_TEST(argument.getObjectValue()->getReferenceCount() == (empty ? 2U : 3U));
+                if (structure) {
+                    if (!empty) {
+                        BOOST_TEST(destination[1].getObjectValue() == argument.getObjectValue());
+                    }
+
+                    type->freeValue(empty ? nullptr : &destination[1]);
+                } else {
+                    BOOST_REQUIRE(machine.getResult().getObjectValue() != nullptr);
+                    type->freeValue(&machine.getResult());
+                }
+
+                auto copiedArgument = machine.popValue();
+                runtime.getStringType()->freeValue(&copiedArgument);
+            }
+
+            if (fail) {
+                machine.pop1();
+            }
+
+            if (layout.receiverOffset.has_value()) {
+                machine.pop1();
+            }
+
+            machine.popThis();
+            BOOST_TEST(machine.peekStack(0).getIntegerValue() == 29);
+            const auto restored = machine.captureExecutionState();
+            BOOST_TEST(restored.parameterIndex == prepared.parameterIndex);
+            BOOST_TEST(restored.variableIndex == prepared.variableIndex);
+            BOOST_TEST(restored.receiver.getObjectValue() == prepared.receiver.getObjectValue());
+            BOOST_TEST(restored.stackIndex == 1U);
+            BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(destination.front().getIntegerValue() == 37);
+            BOOST_TEST(destination.back().getIntegerValue() == 41);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        }
+    }
 }
 
 BOOST_AUTO_TEST_CASE(scalar_suspension_keeps_owned_arguments_until_host_resumption) {

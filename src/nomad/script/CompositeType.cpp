@@ -7,6 +7,8 @@
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <algorithm>
 #include <exception>
 #include <limits>
@@ -260,38 +262,44 @@ void CompositeType::finalizeFieldLayout() {
         throw NomadException("Inline struct field layout cycle involving '" + getTypeName() + "'");
     }
 
-    m_fieldLayoutState = FieldLayoutState::Resolving;
-    try {
-        auto size = NomadIndex{0};
-        std::vector<StoredFieldLayout> fields;
-        fields.reserve(m_properties.size());
-        for (const auto& property : m_properties) {
-            if (property->asNativeProperty() != nullptr) {
-                continue;
-            }
-            const auto* type = property->getValueType();
-            if (type->getStorage() == TypeStorage::Struct) {
-                const auto* composite = type->asCompositeType();
-                if (composite == nullptr) {
-                    throw NomadException("Cannot finalize field '" + getTypeName() + "." + property->getName() +
-                        "': inline struct type has no composite metadata");
-                }
-                getRuntime()->getTypeManager().finalizeCompositeFieldLayout(composite->getId());
-            }
-            const auto fieldSize = type->getSize();
-            if (fieldSize > std::numeric_limits<NomadIndex>::max() - size) {
-                throw NomadException("Field storage size exceeds the maximum slot count at '" + property->getName() + "'");
-            }
-            fields.push_back({type, size, fieldSize});
-            size += fieldSize;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        if (!isFieldLayoutFinalized()) {
+            m_fieldLayoutState = FieldLayoutState::Unresolved;
         }
-        m_fieldLayouts = std::move(fields);
-        m_fieldStorageSize = size;
-        m_fieldLayoutState = FieldLayoutState::Finalized;
-    } catch (...) {
-        m_fieldLayoutState = FieldLayoutState::Unresolved;
-        throw;
+    };
+
+    m_fieldLayoutState = FieldLayoutState::Resolving;
+    auto size = NomadIndex{0};
+    std::vector<StoredFieldLayout> fields;
+    fields.reserve(m_properties.size());
+    for (const auto& property : m_properties) {
+        if (property->asNativeProperty() != nullptr) {
+            continue;
+        }
+
+        const auto* type = property->getValueType();
+        if (type->getStorage() == TypeStorage::Struct) {
+            const auto* composite = type->asCompositeType();
+            if (composite == nullptr) {
+                throw NomadException("Cannot finalize field '" + getTypeName() + "." + property->getName() +
+                    "': inline struct type has no composite metadata");
+            }
+
+            getRuntime()->getTypeManager().finalizeCompositeFieldLayout(composite->getId());
+        }
+
+        const auto fieldSize = type->getSize();
+        if (fieldSize > std::numeric_limits<NomadIndex>::max() - size) {
+            throw NomadException("Field storage size exceeds the maximum slot count at '" + property->getName() + "'");
+        }
+
+        fields.push_back({type, size, fieldSize});
+        size += fieldSize;
     }
+
+    m_fieldLayouts = std::move(fields);
+    m_fieldStorageSize = size;
+    m_fieldLayoutState = FieldLayoutState::Finalized;
 }
 
 } // namespace nomad

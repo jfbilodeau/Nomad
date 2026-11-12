@@ -438,6 +438,52 @@ BOOST_AUTO_TEST_CASE(partial_dynamic_getter_failures_release_owned_outputs_in_al
     BOOST_TEST(getterCalls == 9);
 }
 
+BOOST_AUTO_TEST_CASE(dynamic_format_evaluation_clears_partial_results_and_preserves_successful_output) {
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    auto fail = false;
+    BOOST_REQUIRE(runtime.registerDynamicVariable(
+        "partialEvaluationValue",
+        {},
+        [&](VirtualMachine*, RuntimeValue& value) {
+            value.setStringValue("evaluation output");
+            context.setResult(runtime.getStringType(), value);
+            if (fail) {
+                throw NomadException("Expected format evaluation failure");
+            }
+        },
+        runtime.getStringType(),
+        ""
+    ).isValid());
+    machine->setIntegerResult(41);
+    machine->setIntegerIntermediate(43);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (const auto failure : {true, false, true}) {
+        fail = failure;
+        if (fail) {
+            BOOST_CHECK_THROW(
+                static_cast<void>(interpreter.formatString(
+                    "{partialEvaluationValue}", context, "evaluation.nomad", 1, 1
+                )),
+                NomadException
+            );
+            BOOST_TEST(context.getResult() == nullptr);
+        } else {
+            const auto result = interpreter.formatString(
+                "{partialEvaluationValue}", context, "evaluation.nomad", 1, 1
+            );
+            BOOST_TEST(result.text == "evaluation output");
+            BOOST_TEST(context.getResult() == nullptr);
+        }
+
+        BOOST_TEST(machine->getIntegerResult() == 41);
+        BOOST_TEST(machine->getIntegerIntermediate() == 43);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(struct_formatting_uses_type_names_and_complete_field_captures_in_both_modes) {
     const NomadString declarations =
         "struct FormatEmpty\nend\n"
