@@ -1,7 +1,7 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 and 2 implemented and verified in Windows Debug. Awaiting Step 2
-review. Steps 3 through 9 are not started.
+Status: Steps 1 through 3 implemented and verified in Windows Debug. Awaiting
+Step 3 review. Steps 4 through 9 are not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -180,6 +180,28 @@ Verification:
 - Valid native and script object/struct calls retain their results and mutations.
 
 Stop for review.
+
+#### Step 3 execution record
+
+November 12, 2026:
+
+- Shared method lookup, argument validation, and receiver compatibility in one
+  resolution path. Folded the now-single-use receiver validator into that path.
+- Shared compiled-range and implementation-kind validation separately, after
+  the specialized object/struct receiver-category checks.
+- Preserved validation precedence: method ID, arguments, receiver compatibility,
+  receiver category, then method implementation. No public API or lower-level
+  call-frame validation changed.
+- Extended the existing host validation regression with competing invalid
+  conditions and exact error messages for both method categories, including
+  uncompiled class methods. Existing assertions check that rejected calls leave
+  callback counts, receiver values, stack, and registers unchanged.
+- Direct baseline CTest `nomad_test_remaining` passed. The Windows Debug
+  `nomad_test` build passed; rebuilt CTest `nomad_test_language` passed
+  (38.06 seconds) and `nomad_test_remaining` passed (38.84 seconds).
+- No sanitizer, other-platform, or gameplay validation was performed.
+- Next step after review: Step 4, consolidating synchronous native invocation
+  while preserving scalar-native suspension and existing method fault messages.
 
 ### Step 4: Give synchronous native invocation one implementation
 

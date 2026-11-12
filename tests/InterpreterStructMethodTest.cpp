@@ -609,8 +609,17 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
         .name = "classOnly", .parameters = {}, .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++calls; }
     });
+    const auto uncompiledClassId = runtime.getTypeManager().registerScriptClassMethod(
+        classId,
+        "uncompiledClass",
+        {},
+        "uncompiled-class.nomad",
+        "return 1"
+    );
     BOOST_REQUIRE(methodId.isValid() && functionId.isValid() && uncompiledId.isValid() && classMethodId.isValid());
+    BOOST_REQUIRE(uncompiledClassId.isValid());
     runtime.getScriptCallable(uncompiledId)->setReturnType(runtime.getIntegerType());
+    runtime.getScriptCallable(uncompiledClassId)->setReturnType(runtime.getIntegerType());
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     const std::array<RuntimeValue, 1> source{RuntimeValue{NomadInteger{17}}};
@@ -636,6 +645,45 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
         std::invalid_argument);
     BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, functionId, {})),
         std::invalid_argument);
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(interpreter.runObjectMethod(receiver, functionId, {&number, 1})),
+        std::invalid_argument,
+        [](const auto& error) { return NomadString{error.what()} == "Unknown method id"; }
+    );
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(interpreter.runStructMethod(classReceiver, methodId, {})),
+        std::invalid_argument,
+        [](const auto& error) {
+            return NomadString{error.what()} == "Incorrect argument count for callable 'read'";
+        }
+    );
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(interpreter.runObjectMethod(receiver, classMethodId, {&number, 1})),
+        std::invalid_argument,
+        [](const auto& error) {
+            return NomadString{error.what()} == "Incorrect argument count for callable 'classOnly'";
+        }
+    );
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(interpreter.runStructMethod(classReceiver, uncompiledId, {})),
+        std::invalid_argument,
+        [](const auto& error) { return NomadString{error.what()} == "Method receiver type does not match its owner"; }
+    );
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(interpreter.runObjectMethod(receiver, uncompiledId, {})),
+        std::invalid_argument,
+        [](const auto& error) { return NomadString{error.what()} == "Object method calls require a class receiver"; }
+    );
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(interpreter.runStructMethod(classReceiver, uncompiledClassId, {})),
+        std::invalid_argument,
+        [](const auto& error) { return NomadString{error.what()} == "Struct method calls require a struct receiver"; }
+    );
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(interpreter.runObjectMethod(classReceiver, uncompiledClassId, {})),
+        std::invalid_argument,
+        [](const auto& error) { return NomadString{error.what()} == "Method 'uncompiledClass' is not compiled"; }
+    );
     BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, methodId, {})),
         std::invalid_argument);
     const std::array extraArguments{number, number};

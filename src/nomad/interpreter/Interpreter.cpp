@@ -88,16 +88,48 @@ void validateCallArguments(
 
 }
 
-void validateMethodReceiver(
+const Method& resolveMethod(
     const Runtime& runtime,
-    const Method& method,
-    const Type* receiverType
+    const Type* receiverType,
+    const CallableId methodId,
+    const std::span<const InterpreterValue> arguments
 ) {
-    const auto* ownerType = method.getClassType();
-    if (receiverType == nullptr || ownerType == nullptr || receiverType->getRuntime() != &runtime ||
-        ownerType->getRuntime() != &runtime || !ownerType->acceptsArgument(receiverType)) {
+    const auto* method = runtime.getMethod(methodId);
+    if (method == nullptr) {
+        throw std::invalid_argument("Unknown method id");
+    }
+
+    validateCallArguments(runtime, *method, arguments);
+    const auto* ownerType = method->getClassType();
+    if (
+        receiverType == nullptr ||
+        ownerType == nullptr ||
+        receiverType->getRuntime() != &runtime ||
+        ownerType->getRuntime() != &runtime ||
+        !ownerType->acceptsArgument(receiverType)
+    ) {
         throw std::invalid_argument("Method receiver type does not match its owner");
     }
+
+    return *method;
+}
+
+void validateMethodImplementation(const Method& method) {
+    const auto* script = method.asScriptMethod();
+    if (
+        script != nullptr &&
+        (
+            script->getFunctionStart() == NOMAD_INVALID_INDEX ||
+            script->getFunctionStart() >= script->getFunctionEnd()
+        )
+    ) {
+        throw std::invalid_argument("Method '" + method.getName() + "' is not compiled");
+    }
+
+    if (script == nullptr && method.asNativeMethod() == nullptr) {
+        throw std::invalid_argument("Unsupported method implementation");
+    }
+
 }
 
 const Method& resolveStructMethod(
@@ -106,24 +138,14 @@ const Method& resolveStructMethod(
     const CallableId methodId,
     const std::span<const InterpreterValue> arguments
 ) {
-    const auto* method = runtime.getMethod(methodId);
-    if (method == nullptr) {
-        throw std::invalid_argument("Unknown method id");
-    }
-    validateCallArguments(runtime, *method, arguments);
-    validateMethodReceiver(runtime, *method, receiverType);
+    const auto& method = resolveMethod(runtime, receiverType, methodId, arguments);
     if (!receiverType->isStruct()) {
         throw std::invalid_argument("Struct method calls require a struct receiver");
     }
-    const auto* script = method->asScriptMethod();
-    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd())) {
-        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
-    }
-    if (script == nullptr && method->asNativeMethod() == nullptr) {
-        throw std::invalid_argument("Unsupported method implementation");
-    }
-    return *method;
+
+    validateMethodImplementation(method);
+
+    return method;
 }
 
 const Method& resolveObjectMethod(
@@ -132,24 +154,14 @@ const Method& resolveObjectMethod(
     const CallableId methodId,
     const std::span<const InterpreterValue> arguments
 ) {
-    const auto* method = runtime.getMethod(methodId);
-    if (method == nullptr) {
-        throw std::invalid_argument("Unknown method id");
-    }
-    validateCallArguments(runtime, *method, arguments);
-    validateMethodReceiver(runtime, *method, receiverType);
+    const auto& method = resolveMethod(runtime, receiverType, methodId, arguments);
     if (!receiverType->isClass()) {
         throw std::invalid_argument("Object method calls require a class receiver");
     }
-    const auto* script = method->asScriptMethod();
-    if (script != nullptr && (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd())) {
-        throw std::invalid_argument("Method '" + method->getName() + "' is not compiled");
-    }
-    if (script == nullptr && method->asNativeMethod() == nullptr) {
-        throw std::invalid_argument("Unsupported method implementation");
-    }
-    return *method;
+
+    validateMethodImplementation(method);
+
+    return method;
 }
 
 struct StoredPropertySelection {
