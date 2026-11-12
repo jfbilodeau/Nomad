@@ -1,14 +1,15 @@
 # RAII cleanup plan
 
-Status: Steps 5A/5B reviewed; retain the existing filesystem exception paths.
-Next slice: Step 6, inventory reconciliation and integrated validation.
+Status: Step 6 complete; final inventory reconciled and Windows Debug validation
+passed. Awaiting final review; no further implementation slice is scheduled.
 Filesystem cleanup-error behavior changes require separate approval.
 Baseline: the first-party catch-all review of November 11, 2026.
 
 This plan follows the completed lifecycle exception-safety and caller-cleanup
-work. Preserve unrelated worktree changes. Steps 1A, 1B, 2, 3A, 3B, 3C, and 4,
-the concrete value-guard contract, and using Boost.ScopeExit macros have been
-approved. Later slices, commits, and pushes are not authorized.
+work. Preserve unrelated worktree changes. Implementation through Step 4 and its
+review corrections, the Step 5A/5B reviews, Step 6 validation, the concrete
+value-guard contract, and using Boost.ScopeExit macros have been approved.
+Additional behavior changes, commits, and pushes are not authorized.
 
 Implement one approved slice at a time. After each slice, report the changes,
 validation, remaining catches, and next slice, then stop for review.
@@ -516,6 +517,50 @@ Stop for review.
 5. Report runtime-test results separately from compilation, platform checks,
    sanitizer results, and any untested gameplay behavior.
 
+Outcome:
+
+- Reconciled all 63 baseline catches in 26 files. Forty-six now use typed owners
+  or scope cleanup, and four constructor-opcode catches were removed under the
+  fatal-execution contract. Thirteen catches remain intentionally: six distinct
+  exception-only rollback paths, two filesystem exception paths, and five
+  diagnostic/exception-capture boundaries.
+- Rechecked first-party C++ sources, headers, applications, modules, samples,
+  templates, tests, and ancillary tooling directories, excluding build/vendor
+  trees. No new or unexplained catch-all sites were found. The baseline table
+  below records the final disposition of every original site.
+- Verified that embedding documentation matches typed guard ownership, lifecycle
+  failure guarantees, and fatal bytecode argument behavior. No public API or
+  production changes were needed for this final review.
+- All 13 CTest entries passed through CMake Tools using Windows Debug:
+
+  | Test | Result | Seconds |
+  | --- | --- | ---: |
+  | `nomad_value_cleanup_contract` | Passed | 0.22 |
+  | `nomad_test_bindings` | Passed | 1.21 |
+  | `nomad_test_audio` | Passed | 9.64 |
+  | `nomad_test_language` | Passed | 31.29 |
+  | `nomad_test_tooling` | Passed | 29.28 |
+  | `nomad_test_remaining` | Passed | 93.39 |
+  | `nomad_module_script_staging` | Passed | 0.32 |
+  | `nomad_compiler_exports` | Passed | 0.56 |
+  | `nomad_lsp_process` | Passed | 3.49 |
+  | `nomad_module_runtime_integration` | Passed | 30.18 |
+  | `nomad_distribution_integration` | Passed | 33.49 |
+  | `nomad_package_graphical_smoke` | Passed | 7.16 |
+  | `nomad_package_integration` | Passed | 21.07 |
+
+- Unit tests and process/integration tests were run in separate batches.
+  Packaging/distribution tests ran serially. Test and language-library timestamps
+  are newer than their corresponding C++ sources; these are results against
+  current binaries, not compilation-only checks.
+- Graphical packaging smoke compiles, packages, extracts, and executes the fixture
+  using SDL dummy video/audio drivers and checks its completion marker. It is
+  headless runtime validation, not visual inspection or interactive gameplay.
+- Linux Debug, Linux sanitizer, other platform builds, and direct out-of-memory
+  injection were not run in this Windows session. Existing filesystem rollback
+  error-reporting limitations documented in Steps 5A/5B are unchanged.
+- Only this plan changed during Step 6. No commits or pushes were made.
+
 Stop for final review. Commit or push only on explicit request.
 
 ## 5. Validation and completion criteria
@@ -555,8 +600,10 @@ Completion requires:
 - No extra reference leaks, double releases, or changed source/destination
   preservation guarantees.
 - No new allocations in paths already covered by zero-allocation tests.
-- No changed yield/resume, error propagation, or native callback behavior.
-- No throwing cleanup destructors or silently lost cleanup errors.
+- Preserve reviewed yield/resume, error propagation, and native callback behavior;
+  constructor-opcode argument unwinding is intentionally absent after Step 4 review.
+- No newly introduced throwing cleanup destructors or silently lost cleanup
+  errors; existing filesystem reporting limitations remain documented.
 - Current binaries passing the selected tests and build checks.
 - Existing unrelated worktree changes preserved.
 
@@ -569,29 +616,29 @@ Classify by the handler's behavior when revisiting a site, not its line alone.
 
 | File | Catch lines | Disposition |
 | --- | --- | --- |
-| [KeyValueObject.cpp](../../src/nomad/collections/KeyValueObject.cpp) | 20, 42 | Step 1B: construction ownership |
-| [ListObject.cpp](../../src/nomad/collections/ListObject.cpp) | 68 | Step 1B: insertion ownership |
-| [MapObject.cpp](../../src/nomad/collections/MapObject.cpp) | 59, 106, 165 | Step 1B: temporary and insertion ownership |
-| [Compiler.cpp](../../src/nomad/compiler/Compiler.cpp) | 2290 | Step 1B: initial-value ownership |
-| [Expression.cpp](../../src/nomad/compiler/Expression.cpp) | 351, 1287, 1766, 2121, 2150 | Step 1B: owned expression/getter results |
-| [LoopStatement.cpp](../../src/nomad/compiler/LoopStatement.cpp) | 145 | Step 1B: loop-default ownership |
+| [KeyValueObject.cpp](../../src/nomad/collections/KeyValueObject.cpp) | 20, 42 | Removed 2: typed construction ownership (1B) |
+| [ListObject.cpp](../../src/nomad/collections/ListObject.cpp) | 68 | Removed 1: typed insertion ownership (1B) |
+| [MapObject.cpp](../../src/nomad/collections/MapObject.cpp) | 59, 106, 165 | Removed 3: typed temporary/insertion ownership (1B) |
+| [Compiler.cpp](../../src/nomad/compiler/Compiler.cpp) | 2290 | Removed 1: typed initial-value ownership (1B) |
+| [Expression.cpp](../../src/nomad/compiler/Expression.cpp) | 351, 1287, 1766, 2121, 2150 | Removed 5: typed expression/getter results (1B) |
+| [LoopStatement.cpp](../../src/nomad/compiler/LoopStatement.cpp) | 145 | Removed 1: typed loop-default ownership (1B) |
 | [Decompiler.cpp](../../src/nomad/debug/Decompiler.cpp) | 506 | Keep: nonstandard exception to diagnostic text |
 | [Game.cpp](../../src/nomad/game/Game.cpp) | 47, 138, 149 | Keep: diagnostic text, worker exception capture, combined failure handling |
-| [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp) | 306; 384, 407, 424, 488; 707 | Steps 1B, 3B, 4 respectively |
-| [InterpreterObjectReceiver.cpp](../../src/nomad/interpreter/InterpreterObjectReceiver.cpp) | 73 | Step 1B: owned getter result |
-| [LogModule.cpp](../../src/nomad/log/LogModule.cpp) | 277 | Step 1B: logger reference ownership |
-| [Logger.cpp](../../src/nomad/log/Logger.cpp) | 193 | Step 2: delivery-state restoration |
-| [ScriptBindingObject.cpp](../../src/nomad/modules/ScriptBindingObject.cpp) | 65; 144 | Step 1B: object ownership; Step 1A pilot: string ownership |
-| [OsModule.cpp](../../src/nomad/os/OsModule.cpp) | 67, 83, 143 | Step 1B: snapshot/string ownership |
+| [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp) | 306; 384, 407, 424, 488; 707 | Removed 5: result ownership (1B) and execution-state scopes (3B). Keep 707: exception-only result rollback |
+| [InterpreterObjectReceiver.cpp](../../src/nomad/interpreter/InterpreterObjectReceiver.cpp) | 73 | Removed 1: typed getter result ownership (1B) |
+| [LogModule.cpp](../../src/nomad/log/LogModule.cpp) | 277 | Removed 1: typed logger reference ownership (1B) |
+| [Logger.cpp](../../src/nomad/log/Logger.cpp) | 193 | Removed 1: delivery-state scope (2) |
+| [ScriptBindingObject.cpp](../../src/nomad/modules/ScriptBindingObject.cpp) | 65; 144 | Removed 2: object owner (1B) and typed string guard (1A) |
+| [OsModule.cpp](../../src/nomad/os/OsModule.cpp) | 67, 83, 143 | Removed 3: snapshot/string ownership (1B) |
 | [ProjectInitializer.cpp](../../src/nomad/project/ProjectInitializer.cpp) | 425 | Keep after Step 5A review: distinct failure-only filesystem rollback |
 | [ProjectPackager.cpp](../../src/nomad/project/ProjectPackager.cpp) | 856 | Keep after Step 5B review: checked finalization and distinct emergency cleanup |
-| [CompositeType.cpp](../../src/nomad/script/CompositeType.cpp) | 291 | Step 4: layout-state rollback |
-| [FormatString.cpp](../../src/nomad/script/FormatString.cpp) | 88; 169 | Step 3B: call-state restoration; Step 1B: dynamic getter ownership |
-| [IteratorObject.cpp](../../src/nomad/script/IteratorObject.cpp) | 26 | Step 4: partial-current rollback |
-| [OpCode.cpp](../../src/nomad/script/OpCode.cpp) | 70; 267, 280, 300, 314 | Step 3C: indexer arguments; Step 4: construction rollback |
-| [StructType.cpp](../../src/nomad/script/StructType.cpp) | 83, 109 | Step 4: typed destination rollback |
-| [VirtualMachine.cpp](../../src/nomad/script/VirtualMachine.cpp) | 299, 406, 494; 534, 560, 641, 660, 690, 830; 715; 881; 1073 | Steps 3B, 3A, 2, 3C, 4 respectively |
-| [ModuleHostImpl.cpp](../../src/nomad/system/ModuleHostImpl.cpp) | 325 | Step 2: temporary callback reset |
-| [ObjectConstructionTest.cpp](../../tests/ObjectConstructionTest.cpp) | 93 | Step 3C: owned argument block |
+| [CompositeType.cpp](../../src/nomad/script/CompositeType.cpp) | 291 | Keep: distinct exception-only layout-state rollback |
+| [FormatString.cpp](../../src/nomad/script/FormatString.cpp) | 88; 169 | Removed 2: call-state scope (3B) and dynamic getter ownership (1B) |
+| [IteratorObject.cpp](../../src/nomad/script/IteratorObject.cpp) | 26 | Keep: distinct exception-only partial-current rollback |
+| [OpCode.cpp](../../src/nomad/script/OpCode.cpp) | 70; 267, 280, 300, 314 | Removed 5: indexer argument scope (3C); four constructor argument catches removed under fatal-execution contract (4) |
+| [StructType.cpp](../../src/nomad/script/StructType.cpp) | 83, 109 | Keep 2: exception-only resource release and destination clearing |
+| [VirtualMachine.cpp](../../src/nomad/script/VirtualMachine.cpp) | 299, 406, 494; 534, 560, 641, 660, 690, 830; 715; 881; 1073 | Removed 11: execution scopes (3B), native scopes (3A), receiver scope (2), argument scope (3C). Keep 1073: exception-only closure capture rollback |
+| [ModuleHostImpl.cpp](../../src/nomad/system/ModuleHostImpl.cpp) | 325 | Removed 1: temporary callback scope (2) |
+| [ObjectConstructionTest.cpp](../../tests/ObjectConstructionTest.cpp) | 93 | Removed 1: argument-block ownership (3C) |
 | [ValueCleanupContractTest.cpp](../../tests/ValueCleanupContractTest.cpp) | 59 | Keep: unexpected nonstandard exception to process diagnostic |
-| [VirtualMachineStorageTest.cpp](../../tests/VirtualMachineStorageTest.cpp) | 632, 668, 681, 712 | Step 2: CRT allocation-hook restoration |
+| [VirtualMachineStorageTest.cpp](../../tests/VirtualMachineStorageTest.cpp) | 632, 668, 681, 712 | Removed 4: CRT allocation-hook scopes (2) |
