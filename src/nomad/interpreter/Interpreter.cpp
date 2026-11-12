@@ -459,7 +459,11 @@ void Interpreter::runNativeCallable(
     callback(&m_virtualMachine);
 }
 
-void Interpreter::runNativeStructMethod(const NativeMethod& method) const {
+void Interpreter::runSynchronousNativeCallable(
+    const NativeFunctionFn& callback,
+    const RuntimeValue& receiver,
+    const NomadStringView yieldMessage
+) const {
     const auto state = m_virtualMachine.captureExecutionState();
     BOOST_SCOPE_EXIT_ALL(&, this) {
         m_virtualMachine.restoreExecutionState(state);
@@ -468,9 +472,10 @@ void Interpreter::runNativeStructMethod(const NativeMethod& method) const {
     auto invocation = state;
     invocation.yielded = false;
     m_virtualMachine.restoreExecutionState(invocation);
-    runNativeCallable(method.getFn());
+    m_virtualMachine.enterNativeFrame(receiver);
+    callback(&m_virtualMachine);
     if (m_virtualMachine.hasYielded()) {
-        m_virtualMachine.fault("Struct method calls cannot yield");
+        m_virtualMachine.fault(NomadString{yieldMessage});
     }
 }
 
@@ -480,7 +485,11 @@ void Interpreter::runStructMethod(const Method& method) const {
             m_virtualMachine.fault("Struct method calls cannot yield");
         }
     } else {
-        runNativeStructMethod(*method.asNativeMethod());
+        runSynchronousNativeCallable(
+            method.asNativeMethod()->getFn(),
+            RuntimeValue{},
+            "Struct method calls cannot yield"
+        );
     }
 }
 
@@ -522,18 +531,11 @@ InterpreterValue Interpreter::runObjectMethod(
         }
     } else if (method.getReturnType()->isStruct() ||
         std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
-        const auto state = m_virtualMachine.captureExecutionState();
-        BOOST_SCOPE_EXIT_ALL(&, this) {
-            m_virtualMachine.restoreExecutionState(state);
-        };
-
-        auto invocation = state;
-        invocation.yielded = false;
-        m_virtualMachine.restoreExecutionState(invocation);
-        runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
-        if (m_virtualMachine.hasYielded()) {
-            m_virtualMachine.fault("Aggregate object methods cannot yield");
-        }
+        runSynchronousNativeCallable(
+            method.asNativeMethod()->getFn(),
+            receiver.getValue(),
+            "Aggregate object methods cannot yield"
+        );
     } else {
         runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
     }

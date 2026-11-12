@@ -1090,6 +1090,167 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
     BOOST_TEST(calls == 9);
 }
 
+BOOST_AUTO_TEST_CASE(native_object_method_completion_restores_synchronous_state_but_preserves_scalar_suspension) {
+    Runtime runtime;
+    const auto emptyId = runtime.getTypeManager().registerStruct("NativeCompletionEmpty");
+    const auto* emptyType = runtime.getTypeByName("NativeCompletionEmpty");
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    const auto ownerId = runtime.getTypeManager().registerClass("NativeCompletionOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("NativeCompletionOwner")->asClassType();
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
+    const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(ownerId, {
+        .parameters = {},
+        .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
+    });
+    enum class Completion {
+        Return = 1,
+        Stop,
+        Yield,
+        Throw
+    };
+
+    auto completion = Completion::Return;
+    NomadObject* expectedReceiver = nullptr;
+    const auto callback = [&](VirtualMachine* active) {
+        BOOST_TEST(active->getThis() == expectedReceiver);
+        BOOST_TEST(!active->hasYielded());
+        active->setIntegerIntermediate(99);
+        switch (completion) {
+            case Completion::Return:
+                active->setIntegerResult(37);
+                break;
+
+            case Completion::Stop:
+                active->stop(RuntimeValue{NomadInteger{37}});
+                break;
+
+            case Completion::Yield:
+                active->yield(RuntimeValue{NomadInteger{37}});
+                break;
+
+            case Completion::Throw:
+                active->yield(RuntimeValue{NomadInteger{37}});
+                throw std::runtime_error("Native object completion failed");
+        }
+
+    };
+    const auto argumentMethodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "consume", .parameters = {{emptyId, "value", ""}},
+        .returnTypeId = runtime.getIntegerType()->getId(), .function = callback
+    });
+    const auto resultMethodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "produce", .parameters = {}, .returnTypeId = emptyId, .function = callback
+    });
+    const auto scalarPauseId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "scalarPause", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); }
+    });
+    const auto scalarStopId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "scalarStop", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) { active->stop(RuntimeValue{NomadInteger{37}}); }
+    });
+    BOOST_REQUIRE(constructorId.isValid() && argumentMethodId.isValid() && resultMethodId.isValid());
+    BOOST_REQUIRE(scalarPauseId.isValid() && scalarStopId.isValid());
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    {
+        auto machine = runtime.createVirtualMachine();
+        const Interpreter interpreter(*machine);
+        const auto receiver = interpreter.construct(constructorId, {});
+        const auto enclosingReceiver = interpreter.construct(constructorId, {});
+        expectedReceiver = receiver.getValue().getObjectValue();
+        const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
+        const auto initialState = machine->captureExecutionState();
+        machine->pushInteger(1234);
+        const std::array callerStates{
+            std::pair{false, false},
+            std::pair{true, false},
+            std::pair{false, true}
+        };
+        for (const auto methodId : {argumentMethodId, resultMethodId}) {
+            const auto arguments = methodId == argumentMethodId ?
+                std::span<const InterpreterValue>{&empty, 1} : std::span<const InterpreterValue>{};
+            for (const auto outcome : {Completion::Return, Completion::Stop, Completion::Yield, Completion::Throw}) {
+                completion = outcome;
+                for (const auto& [running, yielded] : callerStates) {
+                    auto state = machine->captureExecutionState();
+                    state.running = running;
+                    state.yielded = yielded;
+                    state.receiver = enclosingReceiver.getValue();
+                    machine->restoreExecutionState(state);
+                    machine->setIntegerResult(41);
+                    machine->setIntegerIntermediate(43);
+                    if (completion == Completion::Yield) {
+                        BOOST_CHECK_EXCEPTION(
+                            static_cast<void>(interpreter.runObjectMethod(receiver, methodId, arguments)),
+                            VirtualMachineException,
+                            [](const auto& error) {
+
+                                return NomadString{error.what()} == "Aggregate object methods cannot yield";
+                            }
+                        );
+                    } else if (completion == Completion::Throw) {
+                        BOOST_CHECK_EXCEPTION(
+                            static_cast<void>(interpreter.runObjectMethod(receiver, methodId, arguments)),
+                            std::runtime_error,
+                            [](const auto& error) {
+
+                                return NomadString{error.what()} == "Native object completion failed";
+                            }
+                        );
+                    } else {
+                        const auto result = interpreter.runObjectMethod(receiver, methodId, arguments);
+                        if (methodId == argumentMethodId) {
+                            BOOST_TEST(result.getValue().getIntegerValue() == 37);
+                        } else {
+                            BOOST_TEST(result.getType() == emptyType);
+                            BOOST_TEST(result.getStorage().data() == nullptr);
+                        }
+
+                    }
+
+                    const auto restored = machine->captureExecutionState();
+                    BOOST_TEST(restored.running == state.running);
+                    BOOST_TEST(restored.yielded == state.yielded);
+                    BOOST_TEST(restored.instructionIndex == state.instructionIndex);
+                    BOOST_TEST(restored.stackIndex == state.stackIndex);
+                    BOOST_TEST(restored.parameterIndex == state.parameterIndex);
+                    BOOST_TEST(restored.variableIndex == state.variableIndex);
+                    BOOST_TEST(machine->getThis() == enclosingReceiver.getValue().getObjectValue());
+                    BOOST_TEST(machine->getIntegerResult() == 41);
+                    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                    BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                    BOOST_TEST(expectedReceiver->getReferenceCount() == 1U);
+                }
+
+            }
+
+        }
+
+        for (const auto methodId : {scalarPauseId, scalarStopId}) {
+            auto state = machine->captureExecutionState();
+            state.running = true;
+            state.yielded = true;
+            machine->restoreExecutionState(state);
+            const auto result = interpreter.runObjectMethod(receiver, methodId, {});
+            BOOST_TEST(result.getValue().getIntegerValue() == 37);
+            BOOST_TEST(!machine->isRunning());
+            BOOST_TEST(machine->hasYielded() == (methodId == scalarPauseId));
+            BOOST_TEST(machine->getThis() == enclosingReceiver.getValue().getObjectValue());
+            BOOST_TEST(machine->captureExecutionState().stackIndex == state.stackIndex);
+            BOOST_TEST(machine->getIntegerResult() == 41);
+            BOOST_TEST(machine->getIntegerIntermediate() == 43);
+            BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+        }
+
+        machine->pop1();
+        machine->restoreExecutionState(initialState);
+    }
+
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
 BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_and_results) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;

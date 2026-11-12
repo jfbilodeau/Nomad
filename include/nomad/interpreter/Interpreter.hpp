@@ -138,7 +138,11 @@ private:
         const NativeFunctionFn& callback,
         const RuntimeValue& receiver = RuntimeValue{}
     ) const;
-    void runNativeStructMethod(const NativeMethod& method) const;
+    void runSynchronousNativeCallable(
+        const NativeFunctionFn& callback,
+        const RuntimeValue& receiver,
+        NomadStringView yieldMessage
+    ) const;
     void runStructMethod(const Method& method) const;
     [[nodiscard]] InterpreterValue runObjectMethod(
         const Method& method,

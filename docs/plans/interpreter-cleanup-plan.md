@@ -1,7 +1,7 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 through 3 implemented and verified in Windows Debug. Awaiting
-Step 3 review. Steps 4 through 9 are not started.
+Status: Steps 1 through 4 implemented and verified in Windows Debug. Awaiting
+Step 4 review. Steps 5 through 9 are not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -229,6 +229,35 @@ Verification:
 - Confirm scalar-native behavior has not been made synchronous accidentally.
 
 Stop for review.
+
+#### Step 4 execution record
+
+November 12, 2026:
+
+- Struct methods and aggregate object methods now use one synchronous-native
+  invocation path, with one execution-state capture and unconditional restoration.
+- The shared path clears only the invocation's initial yield flag, enters the
+  native frame directly, invokes the callback, and rejects yielding with the
+  existing category-specific fault message. Removed the struct-only wrapper and
+  redundant nested scalar-native state guard.
+- Scalar-native invocation remains separate and unchanged. The contextual fault
+  message is passed as a string view and materialized only on failure.
+- Extended struct regressions for normal completion, stop, and exceptions after
+  yield, checking stopped/running/yielded caller states and complete restoration.
+  Existing native/script yield-rejection tests remain in place.
+- Added object regressions for aggregate-argument and aggregate-result methods
+  across normal completion, stop, yield, and exceptions after yield. Checked
+  receiver binding, prior state, stack/frame indices, registers, reference counts,
+  empty values, and unchanged scalar-native yield/stop behavior.
+- Existing reentry and partial-copy failure regressions passed with the shared
+  path.
+- Direct baseline CTest `nomad_test_remaining` passed. Windows Debug
+  `nomad_test` build passed; rebuilt CTest `nomad_test_language` passed
+  (33.39 seconds) and `nomad_test_remaining` passed (39.38 seconds).
+- No sanitizer, other-platform, or gameplay validation was performed.
+- Next step after review: Step 5's design gate. Compare ordinary scalar,
+  aggregate, and closure execution and agree on the frame ownership/restoration
+  sequence before changing script invocation.
 
 ### Step 5: Consolidate ordinary script-function execution
 
