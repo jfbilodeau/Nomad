@@ -1,8 +1,7 @@
 # Interpreter cleanup plan
 
-Status: Step 1 edits implemented; rebuilt-test validation blocked by an unrelated
-compilation error. Stopped after two unsuccessful test-build attempts.
-Steps 2 through 9 are not started.
+Status: Steps 1 and 2 implemented and verified in Windows Debug. Awaiting Step 2
+review. Steps 3 through 9 are not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -99,9 +98,10 @@ November 12, 2026:
   results as post-change validation. The new regression cases have not run.
 - Other test files became modified during this step, including the failing
   struct test. Preserve those concurrent changes; they are not this step's work.
-- Next action: resolve the test-build blocker with approval, rebuild, and rerun
-  the two CTest groups. After Step 1 validation and review, Step 2 removes double
-  property traversal and duplicated assignment.
+- Resolved during Step 2: the callback registration was moved out of the macro
+  by concurrent work. No edit to the struct test was needed for this plan.
+  The test executable subsequently built and both affected CTest groups passed,
+  including the Step 1 regression cases.
 
 ### Step 2: Resolve properties once and centralize assignment
 
@@ -133,6 +133,32 @@ Verification:
   traversal and no intermediate property-ID allocation.
 
 Stop for review.
+
+#### Step 2 execution record
+
+November 12, 2026:
+
+- Named paths now accumulate the selected type and physical offset in one
+  traversal. Removed the intermediate property-ID vector and second traversal.
+- Single-ID access resolves its property directly. Removed the obsolete private
+  span-of-ID overloads from the interpreter interface.
+- Assignment validation and physical assignment each have one implementation.
+  Immutable replacement validates before copying, then delegates mutation of
+  its copied storage to the same assignment operation used by borrowed setters.
+  Preserved storage-width validation order for each public overload.
+- Added host-API regressions for nested offsets, ID and name access, whole-struct
+  replacement, unchanged snapshots/sibling fields, empty receivers/fields,
+  malformed paths, invalid owners, mismatched types before copying, and failures
+  at each receiver/assignment/result copy stage.
+- Initial regression execution caught test snapshots being kept alive beyond
+  the existing reference-count assertion. Limited those new snapshots to their
+  own scope; retained the original ownership assertions.
+- Windows Debug `nomad_test` build passed. CTest `nomad_test_language` passed
+  (37.56 seconds); after the test-lifetime correction, `nomad_test_remaining`
+  passed (42.05 seconds). Results cover the rebuilt implementation and tests.
+- No sanitizer, other-platform, or gameplay validation was performed.
+- Next step after review: Step 3, sharing common method metadata validation while
+  keeping specialized object/struct resolvers and their error precedence.
 
 ### Step 3: Consolidate common method metadata validation
 

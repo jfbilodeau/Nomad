@@ -4358,7 +4358,7 @@ BOOST_AUTO_TEST_CASE(native_temporary_property_paths_preserve_receiver_storage_a
         outer,
         ""
     ).isValid());
-    BOOST_REQUIRE(runtime.registerNativeFunction(
+    const auto temporaryArgument = runtime.registerNativeFunction(
         "temporaryArgument",
         [&](VirtualMachine* active) {
 #ifdef NOMAD_DEBUG
@@ -4369,7 +4369,8 @@ BOOST_AUTO_TEST_CASE(native_temporary_property_paths_preserve_receiver_storage_a
         {},
         runtime.getIntegerType(),
         ""
-    ).isValid());
+    );
+    BOOST_REQUIRE(temporaryArgument.isValid());
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "temporaryReleased",
         [&](VirtualMachine*) {
