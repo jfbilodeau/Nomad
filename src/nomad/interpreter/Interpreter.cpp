@@ -88,7 +88,7 @@ void validateCallArguments(
 
 }
 
-const Type* validateMethodReceiver(
+void validateMethodReceiver(
     const Runtime& runtime,
     const Method& method,
     const Type* receiverType
@@ -98,7 +98,6 @@ const Type* validateMethodReceiver(
         ownerType->getRuntime() != &runtime || !ownerType->acceptsArgument(receiverType)) {
         throw std::invalid_argument("Method receiver type does not match its owner");
     }
-    return receiverType;
 }
 
 const Method& resolveStructMethod(
@@ -112,7 +111,7 @@ const Method& resolveStructMethod(
         throw std::invalid_argument("Unknown method id");
     }
     validateCallArguments(runtime, *method, arguments);
-    receiverType = validateMethodReceiver(runtime, *method, receiverType);
+    validateMethodReceiver(runtime, *method, receiverType);
     if (!receiverType->isStruct()) {
         throw std::invalid_argument("Struct method calls require a struct receiver");
     }
@@ -138,7 +137,7 @@ const Method& resolveObjectMethod(
         throw std::invalid_argument("Unknown method id");
     }
     validateCallArguments(runtime, *method, arguments);
-    receiverType = validateMethodReceiver(runtime, *method, receiverType);
+    validateMethodReceiver(runtime, *method, receiverType);
     if (!receiverType->isClass()) {
         throw std::invalid_argument("Object method calls require a class receiver");
     }
@@ -740,11 +739,12 @@ DynamicFormatResult Interpreter::formatString(
         )) {
             result.text += value->getType()->toString(value->getStorage().data());
         } else {
-            const auto diagnostics = context.getDiagnostics();
-            const auto error = std::ranges::find_if(diagnostics, [](const Diagnostic& diagnostic) {
-                return diagnostic.severity == DiagnosticSeverity::Error;
-            });
-            auto message = error != diagnostics.end() ? error->message : *context.getError();
+            const auto* error = context.getError();
+            if (error == nullptr) {
+                throw NomadBug("Format expression failed without an error diagnostic");
+            }
+
+            auto message = *error;
             constexpr NomadStringView unknownIdentifier = "Unknown identifier: ";
             if (message.starts_with(unknownIdentifier)) {
                 message = "invalid identifier: '" + message.substr(unknownIdentifier.size()) + "'";
@@ -805,7 +805,6 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         const auto parseAsExpression = tokenizer.getLineCount() == 1 && !isAssignment && !isStatement &&
                                        (isValueReturningCall || function == nullptr);
 
-        std::unique_ptr<Statement> statement;
         StatementList statements;
         if (parseAsExpression) {
             auto expression = parser::parseExpression(&compilerContext, callable, &tokenizer);
@@ -814,10 +813,12 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
                 if (auto* member = expression->asNativeExpression()) {
                     member->setAllowVoid(true);
                 }
-                statement = std::make_unique<ExpressionStatement>(
-                    line,
-                    column,
-                    std::move(expression)
+                statements.addStatement(
+                    std::make_unique<ExpressionStatement>(
+                        line,
+                        column,
+                        std::move(expression)
+                    )
                 );
             }
         } else {
@@ -825,7 +826,6 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
                 statements.addStatement(parser::parseLine(&compilerContext, callable, &tokenizer));
             } while (tokenizer.nextLine());
         }
-        statements.addStatement(std::move(statement));
 
         if (compilerContext.hasError()) {
             retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
@@ -848,12 +848,6 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
         evaluation.setResult(statements.evaluate(evaluation));
         return !evaluation.hasError();
-    } catch (const NomadException& exception) {
-        evaluation.clearResult();
-        if (!evaluation.hasError()) {
-            reportInputError(evaluation, source, exception.what());
-        }
-        return false;
     } catch (const std::exception& exception) {
         evaluation.clearResult();
         if (!evaluation.hasError()) {

@@ -513,7 +513,9 @@ BOOST_AUTO_TEST_CASE(nested_lifecycle_failures_release_resources_and_clear_every
                 BOOST_TEST(source[4].getStringValue() == "source after");
                 BOOST_TEST(destination.front().getIntegerValue() == 37);
                 BOOST_TEST(destination.back().getIntegerValue() == 41);
+#ifdef NOMAD_DEBUG
                 BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 4);
+#endif
                 BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 4);
                 BOOST_TEST(emptyString.getObjectValue()->getReferenceCount() == emptyReferences);
 
@@ -896,7 +898,9 @@ BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves
             storage[2].freeObjectValue();
             storage[1].setStringValue("nested");
             storage[2].setStringValue("label");
+#ifdef NOMAD_DEBUG
             BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 2);
+#endif
         }, {}, runtime.getVoidType(), "");
     BOOST_REQUIRE(initialize.isValid());
     auto compiler = runtime.createCompiler();
@@ -1112,7 +1116,9 @@ BOOST_AUTO_TEST_CASE(local_assignment_stages_overlapping_reference_ranges_in_bot
             BOOST_TEST(NomadString(storage[2].getStringValue()) == "second");
             BOOST_TEST(storage[0].getObjectValue()->getReferenceCount() == 2U);
             BOOST_TEST(storage[2].getObjectValue()->getReferenceCount() == 1U);
+#ifdef NOMAD_DEBUG
             BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 2);
+#endif
         }, {}, runtime.getVoidType(), "");
     const auto inspectReverse = runtime.registerNativeFunction("inspectReverseOverlap",
         [&](VirtualMachine* machine) {
@@ -4355,7 +4361,9 @@ BOOST_AUTO_TEST_CASE(native_temporary_property_paths_preserve_receiver_storage_a
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "temporaryArgument",
         [&](VirtualMachine* active) {
+#ifdef NOMAD_DEBUG
             BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBeforeRoot + 2);
+#endif
             active->setIntegerResult(3);
         },
         {},

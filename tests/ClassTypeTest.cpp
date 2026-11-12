@@ -452,10 +452,10 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
     composite->emitInitResult(compiler);
     composite->emitFreeResult(compiler);
     BOOST_REQUIRE(instructions.size() == firstInstruction + 2);
-    BOOST_TEST(runtime.getInstructionId(instructions[firstInstruction].fn) ==
-        runtime.getInstructionId(OpCodes::op_object_init_r));
-    BOOST_TEST(runtime.getInstructionId(instructions[firstInstruction + 1].fn) ==
-        runtime.getInstructionId(OpCodes::op_object_free_r));
+    BOOST_TEST(instructions[firstInstruction].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_init_r)));
+    BOOST_TEST(instructions[firstInstruction + 1].fn ==
+        runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_free_r)));
 
     const auto stored = composite->registerProperty(runtime,
         std::make_unique<Property>(composite, "stored", runtime.getStringType()));

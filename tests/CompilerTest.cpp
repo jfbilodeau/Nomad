@@ -222,8 +222,8 @@ BOOST_AUTO_TEST_CASE(type_initialization_emission_preserves_empty_and_reference_
         OpCodes::op_string_init_r, OpCodes::op_string_init_i
     };
     for (auto index = NomadIndex{0}; index < names.size(); ++index) {
-        BOOST_TEST(runtime.getInstructionId(instructions[firstInstruction + index].fn).id ==
-            runtime.getInstructionId(names[index]).id);
+        BOOST_TEST(instructions[firstInstruction + index].fn ==
+            runtime.getInstructionFn(runtime.getInstructionId(names[index])));
     }
 }
 

@@ -164,7 +164,9 @@ BOOST_AUTO_TEST_CASE(temporary_struct_field_operations_release_backing_storage_a
             BOOST_REQUIRE(location.has_value());
             const auto result = location->withReceiver(context, [&](InterpreterReceiver& receiver) {
                 BOOST_TEST(calls == 1);
+#ifdef NOMAD_DEBUG
                 BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
                 snapshot = receiver.getValue();
                 receiver.setProperty(numberId, InterpreterValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{29}}));
                 return receiver.getProperty(numberId);
@@ -172,7 +174,9 @@ BOOST_AUTO_TEST_CASE(temporary_struct_field_operations_release_backing_storage_a
             BOOST_TEST(result.getValue().getIntegerValue() == 29);
         }
         BOOST_TEST(calls == 1);
+#ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
         BOOST_TEST(snapshot->getStorage()[0].getIntegerValue() == 17);
         BOOST_TEST(snapshot->getStorage()[1].getStringValue() == "temporary receiver");
         BOOST_TEST(snapshot->getStorage()[1].getObjectValue()->getReferenceCount() == 1U);

@@ -553,6 +553,9 @@ BOOST_AUTO_TEST_CASE(interpreter_reports_source_execution_failures_as_diagnostic
     BOOST_REQUIRE(runtime.registerNativeFunction("source.failVoid", [](VirtualMachine*) {
         throw NomadException("source statement failure");
     }, {}, runtime.getVoidType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("source.failBug", [](VirtualMachine*) {
+        throw NomadBug("source invariant failure");
+    }, {}, runtime.getIntegerType(), "").isValid());
     fixture.addFunction("failingSourceScript", "return source.failValue");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto machine = runtime.createVirtualMachine();
@@ -562,13 +565,16 @@ BOOST_AUTO_TEST_CASE(interpreter_reports_source_execution_failures_as_diagnostic
     machine->pushInteger(1234);
     machine->setIntegerResult(41);
     machine->setIntegerIntermediate(43);
-    const std::array<std::pair<NomadString, NomadString>, 6> cases{{
+    const std::array<std::pair<NomadString, NomadString>, 9> cases{{
         {"source.failValue", "source value failure"},
         {"failingSourceScript", "source value failure"},
         {"value = source.failValue", "source value failure"},
         {"source.failVoid", "source statement failure"},
         {"if true\nsource.failVoid\nend", "source statement failure"},
-        {"$(\"{source.failValue}\")", "source value failure"}
+        {"$(\"{source.failValue}\")", "source value failure"},
+        {"source.failBug", "source invariant failure"},
+        {"value = source.failBug", "source invariant failure"},
+        {"$(\"{source.failBug}\")", "source invariant failure"}
     }};
     for (const auto& [text, message] : cases) {
         BOOST_TEST_CONTEXT(text) {

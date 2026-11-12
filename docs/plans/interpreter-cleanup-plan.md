@@ -1,6 +1,8 @@
 # Interpreter cleanup plan
 
-Status: Proposed; no implementation authorized or started.
+Status: Step 1 edits implemented; rebuilt-test validation blocked by an unrelated
+compilation error. Stopped after two unsuccessful test-build attempts.
+Steps 2 through 9 are not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -76,6 +78,30 @@ Verification:
   remains unchanged.
 
 Stop for review.
+
+#### Step 1 execution record
+
+November 12, 2026:
+
+- Applied all four mechanical cleanups above.
+- Extended the existing source-failure regression test with `NomadBug` cases
+  for expression execution, assignment, and dynamic formatting. Existing cases
+  continue to cover standard and Nomad exceptions, diagnostic text/location,
+  cleared results, preserved registers/variables, and subsequent successful use.
+- Before editing, direct CTest runs of `nomad_test_remaining` and
+  `nomad_test_language` passed in Windows Debug.
+- The language library built, but rebuilding `nomad_test` failed twice in
+  [StructTypeTest.cpp](../../tests/StructTypeTest.cpp), line 4361, outside this
+  step's edits.
+  MSVC reports C2121 and cascading syntax errors for a `BOOST_REQUIRE` invocation
+  containing a callback with `#ifdef NOMAD_DEBUG` inside its macro argument.
+- Did not alter that unrelated test, suppress its coverage, or claim baseline
+  results as post-change validation. The new regression cases have not run.
+- Other test files became modified during this step, including the failing
+  struct test. Preserve those concurrent changes; they are not this step's work.
+- Next action: resolve the test-build blocker with approval, rebuild, and rerun
+  the two CTest groups. After Step 1 validation and review, Step 2 removes double
+  property traversal and duplicated assignment.
 
 ### Step 2: Resolve properties once and centralize assignment
 

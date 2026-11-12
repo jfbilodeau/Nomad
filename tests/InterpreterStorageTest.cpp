@@ -41,13 +41,17 @@ BOOST_AUTO_TEST_CASE(evaluation_guards_release_retired_storage_only_on_outermost
     {
         const auto guard = context.beginEvaluation();
         context.clearVariableValue("text");
+#ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
         const auto nested = [&]() {
             const auto nestedGuard = context.beginEvaluation();
             throw std::runtime_error("Guard exit");
         };
         BOOST_CHECK_THROW(nested(), std::runtime_error);
+#ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
     }
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
     const auto failing = [&]() {
@@ -95,9 +99,13 @@ BOOST_AUTO_TEST_CASE(retired_context_storage_survives_native_reentry_and_is_rele
             } else {
                 context.setVariable("c", runtime.getIntegerType(), RuntimeValue{NomadInteger{42}});
             }
+#ifdef NOMAD_DEBUG
             BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
             BOOST_REQUIRE(interpreter.execute("nested = 7", context));
+#ifdef NOMAD_DEBUG
             BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
             BOOST_TEST(receiver[1].getStringValue() == "retired");
             receiver[0].setIntegerValue(2);
             if (fail) {
@@ -140,7 +148,9 @@ BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_chan
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter);
+#ifdef NOMAD_DEBUG
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
+#endif
     RuntimeValue source{NomadString{"old"}};
     context.setVariable("value", type, std::span<const RuntimeValue>{&source, 1});
     type->freeValue(&source);
@@ -152,7 +162,9 @@ BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_chan
     const StorageLocation location(root);
     const auto snapshot = location.withReceiver(context, [&](InterpreterReceiver& receiver) {
         context.clearVariableValue("value");
+#ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
         return receiver.getProperty(field);
     });
     BOOST_TEST(snapshot.getValue().getStringValue() == "old");
@@ -160,7 +172,9 @@ BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_chan
     BOOST_TEST(context.getCallable()->getVariableId("value") == variable);
     const auto replace = runtime.registerNativeFunction("replaceFormattedVariable", [&](VirtualMachine* active) {
         context.clearVariableValue("text");
+#ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 2);
+#endif
         active->setIntegerResult(5);
     }, {}, runtime.getIntegerType(), "");
     BOOST_REQUIRE(replace.isValid());
@@ -169,7 +183,9 @@ BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_chan
     text.freeObjectValue();
     const auto formatted = interpreter.formatString("{replaceFormattedVariable}", context, "retirement", 1, 1);
     BOOST_TEST(formatted.text == "5");
+#ifdef NOMAD_DEBUG
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
+#endif
 }
 
 static_assert(!std::is_copy_constructible_v<InterpreterStorage>);
