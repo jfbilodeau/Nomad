@@ -820,6 +820,43 @@ BOOST_AUTO_TEST_CASE(dynamic_format_recovers_from_syntax_type_and_void_errors_be
     }
 }
 
+BOOST_AUTO_TEST_CASE(dynamic_format_source_lines_do_not_change_expression_shape_or_recovery)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
+    for (const auto line : {NomadIndex{1}, NomadIndex{1000000000}, NomadIndex{0}, NOMAD_INVALID_INDEX}) {
+        const auto nested = interpreter.formatString(
+            "nested {$\"inner {score + 1}\"}",
+            context,
+            "origin.nomad",
+            line,
+            5
+        );
+        BOOST_TEST(nested.text == "nested inner 11");
+        BOOST_TEST(nested.diagnostics.empty());
+        for (const auto* expression : {"1 @", "1 +", "score + true", "1\n2", "\nscore"}) {
+            const auto format = NomadString{"before {"} + expression + "} after {score}";
+            const auto result = interpreter.formatString(format, context, "origin.nomad", line, 5);
+            BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1U);
+            const auto& diagnostic = result.diagnostics.front();
+            BOOST_TEST(diagnostic.sourceName == "origin.nomad");
+            BOOST_TEST(diagnostic.line == line);
+            BOOST_TEST(diagnostic.column == 5U);
+            BOOST_TEST(diagnostic.offset == 7U);
+            BOOST_TEST(diagnostic.length == NomadStringView{expression}.size() + 2);
+            BOOST_TEST(result.text.starts_with("before {"));
+            BOOST_TEST(result.text.ends_with("} after 10"));
+            BOOST_TEST(context.getDiagnostics().empty());
+            BOOST_TEST(context.getResult() == nullptr);
+        }
+
+    }
+
+}
+
 BOOST_AUTO_TEST_CASE(dynamic_format_retains_one_ordered_error_per_invalid_expression_and_recovers)
 {
     Runtime runtime;

@@ -5,6 +5,7 @@
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
@@ -13,6 +14,7 @@
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <cmath>
+#include <stdexcept>
 
 using namespace nomad;
 
@@ -34,6 +36,114 @@ BOOST_AUTO_TEST_CASE(tokenizer_tokenizes_indented_lines_and_comments)
 BOOST_AUTO_TEST_CASE(tokenizer_requires_compiler_context)
 {
     BOOST_CHECK_THROW(Tokenizer(nullptr, "test.nomad", "score = 1"), NomadBug);
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_source_origins_preserve_physical_text_navigation_and_reset)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const NomadString source{"\n# comment\n  first = 1\n\nsecond = 2"};
+    for (const auto firstLine : {NomadIndex{1}, NomadIndex{1000000000}}) {
+        CompilerContext context(compiler.get());
+        Tokenizer tokens(&context, "fragment.nomad", source, firstLine);
+        BOOST_TEST(tokens.getSource() == source);
+        BOOST_TEST(tokens.getLineCount() == 5U);
+        BOOST_TEST(tokens.getLineIndex() == firstLine - 1);
+        for (auto iteration = 0; iteration < 2; ++iteration) {
+            BOOST_REQUIRE(tokens.nextLine());
+            BOOST_TEST(tokens.getLineIndex() == firstLine + 2);
+            BOOST_TEST(tokens.getLine() == "  first = 1");
+            BOOST_TEST(tokens.getColumnIndex() == 3U);
+            BOOST_REQUIRE(tokens.nextLine());
+            BOOST_TEST(tokens.getLineIndex() == firstLine + 4);
+            BOOST_TEST(tokens.getLine() == "second = 2");
+            BOOST_TEST(tokens.getColumnIndex() == 1U);
+            BOOST_TEST(!tokens.nextLine());
+            BOOST_TEST(tokens.isEndOfFile());
+            BOOST_TEST(tokens.getLineIndex() == firstLine + 4);
+            tokens.reset();
+            BOOST_TEST(tokens.getLineIndex() == firstLine - 1);
+        }
+
+        BOOST_TEST(!context.hasError());
+        Tokenizer empty(&context, "empty.nomad", "", firstLine);
+        BOOST_TEST(empty.getLineCount() == 0U);
+        BOOST_TEST(!empty.nextLine());
+        BOOST_TEST(empty.getLineIndex() == firstLine - 1);
+    }
+
+    CompilerContext context(compiler.get());
+    Tokenizer implicitOrigin(&context, "default.nomad", source);
+    Tokenizer explicitOrigin(&context, "default.nomad", source, 1);
+    while (implicitOrigin.nextLine()) {
+        BOOST_REQUIRE(explicitOrigin.nextLine());
+        BOOST_TEST(implicitOrigin.getLineIndex() == explicitOrigin.getLineIndex());
+        BOOST_TEST(implicitOrigin.getColumnIndex() == explicitOrigin.getColumnIndex());
+        BOOST_TEST(implicitOrigin.getLine() == explicitOrigin.getLine());
+    }
+
+    BOOST_TEST(!explicitOrigin.nextLine());
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_source_origins_apply_to_lexical_parser_and_expression_locations)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto firstLine = NomadIndex{1000000000};
+    CompilerContext lexical(compiler.get());
+    Tokenizer invalid(&lexical, "fragment.nomad", "# comment\n  @\nvalid", firstLine);
+    BOOST_REQUIRE_EQUAL(lexical.getDiagnostics().size(), 1U);
+    const auto& lexicalError = lexical.getDiagnostics().front();
+    BOOST_TEST(lexicalError.sourceName == "fragment.nomad");
+    BOOST_TEST(lexicalError.line == firstLine + 1);
+    BOOST_TEST(lexicalError.column == 3U);
+    BOOST_REQUIRE(invalid.nextLine());
+    BOOST_TEST(invalid.getLineIndex() == firstLine + 2);
+    BOOST_TEST(invalid.currentToken().textValue == "valid");
+
+    CompilerContext parsing(compiler.get());
+    Tokenizer incomplete(&parsing, "parse-fragment.nomad", "\n1 +", firstLine);
+    BOOST_REQUIRE(incomplete.nextLine());
+    BOOST_TEST(parser::parseExpression(&parsing, nullptr, &incomplete) == nullptr);
+    BOOST_REQUIRE(!parsing.getDiagnostics().empty());
+    for (const auto& diagnostic : parsing.getDiagnostics()) {
+        BOOST_TEST(diagnostic.sourceName == "parse-fragment.nomad");
+        BOOST_TEST(diagnostic.line == firstLine + 1);
+    }
+
+    CompilerContext valid(compiler.get());
+    Tokenizer literal(&valid, "literal.nomad", "\n  17", firstLine);
+    BOOST_REQUIRE(literal.nextLine());
+    const auto expression = parser::parseExpression(&valid, nullptr, &literal);
+    BOOST_REQUIRE(expression != nullptr);
+    BOOST_TEST(expression->getLine() == firstLine + 1);
+    CompilerContext defaultContext(compiler.get());
+    Tokenizer defaultLiteral(&defaultContext, "literal.nomad", "\n  17");
+    BOOST_REQUIRE(defaultLiteral.nextLine());
+    const auto defaultExpression = parser::parseExpression(&defaultContext, nullptr, &defaultLiteral);
+    BOOST_REQUIRE(defaultExpression != nullptr);
+    BOOST_TEST(expression->getColumn() == defaultExpression->getColumn());
+}
+
+BOOST_AUTO_TEST_CASE(tokenizer_rejects_invalid_source_origins_and_overflowing_line_ranges)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    for (const auto firstLine : {NomadIndex{0}, NOMAD_INVALID_INDEX}) {
+        BOOST_CHECK_THROW(Tokenizer(&context, "invalid.nomad", "1", firstLine), std::invalid_argument);
+    }
+
+    BOOST_CHECK_THROW(
+        Tokenizer(&context, "overflow.nomad", "1\n2", NOMAD_INVALID_INDEX - 1),
+        std::invalid_argument
+    );
+    Tokenizer lastValid(&context, "last.nomad", "1", NOMAD_INVALID_INDEX - 1);
+    BOOST_REQUIRE(lastValid.nextLine());
+    BOOST_TEST(lastValid.getLineIndex() == NOMAD_INVALID_INDEX - 1);
+    BOOST_TEST(!lastValid.nextLine());
+    BOOST_TEST(lastValid.getLineIndex() == NOMAD_INVALID_INDEX - 1);
+    BOOST_TEST(!context.hasError());
 }
 
 BOOST_AUTO_TEST_CASE(tokenizer_accepts_letters_and_underscores_after_identifier_dots)

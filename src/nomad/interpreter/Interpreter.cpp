@@ -630,13 +630,13 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     if (sourceLine == 0 || sourceLine == NOMAD_INVALID_INDEX) {
         sourceLine = 1;
     }
-    Tokenizer tokens(&context, source.sourceName, NomadString(sourceLine - 1, '\n') + source.text);
+    Tokenizer tokens(&context, source.sourceName, source.text, sourceLine);
     if (context.hasError()) {
         evaluation.copyCompilerDiagnostic(context.getDiagnostics(), source.sourceName);
 
         return std::nullopt;
     }
-    if (tokens.getLineCount() != sourceLine || !tokens.nextLine()) {
+    if (tokens.getLineCount() != 1 || !tokens.nextLine()) {
         evaluation.copyCompilerDiagnostic(context.getDiagnostics(), source.sourceName);
         evaluation.reportInputError(source, "Interpreter requires one non-empty expression");
 

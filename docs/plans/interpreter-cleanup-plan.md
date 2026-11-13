@@ -1,8 +1,8 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 through 7 and the approved yield-removal follow-up are implemented
+Status: Steps 1 through 8 and the approved yield-removal follow-up are implemented
 and verified in Windows Debug, including the approved Step 7 boundary correction.
-Awaiting review. Steps 8 and 9 are not started.
+Awaiting Step 8 review. Step 9 is not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -610,6 +610,96 @@ Verification:
   length is proportional to the containing source line.
 
 Stop for review.
+
+#### Step 8 design proposal
+
+Status: Approved by the November 13, 2026 request to proceed; implemented below.
+
+Proposed constructor:
+
+```cpp
+Tokenizer(
+    CompilerContext* context,
+    NomadString sourceName,
+    const NomadString& source,
+    NomadIndex firstLine = 1
+);
+```
+
+Contract and implementation boundary:
+
+- `firstLine` is the one-based source line assigned to the first physical line
+  of the supplied text. The default preserves existing callers.
+- Keep the tokenizer's physical line cursor and vector indexing relative to the
+  actual supplied text. Store the source origin separately; do not pad text or
+  allocate line entries for the origin.
+- `getLineIndex()` reports the source coordinate, including blank/comment lines.
+  Before line advancement, retain the cursor convention at `firstLine - 1`
+  (zero for existing default callers). Reset restores that same convention;
+  EOF retains the last physical line coordinate as today.
+- Lexical diagnostics use `firstLine + physicalLineIndex`. Parser/AST diagnostics
+  continue using `getLineIndex()`. Column numbering remains unchanged.
+- `getLineCount()` remains the number of physical lines in the supplied text,
+  independent of the source origin. `getSource()` returns the original unpadded
+  text; `getLine()` continues reading from the physical cursor.
+- Reject explicitly invalid origins (zero or `NOMAD_INVALID_INDEX`) and ranges
+  that would overflow into the reserved invalid index before tokenization.
+  Surface invalid caller input as an exception; do not wrap source coordinates.
+- Preserve format evaluation's existing zero/invalid source-line normalization
+  to 1 at its own boundary. Pass the normalized origin to Tokenizer.
+- Replace the format-expression newline prefix with the actual placeholder text,
+  and change its single-line check to `getLineCount() == 1`. Keep empty-input
+  rejection and strict expression parsing unchanged.
+- Do not move interactive input policy into the tokenizer/parser. This is only
+  a general source-coordinate facility, with no interpreter-specific API.
+- Do not add a source-column origin, source-map abstraction, setters, or unrelated
+  tokenizer cleanup.
+
+Validation after approval:
+
+- Default and explicit origin 1 behave identically; test a large origin with a
+  short source, including blank/comment lines, reset, and EOF.
+- Verify original text/physical line count remain independent of the origin,
+  lexical diagnostics use the mapped line, and parser diagnostics/AST locations
+  use the same coordinates.
+- Check invalid origins and overflowing ranges fail explicitly.
+- Exercise format expressions at line 1 and a large line, plus existing zero/
+  invalid normalization, multiline rejection, nested templates, type/parse/lexical
+  failures, and unchanged structured diagnostic offsets/lengths.
+- Inspect the resulting call path to confirm no fake prefix or origin-sized
+  allocation remains. Use existing build and relevant CTest groups.
+
+The design-only slice required no C++ build or test run. Step 9 starts its separate
+diagnostic-category design gate after Step 8 review.
+
+#### Step 8 execution record
+
+November 13, 2026:
+
+- Added the optional `firstLine = 1` tokenizer origin. Kept physical indexing,
+  source text, line count, and line retrieval independent of the source origin.
+- Mapped lexical diagnostics and public line coordinates consistently. Reset and
+  EOF preserve the agreed cursor convention; invalid/overflowing ranges throw
+  `std::invalid_argument` before tokenization.
+- Removed format-expression newline padding and changed the shape check to one
+  physical line. Existing zero/invalid source-line normalization remains local
+  to format evaluation.
+- Added regressions for default-origin equivalence, origin 1,000,000,000,
+  blank/comment lines, reset/EOF, empty text, lexical/parser/AST positions,
+  invalid origins, and the maximum valid line boundary.
+- Added formatting regressions covering large origins, zero/invalid normalization,
+  nested templates, lexical/parse/type errors, multiline rejection, recovery,
+  and structured source/offset/length preservation.
+- An initial test assumed a literal AST column equaled its token start. The
+  existing parser records that column differently; corrected the test to compare
+  against the default-origin AST rather than changing unrelated parser behavior.
+- Windows Debug `nomad_test` build passed. Rebuilt CTest `nomad_test_language`
+  passed (43.81 seconds); final `nomad_test_remaining` passed (36.23 seconds).
+- Origin-sized padding is absent from format evaluation; the billion-line
+  origin tests execute against short, unpadded source strings.
+- Updated embedding documentation. No sanitizer, other-platform, or gameplay
+  validation ran.
+- Next step: Step 9's design gate for removing diagnostic-message parsing.
 
 ### Step 9: Remove diagnostic-message parsing
 

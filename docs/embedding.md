@@ -2532,6 +2532,13 @@ current token, requires end of line, and permits void member calls. Syntax error
 return null with context diagnostics. The caller chooses between this operation
 and statement parsing; resolution and evaluation are separate operations.
 
+`Tokenizer(context, sourceName, source, firstLine)` accepts an optional one-based
+source-line origin, defaulting to 1. Diagnostics and `getLineIndex()` use mapped
+source coordinates; `getLineCount()`, `getLine()`, and `getSource()` describe only
+the supplied text. Before advancement and after `reset()`, the line coordinate is
+`firstLine - 1`. Invalid origins or overflowing line ranges throw
+`std::invalid_argument`. No leading blank lines are needed for source fragments.
+
 `reportInputError(source, message)` appends an error using `source.sourceName`
 and unspecified line/column positions. It does not clear existing diagnostics,
 results, or loop control.

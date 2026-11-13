@@ -118,7 +118,13 @@ class Tokenizer {
 public:
     // Lexes every line up front. Invalid lines are reported to the context and treated as empty.
     // The source name (usually the file path) identifies the source in diagnostics.
-    Tokenizer(CompilerContext* context, NomadString sourceName, const NomadString& source);
+    // firstLine maps the first physical line to a one-based source coordinate.
+    Tokenizer(
+        CompilerContext* context,
+        NomadString sourceName,
+        const NomadString& source,
+        NomadIndex firstLine = 1
+    );
 
     Tokenizer(const Tokenizer&) = delete;
     Tokenizer& operator=(const Tokenizer&) = delete;
@@ -193,6 +199,7 @@ private:
     NomadString m_sourceName;
     NomadString m_source;
 
+    NomadIndex m_firstLine;
     NomadIndex m_lineIndex = 0;
     NomadIndex m_columnIndex = 0;
     std::vector<NomadString> m_lines;
