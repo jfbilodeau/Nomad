@@ -304,7 +304,7 @@ BOOST_AUTO_TEST_CASE(input_errors_prevent_configuration_hooks)
     });
     compiler->registerSources(&context, {
         {{"answer", {"editor:answer", "return 42"}}},
-        {{DiagnosticSeverity::Error, "Loading failed", "loader", 1, 1}}
+        {{CompilerDiagnosticSeverity::Error, "Loading failed", "loader", 1, 1}}
     });
 
     BOOST_TEST(!compiler->compileScripts(&context));

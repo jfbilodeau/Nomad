@@ -102,14 +102,24 @@ const InterpreterContext* CompilerContext::getInterpreterContext() const {
     return m_interpreterContext;
 }
 
-void CompilerContext::reportDiagnostics(std::span<const Diagnostic> diagnostics) {
+void CompilerContext::addDiagnostic(const CompilerDiagnostic& diagnostic) {
+    m_diagnostics.push_back(diagnostic);
+    if (diagnostic.severity == CompilerDiagnosticSeverity::Error) {
+        ++m_errorCount;
+    } else {
+        ++m_warningCount;
+    }
+
+}
+
+void CompilerContext::addDiagnostics(std::span<const CompilerDiagnostic> diagnostics) {
     for (const auto& diagnostic : diagnostics) {
-        report(diagnostic.severity, diagnostic.message, diagnostic.sourceName, diagnostic.line, diagnostic.column);
+        addDiagnostic(diagnostic);
     }
 }
 
 void CompilerContext::reportError(const NomadStringView message) {
-    report(DiagnosticSeverity::Error, message, {}, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+    report(CompilerDiagnosticSeverity::Error, message, {}, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
 }
 
 void CompilerContext::reportError(
@@ -118,15 +128,15 @@ void CompilerContext::reportError(
     const NomadIndex line,
     const NomadIndex column
 ) {
-    report(DiagnosticSeverity::Error, message, sourceName, line, column);
+    report(CompilerDiagnosticSeverity::Error, message, sourceName, line, column);
 }
 
 void CompilerContext::reportError(const NomadStringView message, const Tokenizer* tokens) {
-    report(DiagnosticSeverity::Error, message, tokens->getSourceName(), tokens->getLineIndex(), tokens->getColumnIndex());
+    report(CompilerDiagnosticSeverity::Error, message, tokens->getSourceName(), tokens->getLineIndex(), tokens->getColumnIndex());
 }
 
 void CompilerContext::reportWarning(const NomadStringView message) {
-    report(DiagnosticSeverity::Warning, message, {}, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+    report(CompilerDiagnosticSeverity::Warning, message, {}, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
 }
 
 void CompilerContext::reportWarning(
@@ -135,11 +145,11 @@ void CompilerContext::reportWarning(
     const NomadIndex line,
     const NomadIndex column
 ) {
-    report(DiagnosticSeverity::Warning, message, sourceName, line, column);
+    report(CompilerDiagnosticSeverity::Warning, message, sourceName, line, column);
 }
 
 void CompilerContext::reportWarning(const NomadStringView message, const Tokenizer* tokens) {
-    report(DiagnosticSeverity::Warning, message, tokens->getSourceName(), tokens->getLineIndex(), tokens->getColumnIndex());
+    report(CompilerDiagnosticSeverity::Warning, message, tokens->getSourceName(), tokens->getLineIndex(), tokens->getColumnIndex());
 }
 
 NomadBoolean CompilerContext::hasError() const {
@@ -158,13 +168,13 @@ NomadIndex CompilerContext::getWarningCount() const {
     return m_warningCount;
 }
 
-std::span<const Diagnostic> CompilerContext::getDiagnostics() const {
+std::span<const CompilerDiagnostic> CompilerContext::getDiagnostics() const {
     return m_diagnostics;
 }
 
-const Diagnostic* CompilerContext::getFirstError() const {
+const CompilerDiagnostic* CompilerContext::getFirstError() const {
     for (const auto& diagnostic : m_diagnostics) {
-        if (diagnostic.severity == DiagnosticSeverity::Error) {
+        if (diagnostic.severity == CompilerDiagnosticSeverity::Error) {
             return &diagnostic;
         }
     }
@@ -179,13 +189,13 @@ void CompilerContext::clearDiagnostics() {
 }
 
 void CompilerContext::report(
-    const DiagnosticSeverity severity,
+    const CompilerDiagnosticSeverity severity,
     const NomadStringView message,
     const NomadStringView sourceName,
     const NomadIndex line,
     const NomadIndex column
 ) {
-    m_diagnostics.push_back(Diagnostic{
+    addDiagnostic({
         severity,
         NomadString(message),
         NomadString(sourceName),
@@ -193,11 +203,6 @@ void CompilerContext::report(
         column
     });
 
-    if (severity == DiagnosticSeverity::Error) {
-        ++m_errorCount;
-    } else {
-        ++m_warningCount;
-    }
 }
 
 } // namespace nomad

@@ -114,16 +114,18 @@ public:
     void resetEvaluation();
     void setError(const NomadString& error);
     void reportInputError(const SourceText& source, const NomadString& message);
-    void addDiagnostic(const Diagnostic& diagnostic);
+    void addDiagnostic(const CompilerDiagnostic& diagnostic);
     void copyCompilerDiagnostic(
-        std::span<const Diagnostic> diagnostics,
+        std::span<const CompilerDiagnostic> diagnostics,
         const NomadString& sourceName
     );
     // Includes warnings and errors in reporting order. clearError clears this collection too.
-    [[nodiscard]] std::span<const Diagnostic> getDiagnostics() const;
+    [[nodiscard]] std::span<const CompilerDiagnostic> getDiagnostics() const;
     void clearError();
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] NomadBoolean hasWarning() const;
+    // First complete error diagnostic, or nullptr; invalidated by diagnostic collection changes.
+    [[nodiscard]] const CompilerDiagnostic* getFirstError() const;
     // First error message, or nullptr. Invalidated by changes to the diagnostics collection.
     [[nodiscard]] const NomadString* getError() const;
 
@@ -167,7 +169,7 @@ private:
     NomadIndex m_variableIndex = 0;
     NomadIndex m_frameVariableCount = 0;
     std::optional<InterpreterValue> m_result;
-    std::vector<Diagnostic> m_diagnostics;
+    std::vector<CompilerDiagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
     std::vector<std::unique_ptr<InterpreterStorage>> m_variables;
     std::vector<std::unique_ptr<InterpreterStorage>> m_retiredStorage;

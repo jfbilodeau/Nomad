@@ -222,7 +222,7 @@ void HubInitializerStatement::onResolve(CompilerContext* context, ScriptCallable
         initializerContext.reportError(exception.what(), getSourceName(),
             exception.getLine(), exception.getColumn());
     }
-    context->reportDiagnostics(initializerContext.getDiagnostics());
+    context->addDiagnostics(initializerContext.getDiagnostics());
 }
 
 void HubInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {

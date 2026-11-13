@@ -581,7 +581,7 @@ BOOST_AUTO_TEST_CASE(interpreter_reports_source_execution_failures_as_diagnostic
             BOOST_TEST(!interpreter.execute(SourceText{"console:failure", text}, context));
             BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 1U);
             const auto& diagnostic = context.getDiagnostics()[0];
-            BOOST_CHECK(diagnostic.severity == DiagnosticSeverity::Error);
+            BOOST_CHECK(diagnostic.severity == CompilerDiagnosticSeverity::Error);
             BOOST_TEST(diagnostic.sourceName == "console:failure");
             BOOST_TEST(diagnostic.message == message);
             BOOST_REQUIRE(context.getError() != nullptr);
@@ -747,6 +747,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
 
     BOOST_TEST(!context.hasError());
     BOOST_TEST(context.getError() == nullptr);
+    BOOST_TEST(context.getFirstError() == nullptr);
 
     context.setError("Unknown variable 'score'");
     BOOST_TEST(context.hasError());
@@ -775,7 +776,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_input_errors_without_clearing_e
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter);
-    context.addDiagnostic({DiagnosticSeverity::Warning, "existing warning", "previous.nomad", 3, 4});
+    context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "existing warning", "previous.nomad", 3, 4});
     context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}});
     context.setLoopControl(LoopControl::Break);
     {
@@ -788,7 +789,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_input_errors_without_clearing_e
     BOOST_REQUIRE_EQUAL(diagnostics.size(), 2U);
     BOOST_TEST(diagnostics[0].message == "existing warning");
     BOOST_TEST(diagnostics[0].sourceName == "previous.nomad");
-    BOOST_CHECK(diagnostics[1].severity == DiagnosticSeverity::Error);
+    BOOST_CHECK(diagnostics[1].severity == CompilerDiagnosticSeverity::Error);
     BOOST_TEST(diagnostics[1].message == "input failed");
     BOOST_TEST(diagnostics[1].sourceName == "console:input");
     BOOST_TEST(diagnostics[1].line == NOMAD_INVALID_INDEX);
@@ -812,7 +813,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_resets_evaluation_without_clearing_bind
     auto* object = storage->getObjectValue();
     for (const auto control : {LoopControl::Break, LoopControl::Continue}) {
         context.setResult(runtime.getStringType(), *storage);
-        context.addDiagnostic({DiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
+        context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
         context.setError("error");
         context.setLoopControl(control);
         BOOST_TEST(object->getReferenceCount() == 2U);
@@ -838,12 +839,12 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     auto machine = runtime.createVirtualMachine();
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator);
-    context.addDiagnostic({DiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
+    context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
     BOOST_TEST(!context.hasError());
     BOOST_TEST(context.hasWarning());
     BOOST_TEST(context.getError() == nullptr);
-    context.addDiagnostic({DiagnosticSeverity::Error, "first error", "test.nomad", 2, 3});
-    context.addDiagnostic({DiagnosticSeverity::Error, "second error", "test.nomad", 3, 4});
+    context.addDiagnostic({CompilerDiagnosticSeverity::Error, "first error", "test.nomad", 2, 3});
+    context.addDiagnostic({CompilerDiagnosticSeverity::Error, "second error", "test.nomad", 3, 4});
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 3);
     BOOST_TEST(context.getDiagnostics()[0].message == "warning");
     BOOST_TEST(context.getDiagnostics()[1].message == "first error");
@@ -860,6 +861,10 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
     BOOST_TEST(context.getDiagnostics()[0].message == "Unknown identifier: missingLeft");
     BOOST_TEST(context.getDiagnostics()[1].message == "Unknown identifier: missingRight");
+    BOOST_CHECK(context.getDiagnostics()[0].code == CompilerDiagnosticCode::UnknownIdentifier);
+    BOOST_CHECK(context.getDiagnostics()[1].code == CompilerDiagnosticCode::UnknownIdentifier);
+    BOOST_TEST(context.getDiagnostics()[0].subject == "missingLeft");
+    BOOST_TEST(context.getDiagnostics()[1].subject == "missingRight");
     BOOST_REQUIRE(context.getInterpreter().execute("1 + 2", context));
     BOOST_TEST(context.getDiagnostics().empty());
     BOOST_TEST(!context.hasError());
@@ -871,12 +876,15 @@ BOOST_AUTO_TEST_CASE(interpreter_context_copies_compiler_diagnostics_in_order_wi
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter);
-    context.addDiagnostic({DiagnosticSeverity::Warning, "existing", "existing.nomad", 1, 2});
+    context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "existing", "existing.nomad", 1, 2});
     {
         auto compiler = runtime.createCompiler();
         CompilerContext compilation(compiler.get());
         compilation.reportWarning("compiler warning", "original.nomad", 3, 4);
-        compilation.reportError("compiler error", "original.nomad", 5, 6);
+        compilation.addDiagnostic({
+            CompilerDiagnosticSeverity::Error, "compiler error", "original.nomad", 5, 6,
+            CompilerDiagnosticCode::UnknownIdentifier, "missing"
+        });
         context.copyCompilerDiagnostic(compilation.getDiagnostics(), "console:input");
         BOOST_REQUIRE_EQUAL(compilation.getDiagnostics().size(), 2U);
         BOOST_TEST(compilation.getDiagnostics()[0].sourceName == "original.nomad");
@@ -887,22 +895,28 @@ BOOST_AUTO_TEST_CASE(interpreter_context_copies_compiler_diagnostics_in_order_wi
     BOOST_REQUIRE_EQUAL(diagnostics.size(), 3U);
     BOOST_TEST(diagnostics[0].message == "existing");
     BOOST_TEST(diagnostics[0].sourceName == "existing.nomad");
-    BOOST_CHECK(diagnostics[1].severity == DiagnosticSeverity::Warning);
+    BOOST_CHECK(diagnostics[1].severity == CompilerDiagnosticSeverity::Warning);
     BOOST_TEST(diagnostics[1].message == "compiler warning");
     BOOST_TEST(diagnostics[1].sourceName == "console:input");
     BOOST_TEST(diagnostics[1].line == 3U);
     BOOST_TEST(diagnostics[1].column == 4U);
-    BOOST_CHECK(diagnostics[2].severity == DiagnosticSeverity::Error);
+    BOOST_CHECK(diagnostics[2].severity == CompilerDiagnosticSeverity::Error);
     BOOST_TEST(diagnostics[2].message == "compiler error");
     BOOST_TEST(diagnostics[2].sourceName == "console:input");
     BOOST_TEST(diagnostics[2].line == 5U);
     BOOST_TEST(diagnostics[2].column == 6U);
+    BOOST_CHECK(diagnostics[2].code == CompilerDiagnosticCode::UnknownIdentifier);
+    BOOST_TEST(diagnostics[2].subject == "missing");
+    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_TEST(context.getFirstError() == &diagnostics[2]);
+    BOOST_CHECK(diagnostics[1].code == CompilerDiagnosticCode::General);
     BOOST_REQUIRE(context.getError() != nullptr);
     BOOST_TEST(*context.getError() == "compiler error");
     context.copyCompilerDiagnostic({}, "unused.nomad");
     BOOST_TEST(context.getDiagnostics().size() == 3U);
     context.clearError();
     BOOST_TEST(context.getDiagnostics().empty());
+    BOOST_TEST(context.getFirstError() == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_expressions)

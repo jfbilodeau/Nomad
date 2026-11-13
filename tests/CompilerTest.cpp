@@ -423,8 +423,8 @@ BOOST_AUTO_TEST_CASE(source_registration_reports_loading_diagnostics_immediately
     CompilerContext context(compiler.get());
     const SourceBatch batch{
         {{"broken", {"untitled:broken", "return missing"}}},
-        {{DiagnosticSeverity::Warning, "Loading warning", "loader", 1, 2},
-         {DiagnosticSeverity::Error, "Loading error", "loader", 3, 4}}
+        {{CompilerDiagnosticSeverity::Warning, "Loading warning", "loader", 1, 2},
+         {CompilerDiagnosticSeverity::Error, "Loading error", "loader", 3, 4}}
     };
 
     compiler->registerSources(&context, batch);

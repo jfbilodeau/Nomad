@@ -1,8 +1,9 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 through 8 and the approved yield-removal follow-up are implemented
+Status: Steps 1 through 9 and the approved yield-removal follow-up are implemented
 and verified in Windows Debug, including the approved Step 7 boundary correction.
-Awaiting Step 8 review. Step 9 is not started.
+Awaiting Step 9 review. Final finding reconciliation and broader unit validation
+remain to be done.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -721,6 +722,114 @@ Verification:
 - Confirm presentation no longer depends on exact compiler diagnostic wording.
 
 Stop for review.
+
+#### Step 9 producer inventory and design proposal
+
+Status: Approved by the November 13, 2026 request to proceed; implemented below.
+
+The two existing text-based decisions are:
+
+1. `parseFormatTemplate` produces either "Empty placeholder in format string"
+   or "Missing '}' in format string". Dynamic formatting compares this message
+   to choose the existing inline marker.
+2. Identifier-expression resolution produces "Unknown identifier: NAME".
+   Dynamic formatting recognizes that prefix and slices the name back out to
+   produce "invalid identifier: 'NAME'".
+
+The compiler and dynamic formatter deliberately expose different messages today.
+Preserving both requires carrying the identifier independently of its message;
+adding only an error code would still leave name extraction coupled to wording.
+
+Proposed compatibility-preserving design:
+
+- Add a scanner-local `FormatTemplateDiagnosticCode` with `EmptyPlaceholder = 1`
+  and `MissingClosingBrace`. Store the code with each `FormatTemplateDiagnostic`;
+  preserve its existing message, offset, and length. Set it where the scanner
+  already knows whether the closing delimiter was found.
+- Dynamic formatting chooses the two existing markers by scanner code, not by
+  text. Compiled formatting continues displaying the existing scanner message.
+- Add `DiagnosticCode` with only `General = 1` and `UnknownIdentifier`, plus
+  trailing defaulted `code` and `subject` fields on `Diagnostic`.
+  `subject` contains the unresolved identifier for `UnknownIdentifier`; it is
+  empty for existing general diagnostics. Existing five-field initializers and
+  general diagnostic producers remain valid.
+- Tag only the existing unknown-identifier producer. Preserve the compiler
+  message verbatim and use the separately stored identifier as its subject.
+  Add no interpreter-specific reporting policy to the parser or compiler.
+- Add `CompilerContext::reportDiagnostic(const Diagnostic&)` as the single
+  structured reporting operation; existing general reporting and batch reporting
+  delegate to it so severity counts and metadata stay intact.
+- Add `InterpreterContext::getFirstError()` returning the complete first error,
+  matching the existing compiler-context accessor. Keep `getError()` as the
+  message convenience accessor, using the same selection.
+- Dynamic formatting uses the diagnostic code and subject to reproduce the
+  existing unknown-name marker; all other errors display their messages unchanged.
+- Preserve metadata through existing diagnostic copies, including
+  `copyCompilerDiagnostic`; continue overriding only source names there.
+- No repository-wide error-code inventory, exception redesign, parser coupling,
+  localization layer, or migration of unrelated errors.
+
+Trade-off requiring approval:
+
+- Keeping existing text adds two defaulted compiler-diagnostic fields and a small
+  structured reporting/access path, in addition to the scanner's local code.
+- The leaner alternative is to stop rewriting unknown-identifier errors and use
+  the compiler's canonical message directly. That avoids identifier metadata,
+  but intentionally changes dynamic-format output/messages and existing tests.
+  The current proposal does not authorize that observable change.
+
+Validation after approval:
+
+- Scanner tests assert codes together with unchanged messages, recovery segments,
+  offsets, and lengths for empty and unclosed placeholders.
+- Compiler tests verify unknown identifiers retain their ordinary text, acquire
+  the right code/subject, and preserve metadata through batch reporting with
+  correct warning/error counts.
+- Context tests verify first-error selection and metadata copying, preserving
+  warning/error order and original diagnostics.
+- Dynamic-format tests assert existing inline text and structured diagnostics,
+  including quoted/qualified names, nested templates, multiple errors, empty
+  placeholders, missing braces, source positions, offsets, and lengths.
+- Verify a general diagnostic whose message resembles an unknown-identifier
+  error is not reclassified solely from its text.
+- Search affected presentation code to confirm the equality/prefix/slicing
+  branches are gone, and run the existing relevant CTest groups on rebuilt code.
+
+The design-only slice required no C++ build or test run. After Step 9 review,
+reconcile all review findings and run the final broader unit validation described
+below; do not begin unrelated cleanup.
+
+#### Step 9 execution record
+
+November 13, 2026:
+
+- Added scanner-local empty-placeholder/missing-brace codes at their producer.
+  Dynamic formatting selects existing inline markers by code rather than message.
+- Added defaulted general/unknown-identifier diagnostic codes and a subject
+  payload. Tagged the unknown-identifier expression diagnostic without changing
+  its ordinary message or source location.
+- Added structured compiler reporting and preserved metadata during batch copies,
+  with existing severity counts. Existing general producers remain unclassified
+  regardless of their message text.
+- Added complete first-error access to InterpreterContext; message access delegates
+  to it. Dynamic formatting now uses the unknown-name code and subject, with no
+  prefix comparison or identifier extraction from prose.
+- Preserved diagnostic metadata through interpreter copying and kept existing
+  dynamic output, logging text, recovery, and structured source/offset/length.
+- Extended scanner, compiler-context, interpreter-context, and dynamic-format
+  tests for codes, payloads, ownership, warning/error order, severity counts,
+  independent message wording, mixed invalid placeholders, and exact markers.
+- A general diagnostic with unknown-identifier-like prose remains General in the
+  reporting regression. No artificial formatter injection hook was added solely
+  to deliver a synthetic compiler diagnostic into the private expression parser.
+- Windows Debug `nomad_test` build passed. Rebuilt CTest `nomad_test_language`
+  passed (29.26 seconds); `nomad_test_remaining` passed (32.05 seconds).
+- Existing nested-template, qualified-name/member, bridge compatibility, strict
+  compiled-literal, source-origin, and error-propagation regressions passed.
+- Updated embedding documentation. No sanitizer, other-platform, or gameplay
+  validation ran.
+- Next: review Step 9, reconcile the original findings and intentional retained
+  machinery, then run broader unit validation. No further refactoring is scheduled.
 
 ## Verification workflow
 

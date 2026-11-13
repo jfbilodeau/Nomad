@@ -2517,6 +2517,8 @@ if (!succeeded) {
 ```
 
 `getError()` provides the first error message, or null when there are no errors.
+`getFirstError()` returns the complete first error diagnostic, or null. Both
+borrow the context's diagnostic storage and are invalidated when it changes.
 Each new evaluation clears previous diagnostics; inspect or copy them before
 executing more input. Call `clearError()` to dismiss both errors and warnings
 without starting another evaluation.
@@ -2545,8 +2547,17 @@ results, or loop control.
 
 `copyCompilerDiagnostic(diagnostics, sourceName)` appends independent copies of
 compiler diagnostics in reporting order, using the supplied input source name.
-Severity, message, line, and column are preserved; the originals are unchanged.
+Severity, message, line, column, code, and subject are preserved; the originals
+are unchanged.
 Existing context diagnostics are retained, and an empty input adds nothing.
+
+Compiler diagnostics default to `DiagnosticCode::General`. Unresolved identifier
+expressions report `DiagnosticCode::UnknownIdentifier`, with the identifier in
+`subject`; their ordinary compiler message remains unchanged.
+`CompilerContext::reportDiagnostic(diagnostic)` and `reportDiagnostics(diagnostics)`
+copy the complete metadata and update severity counts. Reporting ordinary error
+text does not infer a code from its wording. Text formatting of diagnostics is
+unchanged. C++ hosts using the extended diagnostic structures must be rebuilt.
 
 Results are owned by the context. Copy a result using `InterpreterValue` if it must
 survive another evaluation; do not free the context's result manually.

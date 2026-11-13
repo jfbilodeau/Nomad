@@ -179,7 +179,7 @@ ApiAnalysis analyzeApiSymbols(
     const auto compilation = session->compileSources(batch, CompilationTarget::Analysis);
     const auto currentLineError = std::ranges::any_of(compilation.diagnostics, [&](const auto& diagnostic) {
         return diagnostic.sourceName == uri && diagnostic.line == line &&
-            diagnostic.severity == DiagnosticSeverity::Error;
+            diagnostic.severity == CompilerDiagnosticSeverity::Error;
     });
     std::vector<ApiSymbol> symbols;
     if (compositeMemberPosition) {
@@ -542,7 +542,7 @@ NomadString documentUri(const NomadPath& path) {
     return uri;
 }
 
-json::object diagnosticRange(const Diagnostic& diagnostic, NomadStringView text) {
+json::object diagnosticRange(const CompilerDiagnostic& diagnostic, NomadStringView text) {
     const auto requestedLine = diagnostic.line == NOMAD_INVALID_INDEX || diagnostic.line == 0
         ? 0 : diagnostic.line - 1;
     auto line = std::size_t{0};
@@ -707,7 +707,7 @@ LanguageDiagnostics analyzeLanguageDocuments(const LanguageDocuments& documents)
                 : documentUri(pathFromUtf8(diagnostic.sourceName));
             published[uri].push_back(json::object{
                 {"range", diagnosticRange(diagnostic, sourceTexts[diagnostic.sourceName])},
-                {"severity", diagnostic.severity == DiagnosticSeverity::Error ? 1 : 2},
+                {"severity", diagnostic.severity == CompilerDiagnosticSeverity::Error ? 1 : 2},
                 {"source", "nomad"}, {"message", diagnostic.message}
             });
         }
@@ -738,7 +738,7 @@ int runLanguageServer(
             for (const auto& [uri, document] : documents) {
                 (void)document;
                 diagnostics[uri].push_back(json::object{
-                    {"range", diagnosticRange({DiagnosticSeverity::Error, "", "", 1, 1}, "")},
+                    {"range", diagnosticRange({CompilerDiagnosticSeverity::Error, "", "", 1, 1}, "")},
                     {"severity", 1}, {"source", "nomad"}, {"message", exception.what()}
                 });
             }

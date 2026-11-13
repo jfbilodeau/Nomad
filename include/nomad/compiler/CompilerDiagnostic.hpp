@@ -8,29 +8,29 @@
 
 namespace nomad {
 
-enum class DiagnosticSeverity {
+enum class CompilerDiagnosticSeverity {
     Warning = 1,
     Error,
 };
 
-enum class DiagnosticCode {
+enum class CompilerDiagnosticCode {
     General = 1,
     UnknownIdentifier,
 };
 
-struct Diagnostic {
-    DiagnosticSeverity severity;
+struct CompilerDiagnostic {
+    CompilerDiagnosticSeverity severity;
     NomadString message;
     NomadString sourceName;
     NomadIndex line;
     NomadIndex column;
-    DiagnosticCode code = DiagnosticCode::General;
+    CompilerDiagnosticCode code = CompilerDiagnosticCode::General;
     // The unresolved name for UnknownIdentifier; empty for general diagnostics.
     NomadString subject = {};
 };
 
 // Formats as `source:line:column: error: message`, omitting unknown location parts.
-void formatDiagnostic(const Diagnostic& diagnostic, std::ostream& stream);
-[[nodiscard]] NomadString formatDiagnostic(const Diagnostic& diagnostic);
+void formatDiagnostic(const CompilerDiagnostic& diagnostic, std::ostream& stream);
+[[nodiscard]] NomadString formatDiagnostic(const CompilerDiagnostic& diagnostic);
 
 } // namespace nomad

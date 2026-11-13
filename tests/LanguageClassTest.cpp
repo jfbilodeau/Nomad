@@ -863,9 +863,9 @@ BOOST_AUTO_TEST_CASE(unread_external_fields_warn_once_at_the_introducing_assignm
     CompilerContext context(&fixture.getCompiler());
     BOOST_TEST(fixture.getCompiler().compileScripts(&context));
     BOOST_TEST(context.getWarningCount() == 1u);
-    const Diagnostic* warning = nullptr;
+    const CompilerDiagnostic* warning = nullptr;
     for (const auto& diagnostic : context.getDiagnostics()) {
-        if (diagnostic.severity == DiagnosticSeverity::Warning) warning = &diagnostic;
+        if (diagnostic.severity == CompilerDiagnosticSeverity::Warning) warning = &diagnostic;
     }
     BOOST_REQUIRE(warning != nullptr);
     BOOST_TEST(warning->message == "Externally introduced field 'Point.extra' is assigned but never read");

@@ -4,6 +4,8 @@
 
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/script/Runtime.hpp>
 
@@ -14,11 +16,12 @@ BOOST_AUTO_TEST_CASE(compiler_context_imports_owned_diagnostics_with_counts_and_
     Runtime runtime;
     const auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    std::vector<Diagnostic> diagnostics{
-        {DiagnosticSeverity::Warning, "Loading warning", "first.nomad", 2, 3},
-        {DiagnosticSeverity::Error, "Loading error", "second.nomad", 4, 5}
+    std::vector<CompilerDiagnostic> diagnostics{
+        {CompilerDiagnosticSeverity::Warning, "Loading warning", "first.nomad", 2, 3},
+        {CompilerDiagnosticSeverity::Error, "Loading error", "second.nomad", 4, 5,
+            CompilerDiagnosticCode::UnknownIdentifier, "missing"}
     };
-    context.reportDiagnostics(diagnostics);
+    context.addDiagnostics(diagnostics);
     diagnostics.clear();
 
     BOOST_TEST(context.getWarningCount() == 1U);
@@ -32,6 +35,8 @@ BOOST_AUTO_TEST_CASE(compiler_context_imports_owned_diagnostics_with_counts_and_
     BOOST_TEST(context.getFirstError()->sourceName == "second.nomad");
     BOOST_TEST(context.getFirstError()->line == 4U);
     BOOST_TEST(context.getFirstError()->column == 5U);
+    BOOST_CHECK(context.getFirstError()->code == CompilerDiagnosticCode::UnknownIdentifier);
+    BOOST_TEST(context.getFirstError()->subject == "missing");
     context.clearDiagnostics();
     BOOST_TEST(!context.hasError());
     BOOST_TEST(!context.hasWarning());
@@ -68,21 +73,55 @@ BOOST_AUTO_TEST_CASE(compiler_context_records_errors_and_warnings_in_order)
     const auto diagnostics = context.getDiagnostics();
     BOOST_REQUIRE(diagnostics.size() == 3);
 
-    BOOST_TEST((diagnostics[0].severity == DiagnosticSeverity::Warning));
+    BOOST_TEST((diagnostics[0].severity == CompilerDiagnosticSeverity::Warning));
     BOOST_TEST(diagnostics[0].message == "Unused variable 'bonus'");
     BOOST_TEST(diagnostics[0].sourceName == "test.nomad");
     BOOST_TEST(diagnostics[0].line == 2);
     BOOST_TEST(diagnostics[0].column == 5);
 
-    BOOST_TEST((diagnostics[1].severity == DiagnosticSeverity::Error));
+    BOOST_TEST((diagnostics[1].severity == CompilerDiagnosticSeverity::Error));
+    BOOST_CHECK(diagnostics[1].code == CompilerDiagnosticCode::General);
+    BOOST_TEST(diagnostics[1].subject.empty());
     BOOST_TEST(diagnostics[1].message == "Unknown identifier: missing");
     BOOST_TEST(diagnostics[1].sourceName == "other.nomad");
     BOOST_TEST(diagnostics[1].line == 3);
     BOOST_TEST(diagnostics[1].column == 1);
 
-    BOOST_TEST((diagnostics[2].severity == DiagnosticSeverity::Error));
+    BOOST_TEST((diagnostics[2].severity == CompilerDiagnosticSeverity::Error));
     BOOST_TEST(diagnostics[2].line == NOMAD_INVALID_INDEX);
     BOOST_TEST(diagnostics[2].column == NOMAD_INVALID_INDEX);
+}
+
+BOOST_AUTO_TEST_CASE(unknown_identifier_resolution_reports_structured_metadata_without_changing_text)
+{
+    Runtime runtime;
+    const auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    Tokenizer tokens(&context, "unknown.nomad", "missing", 7);
+    BOOST_REQUIRE(tokens.nextLine());
+    const auto expression = parser::parseExpression(&context, nullptr, &tokens);
+    BOOST_REQUIRE(expression != nullptr);
+    BOOST_TEST(!expression->resolve(&context, nullptr));
+    BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1U);
+    const auto* error = context.getFirstError();
+    BOOST_REQUIRE(error != nullptr);
+    BOOST_CHECK(error->code == CompilerDiagnosticCode::UnknownIdentifier);
+    BOOST_TEST(error->subject == "missing");
+    BOOST_TEST(error->message == "Unknown identifier: missing");
+    BOOST_TEST(error->sourceName.empty());
+    BOOST_TEST(error->line == 7U);
+
+    CompilerContext copied(compiler.get());
+    auto diagnostic = *error;
+    diagnostic.message = "An independently worded error";
+    copied.addDiagnostic(diagnostic);
+    diagnostic.subject = "changed";
+    BOOST_TEST(copied.getErrorCount() == 1U);
+    BOOST_TEST(copied.getWarningCount() == 0U);
+    BOOST_REQUIRE(copied.getFirstError() != nullptr);
+    BOOST_CHECK(copied.getFirstError()->code == CompilerDiagnosticCode::UnknownIdentifier);
+    BOOST_TEST(copied.getFirstError()->subject == "missing");
+    BOOST_TEST(copied.getFirstError()->message == "An independently worded error");
 }
 
 BOOST_AUTO_TEST_CASE(compiler_context_warnings_do_not_count_as_errors)
@@ -145,9 +184,9 @@ BOOST_AUTO_TEST_CASE(compiler_context_requires_compiler)
 
 BOOST_AUTO_TEST_CASE(compiler_context_formats_diagnostics)
 {
-    const Diagnostic located{DiagnosticSeverity::Error, "Unknown identifier: missing", "scripts/main.nomad", 3, 7};
-    const Diagnostic lineOnly{DiagnosticSeverity::Warning, "Unused", "scripts/main.nomad", 4, NOMAD_INVALID_INDEX};
-    const Diagnostic unlocated{DiagnosticSeverity::Error, "Failed", "", NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX};
+    const CompilerDiagnostic located{CompilerDiagnosticSeverity::Error, "Unknown identifier: missing", "scripts/main.nomad", 3, 7};
+    const CompilerDiagnostic lineOnly{CompilerDiagnosticSeverity::Warning, "Unused", "scripts/main.nomad", 4, NOMAD_INVALID_INDEX};
+    const CompilerDiagnostic unlocated{CompilerDiagnosticSeverity::Error, "Failed", "", NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX};
 
     BOOST_TEST(formatDiagnostic(located) == "scripts/main.nomad:3:7: error: Unknown identifier: missing");
     BOOST_TEST(formatDiagnostic(lineOnly) == "scripts/main.nomad:4: warning: Unused");

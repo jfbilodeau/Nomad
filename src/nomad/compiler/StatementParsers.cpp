@@ -227,7 +227,7 @@ std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptCal
             initializerContext.setHub(qualifiedName);
             auto expression = parser::parseExpression(&initializerContext, function, tokens);
             const auto validLine = parser::expectEndOfLine(&initializerContext, function, tokens);
-            context->reportDiagnostics(initializerContext.getDiagnostics());
+            context->addDiagnostics(initializerContext.getDiagnostics());
             if (expression == nullptr || !validLine || initializerContext.hasError()) {
                 continue;
             }

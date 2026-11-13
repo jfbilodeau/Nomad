@@ -435,13 +435,13 @@ void InterpreterContext::resetEvaluation() {
 }
 
 void InterpreterContext::setError(const NomadString& error) {
-    addDiagnostic({DiagnosticSeverity::Error, error, m_function->getPath(),
+    addDiagnostic({CompilerDiagnosticSeverity::Error, error, m_function->getPath(),
         NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
 }
 
 void InterpreterContext::reportInputError(const SourceText& source, const NomadString& message) {
     addDiagnostic({
-        DiagnosticSeverity::Error,
+        CompilerDiagnosticSeverity::Error,
         message,
         source.sourceName,
         NOMAD_INVALID_INDEX,
@@ -453,12 +453,12 @@ void InterpreterContext::clearError() {
     m_diagnostics.clear();
 }
 
-void InterpreterContext::addDiagnostic(const Diagnostic& diagnostic) {
+void InterpreterContext::addDiagnostic(const CompilerDiagnostic& diagnostic) {
     m_diagnostics.push_back(diagnostic);
 }
 
 void InterpreterContext::copyCompilerDiagnostic(
-    const std::span<const Diagnostic> diagnostics,
+    const std::span<const CompilerDiagnostic> diagnostics,
     const NomadString& sourceName
 ) {
     for (auto diagnostic : diagnostics) {
@@ -468,27 +468,34 @@ void InterpreterContext::copyCompilerDiagnostic(
 
 }
 
-std::span<const Diagnostic> InterpreterContext::getDiagnostics() const {
+std::span<const CompilerDiagnostic> InterpreterContext::getDiagnostics() const {
     return m_diagnostics;
 }
 
 NomadBoolean InterpreterContext::hasError() const {
-    return std::ranges::any_of(m_diagnostics, [](const Diagnostic& diagnostic) {
-        return diagnostic.severity == DiagnosticSeverity::Error;
+    return std::ranges::any_of(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
+        return diagnostic.severity == CompilerDiagnosticSeverity::Error;
     });
 }
 
 NomadBoolean InterpreterContext::hasWarning() const {
-    return std::ranges::any_of(m_diagnostics, [](const Diagnostic& diagnostic) {
-        return diagnostic.severity == DiagnosticSeverity::Warning;
+    return std::ranges::any_of(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
+        return diagnostic.severity == CompilerDiagnosticSeverity::Warning;
     });
 }
 
-const NomadString* InterpreterContext::getError() const {
-    const auto error = std::ranges::find_if(m_diagnostics, [](const Diagnostic& diagnostic) {
-        return diagnostic.severity == DiagnosticSeverity::Error;
+const CompilerDiagnostic* InterpreterContext::getFirstError() const {
+    const auto error = std::ranges::find_if(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
+        return diagnostic.severity == CompilerDiagnosticSeverity::Error;
     });
-    return error != m_diagnostics.end() ? &error->message : nullptr;
+
+    return error != m_diagnostics.end() ? &*error : nullptr;
+}
+
+const NomadString* InterpreterContext::getError() const {
+    const auto* error = getFirstError();
+
+    return error != nullptr ? &error->message : nullptr;
 }
 
 void InterpreterContext::setParameterResult(const NomadId parameterId) {

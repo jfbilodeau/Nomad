@@ -1684,7 +1684,7 @@ bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilati
         CompilerContext initializerContext(this, context->getMode(), nullptr, true);
         initializerContext.setHub(source.function->getHub());
         const auto resolved = source.ast->resolve(&initializerContext, source.function);
-        context->reportDiagnostics(initializerContext.getDiagnostics());
+        context->addDiagnostics(initializerContext.getDiagnostics());
         return resolved;
     }
     return source.ast->resolve(context, source.function);
@@ -2194,7 +2194,7 @@ void Compiler::registerSources(CompilerContext* context, const SourceBatch& batc
             return;
         }
     }
-    context->reportDiagnostics(batch.diagnostics);
+    context->addDiagnostics(batch.diagnostics);
     for (const auto& script : batch.sources) {
         registerScript(context, script);
     }
@@ -2431,7 +2431,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
             CompilerContext placeholderContext(this, context->getMode(), nullptr, pending.hubInitializer);
             placeholderContext.setHub(pending.hub);
             (void)pending.literal->parsePlaceholders(&placeholderContext, function, pending.sourceContent);
-            context->reportDiagnostics(placeholderContext.getDiagnostics());
+            context->addDiagnostics(placeholderContext.getDiagnostics());
         });
         if (hasNewErrors()) {
             return false;

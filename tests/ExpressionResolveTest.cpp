@@ -74,7 +74,7 @@ BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_identifier_without_throw
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
 
     const auto& diagnostic = context.getDiagnostics().front();
-    BOOST_TEST((diagnostic.severity == DiagnosticSeverity::Error));
+    BOOST_TEST((diagnostic.severity == CompilerDiagnosticSeverity::Error));
     BOOST_TEST(diagnostic.message == "Unknown identifier: missing");
     BOOST_TEST(diagnostic.line == 3);
     BOOST_TEST(diagnostic.column == 7);

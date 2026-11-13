@@ -4,7 +4,7 @@
 
 #include <nomad/Nomad.hpp>
 
-#include <nomad/compiler/Diagnostic.hpp>
+#include <nomad/compiler/CompilerDiagnostic.hpp>
 
 #include <span>
 #include <utility>
@@ -44,7 +44,8 @@ public:
     void setHub(NomadString hub);
     [[nodiscard]] NomadString qualifyDeclaration(const NomadString& name) const;
 
-    void reportDiagnostics(std::span<const Diagnostic> diagnostics);
+    void addDiagnostic(const CompilerDiagnostic& diagnostic);
+    void addDiagnostics(std::span<const CompilerDiagnostic> diagnostics);
 
     void reportError(NomadStringView message);
     void reportError(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
@@ -58,9 +59,9 @@ public:
     [[nodiscard]] NomadBoolean hasWarning() const;
     [[nodiscard]] NomadIndex getErrorCount() const;
     [[nodiscard]] NomadIndex getWarningCount() const;
-    [[nodiscard]] std::span<const Diagnostic> getDiagnostics() const;
+    [[nodiscard]] std::span<const CompilerDiagnostic> getDiagnostics() const;
     // Returns nullptr when no error has been reported.
-    [[nodiscard]] const Diagnostic* getFirstError() const;
+    [[nodiscard]] const CompilerDiagnostic* getFirstError() const;
     void clearDiagnostics();
 
     struct Block {
@@ -82,7 +83,7 @@ public:
 
 private:
     void report(
-        DiagnosticSeverity severity,
+        CompilerDiagnosticSeverity severity,
         NomadStringView message,
         NomadStringView sourceName,
         NomadIndex line,
@@ -93,7 +94,7 @@ private:
     CompilerMode m_mode;
     const InterpreterContext* m_interpreterContext;
     bool m_hubInitializer;
-    std::vector<Diagnostic> m_diagnostics;
+    std::vector<CompilerDiagnostic> m_diagnostics;
     NomadIndex m_errorCount = 0;
     NomadIndex m_warningCount = 0;
     std::vector<Block> m_blocks;

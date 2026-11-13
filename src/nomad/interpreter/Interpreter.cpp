@@ -677,8 +677,8 @@ DynamicFormatResult formatDynamicString(
 }
 
 DynamicFormatResult Interpreter::formatString(
-    const NomadStringView format,
     InterpreterContext& context,
+    const NomadStringView format,
     const NomadStringView sourceName,
     const NomadIndex line,
     const NomadIndex column
@@ -700,7 +700,7 @@ DynamicFormatResult Interpreter::formatString(
             result.text += segment.text;
         } else if (segment.type == FormatTemplateSegmentType::Error) {
             const auto& diagnostic = parsed.diagnostics.at(*segment.diagnosticIndex);
-            appendError(segment, diagnostic.message == "Missing '}' in format string"
+            appendError(segment, diagnostic.code == FormatTemplateDiagnosticCode::MissingClosingBrace
                 ? "missing `}`" : "empty expression");
         } else if (const auto value = evaluateFormatExpression(
             SourceText{
@@ -712,17 +712,16 @@ DynamicFormatResult Interpreter::formatString(
         )) {
             result.text += value->getType()->toString(value->getStorage().data());
         } else {
-            const auto* error = context.getError();
+            const auto* error = context.getFirstError();
             if (error == nullptr) {
                 throw NomadBug("Format expression failed without an error diagnostic");
             }
 
-            auto message = *error;
-            constexpr NomadStringView unknownIdentifier = "Unknown identifier: ";
-            if (message.starts_with(unknownIdentifier)) {
-                message = "invalid identifier: '" + message.substr(unknownIdentifier.size()) + "'";
-            }
-            appendError(segment, message);
+            appendError(
+                segment,
+                error->code == CompilerDiagnosticCode::UnknownIdentifier ?
+                    "invalid identifier: '" + error->subject + "'" : error->message
+            );
         }
         context.clearError();
         context.clearResult();

@@ -63,13 +63,13 @@ NomadIndex LanguageTestFixture::getErrorCount() const {
     return m_context == nullptr ? 0 : m_context->getErrorCount();
 }
 
-const Diagnostic* LanguageTestFixture::findError(const NomadString& messageFragment) const {
+const CompilerDiagnostic* LanguageTestFixture::findError(const NomadString& messageFragment) const {
     if (m_context == nullptr) {
         return nullptr;
     }
 
     for (const auto& diagnostic: m_context->getDiagnostics()) {
-        if (diagnostic.severity == DiagnosticSeverity::Error &&
+        if (diagnostic.severity == CompilerDiagnosticSeverity::Error &&
             diagnostic.message.find(messageFragment) != NomadString::npos) {
             return &diagnostic;
         }

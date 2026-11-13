@@ -48,7 +48,7 @@ public:
 
     [[nodiscard]] NomadString getDiagnostics() const;
     [[nodiscard]] NomadIndex getErrorCount() const;
-    [[nodiscard]] const Diagnostic* findError(const NomadString& messageFragment) const;
+    [[nodiscard]] const CompilerDiagnostic* findError(const NomadString& messageFragment) const;
     [[nodiscard]] bool hasError(const NomadString& messageFragment) const;
 
     // Executes a compiled function. VM faults are captured in `FunctionOutcome::fault`.

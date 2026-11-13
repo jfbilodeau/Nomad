@@ -244,7 +244,7 @@ BOOST_AUTO_TEST_CASE(batch_loading_errors_prevent_compilation)
 {
     const SourceBatch batch{
         {{"broken", {"untitled:broken", "return missing"}}},
-        {{DiagnosticSeverity::Error, "Could not load dependency", "untitled:dependency", 3, 4}}
+        {{CompilerDiagnosticSeverity::Error, "Could not load dependency", "untitled:dependency", 3, 4}}
     };
     Runtime runtime;
     auto compiler = runtime.createCompiler();
@@ -263,7 +263,7 @@ BOOST_AUTO_TEST_CASE(batch_loading_warnings_allow_compilation)
 {
     const SourceBatch batch{
         {{"answer", {"untitled:answer", "return 42"}}},
-        {{DiagnosticSeverity::Warning, "Source warning", "untitled:answer", 1, 1}}
+        {{CompilerDiagnosticSeverity::Warning, "Source warning", "untitled:answer", 1, 1}}
     };
     Runtime runtime;
     auto compiler = runtime.createCompiler();

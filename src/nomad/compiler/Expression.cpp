@@ -1810,7 +1810,15 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
         case IdentifierType::Unknown:
             if (context->getMode() == CompilerMode::Interpreter ||
                 function == nullptr || !parseCapture(compiler, function)) {
-                reportError(context, function, "Unknown identifier: " + m_identifier);
+                context->addDiagnostic({
+                    CompilerDiagnosticSeverity::Error,
+                    "Unknown identifier: " + m_identifier,
+                    function != nullptr ? function->getPath() : NomadString{},
+                    getLine(),
+                    getColumn(),
+                    CompilerDiagnosticCode::UnknownIdentifier,
+                    m_identifier
+                });
                 return;
             }
 

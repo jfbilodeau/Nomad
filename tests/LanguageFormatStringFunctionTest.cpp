@@ -732,6 +732,41 @@ BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "10");
 }
 
+BOOST_AUTO_TEST_CASE(dynamic_format_structured_errors_preserve_markers_recovery_and_locations)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    const NomadString format{"{}|{ \t }|{missing_one}|{missing2}|{\"quoted\"}|{"};
+    const auto result = interpreter.formatString(format, context, "categories.nomad", 4, 7);
+    BOOST_TEST(result.text ==
+        "{empty expression}|{empty expression}|{invalid identifier: 'missing_one'}|"
+        "{invalid identifier: 'missing2'}|quoted|{missing `}`}");
+    const std::array<NomadString, 5> messages{
+        "empty expression", "empty expression", "invalid identifier: 'missing_one'",
+        "invalid identifier: 'missing2'", "missing `}`"
+    };
+    const std::array<NomadStringView, 5> placeholders{"{}", "{ \t }", "{missing_one}", "{missing2}", "{"};
+    BOOST_REQUIRE_EQUAL(result.diagnostics.size(), messages.size());
+    auto start = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < messages.size(); ++index) {
+        const auto offset = index + 1 == messages.size() ?
+            format.rfind('{') : format.find(placeholders[index], start);
+        BOOST_REQUIRE(offset != NomadString::npos);
+        const auto& diagnostic = result.diagnostics[index];
+        BOOST_TEST(diagnostic.message == messages[index]);
+        BOOST_TEST(diagnostic.sourceName == "categories.nomad");
+        BOOST_TEST(diagnostic.line == 4U);
+        BOOST_TEST(diagnostic.column == 7U);
+        BOOST_TEST(diagnostic.offset == offset);
+        BOOST_TEST(diagnostic.length == placeholders[index].size());
+        start = offset + placeholders[index].size();
+    }
+
+    BOOST_TEST(context.getDiagnostics().empty());
+}
+
 BOOST_AUTO_TEST_CASE(dynamic_format_operator_validates_string_type_and_retains_strict_literals)
 {
     for (const auto* source : {"return $10", "value = true\nreturn $value", "return $"}) {

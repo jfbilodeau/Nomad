@@ -21,14 +21,14 @@ using namespace nomad;
 BOOST_AUTO_TEST_SUITE(compilation)
 
 BOOST_AUTO_TEST_CASE(stream_and_string_diagnostics_preserve_locations_and_append_without_newlines) {
-    const std::pair<Diagnostic, NomadString> cases[]{
-        {{DiagnosticSeverity::Error, "Failed", "main.nomad", 16, 32}, "main.nomad:16:32: error: Failed"},
-        {{DiagnosticSeverity::Warning, "Unused", "main.nomad", 4, NOMAD_INVALID_INDEX}, "main.nomad:4: warning: Unused"},
-        {{DiagnosticSeverity::Error, "Failed", "main.nomad", NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX},
+    const std::pair<CompilerDiagnostic, NomadString> cases[]{
+        {{CompilerDiagnosticSeverity::Error, "Failed", "main.nomad", 16, 32}, "main.nomad:16:32: error: Failed"},
+        {{CompilerDiagnosticSeverity::Warning, "Unused", "main.nomad", 4, NOMAD_INVALID_INDEX}, "main.nomad:4: warning: Unused"},
+        {{CompilerDiagnosticSeverity::Error, "Failed", "main.nomad", NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX},
             "main.nomad: error: Failed"},
-        {{DiagnosticSeverity::Error, "Failed", "", NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX}, "error: Failed"},
-        {{DiagnosticSeverity::Warning, "Unused", "", 4, 2}, ":4:2: warning: Unused"},
-        {{DiagnosticSeverity::Warning, "Unused", "", NOMAD_INVALID_INDEX, 2}, "warning: Unused"}
+        {{CompilerDiagnosticSeverity::Error, "Failed", "", NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX}, "error: Failed"},
+        {{CompilerDiagnosticSeverity::Warning, "Unused", "", 4, 2}, ":4:2: warning: Unused"},
+        {{CompilerDiagnosticSeverity::Warning, "Unused", "", NOMAD_INVALID_INDEX, 2}, "warning: Unused"}
     };
     for (const auto& [diagnostic, expected] : cases) {
         std::ostringstream stream;
@@ -127,7 +127,7 @@ BOOST_AUTO_TEST_CASE(configured_compilation_preserves_targets_hooks_diagnostics_
         const auto instructionCount = runtime.getInstructions().size();
         const SourceBatch sources{
             {{"main", {"editor:main", "probe\nreturn 42"}}},
-            {{DiagnosticSeverity::Warning, "Loading warning", "editor:main", 1, 1}}
+            {{CompilerDiagnosticSeverity::Warning, "Loading warning", "editor:main", 1, 1}}
         };
 
         const auto result = compileSources(sources, *compiler, target);
@@ -161,8 +161,8 @@ BOOST_AUTO_TEST_CASE(compilation_results_own_loading_diagnostics_and_preserve_co
     SourceBatch sources{
         {},
         {
-            {DiagnosticSeverity::Warning, "Loading warning", "warning.nomad", 2, 3},
-            {DiagnosticSeverity::Error, "Loading error", "error.nomad", 4, 5}
+            {CompilerDiagnosticSeverity::Warning, "Loading warning", "warning.nomad", 2, 3},
+            {CompilerDiagnosticSeverity::Error, "Loading error", "error.nomad", 4, 5}
         }
     };
 
@@ -187,7 +187,7 @@ BOOST_AUTO_TEST_CASE(configured_compilation_returns_script_diagnostics_for_both_
         BOOST_TEST(!result.succeeded());
         BOOST_TEST(result.errorCount > 0U);
         BOOST_TEST(std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
-            return diagnostic.severity == DiagnosticSeverity::Error &&
+            return diagnostic.severity == CompilerDiagnosticSeverity::Error &&
                 diagnostic.sourceName == "editor:invalid" &&
                 diagnostic.message.find("unknownIdentifier") != NomadString::npos;
         }));
