@@ -428,9 +428,25 @@ const InterpreterValue* InterpreterContext::getResult() const {
     return m_result ? &*m_result : nullptr;
 }
 
+void InterpreterContext::resetEvaluation() {
+    clearError();
+    clearResult();
+    setLoopControl(LoopControl::None);
+}
+
 void InterpreterContext::setError(const NomadString& error) {
     addDiagnostic({DiagnosticSeverity::Error, error, m_function->getPath(),
         NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
+}
+
+void InterpreterContext::reportInputError(const SourceText& source, const NomadString& message) {
+    addDiagnostic({
+        DiagnosticSeverity::Error,
+        message,
+        source.sourceName,
+        NOMAD_INVALID_INDEX,
+        NOMAD_INVALID_INDEX
+    });
 }
 
 void InterpreterContext::clearError() {

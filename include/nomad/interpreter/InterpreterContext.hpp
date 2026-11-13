@@ -5,6 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/compiler/CompilerContext.hpp>
+#include <nomad/compiler/Source.hpp>
 
 #include <nomad/interpreter/InterpreterValue.hpp>
 
@@ -109,7 +110,10 @@ public:
     void clearResult();
     [[nodiscard]] const InterpreterValue* getResult() const;
 
+    // Clears diagnostics, result, and loop control without changing bindings or evaluation lifetime.
+    void resetEvaluation();
     void setError(const NomadString& error);
+    void reportInputError(const SourceText& source, const NomadString& message);
     void addDiagnostic(const Diagnostic& diagnostic);
     void copyCompilerDiagnostic(
         std::span<const Diagnostic> diagnostics,

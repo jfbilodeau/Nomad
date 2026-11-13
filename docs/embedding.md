@@ -2521,6 +2521,15 @@ Each new evaluation clears previous diagnostics; inspect or copy them before
 executing more input. Call `clearError()` to dismiss both errors and warnings
 without starting another evaluation.
 
+`resetEvaluation()` clears diagnostics, releases the current result, and resets
+loop control. It preserves variables, parameters, receiver bindings, and active
+evaluation lifetimes. Use the individual clear methods when only part of that
+state should be discarded.
+
+`reportInputError(source, message)` appends an error using `source.sourceName`
+and unspecified line/column positions. It does not clear existing diagnostics,
+results, or loop control.
+
 `copyCompilerDiagnostic(diagnostics, sourceName)` appends independent copies of
 compiler diagnostics in reporting order, using the supplied input source name.
 Severity, message, line, and column are preserved; the originals are unchanged.

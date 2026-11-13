@@ -769,6 +769,69 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
     BOOST_TEST(*context.getError() == "A later input error");
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_context_reports_input_errors_without_clearing_existing_state)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    context.addDiagnostic({DiagnosticSeverity::Warning, "existing warning", "previous.nomad", 3, 4});
+    context.setResult(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}});
+    context.setLoopControl(LoopControl::Break);
+    {
+        const SourceText source{"console:input", "invalid input"};
+        const NomadString message{"input failed"};
+        context.reportInputError(source, message);
+    }
+
+    const auto diagnostics = context.getDiagnostics();
+    BOOST_REQUIRE_EQUAL(diagnostics.size(), 2U);
+    BOOST_TEST(diagnostics[0].message == "existing warning");
+    BOOST_TEST(diagnostics[0].sourceName == "previous.nomad");
+    BOOST_CHECK(diagnostics[1].severity == DiagnosticSeverity::Error);
+    BOOST_TEST(diagnostics[1].message == "input failed");
+    BOOST_TEST(diagnostics[1].sourceName == "console:input");
+    BOOST_TEST(diagnostics[1].line == NOMAD_INVALID_INDEX);
+    BOOST_TEST(diagnostics[1].column == NOMAD_INVALID_INDEX);
+    BOOST_REQUIRE(context.getResult() != nullptr);
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
+    BOOST_CHECK(context.getLoopControl() == LoopControl::Break);
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_context_resets_evaluation_without_clearing_bindings)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    RuntimeValue text{NomadString{"preserved binding"}};
+    context.setVariable("text", runtime.getStringType(), text);
+    text.freeObjectValue();
+    const auto* callable = context.getCallable();
+    const auto* storage = context.getVariableValue("text");
+    auto* object = storage->getObjectValue();
+    for (const auto control : {LoopControl::Break, LoopControl::Continue}) {
+        context.setResult(runtime.getStringType(), *storage);
+        context.addDiagnostic({DiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
+        context.setError("error");
+        context.setLoopControl(control);
+        BOOST_TEST(object->getReferenceCount() == 2U);
+        context.resetEvaluation();
+        BOOST_TEST(context.getDiagnostics().empty());
+        BOOST_TEST(context.getResult() == nullptr);
+        BOOST_CHECK(context.getLoopControl() == LoopControl::None);
+        BOOST_TEST(context.getCallable() == callable);
+        BOOST_TEST(context.getVariableValue("text") == storage);
+        BOOST_TEST(storage->getStringValue() == "preserved binding");
+        BOOST_TEST(object->getReferenceCount() == 1U);
+    }
+
+    context.resetEvaluation();
+    BOOST_TEST(context.getVariableValue("text") == storage);
+    BOOST_REQUIRE(interpreter.execute("text", context));
+    BOOST_TEST(context.getResult()->getValue().getStringValue() == "preserved binding");
+}
+
 BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_error)
 {
     Runtime runtime;

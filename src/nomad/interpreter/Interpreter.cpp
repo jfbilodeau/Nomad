@@ -265,16 +265,6 @@ InterpreterValue setStoredProperty(
     return InterpreterValue(receiver.getType(), storage.getStorage());
 }
 
-void reportInputError(InterpreterContext& context, const SourceText& source, const NomadString& message) {
-    context.addDiagnostic({
-        DiagnosticSeverity::Error, 
-        message, 
-        source.sourceName,
-        NOMAD_INVALID_INDEX, 
-        NOMAD_INVALID_INDEX
-    });
-}
-
 class RegisterRestoration {
 public:
     explicit RegisterRestoration(VirtualMachine& machine):
@@ -633,9 +623,7 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     InterpreterContext& evaluation,
     NomadIndex sourceLine
 ) const {
-    evaluation.clearError();
-    evaluation.clearResult();
-    evaluation.setLoopControl(LoopControl::None);
+    evaluation.resetEvaluation();
     auto* function = evaluation.getCallable();
     auto compiler = evaluation.getRuntime()->createCompiler();
     CompilerContext context(compiler.get(), CompilerMode::Interpreter, &evaluation);
@@ -650,7 +638,7 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     }
     if (tokens.getLineCount() != sourceLine || !tokens.nextLine()) {
         evaluation.copyCompilerDiagnostic(context.getDiagnostics(), source.sourceName);
-        reportInputError(evaluation, source, "Interpreter requires one non-empty expression");
+        evaluation.reportInputError(source, "Interpreter requires one non-empty expression");
 
         return std::nullopt;
     }
@@ -663,7 +651,7 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
         return std::nullopt;
     }
     if (expression == nullptr || expression->getType() == nullptr || expression->getType()->isVoid()) {
-        reportInputError(evaluation, source, "Interpreter expression must return a value");
+        evaluation.reportInputError(source, "Interpreter expression must return a value");
         return std::nullopt;
     }
     auto* machine = evaluation.getVirtualMachine();
@@ -746,9 +734,7 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
     try {
         return execute(SourceText{evaluation.getCallable()->getPath(), source}, evaluation);
     } catch (const NomadBug& error) {
-        evaluation.clearError();
-        evaluation.clearResult();
-        evaluation.setLoopControl(LoopControl::None);
+        evaluation.resetEvaluation();
         evaluation.setError(error.what());
         return false;
     }
@@ -756,9 +742,7 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
 
 NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& evaluation) const {
     const auto guard = evaluation.beginEvaluation();
-    evaluation.clearError();
-    evaluation.clearResult();
-    evaluation.setLoopControl(LoopControl::None);
+    evaluation.resetEvaluation();
     const RegisterRestoration registers(*evaluation.getVirtualMachine());
     try {
         auto* callable = evaluation.getCallable();
@@ -825,7 +809,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         if (!statements.resolve(&compilerContext, callable)) {
             evaluation.copyCompilerDiagnostic(compilerContext.getDiagnostics(), source.sourceName);
             if (!evaluation.hasError()) {
-                reportInputError(evaluation, source, "Failed to resolve interpreter input");
+                evaluation.reportInputError(source, "Failed to resolve interpreter input");
             }
             return false;
         }
@@ -836,7 +820,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
     } catch (const std::exception& exception) {
         evaluation.clearResult();
         if (!evaluation.hasError()) {
-            reportInputError(evaluation, source, exception.what());
+            evaluation.reportInputError(source, exception.what());
         }
         return false;
     }

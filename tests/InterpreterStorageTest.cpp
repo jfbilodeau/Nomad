@@ -46,6 +46,7 @@ BOOST_AUTO_TEST_CASE(evaluation_guards_release_retired_storage_only_on_outermost
 #endif
         const auto nested = [&]() {
             const auto nestedGuard = context.beginEvaluation();
+            context.resetEvaluation();
             throw std::runtime_error("Guard exit");
         };
         BOOST_CHECK_THROW(nested(), std::runtime_error);
