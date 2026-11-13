@@ -13,12 +13,20 @@ enum class DiagnosticSeverity {
     Error,
 };
 
+enum class DiagnosticCode {
+    General = 1,
+    UnknownIdentifier,
+};
+
 struct Diagnostic {
     DiagnosticSeverity severity;
     NomadString message;
     NomadString sourceName;
     NomadIndex line;
     NomadIndex column;
+    DiagnosticCode code = DiagnosticCode::General;
+    // The unresolved name for UnknownIdentifier; empty for general diagnostics.
+    NomadString subject = {};
 };
 
 // Formats as `source:line:column: error: message`, omitting unknown location parts.
