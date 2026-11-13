@@ -932,6 +932,86 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_ex
     BOOST_TEST(context.getResult()->getValue().getFloatValue() == 4.0f);
 }
 
+BOOST_AUTO_TEST_CASE(interactive_input_preserves_expression_statement_and_multiline_classification)
+{
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("input.touch", [&](VirtualMachine*) {
+        ++calls;
+    }, {}, runtime.getVoidType(), "").isValid());
+    fixture.addFunction("input.answer", "return 17");
+    fixture.addFunction("input.types",
+        "struct InputValue\nnumber = 23\nend\n"
+        "class InputOwner\nnumber = 31\n"
+        "fun read\nreturn this.number\nend\n"
+        "fun touch\ninput.touch\nend\nend\nreturn 0");
+    fixture.addFunction("input.make", "return new InputValue");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    BOOST_REQUIRE(interpreter.execute("owner = new InputOwner", context));
+    struct InputCase {
+        NomadString source;
+        NomadString expected;
+        int calls;
+    };
+    const InputCase cases[]{
+        {"", "", 0},
+        {"# comment", "", 0},
+        {"1 + 2", "3", 0},
+        {"input.answer", "17", 0},
+        {"input.touch", "", 1},
+        {"value = input.answer", "17", 0},
+        {"value", "17", 0},
+        {"copy = input.make", "", 0},
+        {"copy.number", "23", 0},
+        {"owner.read", "31", 0},
+        {"owner.touch", "", 1},
+        {"if true\ninput.touch\nend", "", 1},
+        {"value = 19\ninput.touch", "", 1}
+    };
+    for (const auto& input : cases) {
+        BOOST_TEST_CONTEXT(input.source) {
+            const auto before = calls;
+            BOOST_REQUIRE_MESSAGE(
+                interpreter.execute(SourceText{"console:matrix", input.source}, context),
+                (context.getError() ? *context.getError() : input.source)
+            );
+            BOOST_REQUIRE(context.getResult() != nullptr);
+            if (input.source == "copy = input.make") {
+                BOOST_TEST(context.getResult()->getType()->isStruct());
+            } else if (input.expected.empty()) {
+                BOOST_TEST(context.getResult()->getType()->isVoid());
+            } else {
+                BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getStorage().data()) == input.expected);
+            }
+
+            BOOST_TEST(calls == before + input.calls);
+        }
+
+    }
+
+    for (const auto* source : {"missing", "1 +", "input.answer 1", "1\n2", "input.touch\n1", "value = 1 +",
+        "assert value == 19"}) {
+        BOOST_TEST_CONTEXT(source) {
+            const auto before = calls;
+            BOOST_TEST(!interpreter.execute(SourceText{"console:invalid", source}, context));
+            BOOST_TEST(context.getResult() == nullptr);
+            BOOST_REQUIRE(!context.getDiagnostics().empty());
+            for (const auto& diagnostic : context.getDiagnostics()) {
+                BOOST_TEST(diagnostic.sourceName == "console:invalid");
+            }
+
+            BOOST_TEST(calls == before);
+            BOOST_TEST(context.getVariableValue("value")->getIntegerValue() == 19);
+        }
+
+    }
+
+}
+
 BOOST_AUTO_TEST_CASE(interpreter_evaluates_format_literal_arithmetic)
 {
     Runtime runtime;

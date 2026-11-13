@@ -10,7 +10,10 @@
 #include <nomad/interpreter/Interpreter.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
+
+#include <utility>
 
 using namespace nomad;
 
@@ -89,6 +92,54 @@ BOOST_AUTO_TEST_CASE(parser_reports_unknown_statement)
     BOOST_TEST(statement == nullptr);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
     BOOST_TEST(context.getFirstError()->message == "Unknown statement, native function or function name: 'missing'");
+}
+
+BOOST_AUTO_TEST_CASE(statement_expression_parser_checks_syntax_without_resolving_or_evaluating_it)
+{
+    Runtime runtime;
+    auto calls = 0;
+    const auto valueId = runtime.registerNativeFunction("input.value", [&](VirtualMachine* machine) {
+        ++calls;
+        machine->setIntegerResult(17);
+    }, {}, runtime.getIntegerType(), "");
+    const auto voidId = runtime.registerNativeFunction("input.void", [&](VirtualMachine*) {
+        ++calls;
+    }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(valueId.isValid() && voidId.isValid());
+    const auto bodyId = runtime.registerScriptFunction("expressionBody", "console:parse", "");
+    BOOST_REQUIRE(bodyId.isValid());
+    auto* function = runtime.getScriptFunction(bodyId);
+    const std::pair<NomadString, bool> cases[]{
+        {"1 + 2", true},
+        {"missing", true},
+        {"input.value", true},
+        {"input.void", true},
+        {"1 +", false},
+        {"1 + 2 3", false},
+        {"value = input.value", false}
+    };
+    for (const auto& [source, expectedSuccess] : cases) {
+        BOOST_TEST_CONTEXT(source) {
+            auto compiler = runtime.createCompiler();
+            CompilerContext context(compiler.get());
+            Tokenizer tokens(&context, "console:parse", source);
+            BOOST_REQUIRE(tokens.nextLine());
+            const auto expression = parser::parseStatementExpression(&context, function, &tokens);
+            BOOST_TEST((expression != nullptr) == expectedSuccess);
+            BOOST_TEST(context.hasError() == !expectedSuccess);
+            BOOST_TEST(calls == 0);
+        }
+
+    }
+
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    CompilerContext otherContext(compiler.get());
+    Tokenizer tokens(&otherContext, "console:other", "1 + 2");
+    BOOST_CHECK_THROW(
+        static_cast<void>(parser::parseStatementExpression(&context, function, &tokens)),
+        NomadBug
+    );
 }
 
 BOOST_AUTO_TEST_CASE(parser_recovers_after_errors_inside_blocks)

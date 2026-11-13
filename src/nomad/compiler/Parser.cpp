@@ -326,6 +326,29 @@ bool isPotentialMemberExpression(CompilerContext* context, ScriptCallableBase* f
 
 } // namespace
 
+std::unique_ptr<Expression> parseStatementExpression(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    const NomadIndex statementLine
+) {
+    if (!tokens->isReportingTo(context)) {
+        context->getCompiler()->reportInternalError("Parser and tokenizer must share the same compiler context");
+    }
+
+    auto expression = parseExpression(context, function, tokens);
+    if (expression == nullptr || !expectEndOfLine(context, function, tokens, statementLine)) {
+
+        return nullptr;
+    }
+
+    if (auto* member = expression->asNativeExpression()) {
+        member->setAllowVoid(true);
+    }
+
+    return expression;
+}
+
 bool hasAssignmentOperator(const Tokenizer* tokens) {
     for (NomadIndex index = 0; index < tokens->getTokenCount(); ++index) {
         if (tokens->getTokenTypeAt(index) == TokenType::Operator && tokens->getTokenAt(index) == "=") {
@@ -415,13 +438,10 @@ std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptCallableBas
 
     if (isPotentialMemberExpression(context, function, tokenizer)) {
         const auto statementLine = tokenizer->getLineIndex();
-        auto expression = parseExpression(context, function, tokenizer);
-        if (!expression || !expectEndOfLine(context, function, tokenizer, statementLine)) {
-            return nullptr;
-        }
+        auto expression = parseStatementExpression(context, function, tokenizer, statementLine);
+        if (expression == nullptr) {
 
-        if (auto* member = expression->asNativeExpression()) {
-            member->setAllowVoid(true);
+            return nullptr;
         }
 
         return std::make_unique<ExpressionStatement>(expression->getLine(), expression->getColumn(),

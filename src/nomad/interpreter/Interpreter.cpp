@@ -756,40 +756,37 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         }
         if (!tokenizer.nextLine()) {
             evaluation.setVoidResult();
+
             return true;
         }
 
         const auto& firstToken = tokenizer.currentToken();
         const auto isAssignment = parser::hasAssignmentOperator(&tokenizer);
         const auto isStatement = firstToken.type == TokenType::Identifier &&
-                                 compiler->isStatement(firstToken.textValue);
-        const auto functionId = firstToken.type == TokenType::Identifier
-            ? runtime->getCallableId(firstToken.textValue)
-            : CallableId{};
+            compiler->isStatement(firstToken.textValue);
+        const auto functionId = firstToken.type == TokenType::Identifier ?
+            runtime->getCallableId(firstToken.textValue) : CallableId{};
         const auto* function = runtime->getFunction(functionId);
         const auto isValueReturningCall =
-            function != nullptr && function->getReturnType() != nullptr && !function->getReturnType()->isVoid();
-        const auto line = tokenizer.getLineIndex();
-        const auto column = tokenizer.getColumnIndex();
-        const auto parseAsExpression = tokenizer.getLineCount() == 1 && !isAssignment && !isStatement &&
-                                       (isValueReturningCall || function == nullptr);
-
+            function != nullptr &&
+            function->getReturnType() != nullptr &&
+            !function->getReturnType()->isVoid();
+        const auto parseAsExpression =
+            tokenizer.getLineCount() == 1 &&
+            !isAssignment &&
+            !isStatement &&
+            (isValueReturningCall || function == nullptr);
         StatementList statements;
         if (parseAsExpression) {
-            auto expression = parser::parseExpression(&compilerContext, callable, &tokenizer);
-            if (expression != nullptr &&
-                parser::expectEndOfLine(&compilerContext, callable, &tokenizer)) {
-                if (auto* member = expression->asNativeExpression()) {
-                    member->setAllowVoid(true);
-                }
+            const auto line = tokenizer.getLineIndex();
+            const auto column = tokenizer.getColumnIndex();
+            auto expression = parser::parseStatementExpression(&compilerContext, callable, &tokenizer);
+            if (expression != nullptr) {
                 statements.addStatement(
-                    std::make_unique<ExpressionStatement>(
-                        line,
-                        column,
-                        std::move(expression)
-                    )
+                    std::make_unique<ExpressionStatement>(line, column, std::move(expression))
                 );
             }
+
         } else {
             do {
                 statements.addStatement(parser::parseLine(&compilerContext, callable, &tokenizer));

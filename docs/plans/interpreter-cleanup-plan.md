@@ -1,8 +1,8 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 through 6 and the approved yield-removal follow-up are implemented
-and verified in Windows Debug. Awaiting Step 6 review.
-Steps 7 through 9 are not started.
+Status: Steps 1 through 7 and the approved yield-removal follow-up are implemented
+and verified in Windows Debug, including the approved Step 7 boundary correction.
+Awaiting review. Steps 8 and 9 are not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -438,6 +438,9 @@ November 13, 2026:
 
 ### Step 7: Move interactive-input classification into the parser
 
+Superseded by the approved boundary correction below. The original proposal and
+first execution record are historical; input policy now belongs to Interpreter.
+
 Review finding: 11. Separate architectural approval required.
 
 Before implementation, agree on a parser entry point and document how it handles
@@ -459,6 +462,132 @@ Verification:
 - Confirm public execution results and diagnostic behavior remain unchanged.
 
 Stop for review.
+
+#### Step 7 design proposal
+
+Status: Design approved by the request to proceed November 13, 2026. During
+implementation, the user required caller-neutral naming and no parser coupling
+to the interpreter. The entry point is named `parseInput`.
+
+Proposed public parser entry point:
+
+```cpp
+[[nodiscard]] bool parseInput(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    StatementList* statements
+);
+```
+
+Contract:
+
+- The caller supplies a compiler context, its matching fresh
+  tokenizer, current callable metadata, and an empty output statement list.
+- The entry point advances to the first nonempty tokenized line and consumes the
+  complete interactive input. Empty input succeeds with an empty statement list.
+- Parsing errors are reported through the compiler context and return `false`.
+  Partial output is not resolved or evaluated on failure.
+- The parser does not resolve or evaluate the completed statement list, publish
+  interpreter results, reset evaluation state, or copy diagnostics. Those remain
+  the interpreter's responsibilities.
+
+Preserved input classification:
+
+| Input | Parser route |
+| --- | --- |
+| Single-line value expression or value-returning function call | Parse expression, require end of line, wrap in an expression statement |
+| Single-line call to a known void function | Existing statement-call parsing |
+| Assignment | Existing `parseLine` assignment parsing |
+| Registered statement | Existing `parseLine` and statement registration/availability rules |
+| Multiline input, including blocks | Existing `parseLine` loop; do not broaden acceptance to bare expressions on arbitrary lines |
+| Member expressions and qualified calls | Existing expression/member/call resolution, preserving lexical receiver priority |
+| Unknown names or malformed input | Existing route-specific diagnostics and locations, not speculative parse-and-retry |
+
+Implementation boundary:
+
+- Move the current interactive classification from `Interpreter::execute` to
+  this parser entry point without changing the registered-function return-type
+  distinction. Eliminating that distinction would be a separate grammar change.
+- Share expression-statement parsing inside the parser with `parseLine`:
+  parse the expression, require the applicable end of line, allow void native
+  member calls in statement position, and construct the statement.
+- Preserve line/column capture and the end-of-line behavior for expressions
+  containing inline callbacks; use the existing statement-line mechanism rather
+  than introducing a second token-position scheme.
+- Leave `parseLine` semantics for ordinary compilation and blocks unchanged.
+  Add no mode flags to `parseExpression` and no speculative error rollback.
+- Replace interpreter classification, AST construction, and line iteration with
+  the new parser call. Retain its compiler setup/tokenization error check,
+  empty-result handling, resolution, evaluation, and exception translation.
+- Keep `evaluateFormatExpression` on strict `parseExpression` plus end-of-line
+  validation. Formatting must not accept assignments or statements.
+
+Validation after approval:
+
+- Add a focused input matrix for arithmetic/literals, scalar/struct/void calls,
+  qualified calls, assignments, registered statements, multiline blocks, empty
+  input, malformed/trailing input, unknown names, and member/receiver access.
+- Verify values and void results as well as diagnostics and callback side
+  effects; include the existing rejection of multiline bare expressions.
+- Reuse existing lexical/frame/member regressions and strict-format rejection
+  tests. Run parser/interpreter and language CTest groups against rebuilt code.
+
+The design-only slice required no C++ build or test run. Step 8 starts its
+separate tokenizer source-origin design gate after Step 7 implementation review.
+
+#### Step 7 execution record
+
+November 13, 2026:
+
+- Added caller-neutral `parser::parseInput` using compiler context, callable
+  metadata, tokenizer, and statement list only. It has no new interpreter types,
+  interpreter-mode checks, or dependencies.
+- Verified the new entry point in a compiler-only context without constructing
+  an interpreter. It parses input without resolving unknown identifiers or
+  executing registered callbacks.
+- Moved input classification and line iteration out of `Interpreter::execute`;
+  retained source diagnostics, resolution, evaluation, and empty-result handling.
+- Shared expression parsing, end-of-line validation, and void-member allowance
+  with `parseLine`. Kept the two tiny statement-construction sites to preserve
+  their existing source locations: standalone input uses the initial token
+  position, while ordinary member statements use the expression position.
+  Avoided adding flags or source-position policy machinery merely to merge them.
+- Added parser and execution matrices covering empty input, value/void calls,
+  qualified names, struct results, assignments, registered statements, multiline
+  blocks, member calls, invalid input, and callback side effects.
+- Preserved rejection of compiler-only `assert` statements and multiline bare
+  expressions. Parsing may register variable metadata through existing parser
+  behavior; tests do not incorrectly require metadata to remain untouched.
+- Strict formatting parsing remains unchanged.
+- Direct baseline CTest `nomad_test_remaining` passed. Windows Debug
+  `nomad_test` build passed; rebuilt CTest `nomad_test_language` passed
+  (33.02 seconds) and final `nomad_test_remaining` passed (37.14 seconds).
+- Existing compiled/parser, lexical receiver, inline callback, and strict-format
+  regressions passed. No sanitizer, other-platform, or gameplay validation ran.
+- Next step after review: Step 8's tokenizer source-origin design gate.
+
+#### Step 7 boundary correction
+
+November 13, 2026: the user approved moving input policy back into Interpreter.
+
+- Removed `parser::parseInput`. Whether an input is a single expression or a
+  statement sequence, initial line advancement, empty-input handling, and
+  multiline iteration are Interpreter responsibilities.
+- Exposed only the shared syntax operation `parser::parseStatementExpression`:
+  parse from the current token, require end of line, and allow void member calls
+  in statement position. It does not choose parsing routes, resolve, or evaluate.
+  Both ordinary member statements and Interpreter reuse this operation.
+- Preserved existing source positions and the optional statement-line handling
+  used by block/callback parsing. Strict format expressions remain separate.
+- Retained the execution input-classification matrix. Replaced the removed API's
+  parser test with syntax-only coverage, unknown-name non-resolution, no callback
+  execution, trailing-token rejection, and context/tokenizer mismatch checks.
+- Updated embedding documentation to describe only the remaining syntax API.
+- Windows Debug `nomad_test` build passed. Rebuilt CTest `nomad_test_language`
+  passed (37.36 seconds); `nomad_test_remaining` passed (38.45 seconds).
+- No sanitizer, other-platform, or gameplay validation ran.
+- Next step remains Step 8's tokenizer source-origin design gate.
 
 ### Step 8: Replace newline padding with an explicit source origin
 

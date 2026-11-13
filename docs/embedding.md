@@ -2526,6 +2526,12 @@ loop control. It preserves variables, parameters, receiver bindings, and active
 evaluation lifetimes. Use the individual clear methods when only part of that
 state should be discarded.
 
+For parsing an expression in statement position without execution,
+`parser::parseStatementExpression(context, callable, tokens)` parses from the
+current token, requires end of line, and permits void member calls. Syntax errors
+return null with context diagnostics. The caller chooses between this operation
+and statement parsing; resolution and evaluation are separate operations.
+
 `reportInputError(source, message)` appends an error using `source.sourceName`
 and unspecified line/column positions. It does not clear existing diagnostics,
 results, or loop control.

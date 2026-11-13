@@ -71,6 +71,14 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
 // Returns nullptr for empty lines, for statements that are only handled during pre-parsing, and on error.
 // Compare the context error count to detect errors.
 std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokenizer);
+// Parses an expression in statement position and requires end of line; permits void member calls.
+// Does not resolve, evaluate, or choose between expression and statement parsing.
+[[nodiscard]] std::unique_ptr<Expression> parseStatementExpression(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    NomadIndex statementLine = NOMAD_INVALID_INDEX
+);
 // Parses lines until one of `endTokens` is found. Lines with errors are skipped so the rest of the block is still
 // parsed. Returns false if any error was reported.
 [[nodiscard]] bool parseBlock(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const std::vector<NomadString>& endTokens, StatementList* statements);
