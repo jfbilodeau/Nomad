@@ -44,7 +44,6 @@ public:
         NomadIndex parameterIndex;
         NomadIndex variableIndex;
         bool running;
-        bool yielded;
         RuntimeValue receiver;
     };
 
@@ -105,16 +104,15 @@ public:
 
     void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
     void run(const Closure& closure, std::span<const RuntimeValue> arguments);
-    // Caller owns prepared argument/result slots; false means scalar suspension, so arguments must stay live.
-    [[nodiscard]] bool executeClosure(const Closure& closure);
-    [[nodiscard]] bool executeFunction(const ScriptFunction& function);
+    // Caller owns prepared argument/result slots; execution restores the enclosing frame.
+    void executeClosure(const Closure& closure);
+    void executeFunction(const ScriptFunction& function);
     // Compiler-verified constructor and body; arguments are owned stack copies the caller frees/pops.
     [[nodiscard]] NomadObject* createNativeObject(CallableId constructorId);
     [[nodiscard]] NomadObject* createScriptObject(CallableId constructorId);
     // Fresh destination storage; nonempty receivers also have a hidden pointer below the arguments.
     void createNativeStruct(RuntimeValue* destination, CallableId constructorId);
     void createScriptStruct(RuntimeValue* destination, CallableId constructorId);
-    void yield(const RuntimeValue& result);
     void stop(const RuntimeValue& result);
     void fault(const NomadString& faultMessage) const;
 
@@ -333,7 +331,6 @@ public:
     bool getVariableValue(IdentifierType identifierType, NomadId variableId, RuntimeValue& value);
 
     [[nodiscard]] bool isRunning() const { return m_running; }
-    [[nodiscard]] bool hasYielded() const { return m_yielded; }
 
     [[nodiscard]] size_t getInstructionIndex() const { return m_instructionIndex; }
 
@@ -350,7 +347,6 @@ private:
     [[nodiscard]] NativeCallFrame beginNativeCall();
     void endNativeCall(const NativeCallFrame& frame);
     [[nodiscard]] ExecutionState beginScriptRun();
-    void restoreScriptRun(const ExecutionState& state) noexcept;
     void pushHostArgument(
         const Type* type,
         const RuntimeValue& value,
@@ -369,7 +365,6 @@ private:
     RuntimeValue m_result;
     RuntimeValue m_intermediate;
     bool m_running = false;
-    bool m_yielded = false;
     NomadIndex m_stackIndex = 0;
     std::vector<RuntimeValue> m_stack;
     NomadIndex m_parameterIndex = 0;

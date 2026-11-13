@@ -277,15 +277,14 @@ BOOST_AUTO_TEST_CASE(compiled_format_restores_execution_state_before_conversion_
     auto conversions = 0;
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
-    for (const auto previouslyYielded : {false, true}) {
+    for (const auto initiallyRunning : {false, true}) {
         for (const auto failConversion : {false, true}) {
             auto machine = runtime.createVirtualMachine();
             machine->pushInteger(1234);
             machine->setIntegerResult(41);
             machine->setIntegerIntermediate(43);
             auto before = machine->captureExecutionState();
-            before.running = true;
-            before.yielded = previouslyYielded;
+            before.running = initiallyRunning;
             machine->restoreExecutionState(before);
             const auto expectRestored = [&]() {
                 const auto after = machine->captureExecutionState();
@@ -294,7 +293,6 @@ BOOST_AUTO_TEST_CASE(compiled_format_restores_execution_state_before_conversion_
                 BOOST_TEST(after.parameterIndex == before.parameterIndex);
                 BOOST_TEST(after.variableIndex == before.variableIndex);
                 BOOST_TEST(after.running == before.running);
-                BOOST_TEST(after.yielded == before.yielded);
                 BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
             };
             descriptor->inspect = [&](const RuntimeValue* value) {

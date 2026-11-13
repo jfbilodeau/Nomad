@@ -46,8 +46,6 @@ public:
     [[nodiscard]] InterpreterValue getResultValue() const;
     // Transfers a scalar result without copying or retaining it.
     [[nodiscard]] RuntimeValue releaseResult();
-    // A suspended scalar call keeps its owned arguments on the VM stack.
-    void releaseArgumentsToVirtualMachine();
 
 private:
     InterpreterCallFrame(
@@ -75,7 +73,6 @@ private:
     std::span<RuntimeValue> m_argumentStorage;
     std::vector<ArgumentStorage> m_arguments;
     NomadIndex m_argumentOffset = 0;
-    bool m_onStack = false;
 };
 
 } // namespace nomad

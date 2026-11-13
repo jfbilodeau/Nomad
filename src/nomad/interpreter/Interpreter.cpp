@@ -21,7 +21,6 @@
 #include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/Type.hpp>
@@ -349,25 +348,9 @@ InterpreterValue Interpreter::runFunction(
     if (script->getCaptureCount() != 0) {
         throw std::invalid_argument("Captured functions require closure arguments");
     }
-    if (!type->isStruct() &&
-        std::ranges::none_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
-        std::vector<RuntimeValue> values;
-        values.reserve(arguments.size());
-        for (const auto& argument : arguments) {
-            values.push_back(argument.getValue());
-        }
-        // Keep the scalar execution path's existing suspension behavior.
-        const RegisterRestoration registers(machine);
-        machine.setResult(RuntimeValue{});
-        machine.run(script, values);
-        const RuntimeValueGuard resultGuard(*type, &machine.getResult());
-
-        return InterpreterValue(type, machine.getResult());
-    }
     InterpreterCallFrame frame(machine, *function, arguments, type);
-    if (!runScriptCallable(*script)) {
-        machine.fault("Aggregate script calls cannot yield");
-    }
+    machine.executeFunction(*script);
+
     return frame.getResultValue();
 }
 
@@ -422,14 +405,12 @@ InterpreterValue Interpreter::runFunction(
     }
 
     InterpreterCallFrame frame(machine, *function, arguments, type, nullptr, &closure);
-    if (!machine.executeClosure(closure)) {
-        frame.releaseArgumentsToVirtualMachine();
-    }
+    machine.executeClosure(closure);
 
     return frame.getResultValue();
 }
 
-bool Interpreter::runScriptCallable(
+void Interpreter::runScriptCallable(
     const ScriptCallableBase& callable,
     const RuntimeValue& receiver
 ) const {
@@ -437,8 +418,6 @@ bool Interpreter::runScriptCallable(
 
     m_virtualMachine.enterScriptFrame(callable.getFunctionStart(), receiver);
     m_virtualMachine.executeScript();
-
-    return !m_virtualMachine.hasYielded();
 }
 
 void Interpreter::runNativeCallable(
@@ -447,9 +426,8 @@ void Interpreter::runNativeCallable(
 ) const {
     auto state = m_virtualMachine.captureExecutionState();
     BOOST_SCOPE_EXIT_ALL(&, this) {
-        // Scalar native calls retain their existing yield/stop behavior.
+        // Scalar native calls retain their existing stop behavior.
         state.running = m_virtualMachine.isRunning();
-        state.yielded = m_virtualMachine.hasYielded();
         m_virtualMachine.restoreExecutionState(state);
     };
 
@@ -459,30 +437,20 @@ void Interpreter::runNativeCallable(
 
 void Interpreter::runSynchronousNativeCallable(
     const NativeFunctionFn& callback,
-    const RuntimeValue& receiver,
-    const NomadStringView yieldMessage
+    const RuntimeValue& receiver
 ) const {
     const ExecutionStateGuard state(m_virtualMachine);
-    auto invocation = m_virtualMachine.captureExecutionState();
-    invocation.yielded = false;
-    m_virtualMachine.restoreExecutionState(invocation);
     m_virtualMachine.enterNativeFrame(receiver);
     callback(&m_virtualMachine);
-    if (m_virtualMachine.hasYielded()) {
-        m_virtualMachine.fault(NomadString{yieldMessage});
-    }
 }
 
 void Interpreter::runStructMethod(const Method& method) const {
     if (const auto* script = method.asScriptMethod()) {
-        if (!runScriptCallable(*script)) {
-            m_virtualMachine.fault("Struct method calls cannot yield");
-        }
+        runScriptCallable(*script);
     } else {
         runSynchronousNativeCallable(
             method.asNativeMethod()->getFn(),
-            RuntimeValue{},
-            "Struct method calls cannot yield"
+            RuntimeValue{}
         );
     }
 }
@@ -520,15 +488,12 @@ InterpreterValue Interpreter::runObjectMethod(
     const InterpreterValue receiver(&receiverType, value);
     InterpreterCallFrame frame(m_virtualMachine, method, arguments, method.getReturnType());
     if (const auto* script = method.asScriptMethod()) {
-        if (!runScriptCallable(*script, receiver.getValue())) {
-            m_virtualMachine.fault("Script methods cannot yield");
-        }
+        runScriptCallable(*script, receiver.getValue());
     } else if (method.getReturnType()->isStruct() ||
         std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
         runSynchronousNativeCallable(
             method.asNativeMethod()->getFn(),
-            receiver.getValue(),
-            "Aggregate object methods cannot yield"
+            receiver.getValue()
         );
     } else {
         runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());

@@ -565,126 +565,69 @@ BOOST_AUTO_TEST_CASE(interpreter_and_host_object_methods_copy_struct_arguments_a
     BOOST_TEST(frameVisits == 9);
 }
 
-BOOST_AUTO_TEST_CASE(interpreter_host_script_methods_keep_the_existing_yield_restriction) {
+BOOST_AUTO_TEST_CASE(script_and_aggregate_native_methods_restore_state_while_scalar_native_stop_propagates) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.registerNativeFunction("pauseHostMethod", [](VirtualMachine* active) {
-        active->yield(RuntimeValue{NomadInteger{37}});
+    BOOST_REQUIRE(runtime.registerNativeFunction("stopHostMethod", [](VirtualMachine* active) {
+        active->stop(RuntimeValue{NomadInteger{37}});
     }, {}, runtime.getVoidType(), "").isValid());
-    fixture.addFunction("hostYieldTypes",
-        "class HostYieldOwner\nfun pause\npauseHostMethod\nreturn 99\nend\nend\nreturn 0");
+    fixture.addFunction("hostCompletionTypes",
+        "struct HostCompletionEmpty\nend\n"
+        "class HostCompletionOwner\n"
+        "fun stop\nstopHostMethod\nreturn 99\nend\nend\nreturn 0");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* type = runtime.getTypeByName("HostYieldOwner")->asClassType();
-    const auto pause = runtime.resolveMethod(type, "pause", {});
-    BOOST_REQUIRE(pause.isResolved());
-    const auto objectsBefore = NomadObject::getLiveObjectCount();
-    {
-        auto machine = runtime.createVirtualMachine();
-        const Interpreter interpreter(*machine);
-        const auto receiver = interpreter.construct(type->getConstructors().front()->getId(), {});
-        machine->pushInteger(1234);
-        machine->setIntegerResult(41);
-        machine->setIntegerIntermediate(43);
-        const auto before = machine->captureExecutionState();
-        BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runObjectMethod(receiver, pause.id, {})), VirtualMachineException,
-            [](const auto& error) { return NomadString{error.what()} == "Script methods cannot yield"; });
-        const auto after = machine->captureExecutionState();
-        BOOST_TEST(after.instructionIndex == before.instructionIndex);
-        BOOST_TEST(after.stackIndex == before.stackIndex);
-        BOOST_TEST(after.parameterIndex == before.parameterIndex);
-        BOOST_TEST(after.variableIndex == before.variableIndex);
-        BOOST_TEST(after.running == before.running);
-        BOOST_TEST(after.yielded == before.yielded);
-        BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
-        BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
-        BOOST_TEST(machine->getIntegerResult() == 41);
-        BOOST_TEST(machine->getIntegerIntermediate() == 43);
-        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
-        BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
-        machine->pop1();
-    }
-    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
-}
-
-BOOST_AUTO_TEST_CASE(aggregate_object_methods_are_synchronous_without_changing_scalar_native_yield_behavior) {
-    LanguageTestFixture fixture;
-    auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.registerNativeFunction("pauseObjectAggregateMethod", [](VirtualMachine* active) {
-        active->yield(RuntimeValue{NomadInteger{37}});
-    }, {}, runtime.getVoidType(), "").isValid());
-    fixture.addFunction("objectAggregateYieldTypes",
-        "struct ObjectAggregateYieldEmpty\nend\n"
-        "class ObjectAggregateYieldOwner\n"
-        "fun echo value:ObjectAggregateYieldEmpty\nreturn value\nend\n"
-        "fun pause value:ObjectAggregateYieldEmpty\npauseObjectAggregateMethod\nreturn value\nend\nend\nreturn 0");
-    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* owner = runtime.getTypeByName("ObjectAggregateYieldOwner")->asClassType();
-    const auto* emptyType = runtime.getTypeByName("ObjectAggregateYieldEmpty");
-    const auto scriptEcho = runtime.resolveMethod(owner, "echo", {emptyType});
-    const auto scriptPause = runtime.resolveMethod(owner, "pause", {emptyType});
-    const auto nativeEcho = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
-        .name = "nativeEcho", .parameters = {{emptyType->getId(), "empty", ""}}, .returnTypeId = emptyType->getId(),
-        .function = [](VirtualMachine*) {}
+    const auto* owner = runtime.getTypeByName("HostCompletionOwner")->asClassType();
+    const auto* emptyType = runtime.getTypeByName("HostCompletionEmpty");
+    const auto scriptStop = runtime.resolveMethod(owner, "stop", {});
+    const auto aggregateStop = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
+        .name = "aggregateStop", .parameters = {{emptyType->getId(), "empty", ""}},
+        .returnTypeId = emptyType->getId(),
+        .function = [](VirtualMachine* active) { active->stop(RuntimeValue{NomadInteger{37}}); }
     });
-    const auto nativePause = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
-        .name = "nativePause", .parameters = {{emptyType->getId(), "empty", ""}}, .returnTypeId = emptyType->getId(),
-        .function = [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); }
+    const auto scalarStop = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
+        .name = "scalarStop", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [](VirtualMachine* active) { active->stop(RuntimeValue{NomadInteger{37}}); }
     });
-    const auto scalarPause = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
-        .name = "scalarPause", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
-        .function = [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); }
-    });
-    BOOST_REQUIRE(scriptEcho.isResolved() && scriptPause.isResolved() &&
-        nativeEcho.isValid() && nativePause.isValid() && scalarPause.isValid());
+    BOOST_REQUIRE(scriptStop.isResolved() && aggregateStop.isValid() && scalarStop.isValid());
     const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
     const auto objectsBefore = NomadObject::getLiveObjectCount();
-    for (const auto initiallyYielded : {false, true}) {
+    for (const auto initiallyRunning : {false, true}) {
         auto machine = runtime.createVirtualMachine();
         const Interpreter interpreter(*machine);
         const auto receiver = interpreter.construct(owner->getConstructors().front()->getId(), {});
         machine->pushInteger(1234);
-        machine->setIntegerResult(41);
-        machine->setIntegerIntermediate(43);
-        if (initiallyYielded) {
-            machine->yield(RuntimeValue{NomadInteger{41}});
-        }
-        const auto before = machine->captureExecutionState();
-        const auto assertRestored = [&]() {
+        for (const auto methodId : {scriptStop.id, aggregateStop, scalarStop}) {
+            auto before = machine->captureExecutionState();
+            before.running = initiallyRunning;
+            machine->restoreExecutionState(before);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            const auto arguments = methodId == aggregateStop ?
+                std::span<const InterpreterValue>{&empty, 1} : std::span<const InterpreterValue>{};
+            const auto result = interpreter.runObjectMethod(receiver, methodId, arguments);
+            if (methodId == aggregateStop) {
+                BOOST_TEST(result.getType() == emptyType);
+                BOOST_TEST(result.getStorage().data() == nullptr);
+            } else {
+                BOOST_TEST(result.getValue().getIntegerValue() == 37);
+            }
+
             const auto after = machine->captureExecutionState();
             BOOST_TEST(after.instructionIndex == before.instructionIndex);
+            BOOST_TEST(after.stackIndex == before.stackIndex);
             BOOST_TEST(after.parameterIndex == before.parameterIndex);
             BOOST_TEST(after.variableIndex == before.variableIndex);
-            BOOST_TEST(after.stackIndex == before.stackIndex);
-            BOOST_TEST(after.running == before.running);
-            BOOST_TEST(after.yielded == before.yielded);
+            BOOST_TEST(after.running == (methodId == scalarStop ? false : initiallyRunning));
             BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
             BOOST_TEST(machine->getIntegerResult() == 41);
             BOOST_TEST(machine->getIntegerIntermediate() == 43);
             BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
-        };
-        for (const auto methodId : {scriptEcho.id, nativeEcho}) {
-            const auto result = interpreter.runObjectMethod(receiver, methodId, {&empty, 1});
-            BOOST_TEST(result.getType() == emptyType);
-            BOOST_TEST(result.getStorage().data() == nullptr);
-            assertRestored();
+            BOOST_TEST(receiver.getValue().getObjectValue()->getReferenceCount() == 1U);
         }
-        BOOST_CHECK_EXCEPTION(static_cast<void>(
-            interpreter.runObjectMethod(receiver, nativePause, {&empty, 1})), VirtualMachineException,
-            [](const auto& error) { return NomadString{error.what()} == "Aggregate object methods cannot yield"; });
-        assertRestored();
-        BOOST_CHECK_EXCEPTION(static_cast<void>(
-            interpreter.runObjectMethod(receiver, scriptPause.id, {&empty, 1})), VirtualMachineException,
-            [](const auto& error) { return NomadString{error.what()} == "Script methods cannot yield"; });
-        assertRestored();
-        const auto result = interpreter.runObjectMethod(receiver, scalarPause, {});
-        BOOST_TEST(result.getValue().getIntegerValue() == 37);
-        BOOST_TEST(machine->hasYielded());
-        BOOST_TEST(!machine->isRunning());
-        BOOST_TEST(machine->getIntegerResult() == 41);
-        BOOST_TEST(machine->getIntegerIntermediate() == 43);
-        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+
         machine->pop1();
     }
+
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 

@@ -19,6 +19,7 @@
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <type_traits>
 #include <utility>
 
 #if defined(_MSC_VER) && defined(_DEBUG)
@@ -26,6 +27,15 @@
 #endif
 
 using namespace nomad;
+
+static_assert(std::is_same_v<
+    decltype(std::declval<VirtualMachine&>().executeFunction(std::declval<const ScriptFunction&>())),
+    void
+>);
+static_assert(std::is_same_v<
+    decltype(std::declval<VirtualMachine&>().executeClosure(std::declval<const Closure&>())),
+    void
+>);
 
 namespace {
 
@@ -810,17 +820,15 @@ BOOST_AUTO_TEST_CASE(constructor_opcodes_preserve_arguments_and_release_failed_s
     }
 }
 
-BOOST_AUTO_TEST_CASE(scalar_suspension_keeps_owned_arguments_until_host_resumption) {
+BOOST_AUTO_TEST_CASE(prepared_and_raw_calls_complete_and_release_owned_arguments) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.registerNativeFunction("pauseOwnedFrame", [](VirtualMachine* active) {
-        active->yield(RuntimeValue{NomadInteger{37}});
-    }, {}, runtime.getVoidType(), "").isValid());
-    fixture.addFunction("suspendOwnedFrame", "params text:string\npauseOwnedFrame\nreturn text");
+    fixture.addFunction("completeOwnedFrame", "params text:string\nreturn text");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     runtime.initializeScripts();
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("suspendOwnedFrame"));
-    RuntimeValue argument{NomadString{"retained suspension argument"}};
+    BOOST_TEST(!runtime.getInstructionId("op_yield").isValid());
+    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("completeOwnedFrame"));
+    RuntimeValue argument{NomadString{"owned synchronous argument"}};
     const RuntimeValueGuard argumentOwner(*runtime.getStringType(), &argument);
     for (const auto prepared : {false, true}) {
         VirtualMachine machine(&runtime, 128);
@@ -830,50 +838,34 @@ BOOST_AUTO_TEST_CASE(scalar_suspension_keeps_owned_arguments_until_host_resumpti
             if (prepared) {
                 machine.pushObjectValue(argument);
                 retainedArgument.emplace(*runtime.getStringType(), machine.getStackAddress(0));
-                BOOST_REQUIRE(!machine.executeFunction(*function));
+                machine.executeFunction(*function);
             } else {
                 machine.run(function, {argument});
-                retainedArgument.emplace(
-                    *runtime.getStringType(),
-                    machine.getParameterStorage(0, 1).data()
-                );
             }
 
-            BOOST_REQUIRE(machine.hasYielded());
-            BOOST_TEST(!machine.isRunning());
-            BOOST_TEST(machine.getIntegerResult() == 37);
-            BOOST_TEST(machine.captureExecutionState().stackIndex > before.stackIndex);
-            BOOST_TEST(machine.getParameter(0).getObjectValue() == argument.getObjectValue());
-            BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 2U);
-
-            // The raw host keeps argument slots alive and releases them after resumption.
-            auto resume = machine.captureExecutionState();
-            resume.running = true;
-            resume.yielded = false;
-            machine.restoreExecutionState(resume);
-            machine.executeScript();
             const RuntimeValueGuard resultOwner(*runtime.getStringType(), &machine.getResult());
-            BOOST_TEST(!machine.hasYielded());
             BOOST_TEST(!machine.isRunning());
             BOOST_TEST(machine.getResult().getObjectValue() == argument.getObjectValue());
-            BOOST_TEST(machine.getResult().getStringValue() == "retained suspension argument");
+            BOOST_TEST(machine.getResult().getStringValue() == "owned synchronous argument");
+            BOOST_TEST(argument.getObjectValue()->getReferenceCount() == (prepared ? 3U : 2U));
+            BOOST_TEST(machine.captureExecutionState().stackIndex == before.stackIndex + (prepared ? 1U : 0U));
         }
 
         machine.restoreExecutionState(before);
         BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
-        BOOST_TEST(machine.captureExecutionState().stackIndex == before.stackIndex);
     }
+
 }
 
-BOOST_AUTO_TEST_CASE(script_run_failure_clears_callee_yield_and_releases_owned_arguments) {
+BOOST_AUTO_TEST_CASE(script_run_failure_after_stop_restores_state_and_releases_owned_arguments) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.registerNativeFunction("yieldThenFailFrame", [](VirtualMachine* active) {
+    BOOST_REQUIRE(runtime.registerNativeFunction("stopThenFailFrame", [](VirtualMachine* active) {
         active->setIntegerIntermediate(55);
-        active->yield(RuntimeValue{NomadInteger{37}});
-        throw NomadException("Expected yielded script failure");
+        active->stop(RuntimeValue{NomadInteger{37}});
+        throw NomadException("Expected stopped script failure");
     }, {}, runtime.getVoidType(), "").isValid());
-    fixture.addFunction("failOwnedFrame", "params text:string\nyieldThenFailFrame\nreturn 0");
+    fixture.addFunction("failOwnedFrame", "params text:string\nstopThenFailFrame\nreturn 0");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     runtime.initializeScripts();
     const auto* function = runtime.getScriptFunction(runtime.getFunctionId("failOwnedFrame"));
@@ -881,13 +873,12 @@ BOOST_AUTO_TEST_CASE(script_run_failure_clears_callee_yield_and_releases_owned_a
     const RuntimeValueGuard argumentOwner(*runtime.getStringType(), &argument);
     RuntimeValue receiver{NomadString{"borrowed enclosing receiver"}};
     const RuntimeValueGuard receiverOwner(*runtime.getStringType(), &receiver);
-    for (const auto previouslyYielded : {false, true}) {
+    for (const auto initiallyRunning : {false, true}) {
         VirtualMachine machine(&runtime, 128);
         machine.pushInteger(29);
         machine.enterNativeFrame(receiver);
         auto before = machine.captureExecutionState();
-        before.running = true;
-        before.yielded = previouslyYielded;
+        before.running = initiallyRunning;
         machine.restoreExecutionState(before);
         BOOST_CHECK_THROW(machine.run(function, {argument}), NomadException);
         const auto after = machine.captureExecutionState();
@@ -897,7 +888,6 @@ BOOST_AUTO_TEST_CASE(script_run_failure_clears_callee_yield_and_releases_owned_a
         BOOST_TEST(after.variableIndex == before.variableIndex);
         BOOST_TEST(after.receiver.getObjectValue() == receiver.getObjectValue());
         BOOST_TEST(after.running == before.running);
-        BOOST_TEST(!after.yielded);
         BOOST_TEST(machine.getIntegerParameter(0) == 29);
         BOOST_TEST(machine.getIntegerResult() == 37);
         BOOST_TEST(machine.getIntegerIntermediate() == 55);
@@ -1319,8 +1309,7 @@ BOOST_AUTO_TEST_CASE(prepared_script_execution_guards_do_not_allocate) {
     function->setFunctionEnd(runtime.getInstructions().size());
     runtime.initializeScripts();
     VirtualMachine machine(&runtime, 64);
-    BOOST_REQUIRE(machine.executeFunction(*function));
-    auto suspendedCalls = 0;
+    machine.executeFunction(*function);
     callAllocations = 0;
     previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
     {
@@ -1330,13 +1319,10 @@ BOOST_AUTO_TEST_CASE(prepared_script_execution_guards_do_not_allocate) {
         };
 
         for (auto index = 0; index < 100; ++index) {
-            if (!machine.executeFunction(*function)) {
-                ++suspendedCalls;
-            }
+            machine.executeFunction(*function);
         }
     }
 
-    BOOST_TEST(suspendedCalls == 0);
     BOOST_TEST(callAllocations == 0U);
     BOOST_TEST(machine.getIntegerResult() == 17);
 }

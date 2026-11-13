@@ -1199,13 +1199,11 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_fra
     auto action = 1;
     const auto callback = [&](VirtualMachine* active) {
         active->setIntegerResult(17);
-        if (action == 2 || action == 5) {
-            active->yield(RuntimeValue{NomadInteger{17}});
-        } else if (action == 3 || action == 6) {
+        if (action == 2 || action == 4) {
             active->stop(RuntimeValue{NomadInteger{17}});
         }
 
-        if (action >= 4) {
+        if (action >= 3) {
             throw NomadException("Expected native control failure");
         }
     };
@@ -1220,19 +1218,18 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_fra
     const auto receiver = interpreter.construct(type->getConstructors().front()->getId(), {});
     machine->pushInteger(1234);
     for (const auto isMethod : {false, true}) {
-        for (const auto previouslyYielded : {false, true}) {
-            for (action = 1; action <= 6; ++action) {
+        for (const auto initiallyRunning : {false, true}) {
+            for (action = 1; action <= 4; ++action) {
                 machine->setIntegerResult(41);
                 machine->setIntegerIntermediate(43);
                 auto before = machine->captureExecutionState();
-                before.running = true;
-                before.yielded = previouslyYielded;
+                before.running = initiallyRunning;
                 machine->restoreExecutionState(before);
                 const auto invoke = [&]() {
                     return isMethod ? interpreter.runObjectMethod(receiver, methodId, {}) :
                         interpreter.runFunction(functionId, {});
                 };
-                if (action >= 4) {
+                if (action >= 3) {
                     BOOST_CHECK_THROW(static_cast<void>(invoke()), NomadException);
                 } else {
                     BOOST_TEST(invoke().getValue().getIntegerValue() == 17);
@@ -1243,10 +1240,8 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_fra
                 BOOST_TEST(after.parameterIndex == before.parameterIndex);
                 BOOST_TEST(after.variableIndex == before.variableIndex);
                 BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
-                const auto yields = action == 2 || action == 5;
-                const auto stops = action == 3 || action == 6;
-                BOOST_TEST(after.running == (!yields && !stops));
-                BOOST_TEST(after.yielded == (yields || (!stops && previouslyYielded)));
+                const auto stops = action == 2 || action == 4;
+                BOOST_TEST(after.running == (initiallyRunning && !stops));
                 BOOST_TEST(machine->getIntegerResult() == 41);
                 BOOST_TEST(machine->getIntegerIntermediate() == 43);
                 BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);

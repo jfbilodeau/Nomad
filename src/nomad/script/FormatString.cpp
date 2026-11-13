@@ -4,7 +4,6 @@
 
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
 
-#include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -84,13 +83,7 @@ NomadString FormatString::format(VirtualMachine* machine) const {
         }
 
         InterpreterCallFrame frame(*machine, *function);
-        {
-            const ExecutionStateGuard state(*machine);
-
-            if (!machine->executeFunction(*function)) {
-                machine->fault("Format expression calls cannot yield");
-            }
-        }
+        machine->executeFunction(*function);
 
         string += segment.valueType->toString(frame.getResult());
     };

@@ -534,8 +534,8 @@ expressions, and empty fields retain their logical names and types.
   Compare the required fields explicitly.
 - Inline struct layouts cannot contain direct or indirect value cycles.
   Class-reference fields do not form inline layout cycles.
-- Calls with struct arguments, captures, or results execute synchronously;
-  aggregate yield/resume is unsupported.
+- All calls execute synchronously, including struct arguments, captures, and
+  results. Suspension and resumption are not supported.
 
 ## Data types and numeric ranges
 
@@ -955,7 +955,7 @@ if finished break
 if skipValue continue
 ```
 
-Loops are synchronous. They do not wait for callbacks or automatically yield
+Loops are synchronous. They do not wait for callbacks or suspend
 execution; an unbounded loop can block the calling thread.
 
 ---

@@ -471,13 +471,12 @@ BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_s
 
 }
 
-BOOST_AUTO_TEST_CASE(aggregate_callbacks_are_synchronous_while_scalar_callbacks_preserve_suspension) {
+BOOST_AUTO_TEST_CASE(aggregate_and_scalar_callbacks_complete_after_stop_and_restore_frames) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    auto* virtualMachine = &fixture.getVirtualMachine();
     std::vector<std::unique_ptr<Closure>> callbacks;
     BOOST_REQUIRE(runtime.registerNativeFunction(
-        "test.keepSuspendingCallback",
+        "test.keepCompletedCallback",
         [&](VirtualMachine* active) {
             callbacks.push_back(active->createClosure(&runtime, active->getCallableIdParameter(0)));
         },
@@ -486,88 +485,50 @@ BOOST_AUTO_TEST_CASE(aggregate_callbacks_are_synchronous_while_scalar_callbacks_
         ""
     ).isValid());
     BOOST_REQUIRE(runtime.registerNativeFunction(
-        "test.pauseCallback",
-        [](VirtualMachine* active) { active->yield(RuntimeValue{NomadInteger{37}}); },
+        "test.stopCallback",
+        [](VirtualMachine* active) { active->stop(RuntimeValue{NomadInteger{37}}); },
         {},
         runtime.getVoidType(),
         ""
     ).isValid());
-    fixture.addFunction(
-        "main",
-        "struct SuspendedCaptureEmpty\nend\nempty = new SuspendedCaptureEmpty\n"
-        "test.keepSuspendingCallback fun\ncopy = empty\nreturn 17\nend\n"
-        "test.keepSuspendingCallback fun\ncopy = empty\ntest.pauseCallback\nreturn 17\nend\n"
-        "test.keepSuspendingCallback fun\ntest.pauseCallback\nreturn 17\nend\n"
-        "return 0"
-    );
+    fixture.addFunction("main",
+        "struct CompletedCaptureEmpty\nend\nempty = new CompletedCaptureEmpty\n"
+        "test.keepCompletedCallback fun\ncopy = empty\ntest.stopCallback\nreturn 17\nend\n"
+        "test.keepCompletedCallback fun\ntest.stopCallback\nreturn 17\nend\nreturn 0");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto outcome = fixture.execute("main");
     BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
-    BOOST_REQUIRE(callbacks.size() == 3U);
-    for (const auto previouslyYielded : {false, true}) {
+    BOOST_REQUIRE(callbacks.size() == 2U);
+    for (const auto initiallyRunning : {false, true}) {
         auto machine = runtime.createVirtualMachine();
         const Interpreter interpreter(*machine);
         machine->pushInteger(1234);
-        machine->setIntegerResult(41);
-        machine->setIntegerIntermediate(43);
-        if (previouslyYielded) {
-            machine->yield(RuntimeValue{NomadInteger{41}});
+        for (const auto& callback : callbacks) {
+            auto before = machine->captureExecutionState();
+            before.running = initiallyRunning;
+            machine->restoreExecutionState(before);
+            machine->setIntegerResult(41);
+            machine->setIntegerIntermediate(43);
+            BOOST_TEST(interpreter.runFunction(*callback, {}).getValue().getIntegerValue() == 37);
+            const auto after = machine->captureExecutionState();
+            BOOST_TEST(after.stackIndex == before.stackIndex);
+            BOOST_TEST(after.parameterIndex == before.parameterIndex);
+            BOOST_TEST(after.variableIndex == before.variableIndex);
+            BOOST_TEST(after.instructionIndex == before.instructionIndex);
+            BOOST_TEST(after.running == before.running);
+            BOOST_TEST(machine->getIntegerResult() == 41);
+            BOOST_TEST(machine->getIntegerIntermediate() == 43);
+            BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+            RuntimeValue rawResult;
+            machine->executeFunction(callback.get(), {}, rawResult);
+            BOOST_TEST(rawResult.getIntegerValue() == 37);
+            BOOST_TEST(machine->captureExecutionState().stackIndex == before.stackIndex);
+            BOOST_TEST(machine->isRunning() == initiallyRunning);
         }
 
-        const auto before = machine->captureExecutionState();
-        BOOST_TEST(interpreter.runFunction(*callbacks[0], {}).getValue().getIntegerValue() == 17);
-        BOOST_CHECK_EXCEPTION(
-            static_cast<void>(interpreter.runFunction(*callbacks[1], {})),
-            VirtualMachineException,
-            [](const auto& error) { return NomadString{error.what()} == "Aggregate closure calls cannot yield"; }
-        );
-        const auto after = machine->captureExecutionState();
-        BOOST_TEST(after.stackIndex == before.stackIndex);
-        BOOST_TEST(after.parameterIndex == before.parameterIndex);
-        BOOST_TEST(after.variableIndex == before.variableIndex);
-        BOOST_TEST(after.instructionIndex == before.instructionIndex);
-        BOOST_TEST(after.running == before.running);
-        BOOST_TEST(after.yielded == before.yielded);
-        BOOST_TEST(machine->getIntegerResult() == 41);
-        BOOST_TEST(machine->getIntegerIntermediate() == 43);
-        BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
         machine->pop1();
     }
 
-    {
-        auto machine = runtime.createVirtualMachine();
-        const Interpreter interpreter(*machine);
-        machine->setIntegerResult(41);
-        machine->setIntegerIntermediate(43);
-        const auto before = machine->captureExecutionState();
-        const auto result = interpreter.runFunction(*callbacks[2], {});
-        BOOST_TEST(result.getValue().getIntegerValue() == 37);
-        BOOST_TEST(machine->hasYielded());
-        BOOST_TEST(!machine->isRunning());
-        BOOST_TEST(machine->captureExecutionState().stackIndex > before.stackIndex);
-        BOOST_TEST(machine->getIntegerResult() == 41);
-        BOOST_TEST(machine->getIntegerIntermediate() == 43);
-    }
-
-    RuntimeValue rawResult{NomadInteger{71}};
-    BOOST_CHECK_EXCEPTION(
-        virtualMachine->executeFunction(callbacks[1].get(), {}, rawResult),
-        VirtualMachineException,
-        [](const auto& error) { return NomadString{error.what()} == "Aggregate closure calls cannot yield"; }
-    );
-    BOOST_TEST(rawResult.getIntegerValue() == 71);
-    {
-        auto machine = runtime.createVirtualMachine();
-        const auto before = machine->captureExecutionState();
-        machine->run(*callbacks[2], std::span<const RuntimeValue>{});
-        BOOST_TEST(machine->getIntegerResult() == 37);
-        BOOST_TEST(machine->hasYielded());
-        BOOST_TEST(!machine->isRunning());
-        BOOST_TEST(machine->captureExecutionState().stackIndex > before.stackIndex);
-    }
-
-    virtualMachine->executeFunction(callbacks[2].get(), {}, rawResult);
-    BOOST_TEST(rawResult.getIntegerValue() == 37);
 }
 
 BOOST_AUTO_TEST_CASE(event_callback_adapters_copy_struct_captures_and_release_them_after_failures) {

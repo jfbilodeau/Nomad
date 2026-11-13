@@ -130,7 +130,7 @@ public:
 private:
     VirtualMachine& m_virtualMachine;
 
-    [[nodiscard]] bool runScriptCallable(
+    void runScriptCallable(
         const ScriptCallableBase& callable,
         const RuntimeValue& receiver = RuntimeValue{}
     ) const;
@@ -140,8 +140,7 @@ private:
     ) const;
     void runSynchronousNativeCallable(
         const NativeFunctionFn& callback,
-        const RuntimeValue& receiver,
-        NomadStringView yieldMessage
+        const RuntimeValue& receiver
     ) const;
     void runStructMethod(const Method& method) const;
     [[nodiscard]] InterpreterValue runObjectMethod(

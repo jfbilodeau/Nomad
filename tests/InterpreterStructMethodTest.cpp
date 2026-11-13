@@ -790,119 +790,70 @@ BOOST_AUTO_TEST_CASE(native_failures_discard_struct_replacements_but_keep_shared
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
-BOOST_AUTO_TEST_CASE(struct_method_completion_and_yield_rejection_preserve_native_and_script_caller_state) {
-    LanguageTestFixture fixture;
-    auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.registerNativeFunction("pauseStructMethod", [](VirtualMachine* active) {
-        active->yield(RuntimeValue{NomadInteger{37}});
-    }, {}, runtime.getVoidType(), "").isValid());
-    fixture.addFunction("yieldStructTypes",
-        "struct HostYieldStruct\nnumber = 17\n"
-        "fun pause\nthis.number = 99\npauseStructMethod\nreturn 99\nend\nend\nreturn 0");
-    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* type = runtime.getTypeByName("HostYieldStruct");
-    const auto pause = runtime.resolveMethod(type, "pause", {});
-    BOOST_REQUIRE(pause.isResolved());
-    const auto nativePauseId = runtime.getTypeManager().registerNativeStructMethod(type->getId(), {
-        .name = "nativePause", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
-        .function = [](VirtualMachine* active) {
+BOOST_AUTO_TEST_CASE(native_struct_completion_stop_and_exceptions_restore_caller_state) {
+    Runtime runtime;
+    const auto typeId = runtime.getTypeManager().registerStruct("NativeCompletionStruct");
+    const auto* type = runtime.getTypeByName("NativeCompletionStruct");
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
+    auto stop = false;
+    auto fail = false;
+    const auto methodId = runtime.getTypeManager().registerNativeStructMethod(typeId, {
+        .name = "complete", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = [&](VirtualMachine* active) {
             active->getStorageParameter(0, 0).setIntegerValue(99);
-            active->yield(RuntimeValue{NomadInteger{37}});
+            active->setIntegerResult(37);
+            if (stop) {
+                active->stop(RuntimeValue{NomadInteger{37}});
+            }
+
+            if (fail) {
+                throw NomadException("Expected struct completion failure");
+            }
+
         }
     });
-    const auto readId = runtime.getTypeManager().registerNativeStructMethod(type->getId(), {
-        .name = "read", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
-        .function = [](VirtualMachine* active) { active->setIntegerResult(active->getStorageParameter(0, 0).getIntegerValue()); }
-    });
-    const auto completeId = runtime.getTypeManager().registerNativeStructMethod(type->getId(), {
-        .name = "nativeComplete", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
-        .function = [](VirtualMachine* active) { active->setIntegerResult(37); }
-    });
-    const auto stopId = runtime.getTypeManager().registerNativeStructMethod(type->getId(), {
-        .name = "nativeStop", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
-        .function = [](VirtualMachine* active) { active->stop(RuntimeValue{NomadInteger{37}}); }
-    });
-    const auto failId = runtime.getTypeManager().registerNativeStructMethod(type->getId(), {
-        .name = "nativeFail", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
-        .function = [](VirtualMachine* active) {
-            active->yield(RuntimeValue{NomadInteger{37}});
-            throw std::runtime_error("Native struct completion failed");
-        }
-    });
-    BOOST_REQUIRE(nativePauseId.isValid() && readId.isValid());
-    BOOST_REQUIRE(completeId.isValid() && stopId.isValid() && failId.isValid());
+    BOOST_REQUIRE(methodId.isValid());
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
-    const auto receiver = interpreter.construct(type->asStructType()->getConstructors().front()->getId(), {});
+    const std::array source{RuntimeValue{NomadInteger{17}}};
+    const InterpreterValue receiver(type, source);
     machine->pushInteger(1234);
-    for (const auto methodId : {nativePauseId, pause.id}) {
-        for (const auto previouslyYielded : {false, true}) {
-            if (previouslyYielded) {
-                machine->yield(RuntimeValue{NomadInteger{41}});
-            } else {
-                machine->stop(RuntimeValue{NomadInteger{41}});
-            }
-            machine->setIntegerIntermediate(43);
-            const auto instruction = machine->getInstructionIndex();
-            BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runStructMethod(receiver, methodId, {})),
-                VirtualMachineException,
-                [](const auto& error) { return NomadString{error.what()} == "Struct method calls cannot yield"; });
-            BOOST_TEST(receiver.getStorage()[0].getIntegerValue() == 17);
-            BOOST_TEST(machine->hasYielded() == previouslyYielded);
-            BOOST_TEST(!machine->isRunning());
-            BOOST_TEST(machine->getInstructionIndex() == instruction);
-            BOOST_TEST(machine->getIntegerResult() == 41);
-            BOOST_TEST(machine->getIntegerIntermediate() == 43);
-            BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
-        }
-    }
-    const std::array callerStates{
-        std::pair{false, false},
-        std::pair{true, false},
-        std::pair{false, true}
-    };
-    for (const auto methodId : {completeId, stopId, failId}) {
-        for (const auto& [running, yielded] : callerStates) {
-            auto state = machine->captureExecutionState();
-            state.running = running;
-            state.yielded = yielded;
-            machine->restoreExecutionState(state);
-            machine->setIntegerResult(41);
-            machine->setIntegerIntermediate(43);
-            if (methodId == failId) {
-                BOOST_CHECK_EXCEPTION(
-                    static_cast<void>(interpreter.runStructMethod(receiver, methodId, {})),
-                    std::runtime_error,
-                    [](const auto& error) {
+    for (const auto initiallyRunning : {false, true}) {
+        for (const auto shouldStop : {false, true}) {
+            for (const auto shouldFail : {false, true}) {
+                stop = shouldStop;
+                fail = shouldFail;
+                auto before = machine->captureExecutionState();
+                before.running = initiallyRunning;
+                machine->restoreExecutionState(before);
+                machine->setIntegerResult(41);
+                machine->setIntegerIntermediate(43);
+                if (fail) {
+                    BOOST_CHECK_THROW(static_cast<void>(interpreter.runStructMethod(receiver, methodId, {})), NomadException);
+                } else {
+                    const auto result = interpreter.runStructMethod(receiver, methodId, {});
+                    BOOST_TEST(result.result.getValue().getIntegerValue() == 37);
+                    BOOST_TEST(result.receiver.getStorage()[0].getIntegerValue() == 99);
+                }
 
-                        return NomadString{error.what()} == "Native struct completion failed";
-                    }
-                );
-            } else {
-                const auto result = interpreter.runStructMethod(receiver, methodId, {});
-                BOOST_TEST(result.result.getValue().getIntegerValue() == 37);
-                BOOST_TEST(result.receiver.getStorage()[0].getIntegerValue() == 17);
+                const auto after = machine->captureExecutionState();
+                BOOST_TEST(after.running == before.running);
+                BOOST_TEST(after.instructionIndex == before.instructionIndex);
+                BOOST_TEST(after.stackIndex == before.stackIndex);
+                BOOST_TEST(after.parameterIndex == before.parameterIndex);
+                BOOST_TEST(after.variableIndex == before.variableIndex);
+                BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+                BOOST_TEST(machine->getIntegerResult() == 41);
+                BOOST_TEST(machine->getIntegerIntermediate() == 43);
+                BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+                BOOST_TEST(receiver.getStorage()[0].getIntegerValue() == 17);
             }
 
-            const auto restored = machine->captureExecutionState();
-            BOOST_TEST(restored.running == state.running);
-            BOOST_TEST(restored.yielded == state.yielded);
-            BOOST_TEST(restored.instructionIndex == state.instructionIndex);
-            BOOST_TEST(restored.stackIndex == state.stackIndex);
-            BOOST_TEST(restored.parameterIndex == state.parameterIndex);
-            BOOST_TEST(restored.variableIndex == state.variableIndex);
-            BOOST_TEST(restored.receiver.getObjectValue() == state.receiver.getObjectValue());
-            BOOST_TEST(machine->getIntegerResult() == 41);
-            BOOST_TEST(machine->getIntegerIntermediate() == 43);
-            BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
-            BOOST_TEST(receiver.getStorage()[0].getIntegerValue() == 17);
         }
+
     }
 
-    const auto read = interpreter.runStructMethod(receiver, readId, {});
-    BOOST_TEST(read.result.getValue().getIntegerValue() == 17);
-    BOOST_TEST(machine->hasYielded());
-    machine->stop(RuntimeValue{NomadInteger{41}});
     machine->pop1();
 }
 

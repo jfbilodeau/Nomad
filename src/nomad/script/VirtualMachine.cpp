@@ -21,7 +21,6 @@
 #include <boost/scope_exit.hpp>
 
 #include <algorithm>
-#include <ranges>
 #include <stdexcept>
 #include <utility>
 
@@ -234,19 +233,21 @@ VirtualMachine::ExecutionState VirtualMachine::captureExecutionState() const noe
         m_parameterIndex, 
         m_variableIndex,
         m_running, 
-        m_yielded, 
         m_this
     };
 }
 
 void VirtualMachine::restoreExecutionState(const ExecutionState& state) noexcept {
-    restoreScriptRun(state);
-    m_yielded = state.yielded;
+    m_instructionIndex = state.instructionIndex;
+    m_stackIndex = state.stackIndex;
+    m_parameterIndex = state.parameterIndex;
+    m_variableIndex = state.variableIndex;
+    m_running = state.running;
+    m_this = state.receiver;
 }
 
 void VirtualMachine::enterScriptFrame(const NomadIndex address, const RuntimeValue& receiver) {
     m_running = true;
-    m_yielded = false;
     m_instructionIndex = 0;
     m_this = receiver;
     callScriptMethod(address);
@@ -264,19 +265,9 @@ void VirtualMachine::run(
 ) {
     const auto state = beginScriptRun();
     std::vector<const Type*> argumentTypes;
-    const auto releaseArguments = [&]() {
-        freeHostArguments(state.stackIndex + 2, argumentTypes);
-    };
-    auto retainSuspendedFrame = false;
     BOOST_SCOPE_EXIT_ALL(&, this) {
-        if (!retainSuspendedFrame) {
-            m_yielded = false;
-            restoreScriptRun(state);
-        }
-
-        if (!retainSuspendedFrame) {
-            releaseArguments();
-        }
+        restoreExecutionState(state);
+        freeHostArguments(state.stackIndex + 2, argumentTypes);
     };
 
     if (function == nullptr || args.size() + closures.size() != function->getParameterCount() ||
@@ -310,14 +301,6 @@ void VirtualMachine::run(
 
     callScriptFunction(function->getFunctionStart());
     executeScript();
-    if (m_yielded && m_this.getObjectValue() != nullptr) {
-        fault("Class initialization or construction cannot yield");
-    }
-
-    if (m_yielded) {
-        retainSuspendedFrame = true;
-        m_running = false;
-    }
 }
 
 void VirtualMachine::run(
@@ -377,9 +360,7 @@ void VirtualMachine::run(
     RuntimeValue result;
     {
         InterpreterCallFrame frame(*this, closure, arguments);
-        if (!executeClosure(closure)) {
-            frame.releaseArgumentsToVirtualMachine();
-        }
+        executeClosure(closure);
 
         result = frame.releaseResult();
     }
@@ -387,70 +368,26 @@ void VirtualMachine::run(
     m_result = result;
 }
 
-bool VirtualMachine::executeClosure(const Closure& closure) {
-
-    return executeFunction(*closure.getFunction());
+void VirtualMachine::executeClosure(const Closure& closure) {
+    executeFunction(*closure.getFunction());
 }
 
-bool VirtualMachine::executeFunction(const ScriptFunction& function) {
-    const auto synchronous = function.getReturnType()->isStruct() || std::ranges::any_of(
-        function.getParameters(),
-        [](const auto& parameter) {
-
-            return parameter.type->isStruct();
-        }
-    );
+void VirtualMachine::executeFunction(const ScriptFunction& function) {
     const auto state = beginScriptRun();
-    const auto restore = [&]() noexcept {
-        if (synchronous) {
-            restoreExecutionState(state);
-        } else {
-            m_yielded = false;
-            restoreScriptRun(state);
-        }
-    };
-    auto retainSuspendedFrame = false;
-    BOOST_SCOPE_EXIT_ALL(&) {
-        if (!retainSuspendedFrame) {
-            restore();
-        }
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        restoreExecutionState(state);
     };
 
     callScriptFunction(function.getFunctionStart());
     executeScript();
-    if (m_yielded && synchronous) {
-        fault("Aggregate closure calls cannot yield");
-    }
-
-    if (m_yielded && m_this.getObjectValue() != nullptr) {
-        fault("Class initialization or construction cannot yield");
-    }
-
-    const auto completed = !m_yielded;
-    if (!completed) {
-        retainSuspendedFrame = true;
-        m_running = false;
-    }
-
-    return completed;
 }
 
 VirtualMachine::ExecutionState VirtualMachine::beginScriptRun() {
     const auto state = captureExecutionState();
     m_running = true;
-    m_yielded = false;
     // Returning to instruction zero executes op_stop.
     m_instructionIndex = 0;
     return state;
-}
-
-void VirtualMachine::restoreScriptRun(const ExecutionState& state) noexcept {
-    m_instructionIndex = state.instructionIndex;
-    m_stackIndex = state.stackIndex;
-    m_parameterIndex = state.parameterIndex;
-    m_variableIndex = state.variableIndex;
-    m_running = state.running;
-    m_this = state.receiver;
 }
 
 void VirtualMachine::executeScript() {
@@ -495,8 +432,7 @@ void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, con
     };
 
     BOOST_SCOPE_EXIT_ALL(&, this) {
-        m_yielded = false;
-        restoreScriptRun(state);
+        restoreExecutionState(state);
     };
 
     m_result = RuntimeValue{};
@@ -504,9 +440,6 @@ void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, con
     m_this = receiver;
     callScriptMethod(callable->getFunctionStart());
     executeScript();
-    if (m_yielded) {
-        fault("Initialization or construction cannot yield");
-    }
 }
 
 NomadObject* VirtualMachine::createScriptObject(const CallableId constructorId) {
@@ -570,18 +503,10 @@ void VirtualMachine::createNativeStruct(RuntimeValue* destination, const Callabl
     constructor->getFn()(this);
 }
 
-void VirtualMachine::yield(const RuntimeValue& result) {
-    m_result = result;
-
-    m_running = false;
-    m_yielded = true;
-}
-
 void VirtualMachine::stop(const RuntimeValue& result) {
     m_result = result;
 
     m_running = false;
-    m_yielded = false;
 }
 
 void VirtualMachine::fault(const NomadString& faultMessage) const {

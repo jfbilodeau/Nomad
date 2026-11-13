@@ -30,7 +30,7 @@ noncopyable, and `interpreter.getVirtualMachine()` returns the borrowed VM by re
 
 `Runtime::createVirtualMachine()` returns a new caller-owned VM. Retain that VM
 for repeated execution; Runtime does not cache or own an ordinary execution VM.
-Each VM has independent stacks, results, receivers, and suspension state, while
+Each VM has independent stacks, results, receivers, and execution state, while
 registered APIs and shared variables belong to their common runtime.
 
 Use `machine->executeFunction(functionId, arguments)` to execute and discard a
@@ -1291,8 +1291,8 @@ nothing. Initialization supplies existing type defaults separately and does not
 run constructors.
 
 Compiled source and the interpreter support struct construction and free-function
-arguments/results. Aggregate yield/resume support remains unsupported.
-`VirtualMachine::run` remains the scalar script scheduler/suspension entry point;
+arguments/results. All execution is synchronous; suspension and resumption are
+not supported. `VirtualMachine::run` is the raw scalar script invocation entry point;
 it rejects struct arguments and returns instead of treating them as single slots.
 Use the typed Interpreter invocation APIs for host function and method calls.
 The former VM `runScript`, `runNative`, `runNativeFunction`, `runNativeMethod`,
@@ -1300,7 +1300,7 @@ and `runScriptMethod` wrappers have been removed.
 
 Low-level VM execution uses `captureExecutionState()` and
 `restoreExecutionState(state)` for instruction, stack, parameter, local,
-receiver, running, and yield state. Snapshots borrow receiver/storage references;
+receiver, and running state. Snapshots borrow receiver/storage references;
 they do not retain values or preserve result/intermediate registers.
 Restoration does not release values in discarded stack slots.
 
@@ -1317,17 +1317,16 @@ the frame so execution state is restored before the frame releases its arguments
 Keep a narrower scope when restoration must happen before consuming the result.
 
 `enterScriptFrame(address, receiver)` requires a validated compiled entry address
-and arguments/hidden pointers already on the stack. It starts script execution,
-clears the yield flag, and enters a frame. `executeScript()` executes bytecode
-until stopping or yielding. `enterNativeFrame(receiver)` binds the current stack
-arguments and receiver without executing a callback or changing running/yield
-flags. The optional receiver defaults to an empty value for free functions and
+and arguments/hidden pointers already on the stack. It starts script execution
+and enters a frame. `executeScript()` executes bytecode until stopping.
+`enterNativeFrame(receiver)` binds the current stack arguments and receiver
+without executing a callback or changing the running flag.
+The optional receiver defaults to an empty value for free functions and
 struct methods; struct receiver pointers follow `Callable::getCallStorageLayout()`.
 
 The caller owns argument, receiver, and result storage, invokes native callbacks,
 and restores the enclosing execution state before releasing and popping arguments.
-The typed Interpreter APIs perform these steps and enforce existing yield rules.
-Scalar script calls retain their suspension-capable scheduler path. VM faults
+The typed Interpreter APIs perform these steps synchronously. VM faults
 remain fatal; these primitives are not fault-recovery or value-unwinding APIs.
 Execution exceptions do not unwind bytecode-owned arguments, including arguments
 to a failed constructor. Do not resume a failed execution or assume all abandoned
@@ -1507,8 +1506,7 @@ empty structs. Do not pass complete struct values through single-slot object,
 constant, or raw argument APIs. Struct-valued native properties require
 [method-backed accessors](#method-backed-native-properties), not scalar property
 callbacks. Compiler type arguments containing structs and built-in struct
-equality remain unsupported; compare fields explicitly. Aggregate calls cannot
-yield or resume.
+equality remain unsupported; compare fields explicitly. Calls execute synchronously.
 
 ### Borrowed VM storage
 
@@ -1675,7 +1673,7 @@ leave partially initialized fields; direct callers must release them.
 VM faults are fatal to execution: stop execution and do not resume or reuse the
 faulted VM. Fault recovery and complete release of nested frames, temporary
 arguments, or instances are not supported yet. Class
-initialization and constructor bodies cannot yield. Compile and initialize
+initialization and constructor bodies execute synchronously. Compile and initialize
 required script-level hub variables before using this lower-level VM API.
 
 Native factories that allocate `ScriptObject` storage must explicitly supply
@@ -2548,7 +2546,7 @@ though they occupy no slots.
 Empty constructors and calls still execute their side effects. Returning an
 empty struct retains its type without a slot pointer. A function call used as a
 statement releases its result, including owned fields in a returned struct.
-Aggregate calls execute synchronously; aggregate yield/resume remains unsupported.
+All calls execute synchronously; suspension and resumption are not supported.
 
 Include `<nomad/interpreter/InterpreterValue.hpp>` to use immutable interpreter values
 independently of an interpreter context. `InterpreterValue(type, storage)` copies a
@@ -2782,9 +2780,8 @@ Interpreter struct results are returned as independent values. The interpreter
 does not forward caller destinations or apply return-value optimization to
 struct storage.
 
-Completed calls preserve the enclosing VM registers/frame. Scalar script calls
-retain their existing suspension behavior; calls with struct arguments or
-returns remain synchronous and cannot yield. For captured functions, use the
+Completed calls preserve the enclosing VM registers/frame. Script calls execute
+synchronously for scalar and struct signatures. For captured functions, use the
 closure overload described below rather than passing a function ID.
 Fatal VM fault recovery remains unsupported.
 Call `context.setResult(result)` explicitly to publish a returned value in a
@@ -2802,7 +2799,7 @@ Host call failures propagate as exceptions instead of being converted into
 context diagnostics by an adapter. The call APIs do not publish or clear
 context results. Callers decide how to store returned values and report
 caught exceptions.
-The VM's scalar script scheduler retains its existing aggregate-storage restrictions.
+The VM's raw scalar invocation API retains its aggregate-storage restrictions.
 
 `Interpreter::runObjectMethod(receiver, methodId, arguments)` invokes a registered
 native or compiled script method and returns an owned `InterpreterValue`.
@@ -2827,10 +2824,10 @@ objects and strings independently of the receiver, arguments, interpreter,
 and VM, provided their runtime/type descriptors remain alive.
 
 Completed method calls restore the enclosing VM frame and result/intermediate
-registers. Script methods retain their existing restriction against yielding.
-Native methods with any struct argument or result are synchronous and cannot
-yield, including empty-struct signatures; they preserve the caller's prior
-yield state. Scalar-only native method calls retain their existing yield behavior.
+registers. All methods execute synchronously. Script methods and native methods
+with any struct argument or result restore the caller's running state, including
+empty-struct signatures. Scalar-only native methods propagate `stop` to the VM's
+running state.
 Execution and value-copy failures propagate to host callers; fatal VM fault
 recovery remains unsupported. Property/accessor execution is separate from
 this method API.
@@ -2873,7 +2870,7 @@ Execution or copying failures throw without returning a replacement/result
 pair. This is not a transaction for shared objects: mutations of contained
 class objects remain visible even if the call fails.
 
-Struct-method calls are synchronous and cannot yield, for either native or
+Struct-method calls are synchronous, for either native or
 script methods. They preserve the enclosing execution frame, current object
 receiver, and result/intermediate registers. Fatal VM fault recovery remains
 unsupported. This snapshot-based host API does not automatically replace
@@ -2909,7 +2906,7 @@ cleared or retyped roots without using an invalidated address. Object field
 receivers continue using the evaluated, retained owner even when its former
 variable is replaced by an argument.
 
-Borrowed calls are synchronous and cannot yield. Mutations performed before a
+Borrowed calls are synchronous. Mutations performed before a
 method throws or its result cannot be copied remain visible; argument and result
 cleanup and enclosing VM state restoration still occur. Source execution
 reports failures as diagnostics and clears its published result, without
@@ -3021,10 +3018,9 @@ is created. Nested callbacks propagate complete value copies from their enclosin
 callback's current invocation. Captured class receivers retain ordinary object
 identity; captured struct receivers do not write back to the original receiver.
 
-Calls with any struct argument, capture, or result are synchronous and cannot
-yield, including zero-slot signatures. Such calls restore enclosing VM
-registers/frame and prior yield state. Scalar-only callbacks retain the existing
-script suspension behavior. Copying/execution failures propagate to the host;
+All callback calls execute synchronously, including zero-slot signatures.
+Typed calls restore enclosing VM registers/frame and running state.
+Copying/execution failures propagate to the host;
 temporary argument/result cleanup occurs, but shared-object side effects are
 not rolled back. Fatal VM fault recovery remains unsupported.
 
@@ -3032,8 +3028,7 @@ not rolled back. Fatal VM fault recovery remains unsupported.
 also accept struct captures, so existing event/game callback adapters can invoke
 them without reading captures as scalars. These adapters retain their scalar/
 reference explicit-argument and scalar/reference/void result limits. Use the typed
-interpreter overload for aggregate explicit arguments or results. Scalar-only
-callbacks retain their suspension behavior.
+interpreter overload for aggregate explicit arguments or results.
 
 `VirtualMachine::run(closure, rawArgumentSpan)` provides the raw closure-call
 contract on a caller-owned VM. It borrows the explicit arguments and the closure's
@@ -3050,11 +3045,17 @@ For already prepared calls, `VirtualMachine::executeFunction(function)` and
 `executeClosure(closure)` require
 the complete copied arguments and any hidden return pointer to be on the stack
 in the callable's physical layout. It executes the body without copying values.
-The caller owns argument/result cleanup. A `false` return denotes scalar
-suspension, in which case argument slots must remain owned by the suspended VM.
-Synchronous completion and exceptions restore the enclosing execution frame;
-aggregate calls also preserve the prior yield state. This low-level entry point
+The caller owns argument/result cleanup. Both functions return `void`; completion
+and exceptions restore the enclosing execution frame and running state.
+This low-level entry point
 does not validate host arguments or allocate call storage.
+
+The former `VirtualMachine::yield`, `hasYielded`, suspension status returns,
+and configurable aggregate-yield diagnostic overload have been removed.
+`ExecutionState` no longer contains a yield flag, and the runtime no longer
+registers `op_yield`. C++ hosts using these APIs must be updated and rebuilt.
+Execution failures continue to propagate as exceptions; `stop` still terminates
+the current execution.
 
 Compiled format literals use compiler-resolved lookups or generated compiled
 functions, executed directly by the VM. They do not construct an `Interpreter`

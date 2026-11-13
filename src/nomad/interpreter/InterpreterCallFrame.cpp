@@ -148,7 +148,6 @@ InterpreterCallFrame::InterpreterCallFrame(
 
     m_arguments.reserve(callable.getParameterCount());
     m_machine.reserveLocals(layout.stackSlotCount);
-    m_onStack = true;
     if (layout.stackSlotCount != 0) {
         m_argumentStorage = {
             m_machine.getStackAddress(layout.stackSlotCount - 1),
@@ -216,10 +215,6 @@ RuntimeValue InterpreterCallFrame::releaseResult() {
     return result;
 }
 
-void InterpreterCallFrame::releaseArgumentsToVirtualMachine() {
-    m_onStack = false;
-}
-
 void InterpreterCallFrame::copyArgument(
     const Type& type,
     const std::span<const RuntimeValue> storage
@@ -251,11 +246,6 @@ void InterpreterCallFrame::copyCaptures(const Closure& closure) {
 }
 
 void InterpreterCallFrame::releaseArguments() noexcept {
-    if (!m_onStack) {
-
-        return;
-    }
-
     for (const auto& argument : m_arguments) {
         if (argument.size != 0) {
             argument.type->freeValue(m_argumentStorage.data() + argument.offset);

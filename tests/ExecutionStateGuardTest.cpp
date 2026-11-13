@@ -24,53 +24,48 @@ BOOST_AUTO_TEST_CASE(restores_complete_state_on_normal_exit_and_exception_withou
     RuntimeValue receiver{NomadString{"borrowed receiver"}};
     const RuntimeValueGuard receiverOwner(*runtime.getStringType(), &receiver);
     for (const auto running : {false, true}) {
-        for (const auto yielded : {false, true}) {
-            for (const auto throws : {false, true}) {
-                VirtualMachine machine(&runtime, 64);
-                auto before = machine.captureExecutionState();
-                before.instructionIndex = 7;
-                before.stackIndex = 9;
-                before.parameterIndex = 3;
-                before.variableIndex = 6;
-                before.running = running;
-                before.yielded = yielded;
-                before.receiver = receiver;
-                machine.restoreExecutionState(before);
-                auto caught = false;
-                try {
-                    const ExecutionStateGuard state(machine);
-                    BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
-                    auto invocation = before;
-                    invocation.instructionIndex = 17;
-                    invocation.stackIndex = 19;
-                    invocation.parameterIndex = 13;
-                    invocation.variableIndex = 16;
-                    invocation.running = !running;
-                    invocation.yielded = !yielded;
-                    invocation.receiver = RuntimeValue{};
-                    machine.restoreExecutionState(invocation);
-                    machine.setIntegerResult(42);
-                    machine.setIntegerIntermediate(55);
-                    if (throws) {
-                        throw NomadException("Expected execution-state unwinding");
-                    }
-                } catch (const NomadException&) {
-                    caught = true;
-                }
-
-                const auto after = machine.captureExecutionState();
-                BOOST_TEST(caught == throws);
-                BOOST_TEST(after.instructionIndex == before.instructionIndex);
-                BOOST_TEST(after.stackIndex == before.stackIndex);
-                BOOST_TEST(after.parameterIndex == before.parameterIndex);
-                BOOST_TEST(after.variableIndex == before.variableIndex);
-                BOOST_TEST(after.running == before.running);
-                BOOST_TEST(after.yielded == before.yielded);
-                BOOST_TEST(after.receiver.getObjectValue() == receiver.getObjectValue());
+        for (const auto throws : {false, true}) {
+            VirtualMachine machine(&runtime, 64);
+            auto before = machine.captureExecutionState();
+            before.instructionIndex = 7;
+            before.stackIndex = 9;
+            before.parameterIndex = 3;
+            before.variableIndex = 6;
+            before.running = running;
+            before.receiver = receiver;
+            machine.restoreExecutionState(before);
+            auto caught = false;
+            try {
+                const ExecutionStateGuard state(machine);
                 BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
-                BOOST_TEST(machine.getIntegerResult() == 42);
-                BOOST_TEST(machine.getIntegerIntermediate() == 55);
+                auto invocation = before;
+                invocation.instructionIndex = 17;
+                invocation.stackIndex = 19;
+                invocation.parameterIndex = 13;
+                invocation.variableIndex = 16;
+                invocation.running = !running;
+                invocation.receiver = RuntimeValue{};
+                machine.restoreExecutionState(invocation);
+                machine.setIntegerResult(42);
+                machine.setIntegerIntermediate(55);
+                if (throws) {
+                    throw NomadException("Expected execution-state unwinding");
+                }
+            } catch (const NomadException&) {
+                caught = true;
             }
+
+            const auto after = machine.captureExecutionState();
+            BOOST_TEST(caught == throws);
+            BOOST_TEST(after.instructionIndex == before.instructionIndex);
+            BOOST_TEST(after.stackIndex == before.stackIndex);
+            BOOST_TEST(after.parameterIndex == before.parameterIndex);
+            BOOST_TEST(after.variableIndex == before.variableIndex);
+            BOOST_TEST(after.running == before.running);
+            BOOST_TEST(after.receiver.getObjectValue() == receiver.getObjectValue());
+            BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(machine.getIntegerResult() == 42);
+            BOOST_TEST(machine.getIntegerIntermediate() == 55);
         }
     }
 }
@@ -111,7 +106,6 @@ BOOST_AUTO_TEST_CASE(release_leaves_current_state_active) {
     expected.parameterIndex = 13;
     expected.variableIndex = 16;
     expected.running = true;
-    expected.yielded = true;
     expected.receiver = receiver;
     {
         ExecutionStateGuard state(machine);
@@ -126,7 +120,6 @@ BOOST_AUTO_TEST_CASE(release_leaves_current_state_active) {
     BOOST_TEST(after.parameterIndex == expected.parameterIndex);
     BOOST_TEST(after.variableIndex == expected.variableIndex);
     BOOST_TEST(after.running == expected.running);
-    BOOST_TEST(after.yielded == expected.yielded);
     BOOST_TEST(after.receiver.getObjectValue() == receiver.getObjectValue());
     BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
 }

@@ -1,13 +1,18 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 through 4 implemented and verified in Windows Debug. Awaiting
-Step 4 review. Steps 5 through 9 are not started.
+Status: Steps 1 through 5 and the approved yield-removal follow-up are implemented
+and verified in Windows Debug. Awaiting review.
+Steps 6 through 9 are not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
 Implement one approved step at a time, report its changes and verification,
 then stop for review. Approval of this plan does not authorize autonomous
 execution of all steps, commits, or pushes.
+
+The historical execution records for Steps 1 through 5 describe the earlier
+suspension contracts. The subsequently approved yield-removal follow-up below
+supersedes those contracts and their suspension-specific tests.
 
 ## Goal and scope
 
@@ -36,9 +41,10 @@ exception-safety work. This plan does not authorize broader RAII migration.
 - Preserve immutable snapshots versus mutation of borrowed live struct storage.
 - Preserve raw-pointer reference semantics, reference counts, copy-failure
   cleanup, strong assignment guarantees, and zero-sized values.
-- Preserve scalar suspension and suspended-frame ownership, aggregate and
-  method no-yield rules, prior yield state, nested calls, receiver bindings,
-  stack layout, and register restoration.
+- Execution is synchronous; yield and suspended-frame ownership have been
+  removed by explicit approval. Preserve existing `stop` behavior, nested calls,
+  receiver bindings, stack layout, and register restoration, except for Step 5's
+  explicitly approved removal of the redundant scalar saved-receiver slot.
 - Preserve source execution's diagnostic translation versus dynamic formatting's
   propagation of execution faults.
 - Preserve the free formatting bridge, public overloads, diagnostic locations,
@@ -294,6 +300,90 @@ Verification:
   packing and result ownership solely for scalar values.
 
 Stop for review; retain the existing split if consolidation cannot stay simple.
+
+#### Step 5 approved design and execution record
+
+November 12, 2026:
+
+- Compared legacy scalar invocation, aggregate invocation, and closure execution
+  with prepared call frames and VM execution. The user approved "Use the shared
+  prepared-frame path" before implementation.
+- Approved stack-footprint change: ordinary scalar calls no longer push the
+  legacy extra saved-receiver slot. They can fit in a stack one slot smaller;
+  parameter/local layouts continue using the existing prepared-frame convention.
+  Raw VM host invocation APIs retain their existing layouts and behavior.
+- Ordinary script functions now prepare one typed call frame and use
+  `VirtualMachine::executeFunction`, without separate scalar argument packing
+  or scalar result-ownership machinery.
+- A completed or failing invocation retains frame cleanup. Scalar suspension
+  transfers argument ownership before result snapshotting; the suspended frame
+  remains active while the call frame restores enclosing result/intermediate
+  registers. Aggregate invocation remains synchronous and restores prior state.
+- Added a diagnostic-text overload for prepared function execution, retaining
+  the original overload and closure fault text. Ordinary functions retain
+  "Aggregate script calls cannot yield".
+- Closure capture handling, raw VM APIs, method invocation, and
+  `ExecutionStateGuard` were not redesigned or modified. The supplied guard-test
+  attachment was read only.
+- Added regressions for the exact prepared stack boundary (one scalar argument:
+  six slots succeeds, five fails), direct argument copying into VM storage,
+  copy failures at argument/result stages, and scalar suspension/resumption after
+  destruction of the original input value. Checked references, registers,
+  stack/frame indices, and final live-value counts.
+- Existing aggregate/empty-struct no-yield, prior-yield, closure capture/failure,
+  nested frame, and allocation-free prepared execution tests passed.
+- Direct baseline CTest `nomad_test_remaining` passed. Windows Debug
+  `nomad_test` build passed; rebuilt CTest `nomad_test_language` passed
+  (35.98 seconds) and `nomad_test_remaining` passed (39.51 seconds).
+- No sanitizer, other-platform, or gameplay validation was performed.
+- Next step after review: Step 6, removing diagnostic-transfer cursor bookkeeping
+  from format-expression parsing while preserving diagnostic order and locations.
+
+### Approved follow-up: Remove yield support
+
+The user approved removing yield after the usage review found no application,
+module, compiler-emission, sample, or template dependency on suspension.
+
+Changes:
+
+- Removed the VM yield API, flag/accessor, execution-state field, opcode
+  registration/implementation, and obsolete instruction/decompiler declarations.
+- Prepared function and closure execution return `void`, restore the enclosing
+  frame synchronously, and propagate failures through exceptions. Removed the
+  configurable diagnostic-text overload and yield-rejection branches.
+- Removed suspended-argument ownership transfer. Typed call frames always
+  release their arguments/results; raw host calls release their owned copies on
+  completion and exceptions.
+- Preserved `stop` semantics: script execution restores enclosing running state;
+  scalar native calls propagate stop, while native struct/aggregate object
+  methods restore the caller's running state. The remaining specialized native
+  helpers are intentional because of this difference, not suspension support.
+- Replaced suspension-only regressions with synchronous completion, stop,
+  exception, frame restoration, ownership, and callback coverage. Preserved
+  existing copy-failure, nested-call, and allocation checks.
+- Updated embedding/language documentation, including the breaking C++ API
+  removal and the requirement to update and rebuild affected hosts.
+- Only repository files were edited; the supplied read-only attachment was not
+  modified. Unrelated historical plans were not rewritten.
+
+Validation:
+
+- Before editing, direct CTest `nomad_test_language` and `nomad_test_remaining`
+  passed.
+- The VS Code build request timed out without a result. After checking that no
+  build process remained, built `nomad_test` successfully using the configured
+  CMake executable and active Windows Debug build directory. Existing unrelated
+  warnings remain; there were no build errors.
+- Rebuilt CTest `nomad_test_language` passed (49.34 seconds) and
+  `nomad_test_remaining` passed (196.11 seconds), including replacement completion,
+  stop/exception restoration, ownership/copy failure, callback, and allocation
+  regressions.
+- Confirmed no suspension API, state field, status-return branch, ownership
+  transfer, or opcode implementation remains in production code. The only
+  `op_yield` reference in tests checks that it is absent from the registry.
+- No sanitizer, other-platform, or gameplay validation was performed.
+
+Stop for review after validation. The next cleanup step remains Step 6.
 
 ### Step 6: Simplify format-expression diagnostic transfer
 

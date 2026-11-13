@@ -98,10 +98,6 @@ void op_stop(VirtualMachine* interpreter) {
     interpreter->stop(interpreter->getResult());
 }
 
-void op_yield(VirtualMachine* interpreter) {
-    interpreter->yield(interpreter->getResult());
-}
-
 void op_return(VirtualMachine* interpreter) {
     interpreter->returnFunction(0);
 }
