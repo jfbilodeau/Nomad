@@ -441,6 +441,17 @@ void InterpreterContext::addDiagnostic(const Diagnostic& diagnostic) {
     m_diagnostics.push_back(diagnostic);
 }
 
+void InterpreterContext::copyCompilerDiagnostic(
+    const std::span<const Diagnostic> diagnostics,
+    const NomadString& sourceName
+) {
+    for (auto diagnostic : diagnostics) {
+        diagnostic.sourceName = sourceName;
+        addDiagnostic(diagnostic);
+    }
+
+}
+
 std::span<const Diagnostic> InterpreterContext::getDiagnostics() const {
     return m_diagnostics;
 }

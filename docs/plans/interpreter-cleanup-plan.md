@@ -1,8 +1,8 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 through 5 and the approved yield-removal follow-up are implemented
-and verified in Windows Debug. Awaiting review.
-Steps 6 through 9 are not started.
+Status: Steps 1 through 6 and the approved yield-removal follow-up are implemented
+and verified in Windows Debug. Awaiting Step 6 review.
+Steps 7 through 9 are not started.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -406,6 +406,35 @@ Verification:
   placeholders; execution exceptions still propagate.
 
 Stop for review.
+
+#### Step 6 execution record
+
+November 13, 2026:
+
+- Removed early diagnostic transfer and destination-size cursor bookkeeping
+  from format-expression parsing.
+- Tokenization failures and invalid input shape transfer compiler diagnostics at
+  their return boundaries. Otherwise, parsing/resolution diagnostics transfer
+  once before error/value validation and expression execution.
+- Preserved reporting order, source-name replacement, strict expression parsing,
+  synthesized input/value errors, and exception-only result clearing.
+- Added a regression covering lexical, parse, trailing-input, type, void-value,
+  and multiline failures, individually and in one template. Checked one public
+  error per invalid placeholder, message order, source name, line, column,
+  offset/length, subsequent successful evaluation, and absence of invalid
+  expression side effects.
+- Warning/error transfer order remains the compiler collection's insertion
+  order. No warning-producing strict-expression path was found; no artificial
+  warning hook or production API was added solely to test that case. The new
+  regression does not claim direct warning-before-error coverage.
+- Direct baseline CTest `nomad_test_language` passed (29.87 seconds). Windows
+  Debug `nomad_test` build passed; rebuilt CTest `nomad_test_language` passed
+  (50.23 seconds) and `nomad_test_remaining` passed (49.03 seconds).
+- Existing nested-template recovery and execution-exception propagation tests
+  passed. No sanitizer, other-platform, or gameplay validation was performed.
+- Next step after review: Step 7's architectural gate. Agree on a parser entry
+  point for interactive input before moving classification out of Interpreter.
+  Strict formatting expressions remain separate.
 
 ### Step 7: Move interactive-input classification into the parser
 

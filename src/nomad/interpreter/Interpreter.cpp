@@ -265,17 +265,14 @@ InterpreterValue setStoredProperty(
     return InterpreterValue(receiver.getType(), storage.getStorage());
 }
 
-void retainDiagnostics(InterpreterContext& evaluation, std::span<const Diagnostic> diagnostics,
-    const NomadString& sourceName) {
-    for (auto diagnostic : diagnostics) {
-        diagnostic.sourceName = sourceName;
-        evaluation.addDiagnostic(diagnostic);
-    }
-}
-
-void reportInputError(InterpreterContext& evaluation, const SourceText& source, const NomadString& message) {
-    evaluation.addDiagnostic({DiagnosticSeverity::Error, message, source.sourceName,
-        NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
+void reportInputError(InterpreterContext& context, const SourceText& source, const NomadString& message) {
+    context.addDiagnostic({
+        DiagnosticSeverity::Error, 
+        message, 
+        source.sourceName,
+        NOMAD_INVALID_INDEX, 
+        NOMAD_INVALID_INDEX
+    });
 }
 
 class RegisterRestoration {
@@ -646,21 +643,22 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
         sourceLine = 1;
     }
     Tokenizer tokens(&context, source.sourceName, NomadString(sourceLine - 1, '\n') + source.text);
-    retainDiagnostics(evaluation, context.getDiagnostics(), source.sourceName);
     if (context.hasError()) {
+        evaluation.copyCompilerDiagnostic(context.getDiagnostics(), source.sourceName);
+
         return std::nullopt;
     }
     if (tokens.getLineCount() != sourceLine || !tokens.nextLine()) {
+        evaluation.copyCompilerDiagnostic(context.getDiagnostics(), source.sourceName);
         reportInputError(evaluation, source, "Interpreter requires one non-empty expression");
+
         return std::nullopt;
     }
     auto expression = parser::parseExpression(&context, function, &tokens);
     if (expression != nullptr && parser::expectEndOfLine(&context, function, &tokens)) {
         (void)expression->resolve(&context, function);
     }
-    // Tokenization diagnostics were already retained above.
-    const auto retainedDiagnostics = evaluation.getDiagnostics().size();
-    retainDiagnostics(evaluation, context.getDiagnostics().subspan(retainedDiagnostics), source.sourceName);
+    evaluation.copyCompilerDiagnostic(context.getDiagnostics(), source.sourceName);
     if (context.hasError()) {
         return std::nullopt;
     }
@@ -717,7 +715,12 @@ DynamicFormatResult Interpreter::formatString(
             appendError(segment, diagnostic.message == "Missing '}' in format string"
                 ? "missing `}`" : "empty expression");
         } else if (const auto value = evaluateFormatExpression(
-            SourceText{NomadString{sourceName}, segment.text}, context, line
+            SourceText{
+                NomadString{sourceName},
+                segment.text
+            },
+            context,
+            line
         )) {
             result.text += value->getType()->toString(value->getStorage().data());
         } else {
@@ -764,7 +767,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         CompilerContext compilerContext(compiler.get(), CompilerMode::Interpreter, &evaluation);
         Tokenizer tokenizer(&compilerContext, source.sourceName, source.text);
         if (compilerContext.hasError()) {
-            retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
+            evaluation.copyCompilerDiagnostic(compilerContext.getDiagnostics(), source.sourceName);
             return false;
         }
         if (!tokenizer.nextLine()) {
@@ -810,7 +813,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         }
 
         if (compilerContext.hasError()) {
-            retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
+            evaluation.copyCompilerDiagnostic(compilerContext.getDiagnostics(), source.sourceName);
             return false;
         }
 
@@ -820,14 +823,14 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         }
 
         if (!statements.resolve(&compilerContext, callable)) {
-            retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
+            evaluation.copyCompilerDiagnostic(compilerContext.getDiagnostics(), source.sourceName);
             if (!evaluation.hasError()) {
                 reportInputError(evaluation, source, "Failed to resolve interpreter input");
             }
             return false;
         }
 
-        retainDiagnostics(evaluation, compilerContext.getDiagnostics(), source.sourceName);
+        evaluation.copyCompilerDiagnostic(compilerContext.getDiagnostics(), source.sourceName);
         evaluation.setResult(statements.evaluate(evaluation));
         return !evaluation.hasError();
     } catch (const std::exception& exception) {

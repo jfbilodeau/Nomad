@@ -2521,6 +2521,11 @@ Each new evaluation clears previous diagnostics; inspect or copy them before
 executing more input. Call `clearError()` to dismiss both errors and warnings
 without starting another evaluation.
 
+`copyCompilerDiagnostic(diagnostics, sourceName)` appends independent copies of
+compiler diagnostics in reporting order, using the supplied input source name.
+Severity, message, line, and column are preserved; the originals are unchanged.
+Existing context diagnostics are retained, and an empty input adds nothing.
+
 Results are owned by the context. Copy a result using `InterpreterValue` if it must
 survive another evaluation; do not free the context's result manually.
 `listVariables()` lists interpreter-owned variables, not borrowed frame slots.

@@ -802,6 +802,46 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     BOOST_TEST(!context.hasError());
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_context_copies_compiler_diagnostics_in_order_without_changing_the_source)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    context.addDiagnostic({DiagnosticSeverity::Warning, "existing", "existing.nomad", 1, 2});
+    {
+        auto compiler = runtime.createCompiler();
+        CompilerContext compilation(compiler.get());
+        compilation.reportWarning("compiler warning", "original.nomad", 3, 4);
+        compilation.reportError("compiler error", "original.nomad", 5, 6);
+        context.copyCompilerDiagnostic(compilation.getDiagnostics(), "console:input");
+        BOOST_REQUIRE_EQUAL(compilation.getDiagnostics().size(), 2U);
+        BOOST_TEST(compilation.getDiagnostics()[0].sourceName == "original.nomad");
+        BOOST_TEST(compilation.getDiagnostics()[1].sourceName == "original.nomad");
+    }
+
+    const auto diagnostics = context.getDiagnostics();
+    BOOST_REQUIRE_EQUAL(diagnostics.size(), 3U);
+    BOOST_TEST(diagnostics[0].message == "existing");
+    BOOST_TEST(diagnostics[0].sourceName == "existing.nomad");
+    BOOST_CHECK(diagnostics[1].severity == DiagnosticSeverity::Warning);
+    BOOST_TEST(diagnostics[1].message == "compiler warning");
+    BOOST_TEST(diagnostics[1].sourceName == "console:input");
+    BOOST_TEST(diagnostics[1].line == 3U);
+    BOOST_TEST(diagnostics[1].column == 4U);
+    BOOST_CHECK(diagnostics[2].severity == DiagnosticSeverity::Error);
+    BOOST_TEST(diagnostics[2].message == "compiler error");
+    BOOST_TEST(diagnostics[2].sourceName == "console:input");
+    BOOST_TEST(diagnostics[2].line == 5U);
+    BOOST_TEST(diagnostics[2].column == 6U);
+    BOOST_REQUIRE(context.getError() != nullptr);
+    BOOST_TEST(*context.getError() == "compiler error");
+    context.copyCompilerDiagnostic({}, "unused.nomad");
+    BOOST_TEST(context.getDiagnostics().size() == 3U);
+    context.clearError();
+    BOOST_TEST(context.getDiagnostics().empty());
+}
+
 BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_expressions)
 {
     Runtime runtime;

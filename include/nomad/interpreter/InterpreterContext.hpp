@@ -111,6 +111,10 @@ public:
 
     void setError(const NomadString& error);
     void addDiagnostic(const Diagnostic& diagnostic);
+    void copyCompilerDiagnostic(
+        std::span<const Diagnostic> diagnostics,
+        const NomadString& sourceName
+    );
     // Includes warnings and errors in reporting order. clearError clears this collection too.
     [[nodiscard]] std::span<const Diagnostic> getDiagnostics() const;
     void clearError();
@@ -159,12 +163,12 @@ private:
     NomadIndex m_variableIndex = 0;
     NomadIndex m_frameVariableCount = 0;
     std::optional<InterpreterValue> m_result;
-    LoopControl m_loopControl = LoopControl::None;
     std::vector<Diagnostic> m_diagnostics;
     // Indexed by resolution variable id; borrowed frame slots remain empty.
     std::vector<std::unique_ptr<InterpreterStorage>> m_variables;
     std::vector<std::unique_ptr<InterpreterStorage>> m_retiredStorage;
     NomadIndex m_evaluationDepth = 0;
+    LoopControl m_loopControl = LoopControl::None;
 };
 
 } // namespace nomad

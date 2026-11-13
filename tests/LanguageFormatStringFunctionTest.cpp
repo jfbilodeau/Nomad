@@ -820,6 +820,68 @@ BOOST_AUTO_TEST_CASE(dynamic_format_recovers_from_syntax_type_and_void_errors_be
     }
 }
 
+BOOST_AUTO_TEST_CASE(dynamic_format_retains_one_ordered_error_per_invalid_expression_and_recovers)
+{
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction("test.unusedVoid", [&](VirtualMachine*) {
+        ++calls;
+    }, {}, runtime.getVoidType(), "").isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction("test.inspectFormat", [&](VirtualMachine* active) {
+        ++calls;
+        BOOST_TEST(context.getDiagnostics().empty());
+        BOOST_TEST(context.getResult() == nullptr);
+        active->setIntegerResult(11);
+    }, {}, runtime.getIntegerType(), "").isValid());
+
+    const std::array<NomadString, 6> expressions{
+        "1 @", "1 +", "score = 1", "score + true", "test.unusedVoid", "1\n2"
+    };
+    std::vector<NomadString> messages;
+    NomadString format;
+    for (const auto& expression : expressions) {
+        const auto placeholder = "{" + expression + "}";
+        const auto result = interpreter.formatString(placeholder, context, "ordered.nomad", 7, 9);
+        BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1U);
+        messages.push_back(result.diagnostics.front().message);
+        format += placeholder + "|";
+        BOOST_TEST(context.getDiagnostics().empty());
+        BOOST_TEST(context.getResult() == nullptr);
+    }
+
+    BOOST_TEST(messages[0].starts_with("Unrecognized token"));
+    BOOST_TEST(messages[5] == "Interpreter requires one non-empty expression");
+    BOOST_TEST(calls == 0);
+    const auto successfulOffset = format.size();
+    format += "{test.inspectFormat}";
+    const auto result = interpreter.formatString(format, context, "ordered.nomad", 7, 9);
+    BOOST_REQUIRE_EQUAL(result.diagnostics.size(), expressions.size());
+    NomadString expected;
+    auto offset = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < expressions.size(); ++index) {
+        const auto& diagnostic = result.diagnostics[index];
+        BOOST_TEST(diagnostic.message == messages[index]);
+        BOOST_TEST(diagnostic.sourceName == "ordered.nomad");
+        BOOST_TEST(diagnostic.line == 7U);
+        BOOST_TEST(diagnostic.column == 9U);
+        BOOST_TEST(diagnostic.offset == offset);
+        BOOST_TEST(diagnostic.length == expressions[index].size() + 2);
+        expected += "{" + messages[index] + "}|";
+        offset += expressions[index].size() + 3;
+    }
+
+    BOOST_TEST(offset == successfulOffset);
+    BOOST_TEST(result.text == expected + "11");
+    BOOST_TEST(calls == 1);
+    BOOST_TEST(context.getDiagnostics().empty());
+    BOOST_TEST(context.getResult() == nullptr);
+    BOOST_TEST(context.getVariableValue("score")->getIntegerValue() == 10);
+}
+
 BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preserves_vm_usability)
 {
     LanguageTestFixture fixture;
