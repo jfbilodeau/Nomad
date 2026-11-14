@@ -106,6 +106,13 @@ bool closeTo(NomadFloat actual, NomadFloat expected) {
 
 BOOST_AUTO_TEST_SUITE(language_operators)
 
+BOOST_AUTO_TEST_CASE(negative_zero_float_literal_keeps_its_sign)
+{
+    const auto literal = runExpression("-0.0");
+    BOOST_REQUIRE(literal.compiled);
+    BOOST_TEST(std::signbit(literal.floatValue));
+}
+
 BOOST_AUTO_TEST_CASE(opcode_ids_support_registration_lookup_and_catalog_growth)
 {
     Runtime runtime;

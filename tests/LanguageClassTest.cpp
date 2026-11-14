@@ -62,6 +62,33 @@ BOOST_AUTO_TEST_CASE(init_is_contextual_not_a_globally_reserved_identifier)
     BOOST_TEST(!compileErrors("class Point\ninit = 42\nend").empty());
 }
 
+BOOST_AUTO_TEST_CASE(class_struct_fields_are_readable_through_temporary_receivers)
+{
+    const auto member = runSource(
+        "struct Point\nnumber = 4\nend\n"
+        "class Box\npoint = new Point\nend\n"
+        "return (new Box).point.number");
+    BOOST_REQUIRE(member.compiled);
+    BOOST_REQUIRE(!member.fault.has_value());
+    BOOST_TEST(member.integerValue == 4);
+
+    const auto fromCall = runSource(
+        "struct Point\nnumber = 4\nend\n"
+        "class Box\npoint = new Point\nend\n"
+        "fun makeBox\nreturn new Box\nend\n"
+        "return (makeBox).point.number");
+    BOOST_REQUIRE(fromCall.compiled);
+    BOOST_REQUIRE(!fromCall.fault.has_value());
+    BOOST_TEST(fromCall.integerValue == 4);
+
+    const auto whole = runSource(
+        "struct Point\nnumber = 4\nend\n"
+        "class Box\npoint = new Point\nend\n"
+        "return (new Box).point");
+    BOOST_REQUIRE(whole.compiled);
+    BOOST_REQUIRE(!whole.fault.has_value());
+}
+
 BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_class_types)
 {
     LanguageTestFixture fixture;

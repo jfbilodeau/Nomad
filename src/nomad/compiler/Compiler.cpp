@@ -29,6 +29,7 @@
 #include <nomad/system/String.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 namespace nomad {
 
@@ -916,7 +917,7 @@ NomadIndex Compiler::addLoadIntegerValue(const NomadInteger value, const Express
 NomadIndex Compiler::addLoadFloatValue(NomadFloat value, const ExpressionTarget target) {
     switch (target) {
     case ExpressionTarget::Result:
-        if (value == 0) {
+        if (value == 0 && !std::signbit(value)) {
             return addOpCode(OpCodes::op_float_load_zero_r);
         }
         if (value == 1) {
@@ -927,7 +928,7 @@ NomadIndex Compiler::addLoadFloatValue(NomadFloat value, const ExpressionTarget 
         return addFloat(value);
 
     case ExpressionTarget::Intermediate:
-        if (value == 0) {
+        if (value == 0 && !std::signbit(value)) {
             return addOpCode(OpCodes::op_float_load_zero_i);
         }
         if (value == 1) {
@@ -938,7 +939,7 @@ NomadIndex Compiler::addLoadFloatValue(NomadFloat value, const ExpressionTarget 
         return addFloat(value);
 
     case ExpressionTarget::Stack:
-        if (value == 0) {
+        if (value == 0 && !std::signbit(value)) {
             return addOpCode(OpCodes::op_float_push_zero);
         }
         if (value == 1) {
