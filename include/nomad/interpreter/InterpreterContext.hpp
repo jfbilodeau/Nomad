@@ -79,7 +79,6 @@ public:
     InterpreterContext& operator=(const InterpreterContext&) = delete;
     ~InterpreterContext();
 
-    // TODO: Should be Interpeter*
     [[nodiscard]] const Interpreter& getInterpreter() const;
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] VirtualMachine* getVirtualMachine() const;
