@@ -343,7 +343,13 @@ void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptCallableBase* 
 InterpreterValue DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
     const auto value = m_expression->evaluate(context);
     const auto format = value.getType()->toString(value.getStorage().data());
-    const auto result = formatDynamicString(format, context, context.getCallable()->getPath(), getLine(), getColumn());
+    const auto result = context.getInterpreter().formatString(
+        context,
+        format,
+        context.getCallable()->getPath(),
+        getLine(),
+        getColumn()
+    );
     RuntimeValue formatted;
     const RuntimeValueGuard guard(*getType(), &formatted);
     formatted.setStringValue(result.text);
@@ -1749,8 +1755,13 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* func
 }
 
 InterpreterValue FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
-    const auto result = formatDynamicString(m_formatString, context, context.getCallable()->getPath(),
-        getLine(), getColumn());
+    const auto result = context.getInterpreter().formatString(
+        context,
+        m_formatString,
+        context.getCallable()->getPath(),
+        getLine(),
+        getColumn()
+    );
     RuntimeValue value;
     const RuntimeValueGuard guard(*getType(), &value);
     value.setStringValue(result.text);

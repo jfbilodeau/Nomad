@@ -3938,9 +3938,7 @@ Console and frame evaluation do not require separate compiler modes.
 
 The script format string operator `$expression` and interpreted format literals use the same
 runtime template evaluator. C++ hosts can call `Interpreter::formatString` with a template, context, source
-name, line, and column. The existing free `formatDynamicString` function
-(declared in `nomad/script/FormatString.hpp`) delegates to the context's interpreter
-and accepts the same arguments.
+name, line, and column.
 Its `DynamicFormatResult` contains partial text plus structured diagnostics for
 that template. Each diagnostic includes a message, source location, and zero-based
 byte offset and length in the template. Diagnostics are also logged; nested

@@ -485,8 +485,8 @@ void VirtualMachine::createScriptStruct(RuntimeValue* destination, const Callabl
 }
 
 void VirtualMachine::createNativeStruct(RuntimeValue* destination, const CallableId constructorId) {
-    const auto* constructor = m_runtime->getNativeConstructor(constructorId);
-    initializeStructStorage(destination, constructor->getClassType());
+    const auto& constructor = m_runtime->getResolvedNativeConstructor(constructorId);
+    initializeStructStorage(destination, constructor.getClassType());
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
@@ -500,7 +500,7 @@ void VirtualMachine::createNativeStruct(RuntimeValue* destination, const Callabl
     };
 
     m_this = RuntimeValue{};
-    constructor->getFn()(this);
+    constructor.getFn()(this);
 }
 
 void VirtualMachine::stop(const RuntimeValue& result) {
@@ -560,18 +560,18 @@ void VirtualMachine::pushScriptFrame() {
 }
 
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
-    const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
+    const auto& function = m_runtime->getResolvedNativeFunction(nativeFunctionId);
     const auto frame = beginNativeCall();
     BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
     };
 
     m_this = RuntimeValue{};
-    function->getFn()(this);
+    function.getFn()(this);
 }
 
 NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) {
-    const auto* constructor = m_runtime->getNativeConstructor(constructorId);
+    const auto& constructor = m_runtime->getResolvedNativeConstructor(constructorId);
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
@@ -584,10 +584,10 @@ NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) 
     m_this = RuntimeValue{};
     m_result = RuntimeValue{};
     // Release partial results before restoring the enclosing frame and registers.
-    RuntimeValueGuard resultGuard(*constructor->getReturnType(), &m_result);
-    constructor->getFn()(this);
+    RuntimeValueGuard resultGuard(*constructor.getReturnType(), &m_result);
+    constructor.getFn()(this);
     if (m_result.getObjectValue() == nullptr) {
-        fault("Native constructor for '" + constructor->getName() + "' returned null");
+        fault("Native constructor for '" + constructor.getName() + "' returned null");
     }
 
     auto* object = m_result.getObjectValue();
@@ -608,13 +608,13 @@ void VirtualMachine::endNativeCall(const NativeCallFrame& frame) {
 }
 
 void VirtualMachine::callNativeMethod(const CallableId memberId) {
-    const auto* method = m_runtime->getNativeMemberMethod(memberId);
+    const auto& method = m_runtime->getResolvedNativeMethod(memberId);
     const auto frame = beginNativeCall();
     BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
     };
 
-    method->getFn()(this);
+    method.getFn()(this);
 }
 
 NomadObject* VirtualMachine::getScriptReceiver() const {
@@ -1017,10 +1017,6 @@ void VirtualMachine::setParameter(const NomadIndex parameterIndex, const Runtime
     m_stack[m_parameterIndex - parameterIndex] = value;
 }
 
-void VirtualMachine::freeObjectParameter(const NomadIndex parameterIndex) {
-    m_stack[m_parameterIndex - parameterIndex].freeObjectValue();
-}
-
 void VirtualMachine::reserveLocals(const NomadIndex count) {
     if (m_stackIndex >= m_stack.size() || count > m_stack.size() - m_stackIndex - 1) {
         fault("Stack overflow");
@@ -1087,10 +1083,6 @@ void VirtualMachine::moveObjectResultToStack() {
     m_stackIndex++;
     TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].moveObjectValue(m_result);
-}
-
-void VirtualMachine::freeObjectVariable(const VariableId variableId) {
-    getFunctionVariableStorage(variableId)[0].freeObjectValue();
 }
 
 void VirtualMachine::freeObjectStack(const NomadIndex index) {
@@ -1209,43 +1201,6 @@ const RuntimeValue& VirtualMachine::popValue() {
     return value;
 }
 
-NomadBoolean VirtualMachine::popBoolean() {
-    const auto value = m_stack[m_stackIndex].getBooleanValue();
-    m_stackIndex--;
-    TEST_STACK_UNDERFLOW
-    return value;
-}
-
-NomadInteger VirtualMachine::popInteger() {
-    const auto value = m_stack[m_stackIndex].getIntegerValue();
-    m_stackIndex--;
-    TEST_STACK_UNDERFLOW
-    return value;
-}
-
-NomadFloat VirtualMachine::popFloat() {
-    const auto value = m_stack[m_stackIndex].getFloatValue();
-    m_stackIndex--;
-    TEST_STACK_UNDERFLOW
-    return value;
-}
-
-NomadId VirtualMachine::popId() {
-    const auto value = m_stack[m_stackIndex].getIdValue();
-    m_stackIndex--;
-    TEST_STACK_UNDERFLOW
-    return value;
-}
-
-NomadString VirtualMachine::popString() {
-    auto* object = m_stack[m_stackIndex].getStringObject();
-    auto value = object->getString();
-    object->releaseRef();
-    m_stackIndex--;
-    TEST_STACK_UNDERFLOW
-    return value;
-}
-
 NomadId VirtualMachine::nextId() {
     const auto id = m_instructions[m_instructionIndex].value.getIdValue();
 
@@ -1333,18 +1288,6 @@ NomadIndex VirtualMachine::popIndex() {
     m_stackIndex--;
     TEST_STACK_UNDERFLOW
     return value;
-}
-
-void VirtualMachine::pushInstructionIndex() {
-    m_stackIndex++;
-    m_stack[m_stackIndex].setIndexValue(m_instructionIndex);
-    TEST_STACK_OVERFLOW
-}
-
-void VirtualMachine::popInstructionIndex() {
-    m_instructionIndex = m_stack[m_stackIndex].getIndexValue();
-    m_stackIndex--;
-    TEST_STACK_UNDERFLOW
 }
 
 } // nomad

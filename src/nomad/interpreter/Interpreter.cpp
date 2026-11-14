@@ -665,17 +665,6 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     }
 }
 
-DynamicFormatResult formatDynamicString(
-    const NomadStringView format,
-    InterpreterContext& context,
-    const NomadStringView sourceName,
-    const NomadIndex line,
-    const NomadIndex column
-) {
-
-    return context.getInterpreter().formatString(context, format, sourceName, line, column);
-}
-
 DynamicFormatResult Interpreter::formatString(
     InterpreterContext& context,
     const NomadStringView format,

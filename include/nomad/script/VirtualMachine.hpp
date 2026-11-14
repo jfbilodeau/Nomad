@@ -178,7 +178,6 @@ public:
     [[nodiscard]] NomadInteger getIntegerResult() const { return m_result.getIntegerValue(); }
     [[nodiscard]] NomadFloat getFloatResult() const { return m_result.getFloatValue(); }
     [[nodiscard]] NomadBoolean getBooleanResult() const { return m_result.getBooleanValue(); }
-    [[nodiscard]] NomadId getIdResult() const { return m_result.getIdValue(); }
     [[nodiscard]] NomadStringObject* getStringResult() const { return m_result.getStringObject(); }
 
     void setIntermediate(const RuntimeValue& intermediate) { m_intermediate = intermediate; }
@@ -201,7 +200,6 @@ public:
 
     [[nodiscard]] const RuntimeValue& getParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex]; }
     void setParameter(NomadIndex parameterIndex, const RuntimeValue& value);
-    void freeObjectParameter(NomadIndex parameterIndex);
     [[nodiscard]] NomadBoolean getBooleanParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getBooleanValue(); }
     [[nodiscard]] NomadInteger getIntegerParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getIntegerValue(); }
     [[nodiscard]] NomadFloat getFloatParameter(const NomadIndex parameterIndex) const { return m_stack[m_parameterIndex - parameterIndex].getFloatValue(); }
@@ -213,52 +211,20 @@ public:
     [[nodiscard]] const RuntimeValue& getEnclosingParameter(const NomadIndex parameterIndex) const {
         return m_stack[m_variableIndex - s_scriptFrameSlotCount - 1 - parameterIndex];
     }
-    [[nodiscard]] NomadBoolean getBooleanEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getBooleanValue(); }
     [[nodiscard]] NomadInteger getIntegerEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getIntegerValue(); }
-    [[nodiscard]] NomadFloat getFloatEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getFloatValue(); }
-    [[nodiscard]] NomadId getIdEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getIdValue(); }
-    [[nodiscard]] NomadStringObject* getStringEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getStringObject(); }
 
-    void setVariableValue(const VariableId variableId, const RuntimeValue& value) { setFunctionVariableValue(variableId, value); }
-    void setBooleanVariableValue(const VariableId variableId, const NomadBoolean value) {
-        const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-        getLocalStorage(offset, 1)[0].setBooleanValue(value);
-    }
     void setIntegerVariableValue(const VariableId variableId, const NomadInteger value) {
         const auto offset = getCurrentCallable()->getVariableOffset(variableId);
         getLocalStorage(offset, 1)[0].setIntegerValue(value);
     }
-    void setFloatVariableValue(const VariableId variableId, const NomadFloat value) {
-        const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-        getLocalStorage(offset, 1)[0].setFloatValue(value);
-    }
-    void setIdVariableValue(const VariableId variableId, const NomadId value) {
-        const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-        getLocalStorage(offset, 1)[0].setIdValue(value);
-    }
-    void setStringVariableValue(const VariableId variableId, const NomadChar* value) {
-        const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-        getLocalStorage(offset, 1)[0].setStringValue(value);
-    }
-    void setStringVariableValue(const VariableId variableId, const NomadString& value) {
-        const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-        getLocalStorage(offset, 1)[0].setStringValue(value);
-    }
 
     void getFunctionVariableValue(const VariableId variableId, RuntimeValue& value) const { value = getFunctionVariableValue(variableId); }
-    [[nodiscard]] NomadBoolean getFunctionBooleanVariableValue(const VariableId variableId) const { return getFunctionVariableValue(variableId).getBooleanValue(); }
     [[nodiscard]] NomadInteger getFunctionIntegerVariableValue(const VariableId variableId) const { return getFunctionVariableValue(variableId).getIntegerValue(); }
-    [[nodiscard]] NomadFloat getFunctionFloatVariableValue(const VariableId variableId) const { return getFunctionVariableValue(variableId).getFloatValue(); }
-    [[nodiscard]] NomadId getFunctionIdVariableValue(const VariableId variableId) const { return getFunctionVariableValue(variableId).getIdValue(); }
     [[nodiscard]] NomadStringObject* getFunctionStringVariableValue(const VariableId variableId) const { return getFunctionVariableValue(variableId).getStringObject(); }
 
     [[nodiscard]]
     const RuntimeValue& peekStack(const NomadIndex index) const { return m_stack[m_stackIndex - index]; }
 
-    void initStringVariable(const VariableId variableId) {
-        const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-        getLocalStorage(offset, 1)[0].initStringValue();
-    }
     void initStringResult() { m_result.initStringValue(); }
     void initStringIntermediate() { m_intermediate.initStringValue(); }
 
@@ -269,7 +235,6 @@ public:
     void moveObjectResultToIntermediate() { m_intermediate.moveObjectValue(m_result); }
     void moveObjectResultToStack();
 
-    void freeObjectVariable(VariableId variableId);
     void freeObjectStack(NomadIndex index);
 
     void pushResult();
@@ -303,7 +268,6 @@ public:
     void pushString(const NomadString& value);
     // Takes over the caller's reference.
     void pushString(NomadStringObject* value);
-    void pushInstructionIndex();
 
     void pushN(NomadIndex count);
     void pop1();
@@ -311,18 +275,10 @@ public:
     void pop3();
     void popN(NomadIndex count);
     const RuntimeValue& popValue();
-    NomadBoolean popBoolean();
-    NomadInteger popInteger();
     NomadIndex popIndex();
-    NomadFloat popFloat();
-    NomadId popId();
-    NomadString popString();
-    void popInstructionIndex();
 
-    // NomadId nextInstruction();
     NomadId nextId();
     NomadIndex nextIndex();
-    // NomadShort nextShort();
     NomadInteger nextInteger();
     NomadFloat nextFloat();
 

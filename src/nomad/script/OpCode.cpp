@@ -1223,7 +1223,7 @@ void op_dynamic_format_execute(VirtualMachine* machine) {
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter, *function);
 
-    const auto result = formatDynamicString(formatText->getText(), context, function->getPath(), line, column);
+    const auto result = interpreter.formatString(context, formatText->getText(), function->getPath(), line, column);
 
     formatText->releaseRef();
 

@@ -714,7 +714,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
     const auto compiler = runtime.createCompiler();
     const auto before = runtime.getInstructions().size();
-    const auto result = formatDynamicString("A{missing}B{score + 1}C{", context, "localized.nomad", 4, 7);
+    const auto result = contextEvaluator.formatString(context, "A{missing}B{score + 1}C{", "localized.nomad", 4, 7);
     BOOST_TEST(result.text == "A{invalid identifier: 'missing'}B11C{missing `}`}");
     BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 2);
     BOOST_TEST(result.diagnostics[0].message == "invalid identifier: 'missing'");
@@ -776,7 +776,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_operator_validates_string_type_and_retains_s
     BOOST_TEST(!runSource("return $\"{value\"").compiled);
 }
 
-BOOST_AUTO_TEST_CASE(interpreter_format_entry_point_preserves_strict_placeholders_and_free_function_contract)
+BOOST_AUTO_TEST_CASE(interpreter_format_entry_point_preserves_strict_placeholders)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
@@ -786,19 +786,17 @@ BOOST_AUTO_TEST_CASE(interpreter_format_entry_point_preserves_strict_placeholder
     const auto instructionsBefore = runtime.getInstructions().size();
     const NomadString format{"value {score + 1} invalid {score = 99} tail {score}"};
     const auto result = interpreter.formatString(context, format, "bridge.nomad", 4, 7);
-    const auto compatibility = formatDynamicString(format, context, "bridge.nomad", 4, 7);
-    BOOST_TEST(result.text == compatibility.text);
     BOOST_TEST(result.text.starts_with("value 11 invalid {"));
     BOOST_TEST(result.text.ends_with("} tail 10"));
     BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1U);
-    BOOST_REQUIRE_EQUAL(compatibility.diagnostics.size(), 1U);
     const auto& diagnostic = result.diagnostics[0];
-    BOOST_TEST(diagnostic.message == compatibility.diagnostics[0].message);
     BOOST_TEST(diagnostic.sourceName == "bridge.nomad");
     BOOST_TEST(diagnostic.line == 4U);
     BOOST_TEST(diagnostic.column == 7U);
-    BOOST_TEST(diagnostic.offset == compatibility.diagnostics[0].offset);
-    BOOST_TEST(diagnostic.length == compatibility.diagnostics[0].length);
+    const auto placeholder = NomadString{"{score = 99}"};
+    BOOST_TEST(!diagnostic.message.empty());
+    BOOST_TEST(diagnostic.offset == format.find(placeholder));
+    BOOST_TEST(diagnostic.length == placeholder.size());
     BOOST_TEST(context.getVariableValue("score")->getIntegerValue() == 10);
     BOOST_TEST(context.getResult() == nullptr);
     BOOST_TEST(!context.hasError());
@@ -820,7 +818,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_supports_nested_templates_and_quoted_braces)
         {"{false && (1 == 2)}", "false"},
     };
     for (const auto& [format, expected] : cases) {
-        const auto result = formatDynamicString(format, context, "nested.nomad", 1, 1);
+        const auto result = contextEvaluator.formatString(context, format, "nested.nomad", 1, 1);
         BOOST_TEST(result.text == expected);
         BOOST_TEST(!context.hasError());
     }
@@ -843,8 +841,13 @@ BOOST_AUTO_TEST_CASE(dynamic_format_recovers_from_syntax_type_and_void_errors_be
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
     for (const auto* expression : {"1 +", "score = 1", "(test.count) + true", "test.void", "1\n2"}) {
         BOOST_TEST_CONTEXT(expression) {
-            const auto result = formatDynamicString(NomadString{"before {"} + expression + "} after {score}",
-                context, "invalid.nomad", 1, 1);
+            const auto result = contextEvaluator.formatString(
+                context,
+                NomadString{"before {"} + expression + "} after {score}",
+                "invalid.nomad",
+                1,
+                1
+            );
             BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1);
             BOOST_TEST(result.text.starts_with("before {"));
             BOOST_TEST(result.text.ends_with("} after 10"));
@@ -978,7 +981,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_propagates_called_function_faults_and_preser
         argument.freeObjectValue();
         const Interpreter contextEvaluator(*machine);
         InterpreterContext context(contextEvaluator);
-        BOOST_CHECK_THROW(static_cast<void>(formatDynamicString(format, context, "fault.nomad", 1, 1)),
+        BOOST_CHECK_THROW(static_cast<void>(contextEvaluator.formatString(context, format, "fault.nomad", 1, 1)),
             VirtualMachineException);
         BOOST_REQUIRE(context.getInterpreter().execute("2 + 3", context));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 5);
