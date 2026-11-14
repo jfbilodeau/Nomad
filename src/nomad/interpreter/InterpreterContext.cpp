@@ -283,7 +283,6 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
 
 InterpreterContext::InterpreterContext(const Interpreter& interpreter):
     m_interpreter(interpreter),
-    m_runtime(interpreter.getVirtualMachine().getRuntime()),
     m_function(std::make_unique<ScriptFunction>(
         CallableId{}, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""
     ))
@@ -306,7 +305,7 @@ InterpreterContext::InterpreterContext(
     m_parameterIndex = virtualMachine.m_parameterIndex;
     m_variableIndex = virtualMachine.m_variableIndex;
     m_frameVariableCount = function.getVariableCount();
-    if (m_runtime->getConstructor(function.getId()) != nullptr) {
+    if (virtualMachine.getRuntime()->getConstructor(function.getId()) != nullptr) {
         m_function = std::make_unique<ScriptConstructor>(
             function.getClassType(), std::vector<Parameter>{}, function.getPath(), ""
         );
@@ -379,7 +378,7 @@ const ScriptCallableBase* InterpreterContext::getCallable() const {
 }
 
 Runtime* InterpreterContext::getRuntime() const {
-    return m_runtime;
+    return getVirtualMachine()->getRuntime();
 }
 
 const Interpreter& InterpreterContext::getInterpreter() const {

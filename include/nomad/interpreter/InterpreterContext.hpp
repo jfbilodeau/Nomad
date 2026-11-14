@@ -167,7 +167,6 @@ private:
     );
 
     const Interpreter& m_interpreter;
-    Runtime* m_runtime;
     std::unique_ptr<ScriptCallableBase> m_function;
     std::unique_ptr<InterpreterReceiver> m_receiver;
     const ScriptCallableBase* m_frameCallable = nullptr;
