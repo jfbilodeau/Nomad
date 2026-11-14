@@ -390,6 +390,18 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_
             BOOST_TEST(context.getVariableType("empty") == empty);
             BOOST_TEST(context.getVariableStorage("empty").empty());
             BOOST_TEST(context.getVariableStorage("emptyLocal").empty());
+            context.setParameterResult(parameterId);
+            BOOST_REQUIRE(context.getResult() != nullptr);
+            BOOST_TEST(context.getResult()->getType() == outer);
+            BOOST_TEST(context.getResult()->getStorage().data() != input.data());
+            BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 7);
+            context.setParameterResult(callable->getParameterId("empty"));
+            BOOST_TEST(context.getResult()->getType() == empty);
+            BOOST_TEST(context.getResult()->getStorage().empty());
+            context.setParameterResult(tailId);
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
+            BOOST_CHECK_THROW(context.setParameterResult(NOMAD_INVALID_ID), NomadBug);
+            BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
             BOOST_REQUIRE(context.getInterpreter().execute("value", context));
             const InterpreterValue snapshot(*context.getResult());
             BOOST_TEST(snapshot.getStorage().data() != input.data());

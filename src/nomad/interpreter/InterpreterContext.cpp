@@ -98,7 +98,7 @@ void InterpreterContext::setVariable(
         m_retiredStorage.reserve(m_retiredStorage.size() + 1);
     }
 
-    auto variableId = m_function->getVariableId(name);
+    auto variableId = frameId;
     if (variableId.isInvalid()) {
         variableId = m_function->registerVariable(name, type);
     } else {
@@ -493,11 +493,8 @@ std::optional<CompilerDiagnostic> InterpreterContext::getFirstError() const {
 }
 
 void InterpreterContext::setParameterResult(const NomadId parameterId) {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
-        throw NomadBug("Invalid frame-backed parameter access");
-    }
-    validateFrame();
-    setResult(m_function->getParameterType(parameterId), getParameterStorage(parameterId));
+    const auto storage = getParameterStorage(parameterId);
+    setResult(m_function->getParameterType(parameterId), storage);
 }
 
 void InterpreterContext::setParameter(const NomadId parameterId, const RuntimeValue& value) {
