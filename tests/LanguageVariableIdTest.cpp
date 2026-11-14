@@ -196,9 +196,10 @@ BOOST_AUTO_TEST_CASE(variable_map_ids_are_owner_local_and_stable)
 
     VariableList values(&variables);
     values.setVariableValue(id, RuntimeValue{NomadInteger{42}});
-    RuntimeValue value;
-    values.getVariableValue(id, value);
-    BOOST_TEST(value.getIntegerValue() == 42);
+    const auto* stored = values.getVariableValue(id);
+    BOOST_REQUIRE(stored != nullptr);
+    BOOST_TEST(stored->getIntegerValue() == 42);
+    BOOST_TEST(values.getVariableValue(VariableId{NOMAD_INVALID_ID}) == nullptr);
     BOOST_TEST(values.getVariableId("value") == id);
     BOOST_TEST(values.getVariableType(id) == runtime.getIntegerType());
 }

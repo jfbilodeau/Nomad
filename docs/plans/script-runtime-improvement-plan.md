@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D4 are approved. Step 1 is implemented and validated: the VS Code build succeeded, and all 13 CTest entries passed. Step 2 awaits review.
+**Status:** Decisions D1–D4 are approved. Step 1 is implemented and validated, including the follow-up changes: unchecked accessors, stack-check removal, and checked variable accessors. All 13 CTest entries passed. Step 2 awaits review.
 
 ## Component contract
 
@@ -47,7 +47,7 @@ Each step ends with a full build and CTest run, then stops for review before the
 
 ### Step 1: native dispatch and VM dead code (implemented)
 
-- `Runtime` gains `getResolvedNativeFunction`, `getResolvedNativeMethod`, and `getResolvedNativeConstructor`. Release builds cast the compiler-resolved ID directly. Debug builds throw `NomadBug` when the ID names a different kind of callable.
+- `Runtime` gains inline `getUncheckedNativeFunction`, `getUncheckedNativeMethod`, and `getUncheckedNativeConstructor`. They cast the compiler-resolved ID directly, with no debug check.
 - `VirtualMachine::callNativeFunction`, `callNativeMethod`, `createNativeStruct`, and `createNativeObject` use the resolved accessors. `createNativeObject` keeps its null-result fault because it guards host-provided constructors.
 - Removed the unused VM members listed under V3, the dead pop helpers, `pushInstructionIndex`, `freeObjectParameter`, and the commented-out `nextInstruction` and `nextShort` declarations.
 - Removed `formatDynamicString`. `Expression.cpp`, `OpCode.cpp`, and the format tests call `Interpreter::formatString`. `docs/embedding.md` no longer mentions the free function.
@@ -65,7 +65,7 @@ Remove each API below and rewrite its test call sites against the production rep
 
 1. Write failing tests first: a struct-typed class field read and write (K1), and a `-0.0` literal (K3).
 2. K1: route struct-typed class fields through storage addressing, so they no longer reach the single-slot field accessors (D1).
-3. K2: compute exact operand-stack depth during emission and store it with the callable's frame layout (D2). Remove the per-push checks (V1, V2). Keep one frame-capacity check per script call, because recursion makes depth unbounded across calls.
+3. K2: compute exact operand-stack depth during emission and store it with the callable's frame layout (D2). The per-push checks (V1, V2) are already removed. Keep one frame-capacity check per script call, because recursion makes depth unbounded across calls.
 4. K3: use `std::signbit` to detect negative-zero literals.
 5. K4: bound the `inferTypes` fixed-point loop, and report a diagnostic when the bound is reached.
 
@@ -117,20 +117,20 @@ Measure each change before and after on the same workload.
 
 ## Open questions
 
-- **Q1 (step 1):** Keep the debug-only kind check in the `getResolvedNative*` accessors, or remove it for a pure trust model? The current code keeps it, matching the `TEST_STACK_*` convention.
+- **Q1 (resolved):** The debug-only kind check was removed. The accessors are `getUncheckedNative*`, inline in `Runtime.hpp`.
 - **Q2 (step 8):** Cache compiled format-template segments (I5), or keep the Interpreter simpler and accept re-parsing? Measure first.
 - **Q3 (step 4):** `VirtualMachine.hpp` declares `friend class InterpreterContext;`, which conflicts with the no-`friend` rule. Replace it with a narrow public API.
 
 ## Debug-only checks
 
-Checks compiled only under `NOMAD_DEBUG`, with the proposed action for each.
+Checks compiled only under `NOMAD_DEBUG`. Status after the follow-up change:
 
 | Check | Location | Proposed action |
 | --- | --- | --- |
-| Stack overflow and underflow macros (26 use sites) | `VirtualMachine.cpp`, `TEST_STACK_OVERFLOW` and `TEST_STACK_UNDERFLOW` | Remove with exact stack-depth accounting (step 3). Keep one frame-capacity check per script call, because recursion is legal. |
-| Native callable kind verification (3 accessors) | `Runtime.cpp`, `getResolvedNative*` | Decision Q1. Remove for a pure trust model, or keep as an assertion. |
-| Variable ID range check, log and continue | `Variable.cpp`, `VariableList::setVariableValue` and `getVariableValue` | Replace with a trust-based design or a `NomadBug` throw (step 4 or 6). Bug: `setVariableValue` logs, then writes out of range anyway, because it doesn't return. |
-| Commented `BOOST_SPIRIT_DEBUG` block | `Tokenizer.cpp` | Delete as dead code. |
+| Stack overflow and underflow macros (26 use sites) | `VirtualMachine.cpp`, `TEST_STACK_*` | Removed. The explicit `Stack overflow` checks in `pushScriptFrame` and `reserveLocals` remain. |
+| Native callable kind verification | `Runtime.cpp`, `getUnchecked*` | Removed. The accessors are inline and unchecked. |
+| Variable ID range check, log and continue | `Variable.cpp`, `VariableList` | Replaced. `setVariableValue` and `getVariableValue` return `nullptr` for an invalid ID. The `getUnchecked*` accessors are inline and unchecked. |
+| Commented `BOOST_SPIRIT_DEBUG` blocks | `Tokenizer.cpp` | Removed. |
 | Live string count | `NomadStringObject.cpp` | Not a check. It is instrumentation that tests read through `getLiveCount`. Keep. |
 
 ## Verification

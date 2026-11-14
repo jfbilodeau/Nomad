@@ -24,14 +24,6 @@
 #include <stdexcept>
 #include <utility>
 
-#ifdef NOMAD_DEBUG
-#define TEST_STACK_OVERFLOW if (m_stackIndex >= m_stack.size()) { fault("Stack overflow"); }
-#define TEST_STACK_UNDERFLOW if (m_stackIndex >= m_stack.size()) { fault("Stack underflow"); }
-#else
-#define TEST_STACK_OVERFLOW
-#define TEST_STACK_UNDERFLOW
-#endif
-
 namespace nomad {
 
 VirtualMachine::VirtualMachine(Runtime* runtime, NomadIndex stack_size):
@@ -485,7 +477,7 @@ void VirtualMachine::createScriptStruct(RuntimeValue* destination, const Callabl
 }
 
 void VirtualMachine::createNativeStruct(RuntimeValue* destination, const CallableId constructorId) {
-    const auto& constructor = m_runtime->getResolvedNativeConstructor(constructorId);
+    const auto& constructor = m_runtime->getUncheckedNativeConstructor(constructorId);
     initializeStructStorage(destination, constructor.getClassType());
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
@@ -560,7 +552,7 @@ void VirtualMachine::pushScriptFrame() {
 }
 
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
-    const auto& function = m_runtime->getResolvedNativeFunction(nativeFunctionId);
+    const auto& function = m_runtime->getUncheckedNativeFunction(nativeFunctionId);
     const auto frame = beginNativeCall();
     BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
@@ -571,7 +563,7 @@ void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
 }
 
 NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) {
-    const auto& constructor = m_runtime->getResolvedNativeConstructor(constructorId);
+    const auto& constructor = m_runtime->getUncheckedNativeConstructor(constructorId);
     const auto frame = beginNativeCall();
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
@@ -608,7 +600,7 @@ void VirtualMachine::endNativeCall(const NativeCallFrame& frame) {
 }
 
 void VirtualMachine::callNativeMethod(const CallableId memberId) {
-    const auto& method = m_runtime->getResolvedNativeMethod(memberId);
+    const auto& method = m_runtime->getUncheckedNativeMethod(memberId);
     const auto frame = beginNativeCall();
     BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
@@ -1057,31 +1049,26 @@ void VirtualMachine::bindThisFromStack(const NomadIndex offset) {
 
 void VirtualMachine::pushResult() {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex] = m_result;
 }
 
 void VirtualMachine::pushIntermediate() {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex] = m_intermediate;
 }
 
 void VirtualMachine::pushObjectResult() {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].copyObjectValue(m_result);
 }
 
 void VirtualMachine::pushObjectIntermediate() {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].moveObjectValue(m_intermediate);
 }
 
 void VirtualMachine::moveObjectResultToStack() {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].moveObjectValue(m_result);
 }
 
@@ -1092,111 +1079,92 @@ void VirtualMachine::freeObjectStack(const NomadIndex index) {
 void VirtualMachine::popResult() {
     m_result = m_stack[m_stackIndex];
     m_stackIndex--;
-    TEST_STACK_UNDERFLOW
 }
 
 void VirtualMachine::popIntermediate() {
     m_intermediate = m_stack[m_stackIndex];
     m_stackIndex--;
-    TEST_STACK_UNDERFLOW
 }
 
 void VirtualMachine::popObjectResult() {
     m_result.moveObjectValue(m_stack[m_stackIndex]);
     m_stackIndex--;
-    TEST_STACK_UNDERFLOW
 }
 
 void VirtualMachine::popObjectIntermediate() {
     m_intermediate.moveObjectValue(m_stack[m_stackIndex]);
     m_stackIndex--;
-    TEST_STACK_UNDERFLOW
 }
 
 
 void VirtualMachine::pushValue(const RuntimeValue& value) {
     m_stackIndex++;
     m_stack[m_stackIndex] = value;
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pushObjectValue(const RuntimeValue& value) {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].copyObjectValue(value);
 }
 
 void VirtualMachine::pushBoolean(const NomadBoolean value) {
     m_stackIndex++;
     m_stack[m_stackIndex].setBooleanValue(value);
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pushInteger(const NomadInteger value) {
     m_stackIndex++;
     m_stack[m_stackIndex].setIntegerValue(value);
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pushFloat(const NomadFloat value) {
     m_stackIndex++;
     m_stack[m_stackIndex].setFloatValue(value);
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pushId(const NomadId value) {
     m_stackIndex++;
     m_stack[m_stackIndex].setIdValue(value);
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pushString(const NomadChar* value) {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].setStringValue(value);
 }
 
 void VirtualMachine::pushString(const NomadString& value) {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].setStringValue(value);
 }
 
 void VirtualMachine::pushString(NomadStringObject* value) {
     m_stackIndex++;
-    TEST_STACK_OVERFLOW
     m_stack[m_stackIndex].setObjectValue(value);
 }
 
 void VirtualMachine::pushN(const NomadIndex count) {
     m_stackIndex += count;
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pop1() {
     m_stackIndex--;
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pop2() {
     m_stackIndex -= 2;
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::pop3() {
     m_stackIndex -= 3;
-    TEST_STACK_OVERFLOW
 }
 
 void VirtualMachine::popN(const NomadIndex count) {
     m_stackIndex -= count;
-    TEST_STACK_UNDERFLOW
 }
 
 const RuntimeValue& VirtualMachine::popValue() {
     const auto& value= m_stack[m_stackIndex];
     m_stackIndex--;
-    TEST_STACK_UNDERFLOW
 
     return value;
 }
@@ -1280,13 +1248,11 @@ bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId var
 void VirtualMachine::pushIndex(const NomadIndex value) {
     m_stackIndex++;
     m_stack[m_stackIndex].setIndexValue(value);
-    TEST_STACK_OVERFLOW
 }
 
 NomadIndex VirtualMachine::popIndex() {
     const auto value = m_stack[m_stackIndex].getIndexValue();
     m_stackIndex--;
-    TEST_STACK_UNDERFLOW
     return value;
 }
 

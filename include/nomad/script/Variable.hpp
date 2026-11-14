@@ -68,8 +68,26 @@ public:
     [[nodiscard]] const Type* getVariableType(VariableId variableId) const;
     [[nodiscard]] NomadIndex getVariableCount() const;
 
-    void setVariableValue(VariableId variableId, const RuntimeValue& value);
-    void getVariableValue(VariableId variableId, RuntimeValue& value) const;
+    // Returns the stored value, or nullptr when the ID is out of range.
+    RuntimeValue* setVariableValue(VariableId variableId, const RuntimeValue& value);
+    [[nodiscard]] const RuntimeValue* getVariableValue(VariableId variableId) const;
+
+    // Requires a valid ID; performs no validation.
+    void setUncheckedVariableValue(const VariableId variableId, const RuntimeValue& value) {
+        const auto variableIndex = toNomadIndex(variableId.id);
+        const auto* type = m_variableMap.getVariableType(variableId);
+
+        if (type == nullptr) {
+            m_variableValues[variableIndex] = value;
+            return;
+        }
+
+        type->assignValue(&value, &m_variableValues[variableIndex]);
+    }
+
+    [[nodiscard]] const RuntimeValue& getUncheckedVariableValue(const VariableId variableId) const {
+        return m_variableValues[toNomadIndex(variableId.id)];
+    }
 
 private:
     const VariableMap m_variableMap;

@@ -1299,7 +1299,9 @@ void Entity::setVariableValue(const VariableId variableId, const RuntimeValue& v
 }
 
 void Entity::getVariableValue(const VariableId variableId, RuntimeValue& value) const {
-    m_variables.getVariableValue(variableId, value);
+    if (const auto* variableValue = m_variables.getVariableValue(variableId)) {
+        value = *variableValue;
+    }
 }
 
 void Entity::registerUserEvent(const NomadString& name, const CallableId callableId) {

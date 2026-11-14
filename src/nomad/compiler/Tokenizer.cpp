@@ -8,10 +8,6 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 
-#if defined(NOMAD_DEBUG)
-//#define BOOST_SPIRIT_DEBUG
-#endif
-
 #define BOOST_NO_CXX98_FUNCTION_BASE
 #include "boost/spirit/include/qi.hpp"
 #include "boost/phoenix.hpp"
@@ -36,7 +32,6 @@ namespace phoenix = boost::phoenix;
 template<typename Iterator>
 struct CommentSkipper : qi::grammar<Iterator> {
     CommentSkipper() : CommentSkipper::base_type(skip) {
-//        BOOST_SPIRIT_DEBUG_NODE(skip);
     }
 
     qi::rule<Iterator> skip =
@@ -48,22 +43,6 @@ template<typename Iterator>
 struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> {
     LineGrammar() :
         LineGrammar::base_type(start) {
-
-//        BOOST_SPIRIT_DEBUG_NODE(hex_value);
-//        BOOST_SPIRIT_DEBUG_NODE(decimal_value);
-//        BOOST_SPIRIT_DEBUG_NODE(value);
-//        BOOST_SPIRIT_DEBUG_NODE(escape_sequence);
-//        BOOST_SPIRIT_DEBUG_NODE(quoted_content);
-//        BOOST_SPIRIT_DEBUG_NODE(format_content);
-//        BOOST_SPIRIT_DEBUG_NODE(literal_string);
-//        BOOST_SPIRIT_DEBUG_NODE(format_string);
-//        BOOST_SPIRIT_DEBUG_NODE(operators);
-//        BOOST_SPIRIT_DEBUG_NODE(keyword);
-//        BOOST_SPIRIT_DEBUG_NODE(identifier);
-//        BOOST_SPIRIT_DEBUG_NODE(basic_token);
-//        BOOST_SPIRIT_DEBUG_NODE(token);
-//        BOOST_SPIRIT_DEBUG_NODE(start);
-//        BOOST_SPIRIT_DEBUG_NODE(skipper);
     }
 
     CommentSkipper<Iterator> skipper;

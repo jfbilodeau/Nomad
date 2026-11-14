@@ -685,18 +685,6 @@ const NativeFunction* Runtime::getNativeFunction(const CallableId functionId) co
     return function == nullptr ? nullptr : function->asNativeFunction();
 }
 
-const NativeFunction& Runtime::getResolvedNativeFunction(const CallableId functionId) const {
-#ifdef NOMAD_DEBUG
-    const auto* function = getNativeFunction(functionId);
-    if (function == nullptr) {
-        throw NomadBug("Native function call requires a native function ID");
-    }
-
-    return *function;
-#else
-    return *static_cast<const NativeFunction*>(m_callables[toNomadIndex(functionId.id)]);
-#endif
-}
 
 const Method* Runtime::getMethod(const CallableId callableId) const {
     const auto* callable = getCallable(callableId);
@@ -719,36 +707,12 @@ const NativeMethod* Runtime::getNativeMethod(const CallableId callableId) const 
     return method == nullptr ? nullptr : method->asNativeMethod();
 }
 
-const NativeMethod& Runtime::getResolvedNativeMethod(const CallableId callableId) const {
-#ifdef NOMAD_DEBUG
-    const auto* method = getNativeMethod(callableId);
-    if (method == nullptr) {
-        throw NomadBug("Native method call requires a native method ID");
-    }
-
-    return *method;
-#else
-    return *static_cast<const NativeMethod*>(m_callables[toNomadIndex(callableId.id)]);
-#endif
-}
 
 const NativeConstructor* Runtime::getNativeConstructor(const CallableId functionId) const {
     const auto* constructor = getConstructor(functionId);
     return constructor == nullptr ? nullptr : constructor->asNativeConstructor();
 }
 
-const NativeConstructor& Runtime::getResolvedNativeConstructor(const CallableId functionId) const {
-#ifdef NOMAD_DEBUG
-    const auto* constructor = getNativeConstructor(functionId);
-    if (constructor == nullptr) {
-        throw NomadBug("Native constructor call requires a native constructor ID");
-    }
-
-    return *constructor;
-#else
-    return *static_cast<const NativeConstructor*>(m_callables[toNomadIndex(functionId.id)]);
-#endif
-}
 
 NomadIndex Runtime::getFunctionTableSize() const {
     return m_callables.size();

@@ -203,8 +203,10 @@ public:
 
     // Null unless `functionId` identifies a constructor.
     [[nodiscard]] const NativeConstructor* getNativeConstructor(CallableId functionId) const;
-    // Requires a compiler-resolved ID; debug builds verify the callable kind.
-    [[nodiscard]] const NativeConstructor& getResolvedNativeConstructor(CallableId functionId) const;
+    // Requires an ID already resolved by the compiler; performs no validation.
+    [[nodiscard]] const NativeConstructor& getUncheckedNativeConstructor(const CallableId functionId) const {
+        return *static_cast<const NativeConstructor*>(m_callables[toNomadIndex(functionId.id)]);
+    }
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors() const;
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors(const Type* classType) const;
 
@@ -317,8 +319,10 @@ public:
 
     // Null unless `functionId` identifies a native function.
     [[nodiscard]] const NativeFunction* getNativeFunction(CallableId functionId) const;
-    // Requires a compiler-resolved ID; debug builds verify the callable kind.
-    [[nodiscard]] const NativeFunction& getResolvedNativeFunction(CallableId functionId) const;
+    // Requires an ID already resolved by the compiler; performs no validation.
+    [[nodiscard]] const NativeFunction& getUncheckedNativeFunction(const CallableId functionId) const {
+        return *static_cast<const NativeFunction*>(m_callables[toNomadIndex(functionId.id)]);
+    }
     [[nodiscard]] NativeFunction* getMutableNativeFunction(CallableId functionId);
     [[nodiscard]] const NativeFunction* getNativeFunction(const NomadString& name) const;
     [[nodiscard]] std::vector<const NativeFunction*> getNativeFunctions() const;
@@ -349,8 +353,10 @@ public:
     [[nodiscard]] const Method* getMethod(CallableId callableId) const;
     [[nodiscard]] const Constructor* getConstructor(CallableId callableId) const;
     [[nodiscard]] const NativeMethod* getNativeMethod(CallableId callableId) const;
-    // Requires a compiler-resolved ID; debug builds verify the callable kind.
-    [[nodiscard]] const NativeMethod& getResolvedNativeMethod(CallableId callableId) const;
+    // Requires an ID already resolved by the compiler; performs no validation.
+    [[nodiscard]] const NativeMethod& getUncheckedNativeMethod(const CallableId callableId) const {
+        return *static_cast<const NativeMethod*>(m_callables[toNomadIndex(callableId.id)]);
+    }
     [[nodiscard]] NomadIndex getFunctionTableSize() const;
     // `argumentTypes` is indexed by parameter and holds `nullptr` for parameters the compiler supplies. An overload
     // matching every argument exactly wins over one that merely accepts them.

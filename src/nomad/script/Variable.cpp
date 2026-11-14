@@ -186,37 +186,22 @@ NomadIndex VariableList::getVariableCount() const {
     return m_variableMap.getVariableCount();
 }
 
-void VariableList::setVariableValue(const VariableId variableId, const RuntimeValue& value) {
-    const auto variableIndex = toNomadIndex(variableId.id);
-
-#ifdef NOMAD_DEBUG
-    if (variableIndex >= m_variableValues.size()) {
-        log::error("Variable ID out of range");
-    }
-#endif
-
-    const auto* type = m_variableMap.getVariableType(variableId);
-
-    if (type == nullptr) {
-        m_variableValues[variableIndex] = value;
-        return;
+RuntimeValue* VariableList::setVariableValue(const VariableId variableId, const RuntimeValue& value) {
+    if (isIdOutOfRange(variableId.id, m_variableValues.size())) {
+        return nullptr;
     }
 
-    type->assignValue(&value, &m_variableValues[variableIndex]);
+    setUncheckedVariableValue(variableId, value);
+
+    return &m_variableValues[toNomadIndex(variableId.id)];
 }
 
-void VariableList::getVariableValue(const VariableId variableId, RuntimeValue& value) const {
-    const auto variableIndex = toNomadIndex(variableId.id);
-
-#ifdef NOMAD_DEBUG
-    if (variableIndex >= m_variableValues.size()) {
-        log::error("Variable ID out of range");
-
-        return;
+const RuntimeValue* VariableList::getVariableValue(const VariableId variableId) const {
+    if (isIdOutOfRange(variableId.id, m_variableValues.size())) {
+        return nullptr;
     }
-#endif
 
-    value = m_variableValues[variableIndex];
+    return &getUncheckedVariableValue(variableId);
 }
 
 } // nomad
