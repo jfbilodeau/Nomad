@@ -27,6 +27,7 @@ Standing rules:
 | D2 | The Compiler computes exact operand-stack depth. The VM drops per-push bounds checks. |
 | D3 | Native dispatch keeps `CallableId` operands. The VM calls compiler-resolved accessors with no lookup checks. Debug builds verify the callable kind. |
 | D4 | Remove dead and test-only APIs, rewriting their tests against production APIs. Remove `formatDynamicString`; callers use `Interpreter::formatString`. |
+| D5 | Keep nullable pointers for native and member lookups (`getNativeFunction`, `getNativeMethod`, `getNativeConstructor`, and similar). Do not migrate to `std::optional`. The project targets C++20, and a pointer already expresses absence. Copy-returning lookups (`getNativePropertyInfo`, `getEventDefinition`) move to pointers in step 8, not to optionals. |
 
 ## Staged plan
 
