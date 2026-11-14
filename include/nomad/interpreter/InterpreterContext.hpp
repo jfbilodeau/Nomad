@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace nomad {
@@ -29,6 +30,7 @@ class Type;
 class Runtime;
 class ScriptCallableBase;
 class ScriptFunction;
+class StructType;
 class VirtualMachine;
 
 class InterpreterEvaluationGuard {
@@ -160,6 +162,9 @@ private:
     [[nodiscard]] std::span<RuntimeValue> resolveVariableStorage(VariableId variableId) const;
     [[nodiscard]] std::span<RuntimeValue> resolveParameterStorage(NomadId parameterId) const;
     [[nodiscard]] std::span<RuntimeValue> resolveReceiverStorage() const;
+    [[nodiscard]] std::pair<const StructType*, std::span<RuntimeValue>> resolveVariablePropertyStorage(
+        const NomadString& name
+    );
 
     const Interpreter& m_interpreter;
     Runtime* m_runtime;

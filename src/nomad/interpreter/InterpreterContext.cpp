@@ -157,14 +157,8 @@ void InterpreterContext::setVariableProperty(
     const InterpreterValue& value
 ) {
     const auto guard = beginEvaluation();
-    const auto* type = getVariableType(name);
-    if (type == nullptr || !type->isStruct()) {
-        throw std::invalid_argument("Stored property assignment requires an assigned struct variable");
-    }
-    const auto parameterId = getCallable()->getParameterId(name);
-    const auto storage = parameterId != NOMAD_INVALID_ID ? getMutableParameterStorage(parameterId) :
-        getMutableVariableStorageById(getCallable()->getVariableId(name));
-    m_interpreter.setProperty(*type->asStructType(), storage, propertyId, value);
+    const auto [type, storage] = resolveVariablePropertyStorage(name);
+    m_interpreter.setProperty(*type, storage, propertyId, value);
 }
 
 void InterpreterContext::setVariableProperty(
@@ -173,6 +167,13 @@ void InterpreterContext::setVariableProperty(
     const InterpreterValue& value
 ) {
     const auto guard = beginEvaluation();
+    const auto [type, storage] = resolveVariablePropertyStorage(name);
+    m_interpreter.setProperty(*type, storage, propertyPath, value);
+}
+
+std::pair<const StructType*, std::span<RuntimeValue>> InterpreterContext::resolveVariablePropertyStorage(
+    const NomadString& name
+) {
     const auto* type = getVariableType(name);
     if (type == nullptr || !type->isStruct()) {
         throw std::invalid_argument("Stored property assignment requires an assigned struct variable");
@@ -180,7 +181,8 @@ void InterpreterContext::setVariableProperty(
     const auto parameterId = getCallable()->getParameterId(name);
     const auto storage = parameterId != NOMAD_INVALID_ID ? getMutableParameterStorage(parameterId) :
         getMutableVariableStorageById(getCallable()->getVariableId(name));
-    m_interpreter.setProperty(*type->asStructType(), storage, propertyPath, value);
+
+    return {type->asStructType(), storage};
 }
 
 const Type* InterpreterContext::getVariableType(const NomadString& name) const {

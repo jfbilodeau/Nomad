@@ -400,6 +400,27 @@ BOOST_AUTO_TEST_CASE(stored_field_writes_do_not_copy_unrelated_fields) {
             const auto storage = context.getMutableVariableStorageById(context.getCallable()->getVariableId("root"));
             const auto rootReceiver = interpreter.createStructReceiver(*root, storage.data());
             const auto leafReceiver = interpreter.createStructReceiver(*leaf, storage.data());
+            context.setVariable("scalar", runtime.getIntegerType(), number.getStorage());
+            for (const auto* name : {"missing", "scalar", "holder"}) {
+                BOOST_CHECK_EXCEPTION(context.setVariableProperty(name, siblingId, number),
+                    std::invalid_argument,
+                    [](const auto& error) {
+
+                        return NomadString{error.what()} ==
+                            "Stored property assignment requires an assigned struct variable";
+                    });
+                BOOST_CHECK_EXCEPTION(context.setVariableProperty(name, "sibling", number),
+                    std::invalid_argument,
+                    [](const auto& error) {
+
+                        return NomadString{error.what()} ==
+                            "Stored property assignment requires an assigned struct variable";
+                    });
+            }
+
+            BOOST_TEST(context.getVariableStorage("root").data() == storage.data());
+            BOOST_TEST(storage[0].getIntegerValue() == 17);
+            BOOST_TEST(storage[2].getIntegerValue() == 3);
             reference->copyCount = 0;
             reference->failCopyAt = 1;
             context.setVariableProperty("root", siblingId, number);
