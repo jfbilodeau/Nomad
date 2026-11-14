@@ -382,6 +382,10 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_
             BOOST_TEST(callable->getParameterOffset(tailId) == 5U);
             const auto input = context.getVariableStorage("value");
             BOOST_REQUIRE_EQUAL(input.size(), 5U);
+            BOOST_TEST(context.getMutableParameterStorage(parameterId).data() == input.data());
+            BOOST_TEST(context.getMutableParameterStorage(parameterId).size() == input.size());
+            BOOST_CHECK_THROW(static_cast<void>(context.getParameterStorage(NOMAD_INVALID_ID)), NomadBug);
+            BOOST_CHECK_THROW(static_cast<void>(context.getMutableParameterStorage(NOMAD_INVALID_ID)), NomadBug);
             BOOST_TEST(input[0].getIntegerValue() == 7);
             BOOST_TEST(input[1].getStringValue() == "nested");
             BOOST_TEST(input[3].getStringValue() == "outer");

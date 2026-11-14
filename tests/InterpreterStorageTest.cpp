@@ -415,6 +415,14 @@ BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_wit
     std::array<RuntimeValue, 1> source{RuntimeValue{NomadInteger{17}}};
     context.setVariable("value", owner, source);
     const auto* address = context.getVariableStorage("value").data();
+    const auto valueId = context.getCallable()->getVariableId("value");
+    BOOST_TEST(context.getMutableVariableStorageById(valueId).data() == address);
+    BOOST_TEST(context.getVariableStorageById(VariableId::INVALID).empty());
+    BOOST_TEST(context.getMutableVariableStorageById(VariableId::INVALID).empty());
+    BOOST_CHECK_THROW(static_cast<void>(context.getParameterStorage(0)), NomadBug);
+    BOOST_CHECK_THROW(static_cast<void>(context.getMutableParameterStorage(0)), NomadBug);
+    BOOST_CHECK_THROW(static_cast<void>(context.getReceiverStorage()), NomadBug);
+    BOOST_CHECK_THROW(static_cast<void>(context.getMutableReceiverStorage()), NomadBug);
     const auto executed = interpreter.execute("copy = value", context);
     BOOST_REQUIRE_MESSAGE(executed, (context.getFirstError().has_value() ? context.getFirstError()->message : "No error reported"));
     const InterpreterValue snapshot(*context.getResult());
@@ -435,9 +443,12 @@ BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_wit
     context.setVariable("empty", empty, std::span<const RuntimeValue>{});
     BOOST_TEST(context.getVariableType("empty") == empty);
     BOOST_TEST(context.getVariableStorage("empty").data() == nullptr);
+    const auto emptyVariableId = context.getCallable()->getVariableId("empty");
+    BOOST_TEST(context.getMutableVariableStorageById(emptyVariableId).empty());
     context.clearVariableValue("empty");
     BOOST_TEST(context.getVariableType("empty") == nullptr);
     BOOST_TEST(context.getVariableStorage("empty").empty());
+    BOOST_TEST(context.getMutableVariableStorageById(emptyVariableId).empty());
     context.setVariable("value", runtime.getIntegerType(), RuntimeValue{NomadInteger{29}});
     BOOST_TEST(context.getVariableType("value") == runtime.getIntegerType());
     BOOST_TEST(context.getVariableValue("value")->getIntegerValue() == 29);
