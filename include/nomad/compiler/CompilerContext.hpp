@@ -61,7 +61,7 @@ public:
     [[nodiscard]] NomadIndex getErrorCount() const;
     [[nodiscard]] NomadIndex getWarningCount() const;
     [[nodiscard]] std::span<const CompilerDiagnostic> getDiagnostics() const;
-    // Returns nullptr when no error has been reported.
+    // Returns an owned snapshot of the first error, or std::nullopt.
     [[nodiscard]] std::optional<CompilerDiagnostic> getFirstError() const;
     void clearDiagnostics();
 

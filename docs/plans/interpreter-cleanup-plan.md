@@ -1,9 +1,9 @@
 # Interpreter cleanup plan
 
-Status: Steps 1 through 9 and the approved yield-removal follow-up are implemented
-and verified in Windows Debug, including the approved Step 7 boundary correction.
-Awaiting Step 9 review. Final finding reconciliation and broader unit validation
-remain to be done.
+Status: Closed. Steps 1 through 9, the approved yield removal, and the Step 7
+boundary correction are reconciled. Current code builds and all six unit CTest
+groups pass in Windows Debug. Documentation closeout is complete; no further
+implementation slice is scheduled.
 Baseline: November 12, 2026 review of
 [Interpreter.cpp](../../src/nomad/interpreter/Interpreter.cpp).
 
@@ -14,6 +14,12 @@ execution of all steps, commits, or pushes.
 The historical execution records for Steps 1 through 5 describe the earlier
 suspension contracts. The subsequently approved yield-removal follow-up below
 supersedes those contracts and their suspension-specific tests.
+
+Historical records also retain the diagnostic API names used at the time. Current
+APIs use `CompilerDiagnostic`, `CompilerDiagnosticSeverity`, and
+`CompilerDiagnosticCode`; CompilerContext collects diagnostics through
+`addDiagnostic`, `addDiagnostics`, `addError`, and `addWarning`. Both compiler and
+interpreter contexts return an owned optional snapshot from `getFirstError`.
 
 ## Goal and scope
 
@@ -867,6 +873,72 @@ Relevant regression suites:
 - [ParserTest](../../tests/ParserTest.cpp)
 - [TokenizerTest](../../tests/TokenizerTest.cpp)
 - [CTest registration](../../tests/CMakeLists.txt)
+
+## Final reconciliation
+
+November 13, 2026, after review of the user's latest committed cleanup:
+
+| Original finding | Final disposition |
+| --- | --- |
+| 1. Named property paths traversed twice | Resolved: one type/offset traversal; no intermediate ID vector |
+| 2. Assignment algorithm duplicated | Resolved: copied and borrowed setters share validation and physical assignment |
+| 3. Synchronous native state handling duplicated | Resolved: one synchronous native path; scalar-native stop propagation stays intentionally separate |
+| 4. Legacy scalar and aggregate script lanes | Resolved: typed calls share prepared-frame execution; yield API/state/opcode and suspension transfer are removed |
+| 5. Object/struct method resolution copied | Resolved: common metadata validation is shared; specialized receiver-category checks remain |
+| 6. Receiver validation returned unchanged input | Resolved: folded into common resolution without a misleading return |
+| 7. Identical exception handlers | Resolved: one standard-exception translation handler |
+| 8. Duplicate first-error lookup | Resolved: one complete-error snapshot in dynamic formatting |
+| 9. Diagnostic transfer cursor bookkeeping | Resolved: copy at return boundaries without cross-collection indexing |
+| 10. Statement staging pointer/null append | Resolved: construct and append inside the expression branch |
+| 11. Interpreter/parser boundary | Revised by approval: Interpreter retains input policy; shared expression-in-statement syntax stays in Parser; `parseInput` was removed |
+| 12. Fake newline prefix for source coordinates | Resolved: Tokenizer has a source-line origin; physical storage remains independent |
+| 13. Human-message parsing for error presentation | Resolved: scanner/unknown-name codes and identifier payloads preserve existing markers without parsing prose |
+
+### Intentionally retained machinery
+
+- Host argument and receiver validation, because host calls bypass compilation.
+- Distinct copied-value and borrowed-storage contracts, including strong
+  assignment guarantees, reference ownership, and empty structs.
+- Separate scalar-native versus struct/aggregate-method restoration: scalar
+  native stop affects running state, whereas the other calls restore it.
+- Execution and register guards, because their state and ownership obligations
+  are independent.
+- Strict format-expression evaluation as a separate operation, despite its
+  single caller. It must not accept interactive assignments or statements.
+- The free formatting bridge for existing host and runtime consumers.
+- Small source-position differences between member statements and interactive
+  expressions; no policy flags were added solely to merge their constructors.
+
+### Validation and closeout
+
+- Reviewed the latest diagnostic renames, owned optional first-error access,
+  context-first formatting API, and migrated production/test callers.
+- Earlier blockers are resolved: `CompilerDiagnostic.cpp` is correctly listed
+  in CMake, and the formatting definition/declaration/call sites agree.
+- Current Windows Debug `nomad_test` build passed.
+- All registered unit groups passed against the current artifacts:
+
+| CTest group | Result | Seconds |
+| --- | --- | ---: |
+| `nomad_test_audio` | Passed | 10.66 |
+| `nomad_test_bindings` | Passed | 1.28 |
+| `nomad_test_language` | Passed | 41.48 |
+| `nomad_test_remaining` | Passed | 45.09 |
+| `nomad_test_tooling` | Passed | 21.39 |
+| `nomad_value_cleanup_contract` | Passed | 0.38 |
+
+- Updated the embedding example, diagnostic names, and owned-snapshot contracts,
+  plus the two stale pointer-lifetime comments in public headers.
+- The final closeout edits are documentation/comments only; no C++ rebuild is
+  required for those edits.
+- Strict MkDocs build passed with the installed Python/MkDocs toolchain
+  (3.44 seconds); its temporary site directory was removed. Patch whitespace
+  checks passed, and removed API names are absent from embedding documentation.
+- No sanitizer, non-Windows, package integration, or gameplay validation was run.
+  Unit/build success is not a claim of those forms of validation.
+- Repeated first-error snapshots can make extra copies; this is an optional
+  future optimization, not a correctness blocker or another scheduled refactor.
+- No commits or pushes were performed by this closeout.
 
 ## Completion criteria
 

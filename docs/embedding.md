@@ -2237,8 +2237,9 @@ are destroyed, and both are destroyed before module libraries are unloaded.
 and does not create a runtime, replace the compiler, or execute scripts.
 Results own diagnostics and error/warning counts; `succeeded()` means there are
 no errors, so warnings alone do not fail compilation.
-`<nomad/compiler/Diagnostic.hpp>` provides `DiagnosticSeverity`, `Diagnostic`,
-and `formatDiagnostic`, independently of compiler contexts.
+`<nomad/compiler/CompilerDiagnostic.hpp>` provides `CompilerDiagnosticSeverity`,
+`CompilerDiagnostic`, `CompilerDiagnosticCode`, and `formatDiagnostic`,
+independently of compiler contexts.
 `formatDiagnostic(diagnostic, stream)` writes to an existing `std::ostream`
 without adding a newline. The string-returning overload produces the same text.
 
@@ -2443,7 +2444,10 @@ void interpretInput() {
 
     if (!interpreter.execute("score = 10", context) ||
         !interpreter.execute("score + 5", context)) {
-        std::cerr << *context.getError() << '\n';
+        if (const auto error = context.getFirstError()) {
+            std::cerr << error->message << '\n';
+        }
+
         return;
     }
     const auto* result = context.getResult();
@@ -2516,9 +2520,10 @@ if (!succeeded) {
 }
 ```
 
-`getError()` provides the first error message, or null when there are no errors.
-`getFirstError()` returns the complete first error diagnostic, or null. Both
-borrow the context's diagnostic storage and are invalidated when it changes.
+`getFirstError()` returns an owned `std::optional<CompilerDiagnostic>` containing
+the complete first error, or `std::nullopt` when there are no errors. The snapshot
+remains valid after context diagnostics are changed or cleared. Save the returned
+optional when inspecting several fields rather than requesting repeated copies.
 Each new evaluation clears previous diagnostics; inspect or copy them before
 executing more input. Call `clearError()` to dismiss both errors and warnings
 without starting another evaluation.
@@ -2551,12 +2556,14 @@ Severity, message, line, column, code, and subject are preserved; the originals
 are unchanged.
 Existing context diagnostics are retained, and an empty input adds nothing.
 
-Compiler diagnostics default to `DiagnosticCode::General`. Unresolved identifier
-expressions report `DiagnosticCode::UnknownIdentifier`, with the identifier in
+Compiler diagnostics default to `CompilerDiagnosticCode::General`. Unresolved identifier
+expressions report `CompilerDiagnosticCode::UnknownIdentifier`, with the identifier in
 `subject`; their ordinary compiler message remains unchanged.
-`CompilerContext::reportDiagnostic(diagnostic)` and `reportDiagnostics(diagnostics)`
-copy the complete metadata and update severity counts. Reporting ordinary error
-text does not infer a code from its wording. Text formatting of diagnostics is
+`CompilerContext::addDiagnostic(diagnostic)` and `addDiagnostics(diagnostics)`
+copy the complete metadata and update severity counts. `addError(...)` and
+`addWarning(...)` add ordinary general diagnostics without inferring a code from
+their wording. The compiler context's `getFirstError()` also returns an owned
+optional diagnostic snapshot. Text formatting of diagnostics is
 unchanged. C++ hosts using the extended diagnostic structures must be rebuilt.
 
 Results are owned by the context. Copy a result using `InterpreterValue` if it must

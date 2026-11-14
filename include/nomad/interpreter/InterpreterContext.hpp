@@ -124,7 +124,7 @@ public:
     void clearError();
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] NomadBoolean hasWarning() const;
-    // First complete error diagnostic, or nullptr; invalidated by diagnostic collection changes.
+    // Returns an owned snapshot of the first error, or std::nullopt.
     [[nodiscard]] std::optional<CompilerDiagnostic> getFirstError() const;
 
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
