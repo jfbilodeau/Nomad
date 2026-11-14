@@ -84,9 +84,11 @@ BOOST_AUTO_TEST_CASE(class_struct_fields_are_readable_through_temporary_receiver
     const auto whole = runSource(
         "struct Point\nnumber = 4\nend\n"
         "class Box\npoint = new Point\nend\n"
-        "return (new Box).point");
-    BOOST_REQUIRE(whole.compiled);
-    BOOST_REQUIRE(!whole.fault.has_value());
+        "copy = (new Box).point\n"
+        "return copy.number");
+    BOOST_REQUIRE_MESSAGE(whole.compiled, whole.diagnostics);
+    BOOST_REQUIRE_MESSAGE(!whole.fault.has_value(), whole.fault.value_or(""));
+    BOOST_TEST(whole.integerValue == 4);
 }
 
 BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_class_types)
