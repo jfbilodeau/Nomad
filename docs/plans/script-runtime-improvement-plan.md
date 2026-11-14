@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Step 1 is implemented and validated, including the follow-up changes. Step 2a (Runtime and VirtualMachine) is implemented and validated. All 13 CTest entries passed. Step 2b (InterpreterContext) awaits review.
+**Status:** Decisions D1–D5 are approved. Steps 1 and 2 (2a and 2b) are implemented and validated. All 13 CTest entries passed. Step 3 (compiler correctness) is next.
 
 ## Component contract
 
@@ -66,7 +66,11 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 - Kept `Runtime::getStringByName` and `Runtime::getStringContextVariableValue` as convenience helpers.
 - Removed commented-out code in `Scene.cpp`, `Scene.update.cpp`, `Decompiler.cpp`, `Entity.hpp`, `Logger.hpp`, and `Tokenizer.cpp`.
 
-**Step 2b (InterpreterContext): pending review.** Candidates: `setVariableProperty`, `setReceiverProperty`, `getReceiverStorage`, `getVariableStorage(name)`, `getVariableValueById`, `setParameterResult`, `hasWarning`. Apply the same convenience-versus-navigation rule before removing any of them.
+**Step 2b (InterpreterContext): done, all 13 CTest entries passing.**
+
+- Removed `getVariableValueById`, `setParameterResult`, and `getReceiverStorage` (const). They were ID- or index-based navigation. Replacements: `getVariableStorageById(id)[0]`, `setResult(type, getParameterStorage(id))`, and `getMutableReceiverStorage()`.
+- Kept the name-based convenience helpers `setVariableProperty`, `setReceiverProperty`, `getVariableStorage(name)`, and `hasWarning`. They have no production callers, but they're kept per your decision.
+- Dropped one duplicate struct-restriction check in `InterpreterTest`, since the name-based check on the line above it covers the same path.
 
 ### Step 3: compiler correctness
 

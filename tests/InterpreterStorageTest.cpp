@@ -421,7 +421,7 @@ BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_wit
     BOOST_TEST(context.getMutableVariableStorageById(VariableId::INVALID).empty());
     BOOST_CHECK_THROW(static_cast<void>(context.getParameterStorage(0)), NomadBug);
     BOOST_CHECK_THROW(static_cast<void>(context.getMutableParameterStorage(0)), NomadBug);
-    BOOST_CHECK_THROW(static_cast<void>(context.getReceiverStorage()), NomadBug);
+    BOOST_CHECK_THROW(static_cast<void>(context.getMutableReceiverStorage()), NomadBug);
     BOOST_CHECK_THROW(static_cast<void>(context.getMutableReceiverStorage()), NomadBug);
     const auto executed = interpreter.execute("copy = value", context);
     BOOST_REQUIRE_MESSAGE(executed, (context.getFirstError().has_value() ? context.getFirstError()->message : "No error reported"));

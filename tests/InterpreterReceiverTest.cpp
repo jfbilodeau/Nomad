@@ -481,7 +481,7 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
                         BOOST_TEST(receiver->getProperty("number").getValue().getIntegerValue() == 31);
                         if (type->isStruct()) {
                             BOOST_TEST(before.getStorage()[0].getIntegerValue() == numberBefore);
-                            BOOST_TEST(context.getReceiverStorage()[0].getIntegerValue() == 31);
+                            BOOST_TEST(context.getMutableReceiverStorage()[0].getIntegerValue() == 31);
                         } else {
                             BOOST_TEST(before.getValue().asObject<ScriptObject>()->getField(0).getIntegerValue() == 31);
                             BOOST_TEST(active->getThis() == foreign);

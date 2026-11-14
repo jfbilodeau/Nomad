@@ -304,14 +304,14 @@ BOOST_AUTO_TEST_CASE(interpreter_console_ids_preserve_lookup_and_reassignment)
     const auto id = context.getFunction()->getVariableId("value");
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(context.getVariableTypeById(id) == runtime.getIntegerType());
-    BOOST_REQUIRE(context.getVariableValueById(id) != nullptr);
-    BOOST_TEST(context.getVariableValueById(id)->getIntegerValue() == 7);
+    BOOST_REQUIRE(!context.getVariableStorageById(id).empty());
+    BOOST_TEST(context.getVariableStorageById(id)[0].getIntegerValue() == 7);
     BOOST_REQUIRE(context.getInterpreter().execute("value = \"changed\"", context));
     BOOST_TEST(context.getFunction()->getVariableId("value") == id);
     BOOST_TEST(context.getVariableTypeById(id) == runtime.getStringType());
-    BOOST_TEST(context.getVariableValueById(id)->getStringValue() == "changed");
+    BOOST_TEST(context.getVariableStorageById(id)[0].getStringValue() == "changed");
     BOOST_TEST(context.getVariableTypeById(VariableId::INVALID) == nullptr);
-    BOOST_TEST(context.getVariableValueById(VariableId::INVALID) == nullptr);
+    BOOST_TEST(context.getVariableStorageById(VariableId::INVALID).empty());
 }
 
 BOOST_AUTO_TEST_SUITE_END()

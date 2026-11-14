@@ -324,9 +324,6 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_whole_struct_reads_and_assignments_fro
             BOOST_TEST(context.getVariableStorage("copy")[1].getStringValue() == "host value");
             BOOST_CHECK_THROW(context.setVariable("copy", pair, RuntimeValue{}), std::invalid_argument);
             BOOST_CHECK_THROW(static_cast<void>(context.getVariableValue("copy")), std::invalid_argument);
-            BOOST_CHECK_THROW(static_cast<void>(context.getVariableValueById(
-                context.getCallable()->getVariableId("copy"))),
-                std::invalid_argument);
             context.setVariable("copy", pair, context.getVariableStorage("copy"));
             BOOST_REQUIRE(context.getInterpreter().execute("source = 31", context));
             BOOST_TEST(context.getVariableValue("source")->getIntegerValue() == 31);
@@ -394,17 +391,18 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_copies_and_replaces_aggregate_parameters_
             BOOST_TEST(context.getVariableType("empty") == empty);
             BOOST_TEST(context.getVariableStorage("empty").empty());
             BOOST_TEST(context.getVariableStorage("emptyLocal").empty());
-            context.setParameterResult(parameterId);
+            context.setResult(callable->getParameterType(parameterId), context.getParameterStorage(parameterId));
             BOOST_REQUIRE(context.getResult() != nullptr);
             BOOST_TEST(context.getResult()->getType() == outer);
             BOOST_TEST(context.getResult()->getStorage().data() != input.data());
             BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 7);
-            context.setParameterResult(callable->getParameterId("empty"));
+            const auto emptyParameterId = callable->getParameterId("empty");
+            context.setResult(callable->getParameterType(emptyParameterId), context.getParameterStorage(emptyParameterId));
             BOOST_TEST(context.getResult()->getType() == empty);
             BOOST_TEST(context.getResult()->getStorage().empty());
-            context.setParameterResult(tailId);
+            context.setResult(callable->getParameterType(tailId), context.getParameterStorage(tailId));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
-            BOOST_CHECK_THROW(context.setParameterResult(NOMAD_INVALID_ID), NomadBug);
+            BOOST_CHECK_THROW(static_cast<void>(context.getParameterStorage(NOMAD_INVALID_ID)), NomadBug);
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
             BOOST_REQUIRE(context.getInterpreter().execute("value", context));
             const InterpreterValue snapshot(*context.getResult());

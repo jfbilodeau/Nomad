@@ -233,7 +233,7 @@ BOOST_AUTO_TEST_CASE(empty_receiver_writes_preserve_effects_without_storage_poin
         InterpreterContext context(contextEvaluator, *callable);
         const auto* property = callable->getClassType()->asCompositeType()->getProperty("empty");
         const InterpreterValue emptyValue(property->getValueType(), std::span<const RuntimeValue>{});
-        const InterpreterValue receiver(callable->getClassType(), context.getReceiverStorage());
+        const InterpreterValue receiver(callable->getClassType(), context.getMutableReceiverStorage());
         const auto updatedById = contextEvaluator.setProperty(receiver, property->getId(), emptyValue);
         const auto updatedByName = contextEvaluator.setProperty(receiver, "empty", emptyValue);
         BOOST_TEST(updatedById.getType() == receiver.getType());

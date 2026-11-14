@@ -78,7 +78,7 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
         {
             const Interpreter contextEvaluator(*machine);
             InterpreterContext context(contextEvaluator);
-            BOOST_CHECK_THROW((void)context.getReceiverStorage(), NomadBug);
+            BOOST_CHECK_THROW((void)context.getMutableReceiverStorage(), NomadBug);
             BOOST_REQUIRE(context.getInterpreter().execute("root = new ReadOuter\nholder = new ReadHolder", context));
             const auto root = context.getVariableStorage("root");
             const auto leafProperty = runtime.getTypeByName("ReadOuter")->asCompositeType()->getProperty("leaf");
@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(reads_support_live_parameters_locals_and_borrowed_struct_re
         BOOST_REQUIRE(context.getInterpreter().execute(isReceiver ? "this.empty" : "value.empty", context));
         BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
         if (isReceiver) {
-            const auto receiver = context.getReceiverStorage();
+            const auto receiver = context.getMutableReceiverStorage();
             BOOST_TEST(context.getMutableReceiverStorage().data() == receiver.data());
             BOOST_TEST(receiver.size() == callable->getClassType()->getSize());
             BOOST_REQUIRE(context.getInterpreter().execute("this", context));
@@ -266,8 +266,8 @@ BOOST_AUTO_TEST_CASE(empty_struct_receiver_reads_omit_storage_pointers_but_prese
         BOOST_TEST(!callable->getCallStorageLayout().receiverOffset.has_value());
         const Interpreter contextEvaluator(*machine);
         InterpreterContext context(contextEvaluator, *callable);
-        BOOST_TEST(context.getReceiverStorage().empty());
-        BOOST_TEST(context.getReceiverStorage().data() == nullptr);
+        BOOST_TEST(context.getMutableReceiverStorage().empty());
+        BOOST_TEST(context.getMutableReceiverStorage().data() == nullptr);
         for (const auto* source : {"this", "this.empty"}) {
             const auto evaluated = context.getInterpreter().execute(source, context);
             BOOST_REQUIRE_MESSAGE(evaluated, (context.getFirstError() ? context.getFirstError()->message : source));

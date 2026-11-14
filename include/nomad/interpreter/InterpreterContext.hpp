@@ -89,7 +89,6 @@ public:
     [[nodiscard]] const ScriptCallableBase* getCallable() const;
     [[nodiscard]] bool isFrameBacked() const;
     [[nodiscard]] bool isFrameVariable(VariableId variableId) const;
-    void setParameterResult(NomadId parameterId);
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
@@ -98,7 +97,6 @@ public:
     [[nodiscard]] InterpreterReceiver* getReceiver();
     [[nodiscard]] const InterpreterReceiver* getReceiver() const;
     // Borrows the complete struct receiver of an active method/constructor frame.
-    [[nodiscard]] std::span<const RuntimeValue> getReceiverStorage() const;
     [[nodiscard]] std::span<RuntimeValue> getMutableReceiverStorage();
     void setReceiverProperty(PropertyId propertyId, const InterpreterValue& value);
     void setReceiverProperty(NomadStringView propertyPath, const InterpreterValue& value);
@@ -146,7 +144,6 @@ public:
     [[nodiscard]] const Type* getVariableType(const NomadString& name) const;
     [[nodiscard]] const Type* getVariableTypeById(VariableId variableId) const;
     [[nodiscard]] const RuntimeValue* getVariableValue(const NomadString& name) const;
-    [[nodiscard]] const RuntimeValue* getVariableValueById(VariableId variableId) const;
     // Empty views also represent missing values; query the variable type to distinguish empty structs.
     [[nodiscard]] std::span<const RuntimeValue> getVariableStorage(const NomadString& name) const;
     [[nodiscard]] std::span<const RuntimeValue> getVariableStorageById(VariableId variableId) const;
