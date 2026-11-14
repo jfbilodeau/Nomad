@@ -295,7 +295,7 @@ InterpreterContext::InterpreterContext(
     const Interpreter& interpreter,
     const ScriptCallableBase& function
 ):
-    InterpreterContext(interpreter)
+    m_interpreter(interpreter)
 {
     auto& virtualMachine = interpreter.getVirtualMachine();
     if (virtualMachine.getCurrentCallable() != &function || function.getFunctionStart() == NOMAD_INVALID_INDEX) {
