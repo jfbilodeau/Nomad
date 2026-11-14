@@ -285,8 +285,8 @@ InterpreterContext::InterpreterContext(const Interpreter& interpreter):
     m_interpreter(interpreter),
     m_function(std::make_unique<ScriptFunction>(
         CallableId{}, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""
-    ))
-{
+    )
+) {
 }
 
 InterpreterContext::~InterpreterContext() = default;
