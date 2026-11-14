@@ -318,6 +318,7 @@ The `Array1dObject`, `Array2dObject`, and `Array3dObject` getters accept indices
 followed by a `RuntimeValue& result`. Pass an empty result: valid reads copy the
 element and invalid reads initialize its type's default value.
 The caller owns the result and must release it using the element type's
-`freeValue` when `needsFree()` is true, including if initialization or copying
-throws. Results remain valid independently of subsequent reads or destruction
+`freeValue` when `needsFree()` is true. Failed initialization or copying releases
+acquired resources and clears the result without requiring caller cleanup.
+Successful results remain valid independently of subsequent reads or destruction
 of the array.

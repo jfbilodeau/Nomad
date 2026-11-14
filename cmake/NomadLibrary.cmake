@@ -9,8 +9,8 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compilation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerDiagnostic.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/DeferredType.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/compiler/Diagnostic.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FunctionParameterTypeTarget.cpp
@@ -21,11 +21,24 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Parser.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SourceLoader.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/StatementParsers.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StorageLocation.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StructDeclaration.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StructFieldInitializerStatement.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/StructMemberDeclaration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/SyntaxTree.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Tokenizer.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/EventStatement.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/statements/ReturnStatement.cpp
+
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/Interpreter.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterCallFrame.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterContext.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterObjectReceiver.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterReceiver.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterStorage.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterStructReceiver.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/interpreter/InterpreterValue.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/log/ConsoleSink.cpp
     ${NOMAD_SOURCE_DIR}/nomad/log/FileSink.cpp
@@ -40,17 +53,20 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptBindings.cpp
     ${NOMAD_SOURCE_DIR}/nomad/modules/ScriptClassBinding.cpp
 
+    ${NOMAD_SOURCE_DIR}/nomad/script/BaseTypes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Callable.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ClassType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Closure.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/CompositeType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Documentation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/DynamicVariable.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/EnumType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Event.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ExecutionStateGuard.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/FormatString.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Hub.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/InstructionDump.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Instructions.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/Interpreter.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/script/InterpreterContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/IteratorObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeCallable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/NativeFunctions.cpp
@@ -67,11 +83,15 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/script/Runtime.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeOpCodes.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValue.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/RuntimeValueGuard.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptCallableBase.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptConstructor.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptMethod.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/ScriptObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/StructType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Type.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/TypeManager.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/script/ValueType.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/Variable.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VariableContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/script/VirtualMachine.cpp
@@ -104,6 +124,7 @@ target_link_libraries(nomad-language
     Boost::locale
     Boost::spirit
     PRIVATE
+    Boost::scope_exit
     tomlplusplus::tomlplusplus
     ${CMAKE_DL_LIBS}
 )

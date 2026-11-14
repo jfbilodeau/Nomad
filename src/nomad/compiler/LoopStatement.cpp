@@ -7,8 +7,10 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
-#include <nomad/script/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 
 namespace nomad {
 
@@ -36,8 +38,9 @@ protected:
     void onCompile(Compiler* compiler, ScriptCallableBase*) override {
         m_loop->compileControl(compiler, m_isBreak);
     }
-    void onEvaluate(InterpreterContext& context) const override {
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override {
         context.setLoopControl(m_isBreak ? LoopControl::Break : LoopControl::Continue);
+        return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
 
 private:
@@ -67,7 +70,7 @@ protected:
             if (!m_source->resolve(context, function)) {
                 return;
             }
-            const auto iterable = runtime->getIterableInfo(m_source->getType());
+            const auto iterable = runtime->getTypeManager().getIterableInfo(m_source->getType());
             if (!iterable) {
                 reportError(context, function, "For source must be an iterable object");
                 return;
@@ -107,9 +110,8 @@ protected:
         resetControls();
         const auto store = [&](Expression* expression, const Type* type, VariableId id) {
             expression->compile(compiler, function, ExpressionTarget::Result);
-            compiler->addFreeValue(type->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(id.id));
-            compiler->addOpCode(type->getTypeOpCodes()->setFunctionVariable);
-            compiler->addId(id.id);
+            type->emitFreeFunctionVariable(*compiler, function->getVariableOffset(id));
+            type->emitStoreFunctionVariable(*compiler, function->getVariableOffset(id));
         };
         store(m_factory.get(), m_iteratorType, m_iteratorId);
         const auto continuation = compiler->getOpCodeSize();
@@ -118,7 +120,7 @@ protected:
         const auto exit = compiler->addIndex(NOMAD_INVALID_INDEX);
         if (m_parameterId != NOMAD_INVALID_ID) {
             m_current->compile(compiler, function, ExpressionTarget::Result);
-            compiler->addStoreParameter(m_parameterId, m_valueType);
+            compiler->addStoreParameter(function->getParameterOffset(m_parameterId), m_valueType);
         } else {
             store(m_current.get(), m_valueType, m_valueId);
         }
@@ -128,47 +130,35 @@ protected:
         const auto cleanup = compiler->getOpCodeSize();
         compiler->setIndex(exit, cleanup);
         patchControls(compiler, continuation, cleanup);
-        compiler->addFreeValue(m_iteratorType->getTypeOpCodes()->freeFunctionVariable, toNomadIndex(m_iteratorId.id));
+        m_iteratorType->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_iteratorId));
     }
 
-    void onEvaluate(InterpreterContext& context) const override {
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override {
         const InterpreterLoopVariable iterator(context, m_iterator);
-        m_factory->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
+        const auto iteratorValue = m_factory->evaluate(context);
         if (context.getVariableValue(m_binding) == nullptr) {
             RuntimeValue initial;
             if (m_valueType->isString()) {
-                m_valueType->initValue(initial);
+                m_valueType->initValue(&initial);
             }
-            try {
-                context.setVariable(m_binding, m_valueType, initial);
-            } catch (...) {
-                m_valueType->freeValue(initial);
-                throw;
-            }
-            m_valueType->freeValue(initial);
+            const RuntimeValueGuard guard(*m_valueType, &initial);
+            context.setVariable(m_binding, m_valueType, initial);
         }
-        context.setVariable(m_iterator, m_iteratorType, context.getResult()->getValue());
-        while (!context.hasError()) {
-            m_advance->evaluate(context);
-            if (context.hasError() || !context.getResult()->getValue().getBooleanValue()) {
+        context.setVariable(m_iterator, m_iteratorType, iteratorValue.getValue());
+        while (true) {
+            if (!m_advance->evaluate(context).getValue().getBooleanValue()) {
                 break;
             }
-            m_current->evaluate(context);
-            if (context.hasError()) {
-                break;
-            }
-            context.setVariable(m_binding, m_valueType, context.getResult()->getValue());
-            m_body.evaluate(context);
+            const auto current = m_current->evaluate(context);
+            context.setVariable(m_binding, m_valueType, current.getValue());
+            static_cast<void>(m_body.evaluate(context));
             const auto control = context.getLoopControl();
             context.setLoopControl(LoopControl::None);
             if (control == LoopControl::Break) {
                 break;
             }
         }
-        context.setVoidResult();
+        return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
 
 private:
@@ -202,7 +192,7 @@ std::unique_ptr<Statement> createControl(
 ) {
     auto* loop = context->getEnclosingLoop(function);
     if (loop == nullptr) {
-        context->reportError("Loop control requires an enclosing loop in the same function", tokens);
+        context->addError("Loop control requires an enclosing loop in the same function", tokens);
         return nullptr;
     }
     return std::make_unique<LoopControlStatement>(tokens->getLineIndex(), tokens->getColumnIndex(), loop, isBreak);
@@ -235,7 +225,7 @@ std::unique_ptr<Statement> parseLoop(
     if (postTest) {
         const auto trailingUntil = tokens->is("until");
         if (!trailingUntil && !tokens->is("while")) {
-            context->reportError("Expected 'while' or 'until' after 'end' of a 'do' loop", tokens);
+            context->addError("Expected 'while' or 'until' after 'end' of a 'do' loop", tokens);
             return nullptr;
         }
         loop->setUntil(trailingUntil);
@@ -325,19 +315,19 @@ std::unique_ptr<Statement> parseForStatement(
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
     if (!tokens->is(TokenType::Identifier)) {
-        context->reportError("Expected a loop variable after 'for'", tokens);
+        context->addError("Expected a loop variable after 'for'", tokens);
         return nullptr;
     }
     const auto name = tokens->next().textValue;
     if (name.find('.') != NomadString::npos) {
-        context->reportError("For loop variable must be an unqualified local name", tokens);
+        context->addError("For loop variable must be an unqualified local name", tokens);
         return nullptr;
     }
     auto* compiler = context->getCompiler();
     const auto identifierType = compiler->getIdentifierType(name, function);
     if (identifierType != IdentifierType::Unknown && identifierType != IdentifierType::FunctionVariable &&
         identifierType != IdentifierType::Parameter) {
-        context->reportError("For loop variable must be a local or parameter", tokens);
+        context->addError("For loop variable must be a local or parameter", tokens);
         return nullptr;
     }
     if (!tokens->expect("in")) {
@@ -366,24 +356,23 @@ std::unique_ptr<Statement> parseForStatement(
     return loop;
 }
 
-void LoopStatement::onEvaluate(InterpreterContext& context) const {
+InterpreterValue LoopStatement::onEvaluate(InterpreterContext& context) const {
     auto first = true;
-    while (!context.hasError()) {
+    while (true) {
         if (!m_postTest || !first) {
-            m_condition->evaluate(context);
-            if (context.hasError() || context.getResult()->getValue().getBooleanValue() == m_until) {
+            if (m_condition->evaluate(context).getValue().getBooleanValue() == m_until) {
                 break;
             }
         }
         first = false;
-        m_body.evaluate(context);
+        static_cast<void>(m_body.evaluate(context));
         const auto control = context.getLoopControl();
         context.setLoopControl(LoopControl::None);
         if (control == LoopControl::Break) {
             break;
         }
     }
-    context.setVoidResult();
+    return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
 }
 
 std::unique_ptr<Statement> parseWhileStatement(

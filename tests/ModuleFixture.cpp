@@ -96,6 +96,28 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
     }
     auto state = std::make_shared<FixtureState>();
     state->context = context;
+    if (context->configuration->getBoolean("fixture.coordinate-compilation").value_or(false)) {
+        callbacks->prepareCompilation = [state] {
+            record(state->context, "prepare");
+            const auto outcome = state->context->configuration->getString("fixture.prepare-outcome").value_or("success");
+            if (outcome == "before") {
+                throw nomad::NomadException("Requested preparation failure before compilation");
+            }
+
+            if (outcome != "skip") {
+                state->context->compileScripts();
+            }
+
+            if (outcome == "after") {
+                throw nomad::NomadException("Requested preparation failure after compilation");
+            }
+        };
+        callbacks->checkResources = [state] {
+
+            return state->context->compileScripts ? "compilation callback active" : "compilation callback inactive";
+        };
+    }
+
     if (context->configuration->getBoolean("fixture.deferred").value_or(false)) {
         const auto* type = context->compiler->deferType({"fixture.Settings"});
         const auto id = context->runtime->registerNativeFunction(
@@ -137,7 +159,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         }
         record(state->context, "preParse");
         if (state->context->configuration->getBoolean("fixture.fail-hook").value_or(false)) {
-            compiler->reportError("Requested hook failure");
+            compiler->addError("Requested hook failure");
         }
     };
     callbacks->emit = [state](nomad::CompilerContext*) { record(state->context, "emit"); };
@@ -147,7 +169,8 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             record(state->context, "run");
             const auto entry = state->context->configuration->getString("fixture.entry").value_or("init");
             if (!entry.empty()) {
-                state->context->runtime->executeFunction(state->context->runtime->getFunctionId(entry));
+                auto machine = state->context->runtime->createVirtualMachine();
+                machine->executeFunction(state->context->runtime->getFunctionId(entry));
             }
             return 0;
         };

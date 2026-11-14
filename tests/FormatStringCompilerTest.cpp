@@ -88,6 +88,7 @@ BOOST_AUTO_TEST_CASE(recovers_after_empty_placeholders)
     BOOST_REQUIRE(parsed.segments[1].diagnosticIndex.has_value());
     BOOST_TEST(*parsed.segments[1].diagnosticIndex == 0);
     BOOST_TEST(parsed.diagnostics[0].message == "Empty placeholder in format string");
+    BOOST_CHECK(parsed.diagnostics[0].code == FormatTemplateDiagnosticCode::EmptyPlaceholder);
     BOOST_TEST(parsed.diagnostics[0].offset == 1);
     BOOST_TEST(parsed.diagnostics[0].length == 2);
     BOOST_CHECK(parsed.segments[3].type == FormatTemplateSegmentType::Error);
@@ -95,6 +96,7 @@ BOOST_AUTO_TEST_CASE(recovers_after_empty_placeholders)
     BOOST_TEST(*parsed.segments[3].diagnosticIndex == 1);
     BOOST_TEST(parsed.diagnostics[1].offset == 4);
     BOOST_TEST(parsed.diagnostics[1].length == 5);
+    BOOST_CHECK(parsed.diagnostics[1].code == FormatTemplateDiagnosticCode::EmptyPlaceholder);
     BOOST_TEST(parsed.segments[5].text == "score");
 }
 
@@ -109,6 +111,7 @@ BOOST_AUTO_TEST_CASE(retains_prefix_and_stops_at_an_unclosed_placeholder)
     BOOST_CHECK(parsed.segments[3].type == FormatTemplateSegmentType::Error);
     BOOST_TEST(parsed.segments[3].text == "bonus");
     BOOST_TEST(parsed.diagnostics[0].message == "Missing '}' in format string");
+    BOOST_CHECK(parsed.diagnostics[0].code == FormatTemplateDiagnosticCode::MissingClosingBrace);
     BOOST_TEST(parsed.diagnostics[0].offset == 21);
     BOOST_TEST(parsed.diagnostics[0].length == 6);
 }

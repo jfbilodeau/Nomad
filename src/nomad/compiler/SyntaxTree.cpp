@@ -5,9 +5,10 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/ScriptCallable.hpp>
 
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
@@ -60,11 +61,11 @@ void AstNode::raiseException(const NomadString& message) const {
 }
 
 void AstNode::reportError(CompilerContext* context, const ScriptCallableBase* function, const NomadString& message) const {
-    context->reportError(message, getSourceName(function), m_span.startLine, m_span.startColumn);
+    context->addError(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
 void AstNode::reportWarning(CompilerContext* context, const ScriptCallableBase* function, const NomadString& message) const {
-    context->reportWarning(message, getSourceName(function), m_span.startLine, m_span.startColumn);
+    context->addWarning(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
 NomadIndex AstNode::getLine() const {
@@ -117,18 +118,19 @@ NomadBoolean Statement::isDeclaration() const {
 void Statement::checkReachability(CompilerContext* /*context*/, const ScriptCallableBase* /*function*/) const {
 }
 
-void Statement::evaluate(InterpreterContext& context) const {
-    context.clearResult();
-    if (context.hasError() || context.getLoopControl() != LoopControl::None) {
-        return;
+InterpreterValue Statement::evaluate(InterpreterContext& context) const {
+    const auto guard = context.beginEvaluation();
+    if (context.hasError()) {
+        raiseException(context.getFirstError()->message);
     }
-
-    try {
-        onEvaluate(context);
-    } catch (...) {
-        context.clearResult();
-        throw;
+    if (context.getLoopControl() != LoopControl::None) {
+        return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
+    auto value = onEvaluate(context);
+    if (context.hasError()) {
+        raiseException(context.getFirstError()->message);
+    }
+    return value;
 }
 
 void Statement::onResolve(CompilerContext* /*context*/, ScriptCallableBase* /*function*/) {
@@ -139,7 +141,7 @@ void Statement::onCompile(Compiler* /*compiler*/, ScriptCallableBase* /*function
     // Default implementation does nothing
 }
 
-void Statement::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue Statement::onEvaluate(InterpreterContext& /*context*/) const {
     raiseException("Statement evaluation is not supported by the interpreter");
 }
 
@@ -154,8 +156,8 @@ void NullStatement::onCompile(nomad::Compiler* /*compiler*/, ScriptCallableBase*
     // Nothing to do...
 }
 
-void NullStatement::onEvaluate(InterpreterContext& context) const {
-    context.setVoidResult();
+InterpreterValue NullStatement::onEvaluate(InterpreterContext& context) const {
+    return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -180,6 +182,10 @@ const Expression* AssignmentStatement::getExpression() const {
     return m_expression.get();
 }
 
+VariableId AssignmentStatement::getStagingVariable() const {
+    return m_stagingVariable;
+}
+
 HubInitializerStatement::HubInitializerStatement(
     const NomadIndex line,
     const NomadIndex column,
@@ -199,11 +205,11 @@ const NomadString& HubInitializerStatement::getSourceName() const {
     return m_sourceFunction->getPath();
 }
 
-const TypedValue* HubInitializerStatement::getInitialValue() const {
+const InterpreterValue* HubInitializerStatement::getInitialValue() const {
     return m_initialValue.get();
 }
 
-void HubInitializerStatement::setInitialValue(std::unique_ptr<TypedValue> value) {
+void HubInitializerStatement::setInitialValue(std::unique_ptr<InterpreterValue> value) {
     m_initialValue = std::move(value);
 }
 
@@ -213,10 +219,10 @@ void HubInitializerStatement::onResolve(CompilerContext* context, ScriptCallable
     try {
         AssignmentStatement::onResolve(&initializerContext, m_sourceFunction);
     } catch (const AstException& exception) {
-        initializerContext.reportError(exception.what(), getSourceName(),
+        initializerContext.addError(exception.what(), getSourceName(),
             exception.getLine(), exception.getColumn());
     }
-    context->reportDiagnostics(initializerContext.getDiagnostics());
+    context->addDiagnostics(initializerContext.getDiagnostics());
 }
 
 void HubInitializerStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
@@ -243,10 +249,15 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
     const auto expressionType = m_expression->getType();
 
     if (compiler->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
-        (void)compiler->resolveClassField(
+        const auto* property = compiler->resolveClassField(
             context, function, m_identifier.substr(5), expressionType,
             context->getRuntime()->getConstructor(function->getId()) != nullptr, getLine(), getColumn()
         );
+        if (property != nullptr && expressionType != nullptr && expressionType->isStruct() &&
+            m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "@assignment" + std::to_string(function->getVariableCount()), expressionType);
+        }
         return;
     }
 
@@ -362,6 +373,7 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 
     switch (identifier.identifierType) {
     case IdentifierType::FunctionVariable: {
+        compiler->recordLocalAssignment(function->getId(), identifier.variableId, this);
         // Make sure type is unknown or the same as the expression.
         const auto variableType = function->getVariableType(identifier.variableId);
 
@@ -376,6 +388,10 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
         }
 
         function->setVariableType(identifier.variableId, expressionType);
+        if (expressionType->isStruct() && m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "@assignment" + std::to_string(function->getVariableCount()), expressionType);
+        }
         break;
     }
     case IdentifierType::DynamicVariable: {
@@ -431,6 +447,11 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
     case IdentifierType::Parameter:
         if (identifier.valueType != expressionType) {
             reportError(context, function, "Cannot change type of parameter '" + m_identifier + "'");
+            return;
+        }
+        if (expressionType->isStruct() && m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "@assignment" + std::to_string(function->getVariableCount()), expressionType);
         }
         break;
     default:
@@ -440,6 +461,36 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
 }
 
 void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
+    const auto candidate = function->getNamedReturnVariable();
+    if (candidate.isValid() && m_identifier == function->getVariableName(candidate)) {
+        m_expression->compileIntoReturn(compiler, function);
+        return;
+    }
+    if (m_stagingVariable.isValid()) {
+        if (const auto* receiver = compiler->getReceiverType(function);
+            receiver != nullptr && m_identifier.starts_with("this.")) {
+            const auto* property = receiver->asClassType()->getProperty(m_identifier.substr(5));
+            StorageLocation(property).emitAssignment(*compiler, function, *m_expression, m_stagingVariable);
+            return;
+        }
+        IdentifierDefinition identifier;
+        compiler->getIdentifierDefinition(m_identifier, function, identifier);
+        if (identifier.identifierType != IdentifierType::FunctionVariable &&
+            identifier.identifierType != IdentifierType::Parameter) {
+            compiler->reportInternalError("Aggregate assignment staging requires a local or parameter destination");
+        }
+        m_expression->compileIntoLocal(compiler, function, m_stagingVariable);
+        const auto* type = m_expression->getType();
+        const auto stagingOffset = function->getVariableOffset(m_stagingVariable);
+        if (identifier.identifierType == IdentifierType::FunctionVariable) {
+            type->emitCopyFunctionVariable(*compiler, stagingOffset, function->getVariableOffset(identifier.variableId));
+        } else {
+            type->emitCopyFunctionVariableToParameter(*compiler, stagingOffset,
+                function->getParameterOffset(identifier.parameterId));
+        }
+        type->emitFreeFunctionVariable(*compiler, stagingOffset);
+        return;
+    }
     m_expression->compile(compiler, function, ExpressionTarget::Result);
 
     if (const auto* receiverType = compiler->getReceiverType(function);
@@ -449,10 +500,9 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
             compiler->reportInternalError("Unresolved class field: " + m_identifier);
         }
         compiler->addLoadReceiver(function, ExpressionTarget::Intermediate);
-        compiler->addOpCode(op_native_property_set);
-        compiler->addId(property->getId().id);
-        compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
-        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+        compiler->addStoreProperty(property->getId());
+        m_expression->getType()->emitFreeResult(*compiler);
+        receiverType->emitFreeIntermediate(*compiler);
         return;
     }
 
@@ -461,31 +511,28 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     compiler->getIdentifierDefinition(m_identifier, function, identifier);
 
     // Resolve validated the target and the expression type.
-    const auto* typeOpCodes = m_expression->getType()->getTypeOpCodes();
+    const auto* type = m_expression->getType();
 
     switch (identifier.identifierType) {
     case IdentifierType::Parameter:
-        compiler->addStoreParameter(identifier.parameterId, m_expression->getType());
+        compiler->addStoreParameter(function->getParameterOffset(identifier.parameterId), m_expression->getType());
         break;
     case IdentifierType::FunctionVariable:
         // `r` is moved into the variable, so its previous value is released first.
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(identifier.variableId.id));
-        compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(identifier.variableId.id);
+        m_expression->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(identifier.variableId));
+        type->emitStoreFunctionVariable(*compiler, function->getVariableOffset(identifier.variableId));
         break;
 
     case IdentifierType::DynamicVariable:
         // The setter copies what it keeps.
-        compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(identifier.dynamicVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        type->emitStoreDynamicVariable(*compiler, identifier.dynamicVariableId.id);
+        m_expression->getType()->emitFreeResult(*compiler);
         break;
 
     case IdentifierType::ContextVariable: {
         // The variable context copies what it keeps.
-        compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(identifier.contextVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        type->emitStoreContextVariable(*compiler, identifier.contextVariableId.id);
+        m_expression->getType()->emitFreeResult(*compiler);
 
         compiler->getRuntime()->setContextVariableWritten(identifier.contextVariableId, true);
         break;
@@ -495,23 +542,13 @@ void AssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase* func
     }
 }
 
-void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
-    const auto* value = context.getResult();
-    if (value == nullptr) {
-        if (context.hasError()) {
-            return;
-        }
-
-        raiseException("Assignment expression did not produce a value");
-    }
-
-    const TypedValue assignedValue(*value);
+InterpreterValue AssignmentStatement::onEvaluate(InterpreterContext& context) const {
+    auto assignedValue = m_expression->evaluate(context);
     const auto* type = assignedValue.getType();
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Parameter:
-        context.setParameter(m_identifierDefinition.parameterId, assignedValue.getValue());
+        context.setParameter(m_identifierDefinition.parameterId, assignedValue.getStorage());
         break;
     case IdentifierType::DynamicVariable: {
         auto* runtime = context.getRuntime();
@@ -533,25 +570,33 @@ void AssignmentStatement::onEvaluate(InterpreterContext& context) const {
     }
 
     default:
-        context.setVariable(m_identifier, type, assignedValue.getValue());
+        context.setVariable(m_identifier, type, assignedValue.getStorage());
         break;
     }
 
-    context.setResult(assignedValue);
+    return assignedValue;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // MemberAssignmentStatement
-MemberAssignmentStatement::MemberAssignmentStatement(const NomadIndex line, const NomadIndex column,
-                                                     std::unique_ptr<Expression> target,
-                                                     std::unique_ptr<Expression> expression)
-    : Statement(line, column), m_target(std::move(target)), m_expression(std::move(expression)) {
+MemberAssignmentStatement::MemberAssignmentStatement(
+    const NomadIndex line,
+    const NomadIndex column,
+    std::unique_ptr<Expression> target,
+    std::unique_ptr<Expression> expression
+):
+    Statement(line, column),
+    m_target(std::move(target)),
+    m_expression(std::move(expression))
+{
 }
 
 void MemberAssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (!m_expression->resolve(context, function)) {
+        return;
+    }
     auto* target = m_target.get();
-    if (!m_expression->resolve(context, function) ||
-        !target->resolveAssignmentTarget(context, function, m_expression->getType())) {
+    if (!target->resolveAssignmentTarget(context, function, m_expression->getType())) {
         return;
     }
 
@@ -574,8 +619,8 @@ void MemberAssignmentStatement::onCompile(Compiler* compiler, ScriptCallableBase
     m_target->compileAssignment(compiler, function, m_expression.get());
 }
 
-void MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
-    m_target->evaluateAssignment(context, m_expression.get());
+InterpreterValue MemberAssignmentStatement::onEvaluate(InterpreterContext& context) const {
+    return m_target->evaluateAssignment(context, m_expression.get());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -586,18 +631,30 @@ ExpressionStatement::ExpressionStatement(const NomadIndex line, const NomadIndex
 }
 
 void ExpressionStatement::onResolve(CompilerContext* context, ScriptCallableBase* function) {
-    (void)m_expression->resolve(context, function);
-}
-
-void ExpressionStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
-    m_expression->compile(compiler, function, ExpressionTarget::Result);
-    if (!m_expression->getType()->isVoid()) {
-        compiler->addFreeValue(m_expression->getType()->getTypeOpCodes()->freeResult);
+    if (!m_expression->resolve(context, function)) {
+        return;
+    }
+    if (context->getMode() == CompilerMode::Script && function != nullptr &&
+        m_expression->getType()->isStruct() && m_destination.isInvalid()) {
+        m_destination = function->registerVariable(
+            "$discard" + std::to_string(function->getVariableCount()), m_expression->getType());
     }
 }
 
-void ExpressionStatement::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
+void ExpressionStatement::onCompile(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_destination.isValid()) {
+        m_expression->compileIntoLocal(compiler, function, m_destination);
+        m_expression->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_destination));
+        return;
+    }
+    m_expression->compile(compiler, function, ExpressionTarget::Result);
+    if (!m_expression->getType()->isVoid()) {
+        m_expression->getType()->emitFreeResult(*compiler);
+    }
+}
+
+InterpreterValue ExpressionStatement::onEvaluate(InterpreterContext& context) const {
+    return m_expression->evaluate(context);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -620,20 +677,21 @@ void StatementList::compile(Compiler* compiler, ScriptCallableBase* function) co
     }
 }
 
-void StatementList::evaluate(InterpreterContext& context) const {
+InterpreterValue StatementList::evaluate(InterpreterContext& context) const {
+    const auto guard = context.beginEvaluation();
     if (context.hasError()) {
-        context.clearResult();
-        return;
+        throw AstException(context.getFirstError()->message, 0, 0);
     }
 
-    context.setVoidResult();
+    auto result = InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     for (const auto& statement: m_statements) {
-        if (context.hasError() || context.getLoopControl() != LoopControl::None) {
-            context.clearResult();
-            return;
+        if (context.getLoopControl() != LoopControl::None) {
+            break;
         }
-        statement->evaluate(context);
+        result = InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
+        result = statement->evaluate(context);
     }
+    return result;
 }
 
 void StatementList::addStatement(std::unique_ptr<Statement> statement) {
@@ -647,6 +705,10 @@ void StatementList::addStatement(std::unique_ptr<Statement> statement) {
 
 NomadIndex StatementList::getStatementCount() const {
     return m_statements.size();
+}
+
+const Statement* StatementList::getStatement(const NomadIndex index) const {
+    return m_statements.at(index).get();
 }
 
 NomadIndex StatementList::isEmpty() const {
@@ -665,7 +727,7 @@ void StatementList::checkReachability(CompilerContext* context, const ScriptCall
 
     for (const auto& statement: m_statements) {
         if (returned && !statement->isDeclaration()) {
-            context->reportError(
+            context->addError(
                 "Unreachable code: every path before this statement ends with a `return`",
                 function != nullptr ? function->getPath() : NomadString{},
                 statement->getLine(),

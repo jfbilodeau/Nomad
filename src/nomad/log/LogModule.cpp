@@ -10,6 +10,7 @@
 #include <nomad/log/LogSinkObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Module.hpp>
@@ -48,7 +49,7 @@ void registerLoggerClass(
         throw NomadException("Failed to register log.Logger");
     }
 
-    const auto levelId = runtime->addProperty(typeId, {
+    const auto levelId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = types.level,
         .name = "level",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -74,7 +75,7 @@ void registerLoggerClass(
         throw NomadException("Failed to register log.Logger.level");
     }
 
-    const auto deliveryId = runtime->addProperty(typeId, {
+    const auto deliveryId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = types.deliveryMode,
         .name = "deliveryMode",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -115,7 +116,7 @@ void registerSinkClass(
             throw NomadException("Failed to register log." + NomadString(name));
         }
 
-        const auto levelId = runtime->addProperty(typeId, {
+        const auto levelId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = types.level,
             .name = "level",
             .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -143,7 +144,7 @@ void registerSinkClass(
             throw NomadException("Failed to register log." + NomadString(name) + ".level");
         }
 
-        const auto activeId = runtime->addProperty(typeId, {
+        const auto activeId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = runtime->getBooleanType(),
             .name = "active",
             .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -173,7 +174,7 @@ void registerSinkClass(
     }
 
     const auto typeId = runtime->getTypeByName("log.FileSink")->getId();
-    const auto rotationId = runtime->addProperty(typeId, {
+    const auto rotationId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = types.fileRotationMode,
         .name = "rotationMode",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -201,7 +202,7 @@ void registerSinkClass(
         throw NomadException("Failed to register log.FileSink.rotationMode");
     }
 
-    const auto startupId = runtime->addProperty(typeId, {
+    const auto startupId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime->getBooleanType(),
         .name = "rotateAtStartup",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -229,7 +230,7 @@ void registerSinkClass(
         throw NomadException("Failed to register log.FileSink.rotateAtStartup");
     }
 
-    const auto sizeId = runtime->addProperty(typeId, {
+    const auto sizeId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime->getIntegerType(),
         .name = "maxSizeBytes",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -247,7 +248,7 @@ void registerSinkClass(
         throw NomadException("Failed to register log.FileSink.maxSizeBytes");
     }
 
-    const auto filesId = runtime->addProperty(typeId, {
+    const auto filesId = runtime->getTypeManager().registerNativeClassProperty(typeId, {
         .valueType = runtime->getIntegerType(),
         .name = "maxFiles",
         .getter = [logger](VirtualMachine* machine, RuntimeValue& result) {
@@ -270,15 +271,9 @@ void registerLogConstants(ModuleContext* context, const HubId hubId) {
     auto* runtime = context->runtime;
     const auto* loggerType = runtime->getTypeByName("log.Logger");
     RuntimeValue loggerValue;
+    const RuntimeValueGuard guard(*loggerType, &loggerValue);
     loggerValue.setObjectValue(new LoggerObject(*context->logger));
-    ConstantId loggerId;
-    try {
-        loggerId = runtime->registerHubConstant(hubId, "logger", loggerValue, loggerType);
-    } catch (...) {
-        loggerValue.freeObjectValue();
-        throw;
-    }
-    loggerValue.freeObjectValue();
+    const auto loggerId = runtime->registerHubConstant(hubId, "logger", loggerValue, loggerType);
     if (loggerId.isInvalid()) {
         throw NomadException("Failed to register log.logger");
     }

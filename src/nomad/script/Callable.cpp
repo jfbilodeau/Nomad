@@ -2,8 +2,11 @@
 
 #include <nomad/script/Callable.hpp>
 
+#include <nomad/script/FunctionResolution.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
+#include <limits>
 #include <utility>
 
 namespace nomad {
@@ -21,6 +24,21 @@ NomadString Parameter::getTypeName() const {
         return type->getTypeName();
     }
     return "unknown";
+}
+
+NomadIndex Parameter::getStackValueCount() const {
+    if (type == nullptr) {
+        throw NomadException("Cannot calculate parameter layout: type of '" + name + "' is unresolved");
+    }
+
+    switch (type->getRuntime()->getParameterShape(type)) {
+    case ParameterShape::EventCallback:
+        return 2;
+    case ParameterShape::EventDispatch:
+        throw NomadException("Parameter '" + name + "' has a call-site-dependent event-dispatch layout");
+    default:
+        return type->getSize();
+    }
 }
 
 Parameter defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
@@ -82,6 +100,66 @@ const std::vector<Parameter>& Callable::getParameters() const {
 
 NomadIndex Callable::getParameterCount() const {
     return m_parameters.size();
+}
+
+NomadIndex Callable::getParameterOffset(const NomadId parameterId) const {
+    if (isIdOutOfRange(parameterId, m_parameters.size())) {
+        throw NomadException("Parameter ID out of range");
+    }
+
+    auto offset = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < toNomadIndex(parameterId); ++index) {
+        const auto& parameter = m_parameters[index];
+        const auto size = parameter.getStackValueCount();
+        if (size > std::numeric_limits<NomadIndex>::max() - offset) {
+            throw NomadException("Parameter storage size exceeds the maximum slot count at '" + parameter.name + "'");
+        }
+        offset += size;
+    }
+    return offset;
+}
+
+CallStorageLayout Callable::getCallStorageLayout() const {
+    return getCallStorageLayout(getParameterStorageSize());
+}
+
+CallStorageLayout Callable::getCallStorageLayout(const NomadIndex argumentSlotCount) const {
+    if (m_returnType == nullptr) {
+        throw NomadException("Cannot calculate call storage layout: return type of '" + m_name + "' is unresolved");
+    }
+    const auto returnSize = m_returnType->getSize();
+    CallStorageLayout layout{argumentSlotCount, {}, {}, argumentSlotCount};
+    const auto appendPointer = [&]() {
+        if (layout.stackSlotCount == std::numeric_limits<NomadIndex>::max()) {
+            throw NomadException("Call storage size exceeds the maximum slot count for '" + m_name + "'");
+        }
+        return layout.stackSlotCount++;
+    };
+    if (m_type == CallableType::Method || m_type == CallableType::Constructor) {
+        if (m_classType == nullptr) {
+            throw NomadException("Cannot calculate call storage layout: receiver type of '" + m_name + "' is unresolved");
+        }
+        const auto receiverSize = m_classType->getSize();
+        if (m_classType->isStruct() && receiverSize != 0) {
+            layout.receiverOffset = appendPointer();
+        }
+    }
+    if (m_returnType->isStruct() && returnSize != 0) {
+        layout.returnOffset = appendPointer();
+    }
+    return layout;
+}
+
+NomadIndex Callable::getParameterStorageSize() const {
+    auto size = NomadIndex{0};
+    for (const auto& parameter : m_parameters) {
+        const auto parameterSize = parameter.getStackValueCount();
+        if (parameterSize > std::numeric_limits<NomadIndex>::max() - size) {
+            throw NomadException("Parameter storage size exceeds the maximum slot count at '" + parameter.name + "'");
+        }
+        size += parameterSize;
+    }
+    return size;
 }
 
 const Type* Callable::getReturnType() const {

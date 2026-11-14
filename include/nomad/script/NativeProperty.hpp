@@ -15,7 +15,9 @@ public:
         const Type* valueType,
         NativePropertyGetFn getFn,
         NativePropertySetFn setFn,
-        NomadString doc
+        NomadString doc,
+        CallableId getterMethodId = CallableId::INVALID,
+        CallableId setterMethodId = CallableId::INVALID
     );
 
     [[nodiscard]] const NativeProperty* asNativeProperty() const override;
@@ -30,6 +32,8 @@ private:
 
     NativePropertyGetFn m_getFn;
     NativePropertySetFn m_setFn;
+    CallableId m_getterMethodId;
+    CallableId m_setterMethodId;
     bool m_typeResolved;
 };
 

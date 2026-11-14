@@ -2,8 +2,8 @@
 
 #include <nomad/script/ScriptObject.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Property.hpp>
-#include <nomad/script/Type.hpp>
 
 namespace nomad {
 
@@ -13,18 +13,21 @@ ScriptObject::ScriptObject(const ClassType* classType):
     if (classType == nullptr) {
         throw NomadException("Script object requires a class type");
     }
-    for (const auto* property : classType->getProperties()) {
+    m_fields.reserve(classType->getPropertyCount());
+    for (auto index = NomadIndex{0}; index < classType->getPropertyCount(); ++index) {
+        const auto* property = classType->getPropertyAt(index);
         if (property->asNativeProperty() == nullptr) {
-            m_fieldTypes.push_back(property->getValueType());
+            const auto* type = property->getValueType();
+            m_fields.push_back({type, classType->getFieldOffset(property->getId()), type->getSize()});
         }
     }
-    m_values.resize(m_fieldTypes.size());
+    m_values.resize(classType->getFieldStorageSize());
 }
 
 ScriptObject::~ScriptObject() {
-    for (auto index = NomadIndex{0}; index < m_values.size(); ++index) {
-        if (m_fieldTypes[index]->needsFree()) {
-            m_fieldTypes[index]->freeValue(m_values[index]);
+    for (const auto& field : m_fields) {
+        if (field.size != 0 && field.type->needsFree()) {
+            field.type->freeValue(m_values.data() + field.offset);
         }
     }
 }
@@ -34,22 +37,67 @@ const ClassType* ScriptObject::getClassType() const {
 }
 
 NomadIndex ScriptObject::getFieldCount() const {
-    return m_values.size();
+    return m_fields.size();
 }
 
 const RuntimeValue& ScriptObject::getField(const NomadIndex index) const {
-    validateFieldAccess(index);
-    return m_values[index];
+    validateSingleSlotFieldAccess(index);
+    return m_values[m_fields[index].offset];
 }
 
 void ScriptObject::setField(const NomadIndex index, const RuntimeValue& value) {
+    validateSingleSlotFieldAccess(index);
+    const auto& field = m_fields[index];
+    field.type->assignValue(&value, m_values.data() + field.offset);
+}
+
+std::span<RuntimeValue> ScriptObject::getFieldStorage(const NomadIndex index) {
     validateFieldAccess(index);
-    m_fieldTypes[index]->assignValue(value, m_values[index]);
+    const auto& field = m_fields[index];
+    if (field.size == 0) {
+        return {};
+    }
+    return std::span<RuntimeValue>(m_values).subspan(field.offset, field.size);
+}
+
+std::span<const RuntimeValue> ScriptObject::getFieldStorage(const NomadIndex index) const {
+    validateFieldAccess(index);
+    const auto& field = m_fields[index];
+    if (field.size == 0) {
+        return {};
+    }
+    return std::span<const RuntimeValue>(m_values).subspan(field.offset, field.size);
+}
+
+void ScriptObject::setFieldStorage(
+    const NomadIndex index,
+    const std::span<const RuntimeValue> value,
+    const std::span<RuntimeValue> scratch
+) {
+    validateFieldAccess(index);
+    const auto& field = m_fields[index];
+    if (value.size() != field.size) {
+        throw NomadException("Script object field source storage has an incorrect slot count");
+    }
+    const auto scratchSize = field.type->getAssignmentScratchSize();
+    if (scratch.size() < scratchSize) {
+        throw NomadException("Script object field assignment has insufficient scratch storage");
+    }
+    const auto destination = getFieldStorage(index);
+    field.type->assignValue(value.data(), destination.data(), scratch.empty() ? nullptr : scratch.data());
 }
 
 void ScriptObject::validateFieldAccess(const NomadIndex index) const {
-    if (index >= m_values.size()) {
+    if (index >= m_fields.size()) {
         throw NomadException("Script object field index is out of bounds");
+    }
+}
+
+void ScriptObject::validateSingleSlotFieldAccess(const NomadIndex index) const {
+    validateFieldAccess(index);
+    const auto& field = m_fields[index];
+    if (field.size != 1 || field.type->getStorage() == TypeStorage::Struct) {
+        throw NomadException("Script object field requires the field storage API");
     }
 }
 

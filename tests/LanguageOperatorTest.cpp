@@ -4,7 +4,8 @@
 
 #include <nomad/compiler/Compiler.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -206,9 +207,10 @@ BOOST_AUTO_TEST_CASE(binary_operands_evaluate_left_first_in_compiled_and_interpr
             }
             order.clear();
             auto machine = runtime.createVirtualMachine();
-            InterpreterContext context(*machine);
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression(expression, context));
-            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == expected);
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
+            BOOST_REQUIRE(context.getInterpreter().execute(expression, context));
+            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getStorage().data()) == expected);
             BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
         }
     }
@@ -231,7 +233,7 @@ BOOST_AUTO_TEST_CASE(string_operands_evaluate_left_first_and_snapshot_before_rig
             }, {}, runtime.getStringType(), NomadDoc("Right string"));
             runtime.registerNativeFunction("test.replaceLocal", [&](VirtualMachine* machine) {
                 auto previous = machine->getFunctionVariableValue(VariableId{0});
-                runtime.getStringType()->freeValue(previous);
+                runtime.getStringType()->freeValue(&previous);
                 RuntimeValue replacement;
                 replacement.setStringValue("after");
                 machine->setFunctionVariableValue(VariableId{0}, replacement);
@@ -254,8 +256,9 @@ BOOST_AUTO_TEST_CASE(string_operands_evaluate_left_first_and_snapshot_before_rig
             BOOST_TEST(snapshot.leakedStrings == 0);
             order.clear();
             auto machine = runtime.createVirtualMachine();
-            InterpreterContext context(*machine);
-            BOOST_REQUIRE(Interpreter{}.evaluateExpression(expression, context));
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
+            BOOST_REQUIRE(context.getInterpreter().execute(expression, context));
             BOOST_TEST(context.getResult()->getValue().getBooleanValue() == expected);
             BOOST_TEST(order == expectedOrder, boost::test_tools::per_element());
         }

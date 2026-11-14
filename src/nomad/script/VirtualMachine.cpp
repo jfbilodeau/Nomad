@@ -4,17 +4,25 @@
 
 #include <nomad/compiler/Identifier.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
+
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
-#include <nomad/script/Type.hpp>
+#include <nomad/script/StructType.hpp>
 
 #include <nomad/system/String.hpp>
 
-#include <ranges>
+#include <boost/scope_exit.hpp>
+
+#include <algorithm>
+#include <stdexcept>
+#include <utility>
 
 #ifdef NOMAD_DEBUG
 #define TEST_STACK_OVERFLOW if (m_stackIndex >= m_stack.size()) { fault("Stack overflow"); }
@@ -35,42 +43,219 @@ VirtualMachine::VirtualMachine(Runtime* runtime, NomadIndex stack_size):
 
 VirtualMachine::~VirtualMachine() = default;
 
+void VirtualMachine::executeFunction(const CallableId functionId) {
+    executeFunction(functionId, {});
+}
+
+const ScriptFunction* VirtualMachine::runClosure(
+    const Closure* closure,
+    const std::vector<RuntimeValue>& args
+) {
+    const auto function = closure != nullptr ? closure->getFunction() : nullptr;
+
+    if (function == nullptr) {
+        log::error("Invalid function in closure");
+        return nullptr;
+    }
+
+    run(*closure, args);
+
+    return function;
+}
+
+void VirtualMachine::executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args) {
+    const auto function = runClosure(closure, args);
+
+    if (function == nullptr) {
+        return;
+    }
+
+    // The result is discarded.
+    if (const auto returnType = function->getReturnType()) {
+        returnType->freeValue(&getResult());
+    }
+}
+
+void VirtualMachine::executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue) {
+    const auto function = runClosure(closure, args);
+
+    if (function == nullptr) {
+        return;
+    }
+
+    if (const auto returnType = function->getReturnType()) {
+        // The caller receives its own copy; the virtual machine's result is released.
+        returnType->copyValue(&getResult(), &returnValue);
+        returnType->freeValue(&getResult());
+    }  // Else keep existing value
+}
+
+void VirtualMachine::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args) {
+    const auto function = m_runtime->getScriptFunction(functionId);
+
+    if (function == nullptr) {
+        log::error("Invalid function id");
+        return;
+    }
+
+    run(function, args);
+
+    // The result is discarded.
+    if (const auto returnType = function->getReturnType()) {
+        returnType->freeValue(&getResult());
+    }
+}
+
+void VirtualMachine::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue) {
+    const auto function = m_runtime->getScriptFunction(functionId);
+
+    if (function == nullptr) {
+        log::error("Invalid function id");
+        return;
+    }
+
+    run(function, args);
+
+    const auto returnType = function->getReturnType();
+
+    if (returnType) {
+        // The caller receives its own copy; the virtual machine's result is released.
+        returnType->copyValue(&getResult(), &returnValue);
+        returnType->freeValue(&getResult());
+    }  // Else keep existing value
+}
+
+
 void VirtualMachine::setFunctionVariableValue(const VariableId variableId, const RuntimeValue& value) {
-    m_stack[m_variableIndex + variableId.id] = value;
+    getFunctionVariableStorage(variableId)[0] = value;
 }
 
 const RuntimeValue& VirtualMachine::getFunctionVariableValue(const VariableId variableId) const {
-    return m_stack[m_variableIndex + variableId.id];
+    return getFunctionVariableStorage(variableId)[0];
 }
 
-NomadObject* VirtualMachine::constructObject(
-    const CallableId constructorId,
-    const std::vector<RuntimeValue>& arguments
+std::span<RuntimeValue> VirtualMachine::getFunctionVariableStorage(const VariableId variableId) {
+    const auto* callable = getCurrentCallable();
+    if (variableId.isValid() && variableId == callable->getNamedReturnVariable()) {
+        const auto pointer = getEnclosingParameterStorage(*callable->getCallStorageLayout().returnOffset, 1);
+        return {pointer[0].getStorageAddress(), callable->getVariableType(variableId)->getSize()};
+    }
+    return getLocalStorage(callable->getVariableOffset(variableId), callable->getVariableType(variableId)->getSize());
+}
+
+std::span<const RuntimeValue> VirtualMachine::getFunctionVariableStorage(const VariableId variableId) const {
+    const auto* callable = getCurrentCallable();
+    if (variableId.isValid() && variableId == callable->getNamedReturnVariable()) {
+        const auto pointer = getEnclosingParameterStorage(*callable->getCallStorageLayout().returnOffset, 1);
+        return {pointer[0].getStorageAddress(), callable->getVariableType(variableId)->getSize()};
+    }
+    return getLocalStorage(callable->getVariableOffset(variableId), callable->getVariableType(variableId)->getSize());
+}
+
+std::span<RuntimeValue> VirtualMachine::getLocalStorage(const NomadIndex offset, const NomadIndex count) {
+    if (count == 0) {
+        return {};
+    }
+    return std::span<RuntimeValue>(m_stack).subspan(m_variableIndex + offset, count);
+}
+
+std::span<const RuntimeValue> VirtualMachine::getLocalStorage(
+    const NomadIndex offset,
+    const NomadIndex count
+) const {
+    if (count == 0) {
+        return {};
+    }
+    const auto start = m_variableIndex + offset;
+    return std::span<const RuntimeValue>(m_stack).subspan(start, count);
+}
+
+std::span<RuntimeValue> VirtualMachine::getParameterStorage(const NomadIndex offset, const NomadIndex count) {
+    if (count == 0) {
+        return {};
+    }
+    return std::span<RuntimeValue>(m_stack).subspan(m_parameterIndex - offset - (count - 1), count);
+}
+
+std::span<const RuntimeValue> VirtualMachine::getParameterStorage(
+    const NomadIndex offset,
+    const NomadIndex count
+) const {
+    if (count == 0) {
+        return {};
+    }
+    const auto start = m_parameterIndex - offset - (count - 1);
+    return std::span<const RuntimeValue>(m_stack).subspan(start, count);
+}
+
+std::span<RuntimeValue> VirtualMachine::getEnclosingParameterStorage(
+    const NomadIndex offset,
+    const NomadIndex count
 ) {
-    const auto* constructor = m_runtime->getConstructor(constructorId);
-    if (constructor == nullptr || constructor->getParameters().size() != arguments.size()) {
-        fault("Cannot construct object: invalid constructor or argument count");
+    if (count == 0) {
+        return {};
     }
-    const auto* native = constructor->asNativeConstructor();
-    const auto* script = constructor->asScriptConstructor();
-    if (native == nullptr && (script == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd())) {
-        fault("Class constructor has not been compiled");
+    const auto anchor = m_variableIndex - s_scriptFrameSlotCount - 1;
+    return std::span<RuntimeValue>(m_stack).subspan(anchor - offset - (count - 1), count);
+}
+
+std::span<const RuntimeValue> VirtualMachine::getEnclosingParameterStorage(
+    const NomadIndex offset,
+    const NomadIndex count
+) const {
+    if (count == 0) {
+        return {};
     }
-    const auto savedResult = m_result;
-    const auto savedIntermediate = m_intermediate;
-    try {
-        auto* object = native != nullptr
-            ? runNativeConstructor(native, arguments)
-            : runScriptConstructor(script, arguments);
-        m_result = savedResult;
-        m_intermediate = savedIntermediate;
-        return object;
-    } catch (...) {
-        m_result = savedResult;
-        m_intermediate = savedIntermediate;
-        throw;
+    const auto anchor = m_variableIndex - s_scriptFrameSlotCount - 1;
+    return std::span<const RuntimeValue>(m_stack).subspan(anchor - offset - (count - 1), count);
+}
+
+void VirtualMachine::pushStorageAddress(RuntimeValue* address) {
+    RuntimeValue value;
+    value.setStorageAddress(address);
+    pushValue(value);
+}
+
+void VirtualMachine::pushStorage(const std::span<const RuntimeValue> storage) {
+    if (m_stackIndex >= m_stack.size() || storage.size() > m_stack.size() - m_stackIndex - 1) {
+        fault("Stack overflow");
     }
+    if (!storage.empty()) {
+        std::copy(storage.begin(), storage.end(), m_stack.begin() + m_stackIndex + 1);
+        m_stackIndex += storage.size();
+    }
+}
+
+VirtualMachine::ExecutionState VirtualMachine::captureExecutionState() const noexcept {
+    return {
+        m_instructionIndex,
+        m_stackIndex, 
+        m_parameterIndex, 
+        m_variableIndex,
+        m_running, 
+        m_this
+    };
+}
+
+void VirtualMachine::restoreExecutionState(const ExecutionState& state) noexcept {
+    m_instructionIndex = state.instructionIndex;
+    m_stackIndex = state.stackIndex;
+    m_parameterIndex = state.parameterIndex;
+    m_variableIndex = state.variableIndex;
+    m_running = state.running;
+    m_this = state.receiver;
+}
+
+void VirtualMachine::enterScriptFrame(const NomadIndex address, const RuntimeValue& receiver) {
+    m_running = true;
+    m_instructionIndex = 0;
+    m_this = receiver;
+    callScriptMethod(address);
+}
+
+void VirtualMachine::enterNativeFrame(const RuntimeValue& receiver) {
+    m_parameterIndex = m_stackIndex;
+    m_this = receiver;
 }
 
 void VirtualMachine::run(
@@ -80,72 +265,129 @@ void VirtualMachine::run(
 ) {
     const auto state = beginScriptRun();
     std::vector<const Type*> argumentTypes;
-    const auto releaseArguments = [&]() {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        restoreExecutionState(state);
         freeHostArguments(state.stackIndex + 2, argumentTypes);
     };
 
-    try {
-        if (function == nullptr || args.size() + closures.size() != function->getParameterCount() ||
-            closures.size() != function->getCaptureCount()) {
-            fault("Incorrect script argument or capture count");
-        }
-        if (m_stackIndex >= m_stack.size() ||
-            m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 2 ||
-            function->getParameterCount() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 2) {
-            fault("Stack overflow");
-        }
-        pushThis();
-        argumentTypes.reserve(function->getParameterCount());
-        for (auto index = closures.size(); index > 0; --index) {
-            pushHostArgument(
-                function->getParameterType(toNomadId(args.size() + index - 1)),
-                closures[index - 1],
-                argumentTypes
-            );
-        }
-        for (auto index = args.size(); index > 0; --index) {
-            pushHostArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
-        }
-
-        callScriptFunction(function->getFunctionStart());
-        executeScript();
-        if (m_yielded && m_this.getObjectValue() != nullptr) {
-            fault("Class initialization or construction cannot yield");
-        }
-    } catch (...) {
-        releaseArguments();
-        m_yielded = false;
-        restoreScriptRun(state);
-
-        throw;
+    if (function == nullptr || args.size() + closures.size() != function->getParameterCount() ||
+        closures.size() != function->getCaptureCount()) {
+        fault("Incorrect script argument or capture count");
     }
 
-    if (!m_yielded) {
-        releaseArguments();
-        restoreScriptRun(state);
-    } else {
-        m_running = false;
+    if (function->getReturnType() != nullptr && function->getReturnType()->isStruct()) {
+        fault("Host script calls do not support struct return storage");
     }
+
+    if (m_stackIndex >= m_stack.size() ||
+        m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 2 ||
+        function->getParameterCount() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 2) {
+        fault("Stack overflow");
+    }
+
+    pushThis();
+    argumentTypes.reserve(function->getParameterCount());
+    for (auto index = closures.size(); index > 0; --index) {
+        pushHostArgument(
+            function->getParameterType(toNomadId(args.size() + index - 1)),
+            closures[index - 1],
+            argumentTypes
+        );
+    }
+
+    for (auto index = args.size(); index > 0; --index) {
+        pushHostArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
+    }
+
+    callScriptFunction(function->getFunctionStart());
+    executeScript();
 }
 
-VirtualMachine::ScriptRunState VirtualMachine::beginScriptRun() {
-    const ScriptRunState state{
-        m_instructionIndex, m_stackIndex, m_parameterIndex, m_variableIndex, m_running, m_this
+void VirtualMachine::run(
+    const Closure& closure,
+    const std::span<const RuntimeValue> arguments
+) {
+    const auto* function = closure.getFunction();
+    if (
+        m_runtime->getScriptFunction(function->getId()) != function ||
+        function->getFunctionStart() == NOMAD_INVALID_INDEX ||
+        function->getFunctionStart() >= function->getFunctionEnd()
+    ) {
+        throw std::invalid_argument(
+            "Closure requires a compiled script function in the virtual machine's runtime"
+        );
+    }
+
+    const auto captureCount = closure.getCaptureCount();
+    if (
+        captureCount != function->getCaptureCount() ||
+        captureCount > function->getParameterCount() ||
+        arguments.size() != function->getParameterCount() - captureCount
+    ) {
+        throw std::invalid_argument("Incorrect explicit argument or capture count for closure");
+    }
+
+    const auto* returnType = function->getReturnType();
+    if (returnType == nullptr || returnType->isStruct()) {
+        throw std::invalid_argument("Raw closure calls require a scalar, reference, or void result");
+    }
+
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        const auto& parameter = function->getParameters()[index];
+        const auto* type = parameter.type;
+        if (
+            type == nullptr ||
+            type->isStruct() ||
+            type->getSize() != 1 ||
+            parameter.getStackValueCount() != 1
+        ) {
+            throw std::invalid_argument("Raw closure arguments require scalar or reference storage");
+        }
+
+    }
+
+    for (auto index = NomadIndex{0}; index < captureCount; ++index) {
+        const auto& parameter = function->getParameters()[arguments.size() + index];
+        if (
+            parameter.type != closure.getCaptureType(index) ||
+            parameter.getStackValueCount() != closure.getCaptureStorage(index).size()
+        ) {
+            throw std::invalid_argument("Closure capture storage does not match the callable");
+        }
+
+    }
+
+    RuntimeValue result;
+    {
+        InterpreterCallFrame frame(*this, closure, arguments);
+        executeClosure(closure);
+
+        result = frame.releaseResult();
+    }
+
+    m_result = result;
+}
+
+void VirtualMachine::executeClosure(const Closure& closure) {
+    executeFunction(*closure.getFunction());
+}
+
+void VirtualMachine::executeFunction(const ScriptFunction& function) {
+    const auto state = beginScriptRun();
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        restoreExecutionState(state);
     };
+
+    callScriptFunction(function.getFunctionStart());
+    executeScript();
+}
+
+VirtualMachine::ExecutionState VirtualMachine::beginScriptRun() {
+    const auto state = captureExecutionState();
     m_running = true;
-    m_yielded = false;
     // Returning to instruction zero executes op_stop.
     m_instructionIndex = 0;
     return state;
-}
-
-void VirtualMachine::restoreScriptRun(const ScriptRunState& state) {
-    m_instructionIndex = state.instructionIndex;
-    m_stackIndex = state.stackIndex;
-    m_parameterIndex = state.parameterIndex;
-    m_variableIndex = state.variableIndex;
-    m_running = state.running;
-    m_this = state.receiver;
 }
 
 void VirtualMachine::executeScript() {
@@ -163,9 +405,12 @@ void VirtualMachine::pushHostArgument(
     if (type == nullptr) {
         fault("Host argument has no parameter type");
     }
+    if (type->isStruct()) {
+        fault("Host calls do not support struct argument storage");
+    }
     pushValue(RuntimeValue{});
     argumentTypes.push_back(type);
-    type->copyValue(value, m_stack[m_stackIndex]);
+    type->copyValue(&value, &m_stack[m_stackIndex]);
 }
 
 void VirtualMachine::freeHostArguments(
@@ -173,61 +418,95 @@ void VirtualMachine::freeHostArguments(
     const std::vector<const Type*>& argumentTypes
 ) {
     for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
-        argumentTypes[index]->freeValue(m_stack[firstIndex + index]);
+        argumentTypes[index]->freeValue(&m_stack[firstIndex + index]);
     }
 }
 
-NomadObject* VirtualMachine::runScriptConstructor(
-    const ScriptConstructor* constructor,
-    const std::vector<RuntimeValue>& args
-) {
+void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, const RuntimeValue& receiver) {
     const auto state = beginScriptRun();
-    std::vector<const Type*> argumentTypes;
-    const auto release = [](NomadObject* object) { object->releaseRef(); };
-    std::unique_ptr<NomadObject, decltype(release)> object(nullptr, release);
+    const auto savedResult = m_result;
+    const auto savedIntermediate = m_intermediate;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        m_result = savedResult;
+        m_intermediate = savedIntermediate;
+    };
+
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        restoreExecutionState(state);
+    };
+
     m_result = RuntimeValue{};
     m_intermediate = RuntimeValue{};
-    try {
-        if (m_stackIndex >= m_stack.size() ||
-            m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 2 ||
-            args.size() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 2) {
-            fault("Stack overflow");
-        }
-        pushThis();
-        argumentTypes.reserve(args.size());
-        for (auto index = args.size(); index > 0; --index) {
-            pushHostArgument(constructor->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
-        }
-        callScriptConstructor(constructor->getFunctionStart(), constructor->getClassType()->getId());
-        object.reset(m_this.getObjectValue());
-        executeScript();
-        if (m_yielded) {
-            fault("Class initialization or construction cannot yield");
-        }
-        moveThisToResult();
-    } catch (...) {
-        freeHostArguments(state.stackIndex + 2, argumentTypes);
-        m_yielded = false;
-        restoreScriptRun(state);
-        throw;
-    }
-    freeHostArguments(state.stackIndex + 2, argumentTypes);
-    restoreScriptRun(state);
+    m_this = receiver;
+    callScriptMethod(callable->getFunctionStart());
+    executeScript();
+}
+
+NomadObject* VirtualMachine::createScriptObject(const CallableId constructorId) {
+    const auto* constructor = m_runtime->getConstructor(constructorId)->asScriptConstructor();
+    const auto release = [](ScriptObject* object) { object->releaseRef(); };
+    std::unique_ptr<ScriptObject, decltype(release)> object(
+        new ScriptObject(constructor->getClassType()->asClassType()), release);
+    RuntimeValue receiver;
+    receiver.setObjectValue(object.get());
+    executeCreationBody(constructor, receiver);
     return object.release();
 }
 
-void VirtualMachine::yield(const RuntimeValue& result) {
-    m_result = result;
+void VirtualMachine::initializeStructStorage(RuntimeValue* destination, const Type* type) {
+    const auto* owner = type->asStructType();
+    const auto size = owner->getSize();
+    if (size != 0) {
+        std::fill_n(destination, size, RuntimeValue{});
+    }
+    const auto* initializer = owner->getInitializer();
+    if (initializer == nullptr) {
+        owner->initValue(destination);
+        return;
+    }
+    const auto* script = initializer->asScriptMethod();
+    if (size != 0) {
+        pushStorageAddress(destination);
+    }
 
-    m_running = false;
-    m_yielded = true;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        if (size != 0) {
+            pop1();
+        }
+    };
+
+    executeCreationBody(script, RuntimeValue{});
+}
+
+void VirtualMachine::createScriptStruct(RuntimeValue* destination, const CallableId constructorId) {
+    const auto* constructor = m_runtime->getConstructor(constructorId)->asScriptConstructor();
+    initializeStructStorage(destination, constructor->getClassType());
+    executeCreationBody(constructor, RuntimeValue{});
+}
+
+void VirtualMachine::createNativeStruct(RuntimeValue* destination, const CallableId constructorId) {
+    const auto* constructor = m_runtime->getNativeConstructor(constructorId);
+    initializeStructStorage(destination, constructor->getClassType());
+    const auto frame = beginNativeCall();
+    const auto savedResult = m_result;
+    const auto savedIntermediate = m_intermediate;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        m_result = savedResult;
+        m_intermediate = savedIntermediate;
+    };
+
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        endNativeCall(frame);
+    };
+
+    m_this = RuntimeValue{};
+    constructor->getFn()(this);
 }
 
 void VirtualMachine::stop(const RuntimeValue& result) {
     m_result = result;
 
     m_running = false;
-    m_yielded = false;
 }
 
 void VirtualMachine::fault(const NomadString& faultMessage) const {
@@ -253,13 +532,7 @@ void VirtualMachine::callScriptMethod(const NomadIndex address) {
     jump(address);
 }
 
-void VirtualMachine::callScriptConstructor(const NomadIndex address, const TypeId typeId) {
-    createScriptObject(typeId);
-    pushScriptFrame();
-    jump(address);
-}
-
-void VirtualMachine::createScriptObject(const TypeId typeId) {
+void VirtualMachine::allocateScriptObject(const TypeId typeId) {
     const auto* classType = m_runtime->getType(typeId).value()->asClassType();
     m_this.setObjectValue(new ScriptObject(classType));
 }
@@ -289,33 +562,38 @@ void VirtualMachine::pushScriptFrame() {
 void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
     const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
     const auto frame = beginNativeCall();
-    m_this = RuntimeValue{};
-    try {
-        function->getFn()(this);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
-        throw;
-    }
-    endNativeCall(frame);
+    };
+
+    m_this = RuntimeValue{};
+    function->getFn()(this);
 }
 
-void VirtualMachine::callNativeConstructor(const CallableId constructorId) {
+NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) {
     const auto* constructor = m_runtime->getNativeConstructor(constructorId);
     const auto frame = beginNativeCall();
+    const auto savedResult = m_result;
+    const auto savedIntermediate = m_intermediate;
+    BOOST_SCOPE_EXIT_ALL(&, this) {
+        m_result = savedResult;
+        m_intermediate = savedIntermediate;
+        endNativeCall(frame);
+    };
+
     m_this = RuntimeValue{};
     m_result = RuntimeValue{};
-    try {
-        constructor->getFn()(this);
-        if (m_result.getObjectValue() == nullptr) {
-            fault("Native constructor for '" + constructor->getName() + "' returned null");
-        }
-    } catch (...) {
-        constructor->getReturnType()->freeValue(m_result);
-        endNativeCall(frame);
-        throw;
+    // Release partial results before restoring the enclosing frame and registers.
+    RuntimeValueGuard resultGuard(*constructor->getReturnType(), &m_result);
+    constructor->getFn()(this);
+    if (m_result.getObjectValue() == nullptr) {
+        fault("Native constructor for '" + constructor->getName() + "' returned null");
     }
-    endNativeCall(frame);
-    m_this.moveObjectValue(m_result);
+
+    auto* object = m_result.getObjectValue();
+    resultGuard.release();
+
+    return object;
 }
 
 VirtualMachine::NativeCallFrame VirtualMachine::beginNativeCall() {
@@ -332,13 +610,15 @@ void VirtualMachine::endNativeCall(const NativeCallFrame& frame) {
 void VirtualMachine::callNativeMethod(const CallableId memberId) {
     const auto* method = m_runtime->getNativeMemberMethod(memberId);
     const auto frame = beginNativeCall();
-    try {
-        method->getFn()(this);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
-        throw;
-    }
-    endNativeCall(frame);
+    };
+
+    method->getFn()(this);
+}
+
+NomadObject* VirtualMachine::getScriptReceiver() const {
+    return m_stack[m_variableIndex - 1].getObjectValue();
 }
 
 NomadObject* VirtualMachine::getThis() const {
@@ -351,15 +631,13 @@ NomadObject* VirtualMachine::getThis() const {
 
 void VirtualMachine::invokeNativeMember(const NativeFunctionFn& callback, const RuntimeValue& receiver) {
     const auto previousThis = m_this;
-    m_this = receiver;
-    try {
-        (void)getThis();
-        callback(this);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         m_this = previousThis;
-        throw;
-    }
-    m_this = previousThis;
+    };
+
+    m_this = receiver;
+    (void)getThis();
+    callback(this);
 }
 
 void VirtualMachine::getNativeProperty(
@@ -368,6 +646,9 @@ void VirtualMachine::getNativeProperty(
     RuntimeValue& result
 ) {
     const auto info = m_runtime->getNativePropertyInfo(memberId);
+    if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+        fault("Method-backed native properties require typed interpreter access");
+    }
     if (!info || !info->getFn) {
         fault("Invalid native property getter");
     }
@@ -392,7 +673,7 @@ void VirtualMachine::getProperty(
         fault("Stored property receiver has no matching field storage");
     }
     const auto index = property->getClassType()->getFieldIndex(memberId);
-    property->getValueType()->copyValue(object->getField(index), result);
+    property->getValueType()->copyValue(&object->getField(index), &result);
 }
 
 void VirtualMachine::setProperty(
@@ -415,12 +696,34 @@ void VirtualMachine::setProperty(
     object->setField(property->getClassType()->getFieldIndex(memberId), value);
 }
 
+RuntimeValue& VirtualMachine::getStoredProperty(const NomadIndex offset) {
+    return *getStoredPropertyAddress(m_intermediate, offset, offset);
+}
+
+RuntimeValue* VirtualMachine::getStoredPropertyAddress(
+    const RuntimeValue& receiver,
+    const NomadIndex firstOffset,
+    const NomadIndex lastOffset
+) {
+    auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
+    if (object == nullptr) {
+        fault("Stored property receiver has no matching field storage");
+    }
+    if (lastOffset >= object->getStorageSize()) {
+        fault("Script object field index is out of bounds");
+    }
+    return &object->getStorageValue(firstOffset);
+}
+
 void VirtualMachine::setNativeProperty(
     const PropertyId memberId,
     const RuntimeValue& receiver,
     const RuntimeValue& value
 ) {
     const auto info = m_runtime->getNativePropertyInfo(memberId);
+    if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+        fault("Method-backed native properties require typed interpreter access");
+    }
     if (!info || !info->setFn) {
         fault("Invalid native property setter");
     }
@@ -432,7 +735,7 @@ void VirtualMachine::callNativeIndexer(
     const RuntimeValue& receiver,
     const bool write
 ) {
-    const auto info = m_runtime->getNativeIndexerInfo(indexerId);
+    const auto* info = m_runtime->getNativeIndexerInfo(indexerId);
     if (!info) {
         fault("Invalid native indexer");
     }
@@ -442,14 +745,12 @@ void VirtualMachine::callNativeIndexer(
     }
     m_result = RuntimeValue{};
     const auto frame = beginNativeCall();
-    m_this = receiver;
-    try {
-        callback(this);
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
-        throw;
-    }
-    endNativeCall(frame);
+    };
+
+    m_this = receiver;
+    callback(this);
 }
 
 void VirtualMachine::runNativeIndexer(
@@ -458,7 +759,7 @@ void VirtualMachine::runNativeIndexer(
     const RuntimeValue& receiver,
     const bool write
 ) {
-    const auto info = m_runtime->getNativeIndexerInfo(indexerId);
+    const auto* info = m_runtime->getNativeIndexerInfo(indexerId);
     if (!info) {
         fault("Invalid native indexer");
     }
@@ -474,305 +775,233 @@ void VirtualMachine::runNativeIndexer(
     const auto parameterType = [&](const NomadIndex index) {
         return index < info->indexTypes.size() ? info->indexTypes[index] : info->valueType;
     };
-    const auto releaseArguments = [&]() {
+    const auto releaseArguments = [&]() noexcept {
         while (m_stackIndex > initialStackIndex + 2) {
             const auto index = args.size() - (m_stackIndex - initialStackIndex - 2);
-            parameterType(index)->freeValue(m_stack[m_stackIndex]);
+            parameterType(index)->freeValue(&m_stack[m_stackIndex]);
             --m_stackIndex;
         }
         if (m_stackIndex > initialStackIndex + 1) {
-            info->classType->freeValue(m_stack[initialStackIndex + 2]);
+            info->classType->freeValue(&m_stack[initialStackIndex + 2]);
         }
         m_stackIndex = initialStackIndex;
         m_this = savedThis;
     };
+    BOOST_SCOPE_EXIT_ALL(&) {
+        releaseArguments();
+    };
+
     m_result = RuntimeValue{};
-    try {
-        pushThis();
-        pushObjectValue(receiver);
-        for (auto index = args.size(); index > 0; --index) {
-            ++m_stackIndex;
-            m_stack[m_stackIndex] = RuntimeValue{};
-            parameterType(index - 1)->copyValue(args[index - 1], m_stack[m_stackIndex]);
-        }
-        callNativeIndexer(indexerId, receiver, write);
-    } catch (...) {
-        releaseArguments();
-        throw;
+    pushThis();
+    pushObjectValue(receiver);
+    for (auto index = args.size(); index > 0; --index) {
+        auto* destination = &m_stack[m_stackIndex + 1];
+        *destination = RuntimeValue{};
+        parameterType(index - 1)->copyValue(&args[index - 1], destination);
+        ++m_stackIndex;
     }
-    releaseArguments();
+
+    callNativeIndexer(indexerId, receiver, write);
 }
 
-void VirtualMachine::runNativeFunction(const CallableId nativeFunctionId, const std::vector<RuntimeValue>& args) {
-    const auto* function = m_runtime->getNativeFunction(nativeFunctionId);
-    if (function == nullptr) {
-        fault("Invalid native function id: " + toString(nativeFunctionId.id));
-    }
-    if (!function->isSignatureResolved()) {
-        fault("Native function '" + function->getName() + "' has an unresolved signature");
-    }
-    if (function->getReturnType() == nullptr) {
-        fault("NativeFunction '" + function->getName() + "' has no return type");
-    }
-    if (!function->getReturnType()->isVoid()) {
-        m_result = RuntimeValue{};
-    }
-    if (args.size() != function->getParameterCount()) {
-        fault("Incorrect argument count when calling native function '" + function->getName() + "'");
-    }
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 2 ||
-        args.size() > m_stack.size() - m_stackIndex - 2) {
-        fault("Stack overflow");
-    }
-
-    const auto initialStackIndex = m_stackIndex;
-    const auto savedThis = m_this;
-    std::vector<const Type*> argumentTypes;
-    argumentTypes.reserve(args.size());
-
-    const auto releaseArguments = [&]() {
-        freeHostArguments(initialStackIndex + 2, argumentTypes);
-        m_stackIndex = initialStackIndex;
-        m_this = savedThis;
-    };
-
-    try {
-        pushThis();
-        for (NomadIndex index = args.size(); index > 0; --index) {
-            const auto argumentIndex = index - 1;
-            const auto* type = function->getParameters()[argumentIndex].type;
-            pushHostArgument(type, args[argumentIndex], argumentTypes);
-        }
-
-        callNativeFunction(nativeFunctionId);
-    } catch (...) {
-        releaseArguments();
-        throw;
-    }
-
-    releaseArguments();
-}
-
-NomadObject* VirtualMachine::runNativeConstructor(
-    const NativeConstructor* constructor,
-    const std::vector<RuntimeValue>& args
-) {
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 2 ||
-        args.size() > m_stack.size() - m_stackIndex - 2) {
-        fault("Stack overflow");
-    }
-    const auto initialStackIndex = m_stackIndex;
-    const auto savedThis = m_this;
-    std::vector<const Type*> argumentTypes;
-    argumentTypes.reserve(args.size());
-    const auto releaseArguments = [&]() {
-        freeHostArguments(initialStackIndex + 2, argumentTypes);
-        m_stackIndex = initialStackIndex;
-        m_this = savedThis;
-    };
-    try {
-        pushThis();
-        for (auto index = args.size(); index > 0; --index) {
-            pushHostArgument(constructor->getParameters()[index - 1].type, args[index - 1], argumentTypes);
-        }
-        callNativeConstructor(constructor->getId());
-        moveThisToResult();
-    } catch (...) {
-        releaseArguments();
-        throw;
-    }
-    auto* object = m_result.getObjectValue();
-    releaseArguments();
-    return object;
-}
-
-void VirtualMachine::runScriptMethod(
-    const CallableId memberId,
-    const std::vector<RuntimeValue>& args,
-    const RuntimeValue& receiver
-) {
-    const auto* method = m_runtime->getMethod(memberId);
-    const auto* script = method != nullptr ? method->asScriptMethod() : nullptr;
-    if (script == nullptr || method->getReturnType() == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd()) {
-        fault("Cannot call script method: invalid or uncompiled method");
-    }
-    if (args.size() != method->getParameterCount()) {
-        fault("Incorrect argument count when calling script method '" + method->getName() + "'");
-    }
-    if (!method->getReturnType()->isVoid()) {
-        m_result = RuntimeValue{};
-    }
-    const auto state = beginScriptRun();
-    std::vector<const Type*> argumentTypes;
-    const auto releaseArguments = [&]() {
-        freeHostArguments(state.stackIndex + 3, argumentTypes);
-        if (m_stackIndex > state.stackIndex + 1) {
-            method->getClassType()->freeValue(m_stack[state.stackIndex + 2]);
-        }
-    };
-    try {
-        if (m_stackIndex >= m_stack.size() ||
-            m_stack.size() - m_stackIndex < s_scriptFrameSlotCount + 3 ||
-            args.size() > m_stack.size() - m_stackIndex - s_scriptFrameSlotCount - 3) {
-            fault("Stack overflow");
-        }
-        argumentTypes.reserve(args.size());
-        pushThis();
-        pushObjectValue(receiver);
-        for (auto index = args.size(); index > 0; --index) {
-            pushHostArgument(method->getParameters()[index - 1].type, args[index - 1], argumentTypes);
-        }
-        bindThisFromStack(args.size());
-        callScriptMethod(script->getFunctionStart());
-        executeScript();
-        if (m_yielded) {
-            fault("Script methods cannot yield");
-        }
-    } catch (...) {
-        releaseArguments();
-        m_yielded = false;
-        restoreScriptRun(state);
-        throw;
-    }
-    releaseArguments();
-    restoreScriptRun(state);
-}
-
-void VirtualMachine::runNativeMethod(const CallableId memberId, const std::vector<RuntimeValue>& args,
-                                        RuntimeValue& receiver) {
-    const auto* method = m_runtime->getNativeMemberMethod(memberId);
-    if (method == nullptr) {
-        fault("Invalid native method id: " + toString(memberId.id));
-    }
-    if (method->getReturnType() == nullptr) {
-        fault("Native method '" + method->getName() + "' has no return type");
-    }
-    if (!method->getReturnType()->isVoid()) {
-        m_result = RuntimeValue{};
-    }
-    if (args.size() != method->getParameterCount()) {
-        fault("Incorrect argument count when calling native method '" + method->getName() + "'");
-    }
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 3 ||
-        args.size() > m_stack.size() - m_stackIndex - 3) {
-        fault("Stack overflow");
-    }
-
-    const auto initialStackIndex = m_stackIndex;
-    const auto savedThis = m_this;
-    std::vector<const Type*> argumentTypes;
-    argumentTypes.reserve(args.size());
-
-    const auto releaseArguments = [&]() {
-        freeHostArguments(initialStackIndex + 3, argumentTypes);
-        if (m_stackIndex > initialStackIndex + 1) {
-            method->getClassType()->freeValue(m_stack[initialStackIndex + 2]);
-        }
-        m_stackIndex = initialStackIndex;
-        m_this = savedThis;
-    };
-
-    try {
-        pushThis();
-        pushObjectValue(receiver);
-        for (NomadIndex index = args.size(); index > 0; --index) {
-            const auto argumentIndex = index - 1;
-            const auto* type = method->getParameters()[argumentIndex].type;
-            pushHostArgument(type, args[argumentIndex], argumentTypes);
-        }
-
-        bindThisFromStack(args.size());
-        callNativeMethod(memberId);
-    } catch (...) {
-        releaseArguments();
-        throw;
-    }
-
-    releaseArguments();
-}
-
-std::vector<TypedValue> VirtualMachine::captureCurrentFrame(const ScriptFunction* function) const {
+std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(
+    const ScriptFunction* function
+) const {
     if (function == nullptr || function->getParentId() == CallableId{}) {
         fault("Invalid function for current-frame capture");
     }
+
     const auto* parent = m_runtime->getScriptCallable(function->getParentId());
-    if (parent == nullptr || m_instructionIndex < parent->getFunctionStart() ||
-        m_instructionIndex >= parent->getFunctionEnd()) {
+    if (
+        parent == nullptr ||
+        m_instructionIndex < parent->getFunctionStart() ||
+        m_instructionIndex >= parent->getFunctionEnd()
+    ) {
         fault("Format expression does not belong to the current script frame");
     }
 
-    std::vector<TypedValue> values;
+    std::vector<InterpreterValue> values;
     values.reserve(function->getCaptureCount());
     for (const auto& capture : function->getCaptures()) {
         if (capture.type == nullptr || capture.type->isVoid()) {
             fault("Invalid value type for current-frame capture");
         }
-        if (capture.source == CaptureSource::Parameter) {
-            if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
-                fault("Invalid parameter for current-frame capture");
+
+        const auto size = capture.type->getSize();
+        switch (capture.source) {
+            case CaptureSource::Parameter: {
+                if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
+                    fault("Invalid parameter for current-frame capture");
+                }
+
+                values.emplace_back(
+                    capture.type,
+                    getParameterStorage(parent->getParameterOffset(capture.parameterId), size)
+                );
+                break;
             }
-            values.emplace_back(capture.type, getParameter(capture.parameterId));
-        } else if (capture.source == CaptureSource::Variable) {
-            if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
-                fault("Invalid variable for current-frame capture");
+
+            case CaptureSource::Variable: {
+                if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
+                    fault("Invalid variable for current-frame capture");
+                }
+
+                values.emplace_back(
+                    capture.type,
+                    getFunctionVariableStorage(capture.variableId)
+                );
+                break;
             }
-            values.emplace_back(capture.type, getFunctionVariableValue(capture.variableId));
-        } else if (capture.source == CaptureSource::Receiver) {
-            (void)getThis();
-            values.emplace_back(capture.type, m_this);
-        } else {
-            fault("Invalid source for current-frame capture");
+
+            case CaptureSource::Receiver: {
+                if (capture.type->isStruct()) {
+                    std::span<const RuntimeValue> storage;
+                    if (size != 0) {
+                        const auto layout = parent->getCallStorageLayout();
+                        if (!layout.receiverOffset.has_value()) {
+                            fault("Struct receiver capture has no borrowed receiver storage");
+                        }
+
+                        const auto pointer = getParameterStorage(*layout.receiverOffset, 1);
+                        storage = {pointer[0].getStorageAddress(), size};
+                    }
+
+                    values.emplace_back(capture.type, storage);
+                    break;
+                }
+
+                (void)getThis();
+                values.emplace_back(capture.type, m_this);
+                break;
+            }
+
+            default:
+                fault("Invalid source for current-frame capture");
         }
+
     }
+
     return values;
 }
 
-std::unique_ptr<Closure> VirtualMachine::createClosure(const Runtime* runtime, const CallableId functionId) const {
-    const auto function = runtime->getScriptFunction(functionId);
-
-    if (function == nullptr) {
-        return nullptr;
+std::unique_ptr<Closure> VirtualMachine::createClosure(
+    const Runtime* runtime,
+    const CallableId functionId
+) const {
+    if (runtime == nullptr || runtime != m_runtime) {
+        fault("Closure capture requires the virtual machine's runtime");
     }
 
-    if (function->getCaptureCount() != 0 && m_variableIndex <= s_scriptFrameSlotCount) {
-        fault("Cannot capture without an active script frame");
+    const auto* function = runtime->getScriptFunction(functionId);
+    if (function == nullptr) {
+        fault("Invalid script function for closure capture");
+    }
+
+    const auto* parent = runtime->getScriptCallable(function->getParentId());
+    if (function->getCaptureCount() != 0) {
+        if (m_variableIndex <= s_scriptFrameSlotCount) {
+            fault("Cannot capture without an active script frame");
+        }
+
+        if (parent == nullptr || getCurrentCallable() != parent) {
+            fault("Closure captures do not belong to the active script frame");
+        }
+
     }
 
     const auto& captures = function->getCaptures();
-    std::vector<RuntimeValue> captureValues;
-
+    std::vector<RuntimeValue> storage;
+    auto storageSize = NomadIndex{0};
     for (const auto& capture : captures) {
-        const auto captureType = capture.type;
-        const auto captureSource = capture.source;
-
-        RuntimeValue captureValue;
-
-        if (captureSource == CaptureSource::Parameter) {
-            // Capture from the enclosing function's parameter frame
-            const auto& value = getEnclosingParameter(capture.parameterId);
-
-            captureType->copyValue(value, captureValue);
-        } else if (captureSource == CaptureSource::Variable) {
-            // Capture from the enclosing function's variable frame
-            const auto& value = getFunctionVariableValue(capture.variableId);
-
-            captureType->copyValue(value, captureValue);
-        } else if (captureSource == CaptureSource::Receiver) {
-            // Receiver captures originate in a method or constructor's script frame.
-            const auto& receiver = m_stack[m_variableIndex - 1];
-            if (receiver.getObjectValue() == nullptr) {
-                fault("Cannot capture a missing enclosing receiver");
-            }
-            captureType->copyValue(receiver, captureValue);
-        } else {
-            fault("Invalid capture type");
+        if (capture.type == nullptr || capture.type->isVoid()) {
+            fault("Invalid value type for closure capture");
         }
 
-        captureValues.emplace_back(captureValue);
+        const auto size = capture.type->getSize();
+        if (size > storage.max_size() - storageSize) {
+            fault("Closure capture storage exceeds the maximum slot count");
+        }
+
+        storageSize += size;
     }
 
-    return std::make_unique<Closure>(function, captureValues);
+    storage.resize(storageSize);
+    try {
+        auto offset = NomadIndex{0};
+        for (const auto& capture : captures) {
+            const auto size = capture.type->getSize();
+            std::span<const RuntimeValue> source;
+            switch (capture.source) {
+                case CaptureSource::Parameter: {
+                    if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
+                        fault("Invalid parameter for closure capture");
+                    }
+
+                    source = getEnclosingParameterStorage(
+                        parent->getParameterOffset(capture.parameterId),
+                        size
+                    );
+                    break;
+                }
+
+                case CaptureSource::Variable: {
+                    if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
+                        fault("Invalid variable for closure capture");
+                    }
+
+                    source = getFunctionVariableStorage(capture.variableId);
+                    break;
+                }
+
+                case CaptureSource::Receiver: {
+                    if (capture.type->isStruct()) {
+                        if (size != 0) {
+                            const auto layout = parent->getCallStorageLayout();
+                            if (!layout.receiverOffset.has_value()) {
+                                fault("Struct receiver capture has no borrowed receiver storage");
+                            }
+
+                            const auto pointer = getEnclosingParameterStorage(*layout.receiverOffset, 1);
+                            source = {pointer[0].getStorageAddress(), size};
+                        }
+
+                        break;
+                    }
+
+                    const auto& receiver = m_stack[m_variableIndex - 1];
+                    if (receiver.getObjectValue() == nullptr) {
+                        fault("Cannot capture a missing enclosing receiver");
+                    }
+
+                    source = {&receiver, 1};
+                    break;
+                }
+
+                default:
+                    fault("Invalid source for closure capture");
+            }
+
+            if (size != 0) {
+                capture.type->copyValue(source.data(), storage.data() + offset);
+            }
+
+            offset += size;
+        }
+
+        return std::make_unique<Closure>(function, std::move(storage));
+    } catch (...) {
+        auto offset = NomadIndex{0};
+        for (const auto& capture : captures) {
+            const auto size = capture.type->getSize();
+            if (size != 0) {
+                capture.type->freeValue(storage.data() + offset);
+            }
+
+            offset += size;
+        }
+
+        throw;
+    }
 }
 
 void VirtualMachine::returnFunction(const NomadIndex variableCount) {
@@ -861,7 +1090,7 @@ void VirtualMachine::moveObjectResultToStack() {
 }
 
 void VirtualMachine::freeObjectVariable(const VariableId variableId) {
-    m_stack[m_variableIndex + variableId.id].freeObjectValue();
+    getFunctionVariableStorage(variableId)[0].freeObjectValue();
 }
 
 void VirtualMachine::freeObjectStack(const NomadIndex index) {
@@ -1075,9 +1304,16 @@ bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId var
         getFunctionVariableValue(VariableId{variableId}, value);
         return true;
 
-    case IdentifierType::Parameter:
-        value = getParameter(variableId);
+    case IdentifierType::Parameter: {
+        const auto* function = getCurrentCallable();
+        if (function == nullptr) {
+            fault("Parameter formatting requires an active script callable");
+        }
+
+        value = getParameter(function->getParameterOffset(variableId));
+
         return true;
+    }
 
     default:
         log::warning("Unexpected identifier type: " + toString(static_cast<int>(identifierType)));

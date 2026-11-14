@@ -7,8 +7,8 @@
 #include <nomad/collections/ListType.hpp>
 #include <nomad/collections/ReadOnlyListType.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <utility>
@@ -19,19 +19,19 @@ namespace {
 
 void registerListReaders(Runtime* runtime, const ClassType* classType, const bool writable) {
     const auto* elementType = classType->getTypeArguments()[0];
-    runtime->addIterable(classType->getId(), {
+    runtime->getTypeManager().registerNativeClassIterable(classType->getId(), {
         .valueTypeId = elementType->getId(),
         .factory = {
             .name = "iterator",
             .parameters = {},
-            .returnTypeId = runtime->getIteratorType(elementType)->getId(),
+            .returnTypeId = runtime->getTypeManager().getIteratorType(elementType)->getId(),
             .function = [](VirtualMachine* machine) {
                 machine->getResult().setObjectValue(new ListIterator(machine->getThisAs<ListObject>()));
             },
             .documentation = NomadDoc("Creates an independent live iterator. Structural changes invalidate its next advance.")
         }
     });
-    const auto countId = runtime->addProperty(classType->getId(), {
+    const auto countId = runtime->getTypeManager().registerNativeClassProperty(classType->getId(), {
         .valueType = runtime->getIntegerType(),
         .name = "count",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -46,12 +46,12 @@ void registerListReaders(Runtime* runtime, const ClassType* classType, const boo
             machine->getThisAs<ListObject>()->setValue(machine->getIntegerParameter(0), machine->getParameter(1));
         };
     }
-    const auto indexerId = runtime->addIndexer(classType->getId(), {
+    const auto indexerId = runtime->getTypeManager().registerNativeClassIndexer(classType->getId(), {
         .valueTypeId = elementType->getId(),
         .indexTypes = {runtime->getIntegerType()->getId()},
         .getter = [elementType](VirtualMachine* machine) {
             const auto* list = machine->getThisAs<ListObject>();
-            elementType->copyValue(list->getValue(machine->getIntegerParameter(0)), machine->getResult());
+            elementType->copyValue(&list->getValue(machine->getIntegerParameter(0)), &machine->getResult());
         },
         .setter = std::move(setter),
         .documentation = writable
@@ -66,7 +66,7 @@ void registerListReaders(Runtime* runtime, const ClassType* classType, const boo
 } // namespace
 
 void registerListType(Runtime* runtime) {
-    if (!runtime->registerParameterizedType(
+    if (!runtime->getTypeManager().registerParameterizedType(
         "ReadOnlyList", 1,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ReadOnlyListType>(
@@ -81,7 +81,7 @@ void registerListType(Runtime* runtime) {
     )) {
         throw NomadException("Failed to register ReadOnlyList");
     }
-    if (!runtime->registerParameterizedType(
+    if (!runtime->getTypeManager().registerParameterizedType(
         "List",
         1,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const nomad::Type*>& arguments) {
@@ -95,8 +95,8 @@ void registerListType(Runtime* runtime) {
             const auto* classType = static_cast<const nomad::ClassType*>(type);
             const auto* elementType = classType->getTypeArguments()[0];
             registerListReaders(runtime, classType, true);
-            const auto* readOnlyType = runtime->getParameterizedType("ReadOnlyList", {elementType});
-            if (readOnlyType == nullptr || runtime->addMethod(id, {
+            const auto* readOnlyType = runtime->getTypeManager().getParameterizedType("ReadOnlyList", {elementType});
+            if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "toReadOnly",
                 .parameters = {},
                 .returnTypeId = readOnlyType->getId(),
@@ -112,14 +112,14 @@ void registerListType(Runtime* runtime) {
             }).isInvalid()) {
                 throw NomadException("Failed to register List.toReadOnly");
             }
-            const auto constructorId = runtime->addConstructor(id, {
+            const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(id, {
                 .parameters = {},
                 .function = [elementType](VirtualMachine* machine) {
                     machine->getResult().setObjectValue(new nomad::ListObject(elementType));
                 },
                 .documentation = ""
             });
-            const auto appendId = runtime->addMethod(id, {
+            const auto appendId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "append",
                 .parameters = {{elementType->getId(), "value", NomadDoc("The value to append.")}},
                 .returnTypeId = runtime->getTypeId("int"),
@@ -131,7 +131,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Appends a value and returns its zero-based index.")
             });
-            const auto prependId = runtime->addMethod(id, {
+            const auto prependId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "prepend",
                 .parameters = {{elementType->getId(), "value", NomadDoc("The value to insert at the beginning.")}},
                 .returnTypeId = runtime->getTypeId("void"),
@@ -142,7 +142,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Inserts a value at the beginning, shifting existing elements right.")
             });
-            const auto insertId = runtime->addMethod(id, {
+            const auto insertId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "insert",
                 .parameters = {
                     {runtime->getTypeId("int"), "index", NomadDoc("The insertion position from zero through count.")},
@@ -157,7 +157,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Inserts before the index, shifting later elements right. Index count appends; out-of-range indices fault.")
             });
-            const auto removeId = runtime->addMethod(id, {
+            const auto removeId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "remove",
                 .parameters = {{runtime->getTypeId("int"), "index", NomadDoc("The zero-based index to remove.")}},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -169,7 +169,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Removes the indexed element and shifts later elements left. Returns false without logging for out-of-range indices.")
             });
-            const auto removeFirstId = runtime->addMethod(id, {
+            const auto removeFirstId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "removeFirst",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -180,7 +180,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Removes the first element. Returns false without logging if the list is empty.")
             });
-            const auto removeLastId = runtime->addMethod(id, {
+            const auto removeLastId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "removeLast",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -191,7 +191,7 @@ void registerListType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Removes the last element. Returns false without logging if the list is empty.")
             });
-            const auto clearId = runtime->addMethod(id, {
+            const auto clearId = runtime->getTypeManager().registerNativeClassMethod(id, {
                 .name = "clear",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("void"),

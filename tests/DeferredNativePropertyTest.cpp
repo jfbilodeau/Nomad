@@ -21,9 +21,9 @@ namespace {
 class PropertyOwner final : public NomadObject {};
 
 TypeId registerPropertyOwner(Runtime& runtime) {
-    const auto id = runtime.registerClass("PropertyOwner", ClassMode::Closed);
+    const auto id = runtime.getTypeManager().registerClass("PropertyOwner", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
-    BOOST_REQUIRE(runtime.addConstructor(id, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(id, {
         .parameters = {},
         .function = [](VirtualMachine* machine) {
             machine->getResult().setObjectValue(new PropertyOwner);
@@ -40,13 +40,14 @@ BOOST_AUTO_TEST_SUITE(native_deferred_properties)
 BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_callbacks_and_keep_stable_ids) {
     for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         auto compiler = runtime.createCompiler();
         const auto ownerId = registerPropertyOwner(runtime);
         const auto* placeholder = compiler->deferType({"example.Level"});
         auto getterCalls = 0;
         auto setterCalls = 0;
         NomadInteger stored = 1;
-        const auto id = runtime.addProperty(ownerId, {
+        const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
             .valueType = placeholder,
             .name = "level",
             .getter = [&](VirtualMachine*, RuntimeValue& result) {
@@ -65,6 +66,15 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         BOOST_TEST(!property->isTypeResolved());
         const auto info = property->getInfo();
         BOOST_TEST(info.valueType == placeholder);
+        const auto* owner = runtime.getType(ownerId).value()->asClassType();
+        BOOST_REQUIRE(owner != nullptr);
+        BOOST_TEST(property->getOwnerType() == owner->asCompositeType());
+        BOOST_TEST(property->getClassType() == owner);
+        runtime.getTypeManager().finalizeCompositeFieldLayout(owner->getId());
+        BOOST_TEST(owner->isFieldLayoutFinalized());
+        BOOST_TEST(owner->getFieldStorageSize() == 0U);
+        BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+        BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
         RuntimeValue value;
         BOOST_CHECK_THROW(info.getFn(nullptr, value), NomadException);
         BOOST_CHECK_THROW(info.setFn(nullptr, RuntimeValue(NomadInteger{2})), NomadException);
@@ -82,7 +92,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
             if (phase == CompilationPhase::Parse) {
                 for (auto index = 0; index < 64; ++index) {
-                    BOOST_REQUIRE(runtime.addProperty(ownerId, {
+                    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
                         .valueType = runtime.getIntegerType(),
                         .name = "extra" + std::to_string(index),
                         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(0); }
@@ -101,14 +111,18 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         BOOST_TEST(property->getId() == id);
         BOOST_TEST(property->isTypeResolved());
         BOOST_TEST(property->getValueType() == runtime.getTypeByName("example.Level"));
+        BOOST_TEST(property->getOwnerType() == owner->asCompositeType());
+        BOOST_TEST(owner->isFieldLayoutFinalized());
         BOOST_TEST(runtime.getType(ownerId).value()->asClassType()->getProperty("level") == property);
+        BOOST_TEST(owner->getFieldStorageSize() == 0U);
+        BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
         BOOST_TEST(getterCalls == 0);
         BOOST_TEST(setterCalls == 0);
         if (target == CompilationTarget::Analysis) {
             BOOST_TEST(runtime.getInstructions().size() == instructionCount);
         } else {
             RuntimeValue answer;
-            runtime.executeFunction(runtime.getFunctionId("main"), {}, answer);
+            virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, answer);
             BOOST_TEST(answer.getBooleanValue());
             BOOST_TEST(stored == 2);
             BOOST_TEST(getterCalls == 1);
@@ -123,17 +137,18 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
 
 BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
     RuntimeValue stored;
-    const auto id = runtime.addProperty(ownerId, {
+    const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = compiler->deferType({"Settings"}),
         .name = "settings",
         .getter = [&](VirtualMachine*, RuntimeValue& result) {
-            runtime.getTypeByName("Settings")->copyValue(stored, result);
+            runtime.getTypeByName("Settings")->copyValue(&stored, &result);
         },
         .setter = [&](VirtualMachine*, const RuntimeValue& value) {
-            runtime.getTypeByName("Settings")->assignValue(value, stored);
+            runtime.getTypeByName("Settings")->assignValue(&value, &stored);
         }
     });
     BOOST_REQUIRE(id.isValid());
@@ -147,7 +162,7 @@ BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership
         (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     RuntimeValue answer;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, answer);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, answer);
     BOOST_TEST(answer.getIntegerValue() == 3);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 1U);
     stored.freeObjectValue();
@@ -161,12 +176,12 @@ BOOST_AUTO_TEST_CASE(missing_types_fail_with_property_context_before_applying_an
         auto compiler = runtime.createCompiler();
         const auto ownerId = registerPropertyOwner(runtime);
         const auto* known = compiler->deferType({"Known"});
-        const auto firstId = runtime.addProperty(ownerId, {
+        const auto firstId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
             .valueType = known,
             .name = "known",
             .getter = [](VirtualMachine*, RuntimeValue&) {}
         });
-        const auto missingId = runtime.addProperty(ownerId, {
+        const auto missingId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
             .valueType = compiler->deferType({"Missing"}),
             .name = "missing",
             .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -195,7 +210,7 @@ BOOST_AUTO_TEST_CASE(invalid_resolved_types_and_foreign_placeholders_are_rejecte
             auto compiler = runtime.createCompiler();
             const auto ownerId = registerPropertyOwner(runtime);
             const auto* invalid = internal ? runtime.getFileNameType() : runtime.getVoidType();
-            const auto id = runtime.addProperty(ownerId, {
+            const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
                 .valueType = compiler->deferType({invalid->getTypeName()}),
                 .name = "invalid",
                 .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -214,8 +229,8 @@ BOOST_AUTO_TEST_CASE(invalid_resolved_types_and_foreign_placeholders_are_rejecte
     auto compiler = runtime.createCompiler();
     auto otherCompiler = other.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
-    BOOST_TEST(runtime.registerProperty(ownerId, "storedDeferred", compiler->deferType({"Settings"})).isInvalid());
-    BOOST_TEST(runtime.addProperty(ownerId, {
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(ownerId, "storedDeferred", compiler->deferType({"Settings"})).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = otherCompiler->deferType({"Settings"}),
         .name = "foreign",
         .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -228,18 +243,18 @@ BOOST_AUTO_TEST_CASE(checked_resolution_preserves_readiness_until_central_comple
     Runtime other;
     auto compiler = runtime.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
-    const auto stateId = runtime.createEnum("State", {{"Ready", 1}});
-    const auto otherStateId = other.createEnum("State", {{"Ready", 1}});
+    const auto stateId = runtime.getTypeManager().createEnum("State", {{"Ready", 1}});
+    const auto otherStateId = other.getTypeManager().createEnum("State", {{"Ready", 1}});
     BOOST_REQUIRE(stateId.isValid());
     BOOST_REQUIRE(otherStateId.isValid());
     auto calls = 0;
-    const auto id = runtime.addProperty(ownerId, {
+    const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
         .valueType = compiler->deferType({"State"}),
         .name = "state",
         .getter = [&](VirtualMachine*, RuntimeValue& result) { ++calls; result.setIntegerValue(1); }
     });
     BOOST_REQUIRE(id.isValid());
-    const auto storedId = runtime.registerProperty(ownerId, "stored", runtime.getIntegerType());
+    const auto storedId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "stored", runtime.getIntegerType());
     BOOST_REQUIRE(storedId.isValid());
     BOOST_TEST(runtime.getMutableNativeProperty(storedId) == nullptr);
     BOOST_TEST(runtime.getMutableNativeProperty(PropertyId{NOMAD_ID_MAX}) == nullptr);

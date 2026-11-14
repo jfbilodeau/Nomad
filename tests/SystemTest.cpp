@@ -6,6 +6,9 @@
 #include "nomad/system/TempHeap.hpp"
 #include "nomad/system/Memory.hpp"
 
+#include <boost/scope_exit.hpp>
+
+#include <array>
 #include <cstdint>
 #include <new>
 #include <string>
@@ -13,6 +16,65 @@
 #include <vector>
 
 using namespace nomad;
+
+BOOST_AUTO_TEST_CASE(scope_exit_restores_state_on_return_and_exception) {
+    auto state = 7;
+    auto cleanups = 0;
+    const auto execute = [&](const bool fail) {
+        const auto previous = state;
+        BOOST_SCOPE_EXIT_ALL(&, previous) {
+            state = previous;
+            ++cleanups;
+        };
+
+        state = 17;
+        if (fail) {
+            throw NomadException("Expected scoped state failure");
+        }
+
+        return state;
+    };
+
+    BOOST_TEST(execute(false) == 17);
+    BOOST_TEST(state == 7);
+    BOOST_TEST(cleanups == 1);
+    BOOST_CHECK_THROW(static_cast<void>(execute(true)), NomadException);
+    BOOST_TEST(state == 7);
+    BOOST_TEST(cleanups == 2);
+}
+
+BOOST_AUTO_TEST_CASE(scope_exit_restores_nested_state_in_reverse_order) {
+    auto state = 7;
+    auto cleanups = NomadIndex{0};
+    std::array<int, 2> cleanupOrder{};
+    const auto restore = [&](const int previous) noexcept {
+        cleanupOrder[cleanups++] = state;
+        state = previous;
+    };
+    {
+        const auto previous = state;
+        BOOST_SCOPE_EXIT_ALL(&, previous) {
+            restore(previous);
+        };
+
+        state = 11;
+        {
+            const auto innerPrevious = state;
+            BOOST_SCOPE_EXIT_ALL(&, innerPrevious) {
+                restore(innerPrevious);
+            };
+
+            state = 17;
+        }
+
+        BOOST_TEST(state == 11);
+    }
+
+    BOOST_TEST(state == 7);
+    BOOST_TEST(cleanups == 2U);
+    BOOST_TEST(cleanupOrder[0] == 17);
+    BOOST_TEST(cleanupOrder[1] == 11);
+}
 
 BOOST_AUTO_TEST_CASE(string_to_string_and_basic_conversions)
 {

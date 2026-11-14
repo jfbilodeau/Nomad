@@ -8,6 +8,7 @@ namespace nomad {
 
 class NativeProperty;
 class ClassType;
+class CompositeType;
 class Runtime;
 class Type;
 
@@ -16,7 +17,7 @@ DeclareId(PropertyId);
 class Property {
 public:
     Property(
-        const ClassType* classType,
+        const CompositeType* ownerType,
         NomadString name,
         const Type* valueType,
         NomadString doc = {}
@@ -27,6 +28,7 @@ public:
 
     [[nodiscard]] PropertyId getId() const;
     [[nodiscard]] const ClassType* getClassType() const;
+    [[nodiscard]] const CompositeType* getOwnerType() const;
     [[nodiscard]] const NomadString& getName() const;
     [[nodiscard]] const Type* getValueType() const;
     [[nodiscard]] const NomadString& getDoc() const;
@@ -40,7 +42,7 @@ protected:
 
 private:
     PropertyId m_id;
-    const ClassType* m_classType;
+    const CompositeType* m_ownerType;
     NomadString m_name;
     const Type* m_valueType;
     NomadString m_doc;

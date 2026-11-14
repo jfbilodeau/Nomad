@@ -4,6 +4,7 @@
 #include <nomad/collections/MapObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/system/Module.hpp>
@@ -60,15 +61,10 @@ NomadInteger getArchitecture() {
 
 // registerConstant retains object values; release the original reference even if registration fails.
 void registerSnapshot(Runtime* runtime, const NomadString& name, RuntimeValue value, const Type* type) {
-    try {
-        if (runtime->registerConstant(name, value, type).isInvalid()) {
-            throw NomadException("Failed to register " + name);
-        }
-    } catch (...) {
-        type->freeValue(value);
-        throw;
+    const RuntimeValueGuard guard(*type, &value);
+    if (runtime->registerConstant(name, value, type).isInvalid()) {
+        throw NomadException("Failed to register " + name);
     }
-    type->freeValue(value);
 }
 
 void setEnvironmentEntry(MapObject& environment, const NomadStringView entry) {
@@ -78,13 +74,8 @@ void setEnvironmentEntry(MapObject& environment, const NomadStringView entry) {
         return;
     }
     RuntimeValue value(NomadString(entry.substr(separator + 1)));
-    try {
-        environment.setValue(entry.substr(0, separator), value);
-    } catch (...) {
-        value.freeObjectValue();
-        throw;
-    }
-    value.freeObjectValue();
+    const RuntimeValueGuard guard(*environment.getValueType(), &value);
+    environment.setValue(entry.substr(0, separator), value);
 }
 
 void captureEnvironment(MapObject& environment) {
@@ -138,13 +129,8 @@ std::unique_ptr<Array1dObject> captureArguments(const ModuleContext& context, co
         );
     for (auto index = NomadIndex{0}; index < applicationArguments.size(); ++index) {
         RuntimeValue value(applicationArguments[index]);
-        try {
-            arguments->setValue(static_cast<NomadInteger>(index), value);
-        } catch (...) {
-            value.freeObjectValue();
-            throw;
-        }
-        value.freeObjectValue();
+        const RuntimeValueGuard guard(*stringType, &value);
+        arguments->setValue(static_cast<NomadInteger>(index), value);
     }
     return arguments;
 }
@@ -156,17 +142,17 @@ void registerOs(ModuleContext* context) {
     if (runtime->registerHub("os", HubMode::Closed).isInvalid()) {
         throw NomadException("Failed to register os hub");
     }
-    const auto platformTypeId = runtime->createEnum("os.Platform", {
+    const auto platformTypeId = runtime->getTypeManager().createEnum("os.Platform", {
         {"Windows", 1}, {"Linux", 2}, {"MacOS", 3}
     });
-    const auto architectureTypeId = runtime->createEnum("os.Architecture", {
+    const auto architectureTypeId = runtime->getTypeManager().createEnum("os.Architecture", {
         {"X86", 1}, {"X64", 2}, {"Arm32", 3}, {"Arm64", 4}
     });
     const auto platformType = runtime->getType(platformTypeId);
     const auto architectureType = runtime->getType(architectureTypeId);
     const auto* stringType = runtime->getStringType();
-    const auto* argumentsType = runtime->getParameterizedType("ReadOnlyArray1", {stringType});
-    const auto* environmentType = runtime->getParameterizedType("ReadOnlyMap", {stringType, stringType});
+    const auto* argumentsType = runtime->getTypeManager().getParameterizedType("ReadOnlyArray1", {stringType});
+    const auto* environmentType = runtime->getTypeManager().getParameterizedType("ReadOnlyMap", {stringType, stringType});
     if (!platformType || !architectureType ||
         argumentsType == nullptr || environmentType == nullptr) {
         throw NomadException("Failed to resolve os types; collections is required");

@@ -13,10 +13,15 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterObjectReceiver.hpp>
+
 #include <nomad/script/FormatString.hpp>
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/String.hpp>
@@ -24,6 +29,7 @@
 #include <algorithm>
 #include <any>
 #include <cctype>
+#include <optional>
 #include <ranges>
 
 namespace nomad {
@@ -37,8 +43,8 @@ Expression::Expression(const Expression* parent, const NomadIndex line, const No
 { }
 
 Expression::~Expression() {
-    if (m_type != nullptr) {
-        m_type->freeValue(m_value);
+    if (m_type != nullptr && m_hasValue) {
+        m_type->freeValue(&m_value);
     }
 }
 
@@ -62,8 +68,53 @@ void Expression::compile(Compiler* compiler, ScriptCallableBase* function, const
     }
 }
 
+void Expression::compileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (m_type == nullptr || m_type->isVoid() || function->getVariableType(destination) != m_type) {
+        compiler->reportInternalError("Expression local destination requires a resolved matching value type");
+    }
+    onCompileIntoLocal(compiler, function, destination);
+}
+
+void Expression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (m_type->isStruct()) {
+        compiler->reportError("Struct expression local destination is not supported for this expression");
+    }
+    compile(compiler, function, ExpressionTarget::Result);
+    const auto destinationOffset = function->getVariableOffset(destination);
+    m_type->emitFreeFunctionVariable(*compiler, destinationOffset);
+    m_type->emitStoreFunctionVariable(*compiler, destinationOffset);
+}
+
+bool Expression::supportsReturnDestination() const {
+    return false;
+}
+
+void Expression::compileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (function == nullptr || !supportsReturnDestination() || m_type == nullptr ||
+        !m_type->isStruct() || function->getReturnType() != m_type) {
+        compiler->reportInternalError("Expression return destination requires a supported matching struct result");
+    }
+    onCompileIntoReturn(compiler, function);
+}
+
+void Expression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase*) {
+    compiler->reportInternalError("Expression does not support a struct return destination");
+}
+
 bool Expression::isWritable() const {
     return false;
+}
+
+std::optional<StorageLocation> Expression::getStorageLocation() const {
+    return std::nullopt;
 }
 
 IdentifierExpression* Expression::asIdentifierExpression() {
@@ -91,43 +142,32 @@ void Expression::compileAssignment(Compiler* compiler, ScriptCallableBase*, Expr
     compiler->reportInternalError("Invalid assignment target");
 }
 
-void Expression::evaluateAssignment(InterpreterContext&, const Expression*) const {
+InterpreterValue Expression::evaluateAssignment(InterpreterContext&, const Expression*) const {
     raiseException("Invalid assignment target");
 }
 
-void Expression::evaluate(InterpreterContext& context) const {
-    context.clearResult();
+InterpreterValue Expression::evaluate(InterpreterContext& context) const {
+    const auto guard = context.beginEvaluation();
     if (context.hasError()) {
-        return;
+        raiseException(context.getFirstError()->message);
     }
-
-    try {
-        if (isParsed()) {
-            context.setResult(m_type, m_value);
-            return;
-        }
-
-        if (m_type == nullptr) {
-            raiseException("Expression has not been resolved");
-        }
-
-        onEvaluate(context);
-        if (context.hasError()) {
-            context.clearResult();
-            return;
-        }
-        const auto* value = context.getResult();
-
-        if (value == nullptr || !value->getType()->sameType(m_type)) {
-            raiseException("VirtualMachine expression produced a value with an unexpected type");
-        }
-    } catch (...) {
-        context.clearResult();
-        throw;
+    if (isParsed()) {
+        return InterpreterValue(m_type, m_value);
     }
+    if (m_type == nullptr) {
+        raiseException("Expression has not been resolved");
+    }
+    auto value = onEvaluate(context);
+    if (context.hasError()) {
+        raiseException(context.getFirstError()->message);
+    }
+    if (!value.getType()->sameType(m_type)) {
+        raiseException("Interpreter expression produced a value with an unexpected type");
+    }
+    return value;
 }
 
-void Expression::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue Expression::onEvaluate(InterpreterContext& /*context*/) const {
     raiseException("Expression is not supported by the interpreter");
 }
 
@@ -151,8 +191,8 @@ bool Expression::isParsed() const {
     return hasType() && hasValue();
 }
 
-std::unique_ptr<TypedValue> Expression::getInitialValue(Compiler* /*compiler*/) const {
-    return isParsed() ? std::make_unique<TypedValue>(getType(), getValue()) : nullptr;
+std::unique_ptr<InterpreterValue> Expression::getInitialValue(Compiler* /*compiler*/) const {
+    return isParsed() ? std::make_unique<InterpreterValue>(getType(), getValue()) : nullptr;
 }
 
 bool Expression::isTerminal() const {
@@ -173,7 +213,7 @@ void Expression::setType(const Type* type) {
 }
 
 void Expression::setValue(const RuntimeValue& value) {
-    m_type->copyValue(value, m_value);
+    m_type->copyValue(&value, &m_value);
 
     m_hasValue = true;
 }
@@ -246,7 +286,7 @@ void UnaryExpression::onCompile(Compiler* compiler, ScriptCallableBase* function
     compiler->addOpCode(opcode);
 }
 
-std::unique_ptr<TypedValue> UnaryExpression::getInitialValue(Compiler* compiler) const {
+std::unique_ptr<InterpreterValue> UnaryExpression::getInitialValue(Compiler* compiler) const {
     if (isParsed()) {
         return Expression::getInitialValue(compiler);
     }
@@ -258,25 +298,19 @@ std::unique_ptr<TypedValue> UnaryExpression::getInitialValue(Compiler* compiler)
     if (!compiler->foldUnary(m_unaryOperator, operand->getType(), operand->getValue(), value)) {
         return nullptr;
     }
-    auto result = std::make_unique<TypedValue>(getType(), value);
-    getType()->freeValue(value);
+    auto result = std::make_unique<InterpreterValue>(getType(), value);
+    getType()->freeValue(&value);
     return result;
 }
 
-void UnaryExpression::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
-    const auto* evaluatedOperand = context.getResult();
-    if (evaluatedOperand == nullptr) {
-        return;
-    }
-
-    const TypedValue operand(*evaluatedOperand);
+InterpreterValue UnaryExpression::onEvaluate(InterpreterContext& context) const {
+    const auto operand = m_expression->evaluate(context);
     RuntimeValue result;
     if (!context.getRuntime()->foldUnary(m_unaryOperator, operand.getType(), operand.getValue(), result)) {
         raiseException("Cannot evaluate unary operator '" + toString(m_unaryOperator) + "'");
     }
 
-    context.setResult(getType(), result);
+    return InterpreterValue(getType(), result);
 }
 
 DynamicFormatExpression::DynamicFormatExpression(const Expression* parent, const NomadIndex line,
@@ -306,23 +340,15 @@ void DynamicFormatExpression::onCompile(Compiler* compiler, ScriptCallableBase* 
     compiler->addMoveResult(getType(), target);
 }
 
-void DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
-    m_expression->evaluate(context);
-    const auto* value = context.getResult();
-    if (value == nullptr) {
-        return;
-    }
-    const auto format = value->getType()->toString(value->getValue());
+InterpreterValue DynamicFormatExpression::onEvaluate(InterpreterContext& context) const {
+    const auto value = m_expression->evaluate(context);
+    const auto format = value.getType()->toString(value.getStorage().data());
     const auto result = formatDynamicString(format, context, context.getCallable()->getPath(), getLine(), getColumn());
     RuntimeValue formatted;
+    const RuntimeValueGuard guard(*getType(), &formatted);
     formatted.setStringValue(result.text);
-    try {
-        context.setResult(getType(), formatted);
-    } catch (...) {
-        getType()->freeValue(formatted);
-        throw;
-    }
-    getType()->freeValue(formatted);
+
+    return InterpreterValue(getType(), formatted);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -344,7 +370,7 @@ bool BinaryExpression::isTerminal() const {
     return false;
 }
 
-std::unique_ptr<TypedValue> BinaryExpression::getInitialValue(Compiler* compiler) const {
+std::unique_ptr<InterpreterValue> BinaryExpression::getInitialValue(Compiler* compiler) const {
     if (isParsed()) {
         return Expression::getInitialValue(compiler);
     }
@@ -359,8 +385,8 @@ std::unique_ptr<TypedValue> BinaryExpression::getInitialValue(Compiler* compiler
     )) {
         return nullptr;
     }
-    auto result = std::make_unique<TypedValue>(getType(), value);
-    getType()->freeValue(value);
+    auto result = std::make_unique<InterpreterValue>(getType(), value);
+    getType()->freeValue(&value);
     return result;
 }
 
@@ -457,32 +483,19 @@ void BinaryExpression::onCompile(Compiler* compiler, ScriptCallableBase* functio
     compiler->addMoveResult(getType(), target);
 }
 
-void BinaryExpression::onEvaluate(InterpreterContext& context) const {
-    m_left->evaluate(context);
-    const auto* evaluatedLhs = context.getResult();
-    if (evaluatedLhs == nullptr) {
-        return;
-    }
-
-    const TypedValue lhs(*evaluatedLhs);
+InterpreterValue BinaryExpression::onEvaluate(InterpreterContext& context) const {
+    const auto lhs = m_left->evaluate(context);
 
     // Resolution guarantees logical operators have boolean operands.
     if (m_binaryOperator == BinaryOperator::AndAnd || m_binaryOperator == BinaryOperator::PipePipe) {
         const auto lhsValue = lhs.getValue().getBooleanValue();
         if ((m_binaryOperator == BinaryOperator::AndAnd && !lhsValue) ||
             (m_binaryOperator == BinaryOperator::PipePipe && lhsValue)) {
-            context.setResult(getType(), RuntimeValue{lhsValue});
-            return;
+            return InterpreterValue(getType(), RuntimeValue{lhsValue});
         }
     }
 
-    m_right->evaluate(context);
-    const auto* evaluatedRhs = context.getResult();
-    if (evaluatedRhs == nullptr) {
-        return;
-    }
-
-    const TypedValue rhs(*evaluatedRhs);
+    const auto rhs = m_right->evaluate(context);
     RuntimeValue result;
     if (!context.getRuntime()->foldBinary(
         m_binaryOperator,
@@ -495,7 +508,7 @@ void BinaryExpression::onEvaluate(InterpreterContext& context) const {
         raiseException("Cannot evaluate binary operator '" + toString(m_binaryOperator) + "'");
     }
 
-    context.setResult(getType(), result);
+    return InterpreterValue(getType(), result);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -567,6 +580,9 @@ void FunctionCallExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
+    if (getType()->isStruct()) {
+        compiler->reportError("Struct function calls require a local destination");
+    }
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, &m_arguments);
     } else if (const auto* script = m_function->asScriptFunction()) {
@@ -578,8 +594,34 @@ void FunctionCallExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     compiler->addMoveResult(getType(), target);
 }
 
+void FunctionCallExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (!getType()->isStruct()) {
+        Expression::onCompileIntoLocal(compiler, function, destination);
+        return;
+    }
+    if (m_function == nullptr) {
+        raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    compiler->addFunctionCallIntoLocal(m_function->getId(), function, &m_arguments, destination);
+}
+
 void FunctionCallExpression::addArgument(std::unique_ptr<Argument> argument) {
     m_arguments.add(std::move(argument));
+}
+
+bool FunctionCallExpression::supportsReturnDestination() const {
+    return getType() != nullptr && getType()->isStruct();
+}
+
+void FunctionCallExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_function == nullptr) {
+        raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    compiler->addFunctionCallIntoReturn(m_function->getId(), function, &m_arguments);
 }
 
 ArgumentList* FunctionCallExpression::getArguments() {
@@ -594,24 +636,15 @@ NomadIndex FunctionCallExpression::getArgumentCount() const {
     return m_arguments.getArgumentCount();
 }
 
-void FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue FunctionCallExpression::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-    std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    m_arguments.evaluate(context, evaluatedArguments, values);
-    if (context.hasError()) {
-        return;
-    }
-
-    if (const auto* native = m_function->asNativeFunction()) {
-        context.evaluateNativeFunctionCall(native->getId(), values);
-    } else if (const auto* script = m_function->asScriptFunction()) {
-        context.evaluateFunctionCall(script->getId(), values);
-    } else {
-        raiseException("Unsupported implementation of function '" + m_name + "'");
-    }
+    const auto evaluatedArguments = m_arguments.evaluate(context);
+    return context.getInterpreter().runFunction(
+        m_function->getId(),
+        evaluatedArguments
+    );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -635,7 +668,11 @@ bool NativeMemberExpression::isTerminal() const {
 }
 
 bool NativeMemberExpression::isWritable() const {
-    return false;
+    return m_storage.has_value();
+}
+
+std::optional<StorageLocation> NativeMemberExpression::getStorageLocation() const {
+    return m_storage;
 }
 
 NativeMemberExpression* NativeMemberExpression::asNativeExpression() {
@@ -659,7 +696,13 @@ bool NativeMemberExpression::resolveMember(
     m_memberId = PropertyId::INVALID;
     m_memberType = MemberType::Unknown;
     m_method = nullptr;
+    m_storage.reset();
+    m_structReceiver.reset();
     if (!m_receiver->resolve(context, function)) {
+        return false;
+    }
+    if (m_receiver->getType() == nullptr) {
+        reportError(context, function, "Cannot determine receiver type for member '" + m_qualifiedName + "'");
         return false;
     }
 
@@ -667,14 +710,58 @@ bool NativeMemberExpression::resolveMember(
     m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
 
     const auto* owner = m_receiver->getType()->asClassType();
+    const auto* composite = m_receiver->getType()->asCompositeType();
     if (runtime->getMemberType(m_memberId) == MemberType::Method ||
-        (owner != nullptr && std::ranges::any_of(owner->getMethods(),
+        (composite != nullptr && std::ranges::any_of(composite->getMethods(),
             [&](const auto* method) { return method->getName() == m_memberName; }))) {
         m_memberType = MemberType::Method;
         return true;
     }
 
     if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
+        if (m_receiver->getType()->isStruct()) {
+            const auto* property = composite->getProperty(m_memberName);
+            if (assignment && context->getMode() == CompilerMode::Script) {
+                const auto* identifier = dynamic_cast<const IdentifierExpression*>(m_receiver.get());
+                if (identifier != nullptr && identifier->getIdentifier() == "this" &&
+                    context->getCompiler()->getReceiverType(function) == composite) {
+                    property = context->getCompiler()->resolveStructField(
+                        context, function, m_memberName, valueType,
+                        runtime->getConstructor(function->getId()) != nullptr, getLine(), getColumn());
+                    if (property == nullptr) {
+                        return false;
+                    }
+                }
+            }
+            if (property == nullptr) {
+                reportError(context, function, "Unknown struct property '" + m_memberName +
+                    "' on type '" + composite->getTypeName() + "'");
+                return false;
+            }
+            if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
+                reportError(context, function, "Struct property '" + m_qualifiedName + "' does not take arguments");
+                return false;
+            }
+            if (context->getMode() == CompilerMode::Interpreter ||
+                (context->getMode() == CompilerMode::Script && function != nullptr)) {
+                auto storage = m_receiver->getStorageLocation();
+                if (!storage.has_value()) {
+                    if (context->getMode() == CompilerMode::Interpreter) {
+                        storage = StorageLocation(m_receiver.get());
+                    } else {
+                        if (m_receiverVariable.isInvalid()) {
+                            m_receiverVariable = function->registerVariable(
+                                "$propertyReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
+                        }
+                        storage = StorageLocation(m_receiver.get(), m_receiverVariable);
+                    }
+                }
+                m_storage = storage->getProperty(*property);
+            }
+            m_memberId = property->getId();
+            m_memberType = MemberType::Property;
+            return true;
+        }
         if (owner != nullptr) {
             const auto* property = owner->getProperty(m_memberName);
             if (assignment && context->getMode() == CompilerMode::Script) {
@@ -686,6 +773,12 @@ bool NativeMemberExpression::resolveMember(
                 if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
                     reportError(context, function, "Class field '" + m_qualifiedName + "' does not take arguments");
                     return false;
+                }
+                if ((context->getMode() == CompilerMode::Interpreter ||
+                     (context->getMode() == CompilerMode::Script && function != nullptr)) &&
+                    property->getValueType() != nullptr && property->getValueType()->isStruct() &&
+                    property->asNativeProperty() == nullptr) {
+                    m_storage = StorageLocation(m_receiver.get(), property);
                 }
                 m_memberId = property->getId();
                 m_memberType = MemberType::Property;
@@ -729,13 +822,31 @@ bool NativeMemberExpression::resolveAssignmentTarget(
             context->getCompiler()->reportInternalError("Invalid property: " + m_qualifiedName);
         }
         setType(property->getValueType());
+        if (context->getMode() == CompilerMode::Script && m_storage.has_value() &&
+            getType()->isStruct() && m_stagingVariable.isInvalid()) {
+            m_stagingVariable = function->registerVariable(
+                "$property" + std::to_string(function->getVariableCount()), getType());
+        }
         return true;
     }
-    if (!info->setFn) {
+    if (!info->setFn && info->setterMethodId.isInvalid()) {
         reportError(context, function, "Native property '" + m_qualifiedName + "' is read-only");
         return false;
     }
     setType(info->valueType);
+    if (info->setterMethodId.isValid()) {
+        m_method = runtime->getMethod(info->setterMethodId);
+        if (
+            context->getMode() == CompilerMode::Script &&
+            getType()->isStruct() && 
+            m_stagingVariable.isInvalid()
+        ) {
+            m_stagingVariable = function->registerVariable(
+                "$property" + std::to_string(function->getVariableCount()), getType()
+            );
+        }
+    }
+
     return true;
 }
 
@@ -759,12 +870,23 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
             return;
         }
 
-        if (!info->getFn) {
+        if (!info->getFn && info->getterMethodId.isInvalid()) {
             reportError(context, function, "Native property '" + m_qualifiedName + "' is write-only");
             return;
         }
 
+        if (info->getterMethodId.isValid()) {
+            if (!m_arguments.getArguments().empty()) {
+                reportError(context, function, "Native property '" + m_qualifiedName + "' does not take arguments");
+
+                return;
+            }
+
+            m_method = runtime->getMethod(info->getterMethodId);
+        }
+
         setType(info->valueType);
+
         return;
     }
 
@@ -775,32 +897,61 @@ void NativeMemberExpression::onResolve(CompilerContext* context, ScriptCallableB
         for (const auto& argument : arguments) {
             argumentTypes.push_back(argument->resolveOverloadType(context, function));
         }
+
         const auto resolution = runtime->resolveMethod(m_receiver->getType(), m_memberName, argumentTypes);
         if (resolution.status != ResolveStatus::Resolved) {
             reportError(context, function, runtime->describeResolveFailure(m_qualifiedName, resolution));
             return;
         }
+
         m_method = runtime->getMethod(resolution.id);
         m_memberId = resolution.id;
         const auto* script = m_method->asScriptCallable();
         const auto* returnType = m_method->getReturnType();
         auto* compiler = context->getCompiler();
-        if (script != nullptr && context->getMode() == CompilerMode::Script && function != nullptr) {
+        if (
+            script != nullptr && 
+            context->getMode() == CompilerMode::Script && 
+            function != nullptr
+        ) {
             compiler->addFunctionCallDependency(function->getId(), script->getId());
         }
+        
         if (returnType == nullptr) {
             const auto recursive = script != nullptr && function != nullptr &&
                 compiler->isRecursiveFunctionCall(function->getId(), script->getId());
-            reportError(context, function, recursive
-                ? "Cannot infer return type of recursive method '" + m_qualifiedName +
-                    "': it needs a `return` whose type does not depend on a recursive call"
-                : "Cannot determine return type of method '" + m_qualifiedName + "'");
+            reportError(
+                context, 
+                function, 
+                recursive ? 
+                    "Cannot infer return type of recursive method '" + m_qualifiedName + "': it needs a `return` whose type does not depend on a recursive call" : 
+                    "Cannot determine return type of method '" + m_qualifiedName + "'"
+            );
+
             return;
         }
         if (script != nullptr && context->getMode() != CompilerMode::Script &&
             script->getFunctionStart() == NOMAD_INVALID_INDEX) {
             reportError(context, function, "Method '" + m_qualifiedName + "' has not been compiled");
             return;
+        }
+        if (m_receiver->getType()->isStruct() && context->getMode() == CompilerMode::Script) {
+            m_structReceiver = m_receiver->getStorageLocation();
+            if (!m_structReceiver.has_value()) {
+                if (function == nullptr) {
+                    reportError(context, function, "Struct method calls require a resolved caller");
+                    return;
+                }
+                if (m_receiverVariable.isInvalid()) {
+                    m_receiverVariable = function->registerVariable(
+                        "$methodReceiver" + std::to_string(function->getVariableCount()), m_receiver->getType());
+                }
+                IdentifierDefinition receiver;
+                receiver.identifierType = IdentifierType::FunctionVariable;
+                receiver.variableId = m_receiverVariable;
+                receiver.valueType = m_receiver->getType();
+                m_structReceiver = StorageLocation(receiver);
+            }
         }
         for (NomadIndex index = 0; index < arguments.size(); ++index) {
             arguments[index]->setType(m_method->getParameters()[index].type);
@@ -831,25 +982,44 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
         compiler->reportInternalError("Native member has not been resolved: " + m_qualifiedName);
     }
     const auto* receiverType = m_receiver->getType();
+    if (getType()->isStruct() && (!m_storage.has_value() || target != ExpressionTarget::Stack)) {
+        compiler->reportError("Struct member values require a local destination or stack copies");
+    }
+    if (m_storage.has_value()) {
+        m_storage->emitLoad(*compiler, function, target);
+        return;
+    }
+    if (m_memberType == MemberType::Method && receiverType->isStruct()) {
+        if (m_receiverVariable.isValid()) {
+            m_receiver->compileIntoLocal(compiler, function, m_receiverVariable);
+        }
+        compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver);
+        if (m_receiverVariable.isValid()) {
+            receiverType->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_receiverVariable));
+        }
+        if (!getType()->isVoid()) {
+            compiler->addMoveResult(getType(), target);
+        }
+        return;
+    }
 
-    if (m_memberType != MemberType::Property) {
+    if (m_memberType != MemberType::Property || m_method != nullptr) {
         compiler->addOpCode(OpCodes::op_push_this);
     }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
 
-    if (m_memberType == MemberType::Property) {
-        compiler->addOpCode(op_native_property_get);
-        compiler->addId(std::get<PropertyId>(m_memberId).id);
-        compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+    if (m_memberType == MemberType::Property && m_method == nullptr) {
+        compiler->addLoadProperty(std::get<PropertyId>(m_memberId));
+        receiverType->emitFreeIntermediate(*compiler);
         compiler->addMoveResult(getType(), target);
         return;
     }
 
     m_arguments.setReceiverType(receiverType);
     if (m_method->asScriptMethod() != nullptr) {
-        compiler->addScriptMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
+        compiler->addScriptMethodCall(m_method->getId(), function, &m_arguments);
     } else {
-        compiler->addNativeMethodCall(std::get<CallableId>(m_memberId), function, &m_arguments);
+        compiler->addNativeMethodCall(m_method->getId(), function, &m_arguments);
     }
 
     if (!m_method->getReturnType()->isVoid()) {
@@ -857,135 +1027,133 @@ void NativeMemberExpression::onCompile(Compiler* compiler, ScriptCallableBase* f
     }
 }
 
-void NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
+void NativeMemberExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (!getType()->isStruct()) {
+        Expression::onCompileIntoLocal(compiler, function, destination);
+        return;
+    }
+    if (m_storage.has_value()) {
+        m_storage->emitCopyToLocal(*compiler, function, destination);
+        return;
+    }
+    if (m_method != nullptr && m_receiver->getType()->isClass()) {
+        m_arguments.setReceiverType(nullptr);
+        compiler->addObjectMethodCallIntoLocal(m_method->getId(), function, &m_arguments, *m_receiver, destination);
+        return;
+    }
+    if (m_memberType != MemberType::Method || !m_receiver->getType()->isStruct()) {
+        compiler->reportError("Struct local destinations currently require a struct method receiver");
+    }
+    if (m_receiverVariable.isValid()) {
+        m_receiver->compileIntoLocal(compiler, function, m_receiverVariable);
+    }
+    compiler->addStructMethodCall(m_method->getId(), function, &m_arguments, *m_structReceiver, destination);
+    if (m_receiverVariable.isValid()) {
+        m_receiver->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_receiverVariable));
+    }
+}
+
+bool NativeMemberExpression::supportsReturnDestination() const {
+    return m_method != nullptr && m_method->getReturnType() == getType() &&
+        (m_structReceiver.has_value() || (m_receiver->getType() != nullptr && m_receiver->getType()->isClass())) &&
+        getType() != nullptr && getType()->isStruct();
+}
+
+void NativeMemberExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_receiver->getType()->isClass()) {
+        m_arguments.setReceiverType(nullptr);
+        compiler->addObjectMethodCallIntoReturn(m_method->getId(), function, &m_arguments, *m_receiver);
+        return;
+    }
+    if (m_receiverVariable.isValid()) {
+        m_receiver->compileIntoLocal(compiler, function, m_receiverVariable);
+    }
+    compiler->addStructMethodCallIntoReturn(m_method->getId(), function, &m_arguments, *m_structReceiver);
+    if (m_receiverVariable.isValid()) {
+        m_receiver->getType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_receiverVariable));
+    }
+}
+
+InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context) const {
     if (m_memberType == MemberType::Unknown) {
         raiseException("Native member has not been resolved: " + m_qualifiedName);
     }
-    m_receiver->evaluate(context);
-    const auto* evaluatedReceiver = context.getResult();
-    if (evaluatedReceiver == nullptr) {
-        if (!context.hasError()) {
-            context.setError("Native member receiver did not produce a value");
-        }
-        return;
-    }
-
-    const auto* receiverType = m_receiver->getType();
-    RuntimeValue receiver;
-    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
-
-    auto* runtime = context.getRuntime();
     if (m_memberType == MemberType::Property) {
-        const auto* property = runtime->getProperty(std::get<PropertyId>(m_memberId));
+        const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
         if (property == nullptr) {
-            receiverType->freeValue(receiver);
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
-        const auto* valueType = property->getValueType();
-        RuntimeValue result;
-
-        try {
-            context.getVirtualMachine()->getProperty(std::get<PropertyId>(m_memberId), receiver, result);
-            context.setResult(valueType, result);
-        } catch (...) {
-            valueType->freeValue(result);
-            receiverType->freeValue(receiver);
-            throw;
+        if (const auto* native = property->asNativeProperty();
+            native != nullptr && getType()->isStruct() && native->getInfo().getterMethodId.isInvalid()) {
+            raiseException("Struct member values are not supported by the interpreter");
         }
-        valueType->freeValue(result);
-        receiverType->freeValue(receiver);
-        return;
+        const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
+        return location.withReceiver(context, [&](InterpreterReceiver& receiver) {
+            return receiver.getProperty(property->getId());
+        });
+    }
+    if (m_receiver->getType()->asCompositeType() == nullptr && getType()->isStruct()) {
+        raiseException("Struct member values are not supported by the interpreter");
+    }
+    if (m_memberType == MemberType::Method) {
+        const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
+        std::vector<InterpreterValue> arguments;
+        return location.withReceiver(context, [&](InterpreterReceiver& receiver) {
+            return receiver.callMethod(m_method->getId(), arguments);
+        }, [&]() { arguments = m_arguments.evaluate(context); });
     }
 
-    const auto* method = m_method;
-    const auto* returnType = method->getReturnType();
-
-    std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    m_arguments.evaluate(context, evaluatedArguments, values);
-    if (context.hasError()) {
-        receiverType->freeValue(receiver);
-        return;
-    }
-
-    auto* virtualMachine = context.getVirtualMachine();
-    try {
-        if (method->asScriptMethod() != nullptr) {
-            virtualMachine->runScriptMethod(std::get<CallableId>(m_memberId), values, receiver);
-        } else {
-            virtualMachine->runNativeMethod(std::get<CallableId>(m_memberId), values, receiver);
-        }
-
-
-        if (returnType->isVoid()) {
-            context.setVoidResult();
-        } else {
-            context.setResult(returnType, virtualMachine->getResult());
-            returnType->freeValue(virtualMachine->getResult());
-        }
-    } catch (...) {
-        if (!returnType->isVoid()) {
-            returnType->freeValue(virtualMachine->getResult());
-        }
-        receiverType->freeValue(receiver);
-        throw;
-    }
-
-    receiverType->freeValue(receiver);
+    raiseException("Unsupported interpreter member: " + m_qualifiedName);
 }
 
 void NativeMemberExpression::compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression) {
     const auto* receiverType = m_receiver->getType();
     const auto* propertyType = getType();
+    if (m_storage.has_value()) {
+        m_storage->emitAssignment(*compiler, function, *expression, m_stagingVariable);
+        return;
+    }
+    if (m_method != nullptr) {
+        compiler->addObjectSetterCall(m_method->getId(), function, *m_receiver, *expression, m_stagingVariable);
+        return;
+    }
     m_receiver->compile(compiler, function, ExpressionTarget::Intermediate);
     compiler->addPushIntermediate(receiverType);
     expression->compile(compiler, function, ExpressionTarget::Result);
     compiler->addPopIntermediate(receiverType);
-    compiler->addOpCode(op_native_property_set);
-    compiler->addId(std::get<PropertyId>(m_memberId).id);
-    compiler->addFreeValue(propertyType->getTypeOpCodes()->freeResult);
-    compiler->addFreeValue(receiverType->getTypeOpCodes()->freeIntermediate);
+    compiler->addStoreProperty(std::get<PropertyId>(m_memberId));
+    propertyType->emitFreeResult(*compiler);
+    receiverType->emitFreeIntermediate(*compiler);
 }
 
-void NativeMemberExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
-    m_receiver->evaluate(context);
-    const auto* evaluatedReceiver = context.getResult();
-    if (evaluatedReceiver == nullptr) {
-        if (!context.hasError()) {
-            context.setError("Native property receiver did not produce a value");
-        }
-        return;
-    }
-
-    const auto* receiverType = m_receiver->getType();
-    RuntimeValue receiver;
-    receiverType->copyValue(evaluatedReceiver->getValue(), receiver);
-
-    expression->evaluate(context);
-    const auto* assignedValue = context.getResult();
-    if (assignedValue == nullptr) {
-        receiverType->freeValue(receiver);
-        if (!context.hasError()) {
-            context.setError("Native property assignment did not produce a value");
-        }
-        return;
-    }
-
+InterpreterValue NativeMemberExpression::evaluateAssignment(
+    InterpreterContext& context,
+    const Expression* expression
+) const {
     const auto* property = context.getRuntime()->getProperty(std::get<PropertyId>(m_memberId));
     if (property == nullptr) {
-        receiverType->freeValue(receiver);
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
-
-    try {
-        context.getVirtualMachine()->setProperty(std::get<PropertyId>(m_memberId), receiver, assignedValue->getValue());
-        context.setResult(property->getValueType(), assignedValue->getValue());
-    } catch (...) {
-        receiverType->freeValue(receiver);
-        throw;
+    if (m_receiver->getType()->asCompositeType() != nullptr) {
+        if (const auto* native = property->asNativeProperty();
+            native != nullptr && getType()->isStruct() && native->getInfo().setterMethodId.isInvalid()) {
+            raiseException("Struct member values are not supported by the interpreter");
+        }
+        const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
+        std::optional<InterpreterValue> assignedValue;
+        return location.withReceiver(context, [&](InterpreterReceiver& receiver) {
+            receiver.setProperty(property->getId(), *assignedValue);
+            return std::move(*assignedValue);
+        }, [&]() { assignedValue = expression->evaluate(context); });
     }
-
-    receiverType->freeValue(receiver);
+    const auto receiver = m_receiver->evaluate(context);
+    auto assignedValue = expression->evaluate(context);
+    context.getVirtualMachine()->setProperty(property->getId(), receiver.getValue(), assignedValue.getValue());
+    return InterpreterValue(property->getValueType(), assignedValue.getValue());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1017,7 +1185,7 @@ bool IndexerExpression::resolveIndexer(CompilerContext* context, ScriptCallableB
     }
     auto* runtime = context->getRuntime();
     m_indexerId = runtime->getNativeIndexerId(m_receiver->getType(), m_indexes.size());
-    const auto info = runtime->getNativeIndexerInfo(m_indexerId);
+    const auto* info = runtime->getNativeIndexerInfo(m_indexerId);
     if (!info) {
         reportError(context, function, "Type '" + getTypeDisplayName(m_receiver->getType()) +
             "' has no indexer with " + toString(m_indexes.size()) + " indices");
@@ -1081,35 +1249,23 @@ void IndexerExpression::compileAssignment(Compiler* compiler, ScriptCallableBase
     compiler->addId(m_indexerId.id);
 }
 
-void IndexerExpression::onEvaluate(InterpreterContext& context) const {
-    evaluateIndexer(context);
+InterpreterValue IndexerExpression::onEvaluate(InterpreterContext& context) const {
+    return evaluateIndexer(context);
 }
 
-void IndexerExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
-    evaluateIndexer(context, expression);
+InterpreterValue IndexerExpression::evaluateAssignment(InterpreterContext& context, const Expression* expression) const {
+    return evaluateIndexer(context, expression);
 }
 
-void IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expression* assigned) const {
-    m_receiver->evaluate(context);
-    if (context.hasError()) {
-        return;
-    }
-    const TypedValue receiver(*context.getResult());
-    std::vector<TypedValue> arguments;
+InterpreterValue IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expression* assigned) const {
+    const auto receiver = m_receiver->evaluate(context);
+    std::vector<InterpreterValue> arguments;
     arguments.reserve(m_indexes.size() + (assigned != nullptr ? 1 : 0));
     if (assigned != nullptr) {
-        assigned->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        arguments.emplace_back(*context.getResult());
+        arguments.push_back(assigned->evaluate(context));
     }
     for (const auto& index : std::ranges::reverse_view(m_indexes)) {
-        index->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-        arguments.emplace_back(*context.getResult());
+        arguments.push_back(index->evaluate(context));
     }
     std::vector<RuntimeValue> values;
     values.reserve(arguments.size());
@@ -1117,22 +1273,17 @@ void IndexerExpression::evaluateIndexer(InterpreterContext& context, const Expre
         values.push_back(argument.getValue());
     }
     auto* machine = context.getVirtualMachine();
-    try {
-        machine->runNativeIndexer(m_indexerId, values, receiver.getValue(), assigned != nullptr);
-        if (assigned != nullptr) {
-            context.setResult(arguments.front());
-        } else {
-            context.setResult(getType(), machine->getResult());
-        }
-    } catch (...) {
-        if (assigned == nullptr) {
-            getType()->freeValue(machine->getResult());
-        }
-        throw;
-    }
+    std::optional<RuntimeValueGuard> resultGuard;
     if (assigned == nullptr) {
-        getType()->freeValue(machine->getResult());
+        resultGuard.emplace(*getType(), &machine->getResult());
     }
+    machine->runNativeIndexer(m_indexerId, values, receiver.getValue(), assigned != nullptr);
+    if (assigned != nullptr) {
+
+        return arguments.front();
+    }
+
+    return InterpreterValue(getType(), machine->getResult());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1236,12 +1387,19 @@ void ConstructorExpression::onResolve(CompilerContext* context, ScriptCallableBa
 
     const auto* classType = m_classType;
     if (classType == nullptr) {
-        const auto inference = runtime->inferConstructorTypeArguments(m_constructorName, argumentTypes);
+        const auto inference = runtime->getTypeManager().inferConstructorTypeArguments(m_constructorName, argumentTypes);
         if (!inference.isResolved()) {
             reportError(context, function, inference.error);
             return;
         }
-        classType = runtime->getParameterizedType(m_constructorName, inference.typeArguments);
+        for (const auto* argument : inference.typeArguments) {
+            if (argument->isStruct()) {
+                reportError(context, function, "Struct type argument '" + argument->getTypeName() +
+                    "' is not supported for constructor '" + m_constructorName + "'");
+                return;
+            }
+        }
+        classType = runtime->getTypeManager().getParameterizedType(m_constructorName, inference.typeArguments);
         if (classType == nullptr) {
             reportError(context, function, "Cannot specialize inferred constructor '" + m_constructorName + "'");
             return;
@@ -1274,33 +1432,52 @@ void ConstructorExpression::onCompile(Compiler* compiler, ScriptCallableBase* fu
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
+    if (getType()->isStruct()) {
+        compiler->reportError("Struct construction requires a local destination");
+    }
     if (m_constructor->asNativeConstructor() != nullptr) {
-        compiler->addNativeConstructorCall(m_constructor->getId(), function, &m_arguments);
+        compiler->addNativeObjectCreation(m_constructor->getId(), function, &m_arguments);
     } else {
-        compiler->addScriptConstructorCall(
-            m_constructor->getId(), m_constructor->getClassType()->getId(), function, &m_arguments
-        );
+        compiler->addScriptObjectCreation(m_constructor->getId(), function, &m_arguments);
     }
     compiler->addMoveResult(getType(), target);
 }
 
-void ConstructorExpression::onEvaluate(InterpreterContext& context) const {
+void ConstructorExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (!getType()->isStruct()) {
+        Expression::onCompileIntoLocal(compiler, function, destination);
+        return;
+    }
     if (m_constructor == nullptr) {
         raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    m_arguments.evaluate(context, evaluatedArguments, values);
-    if (context.hasError()) {
-        return;
+    compiler->addStructCreationIntoLocal(m_constructor->getId(), function, &m_arguments, destination);
+}
+
+bool ConstructorExpression::supportsReturnDestination() const {
+    return getType() != nullptr && getType()->isStruct();
+}
+
+void ConstructorExpression::onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function) {
+    if (m_constructor == nullptr) {
+        raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
     }
-    const auto release = [](NomadObject* object) { object->releaseRef(); };
-    const std::unique_ptr<NomadObject, decltype(release)> object(
-        context.getVirtualMachine()->constructObject(m_constructor->getId(), values), release
+    compiler->addStructCreationIntoReturn(m_constructor->getId(), function, &m_arguments);
+}
+
+InterpreterValue ConstructorExpression::onEvaluate(InterpreterContext& context) const {
+    if (m_constructor == nullptr) {
+        raiseException("Constructor call to '" + m_constructorName + "' has not been resolved");
+    }
+    const auto evaluatedArguments = m_arguments.evaluate(context);
+    return context.getInterpreter().construct(
+        m_constructor->getId(),
+        evaluatedArguments
     );
-    RuntimeValue value;
-    value.setObjectValue(object.get());
-    context.setResult(getType(), value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1321,7 +1498,7 @@ void StringLiteral::onResolve(CompilerContext* context, ScriptCallableBase* /*fu
     RuntimeValue value{m_value};
 
     setResolved(value, stringType);
-    stringType->freeValue(value);
+    stringType->freeValue(&value);
 }
 
 void StringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* /*function*/, ExpressionTarget /*target*/) {
@@ -1373,10 +1550,10 @@ void ConstantValueExpression::onCompile(Compiler* compiler, ScriptCallableBase* 
     compiler->addLoadConstant(m_constantId, target);
 }
 
-void ConstantValueExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue ConstantValueExpression::onEvaluate(InterpreterContext& context) const {
     RuntimeValue value;
     context.getRuntime()->getConstantValue(m_constantId, value);
-    context.setResult(getType(), value);
+    return InterpreterValue(getType(), value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1403,7 +1580,7 @@ bool FormatStringLiteral::parsePlaceholders(
 
     const auto parsed = parseFormatTemplate(sourceContent);
     for (const auto& diagnostic : parsed.diagnostics) {
-        context->reportError(diagnostic.message, function->getPath(), getLine(), getColumn() + 2 + diagnostic.offset);
+        context->addError(diagnostic.message, function->getPath(), getLine(), getColumn() + 2 + diagnostic.offset);
     }
     if (!parsed.diagnostics.empty()) {
         return false;
@@ -1480,7 +1657,7 @@ bool FormatStringLiteral::parsePlaceholders(
             return false;
         }
         if (!tokens.nextLine()) {
-            context->reportError("Empty expression in format string", function->getPath(), getLine(), column);
+            context->addError("Empty expression in format string", function->getPath(), getLine(), column);
             return false;
         }
         auto expression = parser::parseExpression(context, expressionFunction, &tokens);
@@ -1509,11 +1686,21 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptCallableBase
         return;
     }
 
+    for (const auto& segment : m_segments) {
+        if (segment.type != FormatTemplateSegmentType::Literal) {
+            IdentifierDefinition definition;
+            context->getCompiler()->getIdentifierDefinition(segment.text, function, definition);
+            if (definition.identifierType == IdentifierType::FunctionVariable) {
+                context->getCompiler()->recordLocalRead(function->getId(), definition.variableId, this);
+            }
+        }
+    }
+
     for (const auto& placeholder : m_expressionPlaceholders) {
         const auto* expressionFunction = context->getRuntime()->getScriptCallable(placeholder.functionId);
         const auto* returnType = expressionFunction->getReturnType();
         if (returnType != nullptr && returnType->isVoid()) {
-            context->reportError("Format string expression must return a value", function->getPath(),
+            context->addError("Format string expression must return a value", function->getPath(),
                 getLine(), placeholder.column);
         }
     }
@@ -1561,18 +1748,14 @@ void FormatStringLiteral::onCompile(Compiler* compiler, ScriptCallableBase* func
     compiler->addMoveResult(getType(), target);
 }
 
-void FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
+InterpreterValue FormatStringLiteral::onEvaluate(InterpreterContext& context) const {
     const auto result = formatDynamicString(m_formatString, context, context.getCallable()->getPath(),
         getLine(), getColumn());
     RuntimeValue value;
+    const RuntimeValueGuard guard(*getType(), &value);
     value.setStringValue(result.text);
-    try {
-        context.setResult(getType(), value);
-    } catch (...) {
-        getType()->freeValue(value);
-        throw;
-    }
-    getType()->freeValue(value);
+
+    return InterpreterValue(getType(), value);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1600,6 +1783,10 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
     }
     if (context->getCompiler()->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
         const auto* owner = context->getCompiler()->getReceiverType(function)->asClassType();
+        if (owner == nullptr) {
+            reportError(context, function, "Struct property access is not yet supported");
+            return;
+        }
         const auto* property = owner->getProperty(m_identifier.substr(5));
         if (property == nullptr) {
             reportError(context, function, "Unknown class field '" + m_identifier.substr(5) + "'");
@@ -1623,7 +1810,15 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
         case IdentifierType::Unknown:
             if (context->getMode() == CompilerMode::Interpreter ||
                 function == nullptr || !parseCapture(compiler, function)) {
-                reportError(context, function, "Unknown identifier: " + m_identifier);
+                context->addDiagnostic({
+                    CompilerDiagnosticSeverity::Error,
+                    "Unknown identifier: " + m_identifier,
+                    function != nullptr ? function->getPath() : NomadString{},
+                    getLine(),
+                    getColumn(),
+                    CompilerDiagnosticCode::UnknownIdentifier,
+                    m_identifier
+                });
                 return;
             }
 
@@ -1700,6 +1895,7 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
     if (m_identifierDefinition.identifierType == IdentifierType::FunctionVariable &&
         context->getMode() == CompilerMode::Script) {
         function->registerVariable(m_identifier, m_identifierDefinition.valueType);
+        compiler->recordLocalRead(function->getId(), m_identifierDefinition.variableId, this);
     }
 
     if (m_identifierDefinition.identifierType == IdentifierType::Parameter &&
@@ -1739,7 +1935,8 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* fun
             break;
 
         case IdentifierType::FunctionVariable:
-            compiler->addLoadFunctionVariable(m_identifierDefinition.variableId, m_identifierDefinition.valueType, target);
+            compiler->addLoadFunctionVariable(
+                function->getVariableOffset(m_identifierDefinition.variableId), m_identifierDefinition.valueType, target);
             break;
 
         case IdentifierType::DynamicVariable:
@@ -1757,7 +1954,8 @@ void IdentifierExpression::onCompile(Compiler* compiler, ScriptCallableBase* fun
             break;
 
         case IdentifierType::Parameter:
-            compiler->addLoadParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType, target);
+            compiler->addLoadParameter(function->getParameterOffset(m_identifierDefinition.parameterId),
+                m_identifierDefinition.valueType, target);
             break;
 
         default:
@@ -1769,12 +1967,38 @@ bool IdentifierExpression::isWritable() const {
     return m_writable;
 }
 
-std::unique_ptr<TypedValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {
+std::optional<StorageLocation> IdentifierExpression::getStorageLocation() const {
+    if (getType() == nullptr ||
+        (m_identifierDefinition.identifierType != IdentifierType::FunctionVariable &&
+         m_identifierDefinition.identifierType != IdentifierType::Parameter &&
+         m_identifierDefinition.identifierType != IdentifierType::Receiver)) {
+        return std::nullopt;
+    }
+    return StorageLocation(m_identifierDefinition);
+}
+
+void IdentifierExpression::onCompileIntoLocal(
+    Compiler* compiler,
+    ScriptCallableBase* function,
+    const VariableId destination
+) {
+    if (!getType()->isStruct()) {
+        Expression::onCompileIntoLocal(compiler, function, destination);
+        return;
+    }
+    const auto storage = getStorageLocation();
+    if (!storage.has_value()) {
+        compiler->reportError("Struct local destinations currently support only local variable or parameter sources");
+    }
+    storage->emitCopyToLocal(*compiler, function, destination);
+}
+
+std::unique_ptr<InterpreterValue> IdentifierExpression::getInitialValue(Compiler* compiler) const {
     if (isParsed()) {
         return Expression::getInitialValue(compiler);
     }
     const auto* value = compiler->getHubInitialValue(m_identifier);
-    return value != nullptr ? std::make_unique<TypedValue>(*value) : nullptr;
+    return value != nullptr ? std::make_unique<InterpreterValue>(*value) : nullptr;
 }
 
 IdentifierExpression* IdentifierExpression::asIdentifierExpression() {
@@ -1785,29 +2009,30 @@ const IdentifierExpression* IdentifierExpression::asIdentifierExpression() const
     return this;
 }
 
-void IdentifierExpression::compileStore(Compiler* compiler) const {
-    const auto* typeOpCodes = m_identifierDefinition.valueType->getTypeOpCodes();
+void IdentifierExpression::compileStore(Compiler* compiler, const ScriptCallableBase* function) const {
+    const auto* type = m_identifierDefinition.valueType;
 
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Parameter:
-        compiler->addStoreParameter(m_identifierDefinition.parameterId, m_identifierDefinition.valueType);
+        compiler->addStoreParameter(function->getParameterOffset(m_identifierDefinition.parameterId),
+            m_identifierDefinition.valueType);
         break;
     case IdentifierType::FunctionVariable:
-        compiler->addFreeValue(typeOpCodes->freeFunctionVariable, toNomadIndex(m_identifierDefinition.variableId.id));
-        compiler->addOpCode(typeOpCodes->setFunctionVariable);
-        compiler->addId(m_identifierDefinition.variableId.id);
+        m_identifierDefinition.valueType->emitFreeFunctionVariable(
+            *compiler,
+            function->getVariableOffset(m_identifierDefinition.variableId)
+        );
+        type->emitStoreFunctionVariable(*compiler, function->getVariableOffset(m_identifierDefinition.variableId));
         break;
 
     case IdentifierType::DynamicVariable:
-        compiler->addOpCode(typeOpCodes->setDynamicVariable);
-        compiler->addId(m_identifierDefinition.dynamicVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        type->emitStoreDynamicVariable(*compiler, m_identifierDefinition.dynamicVariableId.id);
+        m_identifierDefinition.valueType->emitFreeResult(*compiler);
         break;
 
     case IdentifierType::ContextVariable:
-        compiler->addOpCode(typeOpCodes->setContextVariable);
-        compiler->addId(m_identifierDefinition.contextVariableId.id);
-        compiler->addFreeValue(typeOpCodes->freeResult);
+        type->emitStoreContextVariable(*compiler, m_identifierDefinition.contextVariableId.id);
+        m_identifierDefinition.valueType->emitFreeResult(*compiler);
         compiler->getRuntime()->setContextVariableWritten(m_identifierDefinition.contextVariableId, true);
         break;
 
@@ -1842,34 +2067,31 @@ void IdentifierExpression::evaluateStore(InterpreterContext& context, const Runt
     }
 }
 
-void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
+InterpreterValue IdentifierExpression::onEvaluate(InterpreterContext& context) const {
     switch (m_identifierDefinition.identifierType) {
     case IdentifierType::Receiver: {
-        RuntimeValue receiver;
-        receiver.setObjectValue(context.getVirtualMachine()->getThis());
-        context.setResult(getType(), receiver);
-        break;
+        const auto* receiver = context.getReceiver();
+        if (receiver == nullptr) {
+            raiseException("Receiver requires an active callable frame");
+        }
+        return receiver->getValue();
     }
     case IdentifierType::Constant: {
         RuntimeValue value;
         context.getRuntime()->getConstantValue(m_identifierDefinition.constantId, value);
-        context.setResult(getType(), value);
-        break;
+        return InterpreterValue(getType(), value);
     }
     case IdentifierType::Parameter:
-        context.setParameterResult(m_identifierDefinition.parameterId);
-        break;
+        return InterpreterValue(getType(), context.getParameterStorage(m_identifierDefinition.parameterId));
     case IdentifierType::FunctionVariable: {
-        const auto* value = context.getVariableValueById(m_identifierDefinition.variableId);
-        if (value == nullptr) {
+        const auto* actualType = context.getVariableTypeById(m_identifierDefinition.variableId);
+        if (actualType == nullptr) {
             raiseException("Variable '" + m_identifier + "' has not been assigned a value");
         }
-        const auto* actualType = context.getVariableTypeById(m_identifierDefinition.variableId);
         if (actualType != getType()) {
             raiseException("Variable '" + m_identifier + "' changed type after this expression was resolved");
         }
-        context.setResult(actualType, *value);
-        break;
+        return InterpreterValue(actualType, context.getVariableStorageById(m_identifierDefinition.variableId));
     }
 
     case IdentifierType::DynamicVariable: {
@@ -1880,21 +2102,18 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
         }
 
         RuntimeValue value;
+        const RuntimeValueGuard guard(*type, &value);
         runtime->getDynamicVariableValue(
             context.getVirtualMachine(),
             m_identifierDefinition.dynamicVariableId,
             value
         );
-
         // Getters may leave a string untouched when the value is unavailable.
         if (type->isString() && value.getObjectValue() == nullptr) {
             value.initStringValue();
         }
 
-        // `setResult` copies the value, so the temporary is released here.
-        context.setResult(type, value);
-        type->freeValue(value);
-        break;
+        return InterpreterValue(type, value);
     }
 
     case IdentifierType::ContextVariable: {
@@ -1915,14 +2134,13 @@ void IdentifierExpression::onEvaluate(InterpreterContext& context) const {
 
         if (type->isString() && value.getObjectValue() == nullptr) {
             RuntimeValue emptyValue;
+            const RuntimeValueGuard guard(*type, &emptyValue);
             emptyValue.initStringValue();
-            context.setResult(type, emptyValue);
-            emptyValue.freeObjectValue();
-            break;
+
+            return InterpreterValue(type, emptyValue);
         }
 
-        context.setResult(type, value);
-        break;
+        return InterpreterValue(type, value);
     }
 
     default:
@@ -2004,7 +2222,6 @@ bool parseCapture(const NomadString& identifier, const Compiler* compiler, Scrip
     if (captureType == nullptr) {
         return false;
     }
-
     // We've found the capture. Walk back up and ensure the capture is propagated through all intermediate functions.
     for (const auto intermediateFunction : std::ranges::reverse_view(intermediateFunctions)) {
         const auto parentId = intermediateFunction->getParentId();

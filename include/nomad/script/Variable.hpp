@@ -44,6 +44,8 @@ public:
     void setVariableType(VariableId variableId, const Type* type);
     [[nodiscard]] const Type* getVariableType(VariableId variableId) const;
     [[nodiscard]] NomadIndex getVariableCount() const;
+    [[nodiscard]] NomadIndex getVariableOffset(VariableId variableId) const;
+    [[nodiscard]] NomadIndex getStorageSize() const;
 
     [[nodiscard]]
     bool isWritten(VariableId variableId) const;

@@ -12,18 +12,18 @@
 namespace nomad {
 
 void registerRangeType(Runtime* runtime) {
-    const auto id = runtime->registerClass<RangeType>("Range", ClassMode::Closed);
+    const auto id = runtime->getTypeManager().registerClass<RangeType>("Range", ClassMode::Closed);
     if (id.isInvalid()) {
         throw NomadException("Failed to create Range type");
     }
     const auto* rangeType = static_cast<const RangeType*>(runtime->getType(id).value());
     const auto* integerType = runtime->getIntegerType();
-    runtime->addIterable(id, {
+    runtime->getTypeManager().registerNativeClassIterable(id, {
         .valueTypeId = integerType->getId(),
         .factory = {
             .name = "iterator",
             .parameters = {},
-            .returnTypeId = runtime->getIteratorType(integerType)->getId(),
+            .returnTypeId = runtime->getTypeManager().getIteratorType(integerType)->getId(),
             .function = [integerType](VirtualMachine* machine) {
                 machine->getResult().setObjectValue(
                     new RangeIterator(integerType, *machine->getThisAs<RangeObject>())

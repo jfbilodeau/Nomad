@@ -2,9 +2,10 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -205,10 +206,11 @@ BOOST_AUTO_TEST_CASE(dynamic_ids_remain_live_in_scripts_interpreter_and_format_s
     BOOST_TEST(outcome.leakedStrings == 0);
     BOOST_TEST(answer == 43);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("answer = 7", context));
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
+    BOOST_REQUIRE(context.getInterpreter().execute("answer = 7", context));
     BOOST_TEST(answer == 7);
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("$(\"value={answer}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$(\"value={answer}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "value=7");
 }
 

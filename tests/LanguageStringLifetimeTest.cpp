@@ -211,17 +211,18 @@ BOOST_AUTO_TEST_CASE(null_string_converts_to_empty_text)
 {
     LanguageTestFixture fixture;
     RuntimeValue value;
-    fixture.getRuntime().getStringType()->initValue(value);
+    fixture.getRuntime().getStringType()->initValue(&value);
 
-    BOOST_TEST(fixture.getRuntime().getStringType()->toString(value) == "");
+    BOOST_TEST(fixture.getRuntime().getStringType()->toString(&value) == "");
 
-    fixture.getRuntime().getStringType()->freeValue(value);
+    fixture.getRuntime().getStringType()->freeValue(&value);
 }
 
 BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     std::unique_ptr<Closure> closure;
 
     runtime.registerNativeFunction(
@@ -230,7 +231,7 @@ BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
             closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
-            defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
+            defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
         },
         runtime.getVoidType(),
         NomadDoc("Store a callback returning a string")
@@ -242,7 +243,7 @@ BOOST_AUTO_TEST_CASE(discarded_closure_string_result_is_freed)
     BOOST_REQUIRE(closure != nullptr);
 
     const auto before = RuntimeValue::getLiveStringCount();
-    runtime.executeFunction(closure.get(), {});
+    virtualMachine->executeFunction(closure.get(), {});
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
 }
 
@@ -336,6 +337,7 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
+    auto* virtualMachine = &fixture.getVirtualMachine();
     std::unique_ptr<Closure> closure;
     std::vector<NomadString> consumed;
 
@@ -346,7 +348,7 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
             closure = virtualMachine->createClosure(&runtime, CallableId{virtualMachine->getIdParameter(0)});
         },
         {
-            defParameter("callback", runtime.getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
+            defParameter("callback", runtime.getTypeManager().getCallbackType({}, runtime.getStringType()), NomadParamDoc("Callback to store")),
         },
         runtime.getVoidType(),
         NomadDoc("Store a callback returning a string")
@@ -376,9 +378,9 @@ BOOST_AUTO_TEST_CASE(closures_keep_captured_parameters_alive)
 #endif
 
     RuntimeValue result;
-    runtime.executeFunction(closure.get(), {}, result);
+    virtualMachine->executeFunction(closure.get(), {}, result);
     BOOST_TEST(result.getStringValue() == "name");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 
     closure.reset();
 #ifdef NOMAD_DEBUG

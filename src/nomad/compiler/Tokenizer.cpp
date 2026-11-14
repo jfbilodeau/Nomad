@@ -17,6 +17,7 @@
 #include "boost/phoenix.hpp"
 
 #include <sstream>
+#include <stdexcept>
 
 BOOST_FUSION_ADAPT_STRUCT(
     nomad::Token,
@@ -154,12 +155,23 @@ TokenizerException::TokenizerException(const NomadString& message, NomadIndex li
     m_lineIndex(lineIndex),
     m_character(character) {}
 
-Tokenizer::Tokenizer(CompilerContext* context, NomadString sourceName, const NomadString& source) :
+Tokenizer::Tokenizer(
+    CompilerContext* context,
+    NomadString sourceName,
+    const NomadString& source,
+    const NomadIndex firstLine
+):
     m_context(context),
     m_sourceName(std::move(sourceName)),
-    m_source(source) {
+    m_source(source),
+    m_firstLine(firstLine)
+{
     if (m_context == nullptr) {
         throw NomadBug("Tokenizer requires a compiler context");
+    }
+
+    if (m_firstLine == 0 || m_firstLine == NOMAD_INVALID_INDEX) {
+        throw std::invalid_argument("Tokenizer source origin must be a valid one-based line");
     }
 
     std::stringstream stream(source);
@@ -168,6 +180,10 @@ Tokenizer::Tokenizer(CompilerContext* context, NomadString sourceName, const Nom
 
     while (std::getline(stream, line)) {
         m_lines.push_back(line);
+    }
+
+    if (m_lines.size() > NOMAD_INVALID_INDEX - m_firstLine) {
+        throw std::invalid_argument("Tokenizer source line range exceeds the maximum valid index");
     }
 
     tokenizeLines();
@@ -262,7 +278,7 @@ bool Tokenizer::expect(TokenType type) {
 }
 
 NomadIndex Tokenizer::getLineIndex() const {
-    return m_lineIndex;
+    return m_firstLine - 1 + m_lineIndex;
 }
 
 NomadIndex Tokenizer::getColumnIndex() const {
@@ -371,7 +387,7 @@ bool Tokenizer::expectEndOfLine() {
 }
 
 void Tokenizer::reportError(const NomadString& message) const {
-    m_context->reportError(message, this);
+    m_context->addError(message, this);
 }
 
 void Tokenizer::tokenizeLines() {
@@ -420,10 +436,10 @@ void Tokenizer::tokenizeLines() {
 
         if (!success || first != line.cend()) {
             const auto column = static_cast<NomadIndex>(first - line.cbegin()) + 1;
-            m_context->reportError(
+            m_context->addError(
                 "Unrecognized token `" + NomadString(first, line.cend()) + "` in line: `" + line + "`",
                 m_sourceName,
-                lineIndex + 1,
+                m_firstLine + lineIndex,
                 column
             );
             lineTokens.clear();

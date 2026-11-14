@@ -8,13 +8,38 @@
 #include <nomad/collections/ListObject.hpp>
 #include <nomad/collections/MapObject.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
+#include <limits>
+#include <type_traits>
+#include <utility>
+
 using namespace nomad;
+
+static_assert(std::is_same_v<decltype(&Type::initValue), void (Type::*)(RuntimeValue*) const>);
+static_assert(std::is_same_v<decltype(&Type::freeValue), void (Type::*)(RuntimeValue*) const noexcept>);
+static_assert(std::is_same_v<
+    decltype(&Type::copyValue),
+    void (Type::*)(const RuntimeValue*, RuntimeValue*) const
+>);
+static_assert(std::is_same_v<
+    decltype(&Type::assignValue),
+    void (Type::*)(const RuntimeValue*, RuntimeValue*, RuntimeValue*) const
+>);
+static_assert(std::is_same_v<decltype(&Type::getAssignmentScratchSize), NomadIndex (Type::*)() const>);
+static_assert(std::is_nothrow_constructible_v<RuntimeValueGuard, const Type&, RuntimeValue*>);
+static_assert(std::is_nothrow_destructible_v<RuntimeValueGuard>);
+static_assert(!std::is_copy_constructible_v<RuntimeValueGuard>);
+static_assert(!std::is_copy_assignable_v<RuntimeValueGuard>);
+static_assert(!std::is_move_constructible_v<RuntimeValueGuard>);
+static_assert(!std::is_move_assignable_v<RuntimeValueGuard>);
+static_assert(noexcept(std::declval<RuntimeValueGuard&>().release()));
 
 namespace {
 
@@ -42,39 +67,42 @@ public:
     explicit FailingCopyType(Runtime* runtime, TypeId id): ClassType(runtime, id, "FailingCopy", ClassMode::Closed) {}
 
     NomadString getTypeName() const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
+    void freeValue(RuntimeValue* value) const noexcept override;
+
+    mutable NomadIndex freeCalls = 0;
 };
 
 class UnmanagedType final : public ValueType {
 public:
     using ValueType::ValueType;
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     NomadString getTypeName() const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
-    void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override;
-    void freeValue(RuntimeValue& value) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override;
+    void freeValue(RuntimeValue* value) const noexcept override;
 
     mutable NomadIndex freeCalls = 0;
 };
 
-void UnmanagedType::initValue(RuntimeValue& value) const {
-    value = RuntimeValue{};
+void UnmanagedType::initValue(RuntimeValue* value) const {
+    *value = RuntimeValue{};
 }
 
 NomadString UnmanagedType::getTypeName() const {
     return "Unmanaged";
 }
 
-void UnmanagedType::toString(const RuntimeValue&, NomadString& string) const {
+void UnmanagedType::toString(const RuntimeValue*, NomadString& string) const {
     string = getTypeName();
 }
 
-void UnmanagedType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
-    destination = source;
+void UnmanagedType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
+    *destination = *source;
 }
 
-void UnmanagedType::freeValue(RuntimeValue&) const {
+void UnmanagedType::freeValue(RuntimeValue*) const noexcept {
     ++freeCalls;
 }
 
@@ -82,18 +110,524 @@ NomadString FailingCopyType::getTypeName() const {
     return "FailingCopy";
 }
 
-void FailingCopyType::toString(const RuntimeValue&, NomadString& string) const {
+void FailingCopyType::toString(const RuntimeValue*, NomadString& string) const {
     string = getTypeName();
 }
 
-void FailingCopyType::copyValue(const RuntimeValue& source, RuntimeValue& destination) const {
+void FailingCopyType::copyValue(const RuntimeValue* source, RuntimeValue* destination) const {
     ClassType::copyValue(source, destination);
+    freeValue(destination);
     throw NomadException("Copy failed");
 }
+
+void FailingCopyType::freeValue(RuntimeValue* value) const noexcept {
+    ++freeCalls;
+    ClassType::freeValue(value);
+}
+
+class AssignmentStorageType final : public ValueType {
+public:
+    AssignmentStorageType(Runtime* runtime, const NomadIndex size):
+        ValueType(runtime, TypeId::INVALID),
+        m_size(size),
+        m_slotType(runtime, TypeId::INVALID, "AssignmentElement", ClassMode::Closed)
+    {}
+
+    [[nodiscard]] NomadString getTypeName() const override {
+        return "AssignmentStorage";
+    }
+
+    [[nodiscard]] NomadIndex getSize() const override {
+        return m_size;
+    }
+
+    [[nodiscard]] bool needsFree() const override {
+        return m_size != 0;
+    }
+
+    [[nodiscard]] NomadIndex getInitializationCount() const {
+        return m_initializationCount;
+    }
+
+    void initValue(RuntimeValue* values) const override {
+        ++m_initializationCount;
+        for (auto index = NomadIndex{0}; index < m_size; ++index) {
+            m_slotType.initValue(values + index);
+        }
+    }
+
+    void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
+        for (auto index = NomadIndex{0}; index < m_size; ++index) {
+            m_slotType.copyValue(source + index, destination + index);
+            if (index + 1 == failCopyAfterSlot) {
+                freeValue(destination);
+                throw NomadException("Slot copy failed");
+            }
+        }
+    }
+
+    void freeValue(RuntimeValue* values) const noexcept override {
+        for (auto index = NomadIndex{0}; index < m_size; ++index) {
+            m_slotType.freeValue(values + index);
+        }
+    }
+
+    void toString(const RuntimeValue*, NomadString& string) const override {
+        string = getTypeName();
+    }
+
+    NomadIndex failCopyAfterSlot = 0;
+
+private:
+    const NomadIndex m_size;
+    ClassType m_slotType;
+    mutable NomadIndex m_initializationCount = 0;
+};
 
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(NomadObjectTests)
+
+BOOST_AUTO_TEST_CASE(RuntimeValueGuardAdoptsWithoutCopyingOrRetaining) {
+    Runtime runtime;
+    FailingCopyType type(&runtime, TypeId::INVALID);
+    auto destroyed = NomadIndex{0};
+    RuntimeValue value;
+    value.setObjectValue(new CountingObject(destroyed));
+    const auto* original = value.getObjectValue();
+    {
+        const RuntimeValueGuard guard(type, &value);
+        BOOST_TEST(value.getObjectValue() == original);
+        BOOST_TEST(original->getReferenceCount() == 1U);
+        BOOST_TEST(type.freeCalls == 0U);
+    }
+
+    BOOST_TEST(value.getObjectValue() == nullptr);
+    BOOST_TEST(type.freeCalls == 1U);
+    BOOST_TEST(destroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(RuntimeValueGuardCleansPopulatedOutputsOnReturnAndException) {
+    Runtime runtime;
+    FailingCopyType type(&runtime, TypeId::INVALID);
+    auto destroyed = NomadIndex{0};
+    const auto populate = [&](const bool fail) {
+        RuntimeValue value;
+        const RuntimeValueGuard guard(type, &value);
+        value.setObjectValue(new CountingObject(destroyed));
+        if (fail) {
+            throw NomadException("Guarded output failed");
+        }
+
+        return NomadInteger{17};
+    };
+
+    BOOST_TEST(populate(false) == 17);
+    BOOST_TEST(type.freeCalls == 1U);
+    BOOST_TEST(destroyed == 1U);
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(populate(true)),
+        NomadException,
+        [](const NomadException& exception) {
+
+            return NomadString{exception.what()} == "Guarded output failed";
+        }
+    );
+    BOOST_TEST(type.freeCalls == 2U);
+    BOOST_TEST(destroyed == 2U);
+}
+
+BOOST_AUTO_TEST_CASE(RuntimeValueGuardReleaseTransfersCleanupWithoutChangingSlots) {
+    Runtime runtime;
+    FailingCopyType type(&runtime, TypeId::INVALID);
+    auto destroyed = NomadIndex{0};
+    RuntimeValue source;
+    RuntimeValue destination;
+    source.setObjectValue(new CountingObject(destroyed));
+    {
+        RuntimeValueGuard guard(type, &source);
+        destination = source;
+        guard.release();
+        guard.release();
+        BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
+        BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
+    }
+
+    BOOST_TEST(type.freeCalls == 0U);
+    BOOST_TEST(destroyed == 0U);
+    source = RuntimeValue{};
+    {
+        const RuntimeValueGuard guard(type, &destination);
+    }
+
+    BOOST_TEST(destination.getObjectValue() == nullptr);
+    BOOST_TEST(type.freeCalls == 1U);
+    BOOST_TEST(destroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(RuntimeValueGuardLeavesBorrowedReferencesAndSourcesUntouched) {
+    Runtime runtime;
+    ClassType type(&runtime, TypeId::INVALID, "GuardSource", ClassMode::Closed);
+    auto destroyed = NomadIndex{0};
+    RuntimeValue source;
+    source.setObjectValue(new CountingObject(destroyed));
+    const RuntimeValueGuard sourceGuard(type, &source);
+    const auto borrowed = source;
+    {
+        RuntimeValue copy;
+        const RuntimeValueGuard copyGuard(type, &copy);
+        type.copyValue(&source, &copy);
+        BOOST_TEST(borrowed.getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    }
+
+    BOOST_TEST(borrowed.getObjectValue() == source.getObjectValue());
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(destroyed == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(RuntimeValueGuardCleansFullWidthStorageWithoutReleasingItsNeighbors) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto innerId = manager.registerStruct("GuardInner");
+    const auto outerId = manager.registerStruct("GuardOuter");
+    const auto* inner = runtime.getTypeByName("GuardInner");
+    const auto* outer = runtime.getTypeByName("GuardOuter");
+    BOOST_REQUIRE(manager.registerScriptStructProperty(innerId, "number", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(innerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(outerId, "text", runtime.getStringType()).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(outerId, "inner", inner).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(outerId, "number", runtime.getIntegerType()).isValid());
+    manager.finalizeCompositeFieldLayout(outerId);
+    BOOST_REQUIRE(outer->getSize() == 4U);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    std::array<RuntimeValue, 6> storage{};
+    storage.front().setIntegerValue(37);
+    storage.back().setIntegerValue(41);
+    {
+        const RuntimeValueGuard guard(*outer, storage.data() + 1);
+        storage[1].setStringValue("outer");
+        storage[2].setIntegerValue(17);
+        storage[3].setStringValue("inner");
+        storage[4].setIntegerValue(19);
+        BOOST_TEST(storage[1].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(storage[3].getObjectValue()->getReferenceCount() == 1U);
+    }
+
+    BOOST_TEST(storage[1].getObjectValue() == nullptr);
+    BOOST_TEST(storage[2].getIntegerValue() == 17);
+    BOOST_TEST(storage[3].getObjectValue() == nullptr);
+    BOOST_TEST(storage[4].getIntegerValue() == 19);
+    BOOST_TEST(storage.front().getIntegerValue() == 37);
+    BOOST_TEST(storage.back().getIntegerValue() == 41);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(RuntimeValueGuardAcceptsClearedAndZeroSlotStorage) {
+    Runtime runtime;
+    FailingCopyType type(&runtime, TypeId::INVALID);
+    RuntimeValue cleared;
+    {
+        const RuntimeValueGuard guard(type, &cleared);
+    }
+
+    BOOST_TEST(cleared.getObjectValue() == nullptr);
+    BOOST_TEST(type.freeCalls == 1U);
+    const auto emptyId = runtime.getTypeManager().registerStruct("GuardEmpty");
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    const auto* empty = runtime.getTypeByName("GuardEmpty");
+    RuntimeValue neighbor{NomadInteger{37}};
+    {
+        const RuntimeValueGuard emptyGuard(*empty, nullptr);
+        const RuntimeValueGuard voidGuard(*runtime.getVoidType(), nullptr);
+        const RuntimeValueGuard neighborGuard(*runtime.getVoidType(), &neighbor);
+    }
+
+    BOOST_TEST(neighbor.getIntegerValue() == 37);
+}
+
+BOOST_AUTO_TEST_CASE(AssignmentScratchSizeReflectsExternalStorageRequirements) {
+    Runtime runtime;
+    BOOST_TEST(runtime.getVoidType()->getAssignmentScratchSize() == 0U);
+    BOOST_TEST(runtime.getIntegerType()->getAssignmentScratchSize() == 0U);
+    BOOST_TEST(runtime.getStringType()->getAssignmentScratchSize() == 0U);
+    for (const auto size : {NomadIndex{0}, NomadIndex{1}, NomadIndex{3},
+        std::numeric_limits<NomadIndex>::max()}) {
+        AssignmentStorageType type(&runtime, size);
+        BOOST_TEST(type.getAssignmentScratchSize() == (size > 1 ? size : 0));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(SingleSlotAssignmentUsesOptionalScratchAndPreservesNeighboringStorage) {
+    Runtime runtime;
+    const auto* type = runtime.getIntegerType();
+    const RuntimeValue source{NomadInteger{17}};
+    RuntimeValue destination{NomadInteger{99}};
+    type->assignValue(&source, &destination);
+    BOOST_TEST(destination.getIntegerValue() == 17);
+    type->assignValue(&destination, &destination);
+    BOOST_TEST(destination.getIntegerValue() == 17);
+    std::array<RuntimeValue, 3> scratch{};
+    scratch.front().setIntegerValue(37);
+    scratch.back().setIntegerValue(41);
+    type->assignValue(&source, &destination, &scratch[1]);
+    BOOST_TEST(destination.getIntegerValue() == 17);
+    BOOST_TEST(source.getIntegerValue() == 17);
+    BOOST_TEST(scratch[1].getIntegerValue() == 0);
+    BOOST_TEST(scratch.front().getIntegerValue() == 37);
+    BOOST_TEST(scratch.back().getIntegerValue() == 41);
+}
+
+BOOST_AUTO_TEST_CASE(ZeroSlotAssignmentRequiresNoStorageAndHasNoInitializationSideEffects) {
+    Runtime runtime;
+    const auto* type = runtime.getVoidType();
+    type->assignValue(nullptr, nullptr);
+    RuntimeValue source{NomadInteger{17}};
+    RuntimeValue destination{NomadInteger{19}};
+    RuntimeValue scratch{NomadInteger{23}};
+    type->assignValue(&source, &destination, &scratch);
+    BOOST_TEST(source.getIntegerValue() == 17);
+    BOOST_TEST(destination.getIntegerValue() == 19);
+    BOOST_TEST(scratch.getIntegerValue() == 23);
+    AssignmentStorageType empty(&runtime, 0);
+    empty.assignValue(nullptr, nullptr);
+    BOOST_TEST(empty.getInitializationCount() == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(ClassAssignmentUsesLocalOrSuppliedScratchWithoutChangingReferenceSemantics) {
+    Runtime runtime;
+    ClassType type(&runtime, TypeId::INVALID, "Element", ClassMode::Closed);
+    NomadIndex sourceDestroyed = 0;
+    NomadIndex destinationDestroyed = 0;
+    RuntimeValue source;
+    RuntimeValue destination;
+    RuntimeValue scratch;
+    source.setObjectValue(new CountingObject(sourceDestroyed));
+    destination.setObjectValue(new CountingObject(destinationDestroyed));
+    type.assignValue(&source, &destination);
+    BOOST_TEST(destinationDestroyed == 1U);
+    BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.assignValue(&source, &destination, &scratch);
+    BOOST_TEST(scratch.getObjectValue() == nullptr);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.assignValue(&destination, &destination);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    type.freeValue(&source);
+    type.freeValue(&destination);
+    BOOST_TEST(sourceDestroyed == 1U);
+    BOOST_TEST(destinationDestroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(MultiSlotAssignmentRejectsMissingScratchBeforeMutatingValues) {
+    Runtime runtime;
+    AssignmentStorageType type(&runtime, 3);
+    std::array<RuntimeValue, 3> source{};
+    std::array<RuntimeValue, 3> destination{};
+    destination[1].setIntegerValue(37);
+    BOOST_CHECK_EXCEPTION(type.assignValue(source.data(), destination.data()), NomadException,
+        [](const NomadException& error) {
+            const auto message = NomadString{error.what()};
+            return message.find("AssignmentStorage") != NomadString::npos &&
+                message.find("3 scratch slots") != NomadString::npos;
+        });
+    BOOST_TEST(destination[1].getIntegerValue() == 37);
+    BOOST_TEST(type.getInitializationCount() == 0U);
+}
+
+BOOST_AUTO_TEST_CASE(MultiSlotAssignmentCleansPartialCopiesAndReusesScratchAfterFailure) {
+    Runtime runtime;
+    for (auto failureSlot = NomadIndex{1}; failureSlot <= 3; ++failureSlot) {
+        AssignmentStorageType type(&runtime, 3);
+        std::array<NomadIndex, 6> destroyed{};
+        std::array<RuntimeValue, 3> source{};
+        std::array<RuntimeValue, 3> destination{};
+        std::array<RuntimeValue, 5> scratch{};
+        scratch.front().setIntegerValue(37);
+        scratch.back().setIntegerValue(41);
+        for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+            source[index].setObjectValue(new CountingObject(destroyed[index]));
+            destination[index].setObjectValue(new CountingObject(destroyed[index + 3]));
+        }
+        const auto originalDestination = destination;
+        type.failCopyAfterSlot = failureSlot;
+        BOOST_CHECK_THROW(type.assignValue(source.data(), destination.data(), &scratch[1]), NomadException);
+        for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+            BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(destination[index].getObjectValue() == originalDestination[index].getObjectValue());
+            BOOST_TEST(destination[index].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(scratch[index + 1].getObjectValue() == nullptr);
+            BOOST_TEST(destroyed[index] == 0U);
+            BOOST_TEST(destroyed[index + 3] == 0U);
+        }
+        type.failCopyAfterSlot = 0;
+        type.assignValue(source.data(), destination.data(), &scratch[1]);
+        for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+            BOOST_TEST(destination[index].getObjectValue() == source[index].getObjectValue());
+            BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(destroyed[index + 3] == 1U);
+            BOOST_TEST(scratch[index + 1].getObjectValue() == nullptr);
+        }
+        BOOST_TEST(scratch.front().getIntegerValue() == 37);
+        BOOST_TEST(scratch.back().getIntegerValue() == 41);
+        BOOST_TEST(type.getInitializationCount() == 0U);
+        type.freeValue(source.data());
+        type.freeValue(destination.data());
+        for (const auto count : destroyed) {
+            BOOST_TEST(count == 1U);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(MultiSlotAssignmentSupportsForwardBackwardOverlapAndSelfAssignment) {
+    Runtime runtime;
+    for (const auto sourceOffset : {NomadIndex{0}, NomadIndex{1}}) {
+        AssignmentStorageType type(&runtime, 3);
+        std::array<NomadIndex, 4> destroyed{};
+        std::array<RuntimeValue, 4> values{};
+        std::array<RuntimeValue, 3> scratch{};
+        for (auto index = NomadIndex{0}; index < values.size(); ++index) {
+            values[index].setObjectValue(new CountingObject(destroyed[index]));
+        }
+        const auto original = values;
+        const auto destinationOffset = 1 - sourceOffset;
+        type.assignValue(values.data() + sourceOffset, values.data() + destinationOffset, scratch.data());
+        for (auto index = NomadIndex{0}; index < scratch.size(); ++index) {
+            BOOST_TEST(values[destinationOffset + index].getObjectValue() == original[sourceOffset + index].getObjectValue());
+            BOOST_TEST(scratch[index].getObjectValue() == nullptr);
+        }
+        const auto assigned = values;
+        type.assignValue(values.data() + destinationOffset, values.data() + destinationOffset, scratch.data());
+        for (auto index = NomadIndex{0}; index < scratch.size(); ++index) {
+            BOOST_TEST(values[destinationOffset + index].getObjectValue() == assigned[destinationOffset + index].getObjectValue());
+            BOOST_TEST(scratch[index].getObjectValue() == nullptr);
+        }
+        for (auto& value : values) {
+            value.freeObjectValue();
+        }
+        for (const auto count : destroyed) {
+            BOOST_TEST(count == 1U);
+        }
+        BOOST_TEST(type.getInitializationCount() == 0U);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(SingleSlotCopyFailurePreservesOwnedDestinationWithoutRepeatedCleanup) {
+    Runtime runtime;
+    FailingCopyType type(&runtime, TypeId::INVALID);
+    NomadIndex sourceDestroyed = 0;
+    NomadIndex destinationDestroyed = 0;
+    RuntimeValue source;
+    RuntimeValue destination;
+    source.setObjectValue(new CountingObject(sourceDestroyed));
+    destination.setObjectValue(new CountingObject(destinationDestroyed));
+    const auto* originalDestination = destination.getObjectValue();
+    BOOST_TEST(type.getAssignmentScratchSize() == 0U);
+    BOOST_CHECK_THROW(type.assignValue(&source, &destination), NomadException);
+    BOOST_TEST(type.freeCalls == 1U);
+    RuntimeValue scratch;
+    BOOST_CHECK_THROW(type.assignValue(&source, &destination, &scratch), NomadException);
+    BOOST_TEST(type.freeCalls == 2U);
+    BOOST_TEST(scratch.getObjectValue() == nullptr);
+    BOOST_TEST(destination.getObjectValue() == originalDestination);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(sourceDestroyed == 0U);
+    BOOST_TEST(destinationDestroyed == 0U);
+    type.freeValue(&source);
+    type.freeValue(&destination);
+    BOOST_TEST(sourceDestroyed == 1U);
+    BOOST_TEST(destinationDestroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(NonthrowingDestinationReleaseTransfersThePreparedCopy) {
+    Runtime runtime;
+    AssignmentStorageType type(&runtime, 3);
+    std::array<NomadIndex, 6> destroyed{};
+    std::array<RuntimeValue, 3> source{};
+    std::array<RuntimeValue, 3> destination{};
+    std::array<RuntimeValue, 3> scratch{};
+    for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+        source[index].setObjectValue(new CountingObject(destroyed[index]));
+        destination[index].setObjectValue(new CountingObject(destroyed[index + 3]));
+    }
+    type.assignValue(source.data(), destination.data(), scratch.data());
+    for (auto index = NomadIndex{0}; index < source.size(); ++index) {
+        BOOST_TEST(source[index].getObjectValue()->getReferenceCount() == 2U);
+        BOOST_TEST(destination[index].getObjectValue() == source[index].getObjectValue());
+        BOOST_TEST(scratch[index].getObjectValue() == nullptr);
+        BOOST_TEST(destroyed[index] == 0U);
+        BOOST_TEST(destroyed[index + 3] == 1U);
+    }
+    type.freeValue(source.data());
+    type.freeValue(destination.data());
+    for (const auto count : destroyed) {
+        BOOST_TEST(count == 1U);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(PointerLifecycleTouchesOnlyTheSelectedScalarSlot) {
+    Runtime runtime;
+    const Type* type = runtime.getIntegerType();
+    std::array<RuntimeValue, 3> values{};
+    values.front().setIntegerValue(41);
+    values.back().setIntegerValue(43);
+    type->initValue(&values[1]);
+    BOOST_TEST(values[1].getIntegerValue() == 0);
+    const RuntimeValue source{NomadInteger{17}};
+    type->copyValue(&source, &values[1]);
+    BOOST_TEST(values[1].getIntegerValue() == 17);
+    type->copyValue(&values[1], &values[1]);
+    type->freeValue(&values[1]);
+    BOOST_TEST(values[1].getIntegerValue() == 17);
+    BOOST_TEST(values.front().getIntegerValue() == 41);
+    BOOST_TEST(values.back().getIntegerValue() == 43);
+    BOOST_TEST(source.getIntegerValue() == 17);
+}
+
+BOOST_AUTO_TEST_CASE(PointerCopyReplacesOwnedReferencesAndPreservesSelfCopy) {
+    Runtime runtime;
+    ClassType type(&runtime, TypeId::INVALID, "Element", ClassMode::Closed);
+    NomadIndex sourceDestroyed = 0;
+    NomadIndex destinationDestroyed = 0;
+    RuntimeValue source;
+    RuntimeValue destination;
+    source.setObjectValue(new CountingObject(sourceDestroyed));
+    destination.setObjectValue(new CountingObject(destinationDestroyed));
+    const Type* descriptor = &type;
+    descriptor->copyValue(&source, &destination);
+    BOOST_TEST(destinationDestroyed == 1U);
+    BOOST_TEST(sourceDestroyed == 0U);
+    BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    descriptor->copyValue(&destination, &destination);
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
+    descriptor->freeValue(&source);
+    BOOST_TEST(source.getObjectValue() == nullptr);
+    BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
+    descriptor->freeValue(&destination);
+    BOOST_TEST(destination.getObjectValue() == nullptr);
+    BOOST_TEST(sourceDestroyed == 1U);
+    BOOST_TEST(destinationDestroyed == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(VoidLifecycleRequiresNoStorageAndTouchesNoSlots) {
+    Runtime runtime;
+    const Type* type = runtime.getVoidType();
+    BOOST_TEST(type->getSize() == 0U);
+    type->initValue(nullptr);
+    type->copyValue(nullptr, nullptr);
+    type->freeValue(nullptr);
+    const RuntimeValue source{NomadInteger{11}};
+    RuntimeValue destination{NomadInteger{22}};
+    type->initValue(&destination);
+    type->copyValue(&source, &destination);
+    type->freeValue(&destination);
+    BOOST_TEST(source.getIntegerValue() == 11);
+    BOOST_TEST(destination.getIntegerValue() == 22);
+}
 
 BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) {
     Runtime runtime;
@@ -106,7 +640,7 @@ BOOST_AUTO_TEST_CASE(KeyValueRetainsBothReferencesAndReleasesThemOnDestruction) 
         BOOST_TEST(pair.getKey().getObjectValue() == value.getObjectValue());
         BOOST_TEST(pair.getValue().getObjectValue() == value.getObjectValue());
         BOOST_TEST(value.getObjectValue()->getReferenceCount() == 3u);
-        type.freeValue(value);
+        type.freeValue(&value);
         BOOST_TEST(pair.getKey().getObjectValue()->getReferenceCount() == 2u);
         BOOST_TEST(destroyed == 0u);
     }
@@ -123,13 +657,15 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartialCopiesWhenEitherArgumentFails) {
     key.setObjectValue(new CountingObject(destroyed));
     value.setObjectValue(new CountingObject(destroyed));
     BOOST_CHECK_THROW(KeyValueObject(&failingType, &type, key, value), NomadException);
+    BOOST_TEST(failingType.freeCalls == 1U);
     BOOST_TEST(key.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
     BOOST_CHECK_THROW(KeyValueObject(&type, &failingType, key, value), NomadException);
+    BOOST_TEST(failingType.freeCalls == 2U);
     BOOST_TEST(key.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
-    type.freeValue(key);
-    type.freeValue(value);
+    type.freeValue(&key);
+    type.freeValue(&value);
     BOOST_TEST(destroyed == 2u);
 }
 
@@ -141,9 +677,10 @@ BOOST_AUTO_TEST_CASE(KeyValueReleasesPartiallyInitializedDefaults) {
             ClassType(runtime, id, "Initializing", ClassMode::Closed),
             m_destroyed(destroyed)
         {}
-        void initValue(RuntimeValue& value) const override {
-            value.setObjectValue(new CountingObject(m_destroyed));
+        void initValue(RuntimeValue* value) const override {
+            value->setObjectValue(new CountingObject(m_destroyed));
             if (failInitialization) {
+                freeValue(value);
                 throw NomadException("Initialization failed");
             }
         }
@@ -172,13 +709,13 @@ BOOST_AUTO_TEST_CASE(KeyValueDefaultsAndUnmanagedValuesNeedNoCleanup) {
     KeyValueType pairType(&runtime, TypeId::INVALID, "KeyValue<Unmanaged Unmanaged>", ClassMode::Closed, &type, &type);
     RuntimeValue first;
     RuntimeValue second;
-    pairType.initValue(first);
-    pairType.initValue(second);
+    pairType.initValue(&first);
+    pairType.initValue(&second);
     BOOST_TEST(first.getObjectValue() != second.getObjectValue());
     BOOST_TEST(first.asObject<KeyValueObject>()->getKey().getIntegerValue() == 0);
     BOOST_TEST(first.asObject<KeyValueObject>()->getValue().getIntegerValue() == 0);
-    pairType.freeValue(first);
-    pairType.freeValue(second);
+    pairType.freeValue(&first);
+    pairType.freeValue(&second);
     BOOST_TEST(type.freeCalls == 0u);
 }
 
@@ -275,7 +812,7 @@ BOOST_AUTO_TEST_CASE(ListReleasesPartialCopyWhenAppendFails) {
     BOOST_TEST(list->getCount() == 0u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 1u);
     list->releaseRef();
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     BOOST_TEST(destroyed == 1u);
 }
 
@@ -293,7 +830,7 @@ BOOST_AUTO_TEST_CASE(ListRetainsAndReleasesStoredObjects) {
     }
     BOOST_TEST(list->getCount() == 100u);
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 101u);
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     BOOST_TEST(destroyed == 0u);
     list->releaseRef();
     BOOST_TEST(destroyed == 1u);
@@ -330,7 +867,7 @@ BOOST_AUTO_TEST_CASE(ListInsertionCopiesAliasedValuesBeforeReallocation) {
     BOOST_TEST(!list.removeFirst());
     BOOST_TEST(!list.removeLast());
     list.append(value);
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     BOOST_TEST(destroyed == 0u);
     BOOST_TEST(list.removeFirst());
     BOOST_TEST(destroyed == 1u);
@@ -343,10 +880,11 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
         explicit ConditionalCopyType(Runtime* runtime, TypeId id): ClassType(runtime, id, "ConditionalCopy", ClassMode::Closed) {}
 
         NomadString getTypeName() const override { return "ConditionalCopy"; }
-        void toString(const RuntimeValue&, NomadString& string) const override { string = getTypeName(); }
-        void copyValue(const RuntimeValue& source, RuntimeValue& destination) const override {
+        void toString(const RuntimeValue*, NomadString& string) const override { string = getTypeName(); }
+        void copyValue(const RuntimeValue* source, RuntimeValue* destination) const override {
             ClassType::copyValue(source, destination);
             if (failCopy) {
+                freeValue(destination);
                 throw NomadException("Copy failed");
             }
         }
@@ -364,7 +902,7 @@ BOOST_AUTO_TEST_CASE(ListFailedInsertionPreservesExistingElements) {
     BOOST_TEST(list.getCount() == 1u);
     BOOST_TEST(list.getValue(0).getObjectValue() == value.getObjectValue());
     BOOST_TEST(value.getObjectValue()->getReferenceCount() == 2u);
-    elementType.freeValue(value);
+    elementType.freeValue(&value);
     list.clear();
     BOOST_TEST(destroyed == 1u);
 }
@@ -373,9 +911,9 @@ BOOST_AUTO_TEST_CASE(ObjectDescriptorsInitializeNullReferences) {
     Runtime runtime;
     ClassType type(&runtime, TypeId::INVALID, "Example", ClassMode::Closed);
     RuntimeValue value;
-    type.initValue(value);
+    type.initValue(&value);
     BOOST_TEST(value.getObjectValue() == nullptr);
-    type.freeValue(value);
+    type.freeValue(&value);
 }
 
 BOOST_AUTO_TEST_CASE(ClassTypeSharesAndReleasesReferences) {
@@ -386,16 +924,16 @@ BOOST_AUTO_TEST_CASE(ClassTypeSharesAndReleasesReferences) {
     RuntimeValue source;
     source.setObjectValue(new ListObject(&elementType));
     RuntimeValue destination;
-    type.initValue(destination);
-    type.copyValue(source, destination);
+    type.initValue(&destination);
+    type.copyValue(&source, &destination);
     BOOST_TEST(source.getObjectValue() == destination.getObjectValue());
     BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
-    type.copyValue(source, source);
+    type.copyValue(&source, &source);
     BOOST_TEST(source.getObjectValue()->getReferenceCount() == 2U);
-    type.freeValue(source);
+    type.freeValue(&source);
     BOOST_TEST(destination.getObjectValue()->getReferenceCount() == 1U);
     BOOST_TEST(type.needsFree());
-    type.freeValue(destination);
+    type.freeValue(&destination);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
 

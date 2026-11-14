@@ -6,11 +6,15 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] Code: distinguish between property and variable
+[ ] Line continuation. Use operator? (`myMethod.nextMethod` -> `myMethod\n.nextMethod`)
+[ ] Use `Task<T>` for captures?
+[ ] `struct` (Embedded types, pass by copy)
+[ ] Support for Nomad unit testing
 [ ] Improve animations declaration (avoid duplicate files...)
 [ ] Add private hub/class members
 [ ] Finish converting `NomadId` to strong types.
 [ ] Script fault handling
-[ ] `struct` (Embedded types, pass by copy)
 [ ] Object serialization
 [ ] File IO module.
 [ ] Replace ref counting with garbage collector.
@@ -30,6 +34,7 @@ Things the author wants to do.
 [ ] Auto publish Nomad plugin to VS Code extensions
 [ ] Compile to binary
 [ ] LLVM
+[ ] Compiler inline functions
 [ ] Gen game docs for modding
 [ ] Implicit constructor name:
 ```nomad

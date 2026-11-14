@@ -4,7 +4,9 @@
 
 #include <nomad/game/EntityVariableContext.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/Variable.hpp>
@@ -14,6 +16,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <array>
+#include <limits>
 #include <type_traits>
 
 using namespace nomad;
@@ -28,6 +31,7 @@ static_assert(!std::is_convertible_v<VariableId, NomadId>);
 static_assert(!std::is_convertible_v<ContextVariableId, VariableId>);
 static_assert(!std::is_convertible_v<VariableContextId, VariableId>);
 static_assert(!std::is_invocable_v<decltype(&VariableMap::getVariableType), VariableMap&, NomadId>);
+static_assert(!std::is_invocable_v<decltype(&VariableMap::getVariableOffset), const VariableMap&, NomadId>);
 static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadFunctionVariable),
     Compiler&, ContextVariableId, const Type*, ExpressionTarget>);
 static_assert(!std::is_invocable_v<decltype(&ScriptFunction::flagVariableAsCaptured),
@@ -35,7 +39,131 @@ static_assert(!std::is_invocable_v<decltype(&ScriptFunction::flagVariableAsCaptu
 static_assert(!std::is_invocable_v<decltype(&ScriptFunction::flagParameterAsCaptured),
     ScriptFunction&, VariableId, const NomadString&, const Type*>);
 
+namespace {
+
+class VariableLayoutTestType final : public ClassType {
+public:
+    VariableLayoutTestType(Runtime* runtime, const NomadIndex size):
+        ClassType(runtime, TypeId::INVALID, "VariableLayoutTest", ClassMode::Closed),
+        m_size(size)
+    {}
+
+    [[nodiscard]] NomadIndex getSize() const override {
+        return m_size;
+    }
+
+private:
+    const NomadIndex m_size;
+};
+
+} // namespace
+
 BOOST_AUTO_TEST_SUITE(language_variable_ids)
+
+BOOST_AUTO_TEST_CASE(variable_layout_separates_logical_ids_from_physical_slots)
+{
+    Runtime runtime;
+    const VariableLayoutTestType emptyType(&runtime, 0);
+    const VariableLayoutTestType pointType(&runtime, 3);
+    const VariableLayoutTestType pairType(&runtime, 2);
+    VariableMap variables;
+    BOOST_TEST(variables.getStorageSize() == 0U);
+
+    const auto first = variables.registerVariable("first", &emptyType);
+    const auto point = variables.registerVariable("point", &pointType);
+    const auto text = variables.registerVariable("text", runtime.getStringType());
+    const auto lastEmpty = variables.registerVariable("lastEmpty", &emptyType);
+    const auto pair = variables.registerVariable("pair", &pairType);
+
+    BOOST_TEST(variables.getVariableCount() == 5U);
+    BOOST_TEST(first == VariableId{0});
+    BOOST_TEST(point == VariableId{1});
+    BOOST_TEST(text == VariableId{2});
+    BOOST_TEST(lastEmpty == VariableId{3});
+    BOOST_TEST(pair == VariableId{4});
+    BOOST_TEST(variables.getVariableOffset(first) == 0U);
+    BOOST_TEST(variables.getVariableOffset(point) == 0U);
+    BOOST_TEST(variables.getVariableOffset(text) == 3U);
+    BOOST_TEST(variables.getVariableOffset(lastEmpty) == 4U);
+    BOOST_TEST(variables.getVariableOffset(pair) == 4U);
+    BOOST_TEST(variables.getStorageSize() == 6U);
+}
+
+BOOST_AUTO_TEST_CASE(variable_layout_queries_reflect_current_type_metadata)
+{
+    Runtime runtime;
+    const VariableLayoutTestType emptyType(&runtime, 0);
+    const VariableLayoutTestType pointType(&runtime, 3);
+    VariableMap variables;
+    const auto inferred = variables.registerVariable("inferred", nullptr);
+    const auto following = variables.registerVariable("following", runtime.getIntegerType());
+
+    BOOST_TEST(variables.getVariableOffset(inferred) == 0U);
+    BOOST_CHECK_THROW((void)variables.getVariableOffset(following), NomadException);
+    BOOST_CHECK_THROW((void)variables.getStorageSize(), NomadException);
+
+    BOOST_TEST(variables.registerVariable("inferred", &pointType) == inferred);
+    BOOST_TEST(variables.getVariableOffset(following) == 3U);
+    BOOST_TEST(variables.getStorageSize() == 4U);
+
+    variables.setVariableType(inferred, &emptyType);
+    BOOST_TEST(variables.getVariableOffset(following) == 0U);
+    BOOST_TEST(variables.getStorageSize() == 1U);
+    const auto appended = variables.registerVariable("appended", &pointType);
+    BOOST_TEST(variables.getVariableOffset(appended) == 1U);
+    BOOST_TEST(variables.getStorageSize() == 4U);
+    BOOST_TEST(variables.getVariableCount() == 3U);
+    BOOST_TEST(variables.getVariableId("inferred") == inferred);
+    BOOST_TEST(variables.getVariableId("following") == following);
+}
+
+BOOST_AUTO_TEST_CASE(variable_layout_reports_deferred_sizes_until_the_type_is_resolved)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    VariableMap variables;
+    const auto deferred = variables.registerVariable("deferred", compiler->deferType({"Point"}));
+    const auto following = variables.registerVariable("following", runtime.getIntegerType());
+
+    BOOST_CHECK_THROW((void)variables.getVariableOffset(following), NomadException);
+    BOOST_CHECK_THROW((void)variables.getStorageSize(), NomadException);
+    variables.setVariableType(deferred, runtime.getFloatType());
+    BOOST_TEST(variables.getVariableOffset(following) == 1U);
+    BOOST_TEST(variables.getStorageSize() == 2U);
+}
+
+BOOST_AUTO_TEST_CASE(variable_layout_checks_overflow_without_rejecting_representable_sizes)
+{
+    Runtime runtime;
+    const auto maximumSize = std::numeric_limits<NomadIndex>::max();
+    const VariableLayoutTestType maximumType(&runtime, maximumSize);
+    const VariableLayoutTestType emptyType(&runtime, 0);
+    VariableMap variables;
+    const auto maximum = variables.registerVariable("maximum", &maximumType);
+    const auto empty = variables.registerVariable("empty", &emptyType);
+
+    BOOST_TEST(variables.getVariableOffset(maximum) == 0U);
+    BOOST_TEST(variables.getVariableOffset(empty) == maximumSize);
+    BOOST_TEST(variables.getStorageSize() == maximumSize);
+
+    const auto overflow = variables.registerVariable("overflow", runtime.getIntegerType());
+    BOOST_TEST(variables.getVariableOffset(overflow) == maximumSize);
+    BOOST_CHECK_THROW((void)variables.getStorageSize(), NomadException);
+    const auto following = variables.registerVariable("following", runtime.getIntegerType());
+    BOOST_CHECK_THROW((void)variables.getVariableOffset(following), NomadException);
+}
+
+BOOST_AUTO_TEST_CASE(variable_layout_rejects_invalid_variable_ids)
+{
+    Runtime runtime;
+    VariableMap variables;
+    BOOST_CHECK_THROW((void)variables.getVariableOffset(VariableId{0}), NomadException);
+    const auto first = variables.registerVariable("first", runtime.getIntegerType());
+    BOOST_TEST(variables.getVariableOffset(first) == 0U);
+    for (const auto id : {VariableId::INVALID, VariableId{-2}, VariableId{1}, VariableId{NOMAD_ID_MAX}}) {
+        BOOST_CHECK_THROW((void)variables.getVariableOffset(id), NomadException);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(variable_map_ids_are_owner_local_and_stable)
 {
@@ -55,7 +183,9 @@ BOOST_AUTO_TEST_CASE(variable_map_ids_are_owner_local_and_stable)
         BOOST_REQUIRE(variables.registerVariable("additional" + std::to_string(index), runtime.getIntegerType()).isValid());
     }
     BOOST_TEST(variables.getVariableCount() == 65U);
+    BOOST_TEST(variables.getStorageSize() == 65U);
     BOOST_TEST(variables.getVariableId("value") == id);
+    BOOST_TEST(variables.getVariableOffset(id) == 0U);
     BOOST_TEST(variables.getVariableName(id) == "value");
     BOOST_TEST(!variables.isRead(id));
     BOOST_TEST(!variables.isWritten(id));
@@ -138,13 +268,14 @@ BOOST_AUTO_TEST_CASE(local_loads_keep_existing_scalar_and_object_bytecode)
         const auto name = "local" + type->getTypeName();
         const auto id = function.registerVariable(name, type);
         const auto originalCount = runtime.getInstructions().size();
-        const auto result = compiler->addLoadFunctionVariable(id, type, ExpressionTarget::Result);
-        const auto intermediate = compiler->addLoadFunctionVariable(id, type, ExpressionTarget::Intermediate);
-        const auto stack = compiler->addLoadFunctionVariable(id, type, ExpressionTarget::Stack);
+        const auto offset = function.getVariableOffset(id);
+        const auto result = compiler->addLoadFunctionVariable(offset, type, ExpressionTarget::Result);
+        const auto intermediate = compiler->addLoadFunctionVariable(offset, type, ExpressionTarget::Intermediate);
+        const auto stack = compiler->addLoadFunctionVariable(offset, type, ExpressionTarget::Stack);
         const auto& instructions = runtime.getInstructions();
         BOOST_REQUIRE(instructions.size() == originalCount + 6);
         for (const auto operand : {result, intermediate, stack}) {
-            BOOST_TEST(instructions[operand].value.getIdValue() == id.id);
+            BOOST_TEST(instructions[operand].value.getIndexValue() == offset);
         }
         const auto resultOpCode = type->isString() ? OpCodes::op_function_variable_object_get_r :
             OpCodes::op_function_variable_get_r;
@@ -166,14 +297,15 @@ BOOST_AUTO_TEST_CASE(interpreter_console_ids_preserve_lookup_and_reassignment)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("value = 7", context));
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
+    BOOST_REQUIRE(context.getInterpreter().execute("value = 7", context));
     const auto id = context.getFunction()->getVariableId("value");
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(context.getVariableTypeById(id) == runtime.getIntegerType());
     BOOST_REQUIRE(context.getVariableValueById(id) != nullptr);
     BOOST_TEST(context.getVariableValueById(id)->getIntegerValue() == 7);
-    BOOST_REQUIRE(Interpreter{}.execute("value = \"changed\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("value = \"changed\"", context));
     BOOST_TEST(context.getFunction()->getVariableId("value") == id);
     BOOST_TEST(context.getVariableTypeById(id) == runtime.getStringType());
     BOOST_TEST(context.getVariableValueById(id)->getStringValue() == "changed");

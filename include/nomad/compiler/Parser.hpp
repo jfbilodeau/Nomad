@@ -25,6 +25,12 @@ enum class StatementAvailability {
     Both
 };
 
+enum class StatementBlockMode {
+    None = 1,
+    Statement,
+    Inline
+};
+
 enum class PreParsePhase {
     Declarations = 1,
     Signatures
@@ -37,6 +43,7 @@ enum class PreParsePhase {
 using PreParseStatementFn = bool (*)(CompilerContext*, ScriptCallableBase*, Tokenizer*, PreParsePhase);
 // Returns nullptr on error.
 using ParseStatementFn = std::unique_ptr<Statement> (*)(CompilerContext*, ScriptCallableBase*, Tokenizer*);
+using StatementBlockFn = bool (*)(const Tokenizer*);
 
 namespace parser {
 
@@ -47,7 +54,7 @@ namespace parser {
     std::vector<Parameter>& parameters
 );
 // Counts end-delimited blocks opened on a line, including inline fun callbacks but not then continuations.
-[[nodiscard]] NomadIndex countBlockOpenings(const Tokenizer* tokens);
+[[nodiscard]] NomadIndex countBlockOpenings(const Compiler* compiler, const Tokenizer* tokens);
 
 [[nodiscard]] bool expectEndOfLine(
     CompilerContext* context,
@@ -64,6 +71,14 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
 // Returns nullptr for empty lines, for statements that are only handled during pre-parsing, and on error.
 // Compare the context error count to detect errors.
 std::unique_ptr<Statement> parseLine(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokenizer);
+// Parses an expression in statement position and requires end of line; permits void member calls.
+// Does not resolve, evaluate, or choose between expression and statement parsing.
+[[nodiscard]] std::unique_ptr<Expression> parseStatementExpression(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    Tokenizer* tokens,
+    NomadIndex statementLine = NOMAD_INVALID_INDEX
+);
 // Parses lines until one of `endTokens` is found. Lines with errors are skipped so the rest of the block is still
 // parsed. Returns false if any error was reported.
 [[nodiscard]] bool parseBlock(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const std::vector<NomadString>& endTokens, StatementList* statements);

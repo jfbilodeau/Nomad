@@ -5,7 +5,7 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/script/RuntimeValue.hpp>
-#include <nomad/script/Type.hpp>
+#include <nomad/script/ValueType.hpp>
 
 #include <vector>
 
@@ -32,12 +32,12 @@ struct EventDefinition {
 const NomadString EVENT_TYPE_NAME = "event";
 class EventType final : public ValueType {
 public:
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     EventType(Runtime* runtime, TypeId id, const EventDefinition* declaration);
 
     [[nodiscard]] NomadString getTypeName() const override;
-    void copyValue(const RuntimeValue& sourceValue, RuntimeValue& destinationValue) const override;
-    void toString(const RuntimeValue& value, NomadString& string) const override;
+    void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
+    void toString(const RuntimeValue* value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;
 
     [[nodiscard]] const NomadString& getEventName() const;

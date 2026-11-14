@@ -8,9 +8,11 @@
 #include <nomad/compiler/FunctionParameterTypeTarget.hpp>
 #include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/modules/ScriptBindings.hpp>
 
-#include <nomad/script/InterpreterContext.hpp>
+#include <nomad/script/Documentation.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -20,6 +22,7 @@
 
 #include <algorithm>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 using namespace nomad;
@@ -79,10 +82,13 @@ BOOST_AUTO_TEST_CASE(placeholders_are_compiler_owned_named_types_not_runtime_typ
     RuntimeValue value;
     NomadString text;
     BOOST_CHECK_THROW((void)type->getStorage(), NomadException);
-    BOOST_CHECK_THROW(type->initValue(value), NomadException);
-    BOOST_CHECK_THROW(type->copyValue(value, value), NomadException);
-    BOOST_CHECK_THROW(type->freeValue(value), NomadException);
-    BOOST_CHECK_THROW(type->toString(value, text), NomadException);
+    BOOST_CHECK_THROW((void)type->getSize(), NomadException);
+    BOOST_CHECK_THROW((void)type->getAssignmentScratchSize(), NomadException);
+    BOOST_CHECK_THROW(type->initValue(&value), NomadException);
+    BOOST_CHECK_THROW(type->copyValue(&value, &value), NomadException);
+    BOOST_CHECK_THROW(type->assignValue(&value, &value), NomadException);
+    BOOST_TEST(noexcept(type->freeValue(&value)));
+    BOOST_CHECK_THROW(type->toString(&value, text), NomadException);
     BOOST_CHECK_THROW((void)compiler->deferType({""}), NomadException);
 }
 
@@ -226,12 +232,17 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
     BOOST_CHECK_THROW(function->resolveParameterType(0, runtime.getIntegerType()), NomadException);
     BOOST_CHECK_THROW(function->resolveReturnType(runtime.getIntegerType()), NomadException);
     VirtualMachine machine(&runtime);
-    machine.runNativeFunction(id, {RuntimeValue(NomadInteger{42}), RuntimeValue(true)});
-    BOOST_TEST(machine.getResult().getIntegerValue() == 42);
+    const InterpreterValue arguments[]{
+        {runtime.getIntegerType(), RuntimeValue{NomadInteger{42}}},
+        {runtime.getBooleanType(), RuntimeValue{true}}
+    };
+    const auto result = Interpreter{machine}.runFunction(id, arguments);
+    BOOST_TEST(result.getValue().getIntegerValue() == 42);
 }
 
 BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_script_native_cycle) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     const auto types = deferTypes(*compiler);
     ScriptBindings bindings(runtime);
@@ -260,19 +271,23 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(declaration->getParameters()[1].getTypeName() == "log.SinkConfiguration");
     BOOST_TEST(declaration->getReturnTypeName() == "log.SinkConfiguration");
     BOOST_CHECK_THROW((void)declaration->getFn(), NomadException);
-    BOOST_CHECK_THROW((void)runtime.getNativeFunctionFn(id), NomadException);
     const auto unresolved = runtime.resolveFunction("updateConfiguration", {nullptr, nullptr, nullptr});
     BOOST_CHECK(unresolved.status == ResolveStatus::UnresolvedSignature);
     BOOST_TEST(runtime.describeResolveFailure("updateConfiguration", unresolved).find("unresolved") != NomadString::npos);
     VirtualMachine machine(&runtime);
-    BOOST_CHECK_THROW(machine.runNativeFunction(id, {RuntimeValue{}, RuntimeValue{}, RuntimeValue{}}), NomadException);
-    InterpreterContext interpreter(machine);
-    runtime.executeNativeFunction(id, {RuntimeValue{}, RuntimeValue{}, RuntimeValue{}}, interpreter);
-    BOOST_TEST(interpreter.hasError());
+    const Interpreter interpreter(machine);
+    BOOST_CHECK_EXCEPTION(static_cast<void>(interpreter.runFunction(id, {})), std::invalid_argument,
+        [](const auto& error) { return NomadString{error.what()}.find("unresolved signature") != NomadString::npos; });
     BOOST_TEST(calls == 0);
     std::ostringstream documentation;
-    runtime.dumpDocumentation(documentation);
+    generateDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("### `updateConfiguration`") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("level:log.Level") != NomadString::npos);
     BOOST_TEST(documentation.str().find("configuration:log.SinkConfiguration") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("active:bool") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("`returns log.SinkConfiguration`") != NomadString::npos);
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(!declaration->isSignatureResolved());
 
     const auto compilation = compileSources({{{"log.configuration", {"configuration.nomad", getLogBindingSource() +
         "\nfun exerciseDeferred\n"
@@ -292,7 +307,7 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(declaration->getReturnType() == runtime.getTypeByName("log.SinkConfiguration"));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("exerciseDeferred"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("exerciseDeferred"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
     BOOST_TEST(calls == 1);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -305,7 +320,7 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_REQUIRE(later.succeeded());
     BOOST_TEST(runtime.getCallableOverloadCount("updateConfiguration") == 1U);
     BOOST_TEST(runtime.getNativeFunctionId("updateConfiguration") == id);
-    runtime.executeFunction(runtime.getFunctionId("later"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("later"), {}, result);
     BOOST_TEST(result.getBooleanValue());
     BOOST_TEST(calls == 2);
 }
@@ -315,7 +330,7 @@ BOOST_AUTO_TEST_CASE(hub_enum_signatures_resolve_in_analysis_without_running_cal
     auto secondCalls = 0;
     Runtime first;
     Runtime second;
-    BOOST_REQUIRE(second.createEnum("Padding", {{"Value", 1}}).isValid());
+    BOOST_REQUIRE(second.getTypeManager().createEnum("Padding", {{"Value", 1}}).isValid());
     const auto resolve = [](Runtime& runtime, int& calls) {
         auto compiler = runtime.createCompiler();
         const auto hubId = runtime.registerHub("native", HubMode::Opened);
@@ -398,7 +413,7 @@ BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_ar
                 diagnostic.message.find(name) != NomadString::npos;
         }));
         BOOST_TEST(!runtime.getNativeFunction(id)->isSignatureResolved());
-        BOOST_CHECK_THROW((void)runtime.getNativeFunctionFn(id), NomadException);
+        BOOST_CHECK_THROW((void)runtime.getNativeFunction(id)->getFn(), NomadException);
     }
     Runtime runtime;
     auto compiler = runtime.createCompiler();
@@ -422,6 +437,7 @@ BOOST_AUTO_TEST_CASE(missing_or_void_parameter_types_and_missing_return_types_ar
 
 BOOST_AUTO_TEST_CASE(concrete_and_deferred_overloads_share_ordinary_resolution) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     const auto objectId = runtime.registerNativeFunction("choose",
         [](VirtualMachine* machine) { machine->setIntegerResult(20); },
@@ -437,7 +453,7 @@ BOOST_AUTO_TEST_CASE(concrete_and_deferred_overloads_share_ordinary_resolution) 
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getTypeByName("Number")}).id == objectId);
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getIntegerType()}).id == integerId);
     RuntimeValue value;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, value);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, value);
     BOOST_TEST(value.getIntegerValue() == 42);
 }
 
@@ -461,7 +477,8 @@ BOOST_AUTO_TEST_CASE(overload_conflicts_are_reported_after_type_resolution) {
         }));
         BOOST_TEST(!runtime.getNativeFunction(firstId)->isSignatureResolved());
         BOOST_TEST(!runtime.getNativeFunction(secondId)->isSignatureResolved());
-        BOOST_CHECK_THROW((void)runtime.getNativeFunctionFn(firstId), NomadException);
+        BOOST_CHECK_THROW((void)runtime.getNativeFunction(firstId)->getFn(), NomadException);
+        BOOST_CHECK_THROW((void)runtime.getNativeFunction(secondId)->getFn(), NomadException);
     }
 }
 

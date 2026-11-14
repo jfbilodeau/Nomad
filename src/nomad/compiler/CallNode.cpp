@@ -5,10 +5,14 @@
 #include <nomad/compiler/Argument.hpp>
 #include <nomad/compiler/CallNode.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
-#include <nomad/script/Interpreter.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
+
+#include <algorithm>
 
 namespace nomad {
 
@@ -34,11 +38,18 @@ const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptCa
     return nullptr;
 }
 
-TypedValue Argument::evaluate(InterpreterContext& context) const {
-    return onEvaluate(context);
+InterpreterValue Argument::evaluate(InterpreterContext& context) const {
+    if (context.hasError()) {
+        raiseException(context.getFirstError()->message);
+    }
+    auto value = onEvaluate(context);
+    if (context.hasError()) {
+        raiseException(context.getFirstError()->message);
+    }
+    return value;
 }
 
-TypedValue Argument::onEvaluate(InterpreterContext& /*context*/) const {
+InterpreterValue Argument::onEvaluate(InterpreterContext& /*context*/) const {
     throw AstException("Argument kind is not supported by the interpreter", getLine(), getColumn());
 }
 
@@ -151,23 +162,14 @@ void ArgumentList::compile(Compiler* compiler, ScriptCallableBase* function) con
     }
 }
 
-void ArgumentList::evaluate(
-    InterpreterContext& context,
-    std::vector<TypedValue>& evaluatedArguments,
-    std::vector<RuntimeValue>& values
-) const {
+std::vector<InterpreterValue> ArgumentList::evaluate(InterpreterContext& context) const {
+    std::vector<InterpreterValue> evaluatedArguments;
     evaluatedArguments.reserve(m_arguments.size());
-    values.reserve(m_arguments.size());
-
-    for (const auto& argument : m_arguments) {
-        auto value = argument->evaluate(context);
-        if (context.hasError()) {
-            return;
-        }
-
-        values.push_back(value.getValue());
-        evaluatedArguments.push_back(std::move(value));
+    for (auto argument = m_arguments.rbegin(); argument != m_arguments.rend(); ++argument) {
+        evaluatedArguments.push_back((*argument)->evaluate(context));
     }
+    std::reverse(evaluatedArguments.begin(), evaluatedArguments.end());
+    return evaluatedArguments;
 }
 
 NomadIndex ArgumentList::getArgumentCount() const {
@@ -288,11 +290,22 @@ void FunctionCallStatementNode::onResolve(CompilerContext* context, ScriptCallab
     }
 
     CallStatementNode::onResolve(context, function);
+    if (context->getMode() == CompilerMode::Script && function != nullptr &&
+        m_function->getReturnType() != nullptr && m_function->getReturnType()->isStruct() &&
+        m_destination.isInvalid()) {
+        m_destination = function->registerVariable(
+            "$discard" + std::to_string(function->getVariableCount()), m_function->getReturnType());
+    }
 }
 
 void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase* function) {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
+    }
+    if (m_destination.isValid()) {
+        compiler->addFunctionCallIntoLocal(m_function->getId(), function, getArguments(), m_destination);
+        m_function->getReturnType()->emitFreeFunctionVariable(*compiler, function->getVariableOffset(m_destination));
+        return;
     }
     if (const auto* native = m_function->asNativeFunction()) {
         compiler->addNativeFunctionCall(native->getId(), function, getArguments());
@@ -304,32 +317,20 @@ void FunctionCallStatementNode::onCompile(Compiler* compiler, ScriptCallableBase
 
     // The statement discards the function's return value.
     if (const auto* returnType = m_function->getReturnType()) {
-        compiler->addFreeValue(returnType->getTypeOpCodes()->freeResult);
+        returnType->emitFreeResult(*compiler);
     }
 }
 
-void FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
+InterpreterValue FunctionCallStatementNode::onEvaluate(InterpreterContext& context) const {
     if (m_function == nullptr) {
         raiseException("Function call to '" + m_name + "' has not been resolved");
     }
-
-    std::vector<TypedValue> evaluatedArguments;
-    std::vector<RuntimeValue> values;
-    getArguments()->evaluate(context, evaluatedArguments, values);
-    if (context.hasError()) {
-        return;
-    }
-
-    if (const auto* native = m_function->asNativeFunction()) {
-        context.evaluateNativeFunctionCall(native->getId(), values);
-    } else if (const auto* script = m_function->asScriptFunction()) {
-        context.evaluateFunctionCall(script->getId(), values);
-    } else {
-        raiseException("Unsupported implementation of function '" + m_name + "'");
-    }
-    if (!context.hasError()) {
-        context.setVoidResult();
-    }
+    const auto evaluatedArguments = getArguments()->evaluate(context);
+    static_cast<void>(context.getInterpreter().runFunction(
+        m_function->getId(),
+        evaluatedArguments
+    ));
+    return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
 }
 
 } // namespace nomad

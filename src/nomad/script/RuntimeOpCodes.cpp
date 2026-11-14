@@ -8,7 +8,6 @@ void Runtime::registerDefaultInstructions() {
     // OpCode definitions
     registerInstruction(OpCodes::op_nop, op_nop, "No operation", {});
     registerInstruction(OpCodes::op_stop, op_stop, "Stop the execution of the interpreter", {});
-    registerInstruction(OpCodes::op_yield, op_yield, "Yield the execution of the interpreter", {});
     registerInstruction(OpCodes::op_return, op_return, "Return from the current function. Does not free variables from the stack", {});
     registerInstruction(OpCodes::op_return_1, op_return_1, "Return from the current function, discarding 1 local slot without releasing its value", {});
     registerInstruction(OpCodes::op_return_2, op_return_2, "Return from the current function, discarding 2 local slots without releasing their values", {});
@@ -61,34 +60,87 @@ void Runtime::registerDefaultInstructions() {
     );
     registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
     registerInstruction(OpCodes::op_call_script_method, op_call_script_method, "Call a script method with the bound receiver", {Operand::Function});
-    registerInstruction(OpCodes::op_call_script_constructor, op_call_script_constructor, "Allocate an instance and call its script constructor", {Operand::Function, Operand::Id});
+    registerInstruction(OpCodes::op_create_script_object, op_create_script_object, "Create a script object using prepared stack arguments", {Operand::Callable});
+    registerInstruction(OpCodes::op_create_script_struct, op_create_script_struct,
+        "Initialize a struct destination using a script constructor; absent destination uses the invalid index",
+        {Operand::Callable, Operand::Index});
     registerInstruction(OpCodes::op_call_native_method, op_call_native_method, "Call a native method with the bound receiver", {Operand::Id});
-    registerInstruction(OpCodes::op_call_native_constructor, op_call_native_constructor, "Call a native factory and bind its result", {Operand::Id});
+    registerInstruction(OpCodes::op_create_native_object, op_create_native_object, "Create an object using a native factory and prepared stack arguments", {Operand::Callable});
+    registerInstruction(OpCodes::op_create_native_struct, op_create_native_struct,
+        "Initialize a struct destination using a native constructor; absent destination uses the invalid index",
+        {Operand::Callable, Operand::Index});
     registerInstruction(OpCodes::op_native_property_get, op_native_property_get, "Read a native or stored property", {Operand::Id});
     registerInstruction(OpCodes::op_native_property_set, op_native_property_set, "Write a native or stored property", {Operand::Id});
+    registerInstruction(OpCodes::op_stored_property_load_r, op_stored_property_load_r,
+        "Load a scalar stored property at a physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_stored_property_load_r, op_object_stored_property_load_r,
+        "Copy a reference stored property at a physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_stored_property_set, op_stored_property_set,
+        "Store result in a scalar property at a physical offset", {Operand::Index});
+    registerInstruction(OpCodes::op_object_stored_property_set, op_object_stored_property_set,
+        "Copy result into a reference property at a physical offset, replacing owned storage", {Operand::Index});
     registerInstruction(OpCodes::op_native_index_get, op_native_index_get, "Read an indexer", {Operand::Id});
     registerInstruction(OpCodes::op_native_index_set, op_native_index_set, "Write an indexer", {Operand::Id});
     // Parameter operations
-    registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load the `n`th parameter into result", {Operand::Id});
-    registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load the `n`th parameter into intermediate", {Operand::Id});
-    registerInstruction(OpCodes::op_parameter_push, op_parameter_push, "Push the `n`th parameter onto the stack", {Operand::Id});
-    registerInstruction(OpCodes::op_object_parameter_load_r, op_object_parameter_load_r, "Load the `n`th object parameter into result", {Operand::Id});
-    registerInstruction(OpCodes::op_object_parameter_load_i, op_object_parameter_load_i, "Load the `n`th object parameter into intermediate", {Operand::Id});
-    registerInstruction(OpCodes::op_object_parameter_push, op_object_parameter_push, "Push the `n`th object parameter onto the stack", {Operand::Id});
-    registerInstruction(OpCodes::op_parameter_set, op_parameter_set, "Store result in an argument slot after releasing its previous owned value", {Operand::Id});
-    registerInstruction(OpCodes::op_object_free_parameter, op_object_free_parameter, "Release the object owned by an argument slot", {Operand::Id});
+    registerInstruction(OpCodes::op_parameter_load_r, op_parameter_load_r, "Load parameter at physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_load_i, op_parameter_load_i, "Load parameter at physical offset into intermediate", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_push, op_parameter_push, "Push parameter at physical offset onto the stack", {Operand::Index});
+    registerInstruction(OpCodes::op_object_parameter_load_r, op_object_parameter_load_r, "Load object parameter at physical offset into result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_parameter_load_i, op_object_parameter_load_i, "Load object parameter at physical offset into intermediate", {Operand::Index});
+    registerInstruction(OpCodes::op_object_parameter_push, op_object_parameter_push, "Push object parameter at physical offset onto the stack", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_set, op_parameter_set, "Store result at physical parameter offset after releasing its previous owned value", {Operand::Index});
+    registerInstruction(OpCodes::op_object_free_parameter, op_object_free_parameter, "Release object at physical parameter offset", {Operand::Index});
+
+    // Internal borrowed storage operations
+    registerInstruction(OpCodes::op_storage_load_r, op_storage_load_r,
+        "Load a scalar from the borrowed address in intermediate into result", {Operand::Index});
+    registerInstruction(OpCodes::op_storage_push, op_storage_push,
+        "Push a scalar from the borrowed address in intermediate, preserving result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_load_r, op_object_storage_load_r,
+        "Copy a reference from the borrowed address in intermediate into result", {Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_push, op_object_storage_push,
+        "Push an owned reference copy from the borrowed address in intermediate, preserving result", {Operand::Index});
+    registerInstruction(OpCodes::op_storage_set, op_storage_set,
+        "Transfer result into borrowed intermediate-address storage after owned-value cleanup", {Operand::Index});
+    registerInstruction(OpCodes::op_object_free_storage, op_object_free_storage,
+        "Release and clear a reference at the borrowed address in intermediate", {Operand::Index});
+    registerInstruction(OpCodes::op_stored_property_address_push, op_stored_property_address_push,
+        "Push a nonempty stored property address from a retained stack owner and inclusive physical slot bounds",
+        {Operand::Index, Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_local_address_push, op_local_address_push,
+        "Push a borrowed local storage address at physical offset", {Operand::Index});
+    registerInstruction(OpCodes::op_parameter_address_push, op_parameter_address_push,
+        "Push a borrowed parameter address at the anchor distance to its first slot", {Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_address_push, op_storage_parameter_address_push,
+        "Push a borrowed subfield address from a pointer parameter and physical field offset", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_load_r, op_storage_parameter_load_r,
+        "Load borrowed storage into result", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_load_i, op_storage_parameter_load_i,
+        "Load borrowed storage into intermediate", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_push, op_storage_parameter_push,
+        "Push a scalar copy from borrowed storage", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_parameter_load_r, op_object_storage_parameter_load_r,
+        "Copy an object from borrowed storage into result, retaining its reference", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_parameter_load_i, op_object_storage_parameter_load_i,
+        "Copy an object from borrowed storage into intermediate, retaining its reference", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_storage_parameter_push, op_object_storage_parameter_push,
+        "Push an owned object copy from borrowed storage", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_storage_parameter_set, op_storage_parameter_set,
+        "Store result into borrowed storage after any required owned-value cleanup", {Operand::Index, Operand::Index});
+    registerInstruction(OpCodes::op_object_free_storage_parameter, op_object_free_storage_parameter,
+        "Release and clear an owned borrowed-storage field", {Operand::Index, Operand::Index});
 
     // Variable operations
     registerInstruction(
         OpCodes::op_function_variable_set, op_function_variable_set,
-        "Set the `id` function variable from the `r` register value", {Operand::FunctionVariable}
+        "Set the physical local `offset` from the `r` register value", {Operand::Index}
     );
-    registerInstruction(OpCodes::op_function_variable_get_r, op_function_variable_get_r, "Load the `id` function variable value to the `result` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_object_get_r, op_function_variable_object_get_r, "Load the `id` object function variable value to the `result` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_get_i, op_function_variable_get_i, "Load the `id` function variable value to the `intermediate` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_object_get_i, op_function_variable_object_get_i, "Load the `id` object function variable value to the `intermediate` register", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_push, op_function_variable_push, "Push the `id` function variable value to the stack", {Operand::FunctionVariable});
-    registerInstruction(OpCodes::op_function_variable_object_push, op_function_variable_object_push, "Push the `id` object function variable to the stack", {Operand::FunctionVariable});
+    registerInstruction(OpCodes::op_function_variable_get_r, op_function_variable_get_r, "Load the physical local `offset` to the `result` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_object_get_r, op_function_variable_object_get_r, "Copy the object at physical local `offset` to the `result` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_get_i, op_function_variable_get_i, "Load the physical local `offset` to the `intermediate` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_object_get_i, op_function_variable_object_get_i, "Copy the object at physical local `offset` to the `intermediate` register", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_push, op_function_variable_push, "Push the physical local `offset` to the stack", {Operand::Index});
+    registerInstruction(OpCodes::op_function_variable_object_push, op_function_variable_object_push, "Copy the object at physical local `offset` to the stack", {Operand::Index});
     registerInstruction(OpCodes::op_constant_get_r, op_constant_get_r, "Load the constant into the result register", {Operand::Id});
     registerInstruction(OpCodes::op_constant_get_i, op_constant_get_i, "Load the constant into the intermediate register", {Operand::Id});
     registerInstruction(OpCodes::op_constant_push, op_constant_push, "Push the constant onto the stack", {Operand::Id});
@@ -304,7 +356,7 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(OpCodes::op_object_free_r, op_object_free_r, "Release the object in the `r` register", {});
     registerInstruction(OpCodes::op_object_free_i, op_object_free_i, "Release the object in the `i` register", {});
     registerInstruction(
-        OpCodes::op_object_free_variable, op_object_free_variable, "Release the object function variable", {Operand::Index}
+        OpCodes::op_object_free_variable, op_object_free_variable, "Release the object at physical local `offset`", {Operand::Index}
     );
     registerInstruction(
         OpCodes::op_object_free_stack, op_object_free_stack, "Release the object at stack offset (0 = top)", {Operand::Index}

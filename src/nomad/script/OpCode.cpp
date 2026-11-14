@@ -2,56 +2,85 @@
 
 #include <nomad/script/OpCode.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/system/Boolean.hpp>
 #include <nomad/system/Float.hpp>
 #include <nomad/system/Integer.hpp>
 #include <nomad/script/FormatString.hpp>
-#include <nomad/script/InterpreterContext.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <cassert>
+#include <optional>
 
 namespace nomad {
+
+NomadIndex OpCodeEmitter::addLoadTarget(
+    const InstructionFn result,
+    const InstructionFn intermediate,
+    const InstructionFn stack,
+    const NomadId operand,
+    const ExpressionTarget target
+) {
+    switch (target) {
+    case ExpressionTarget::Result:
+        addOpCode(result);
+        return addId(operand);
+    case ExpressionTarget::Intermediate:
+        addOpCode(intermediate);
+        return addId(operand);
+    case ExpressionTarget::Stack:
+        addOpCode(stack);
+        return addId(operand);
+    }
+    throw NomadBug("Internal error: BUG: Invalid expression target");
+}
 
 namespace {
 
 void callNativeIndexer(VirtualMachine* machine, const bool write) {
     const auto indexerId = IndexerId{machine->nextId()};
-    const auto info = machine->getRuntime()->getNativeIndexerInfo(indexerId);
+    const auto* info = machine->getRuntime()->getNativeIndexerInfo(indexerId);
     if (!info) {
         machine->fault("Invalid native indexer");
     }
 
     const auto argumentCount = info->indexTypes.size() + (write ? 1 : 0);
     const auto receiver = machine->peekStack(argumentCount);
-    const auto releaseArguments = [&]() {
+    const auto releaseArguments = [&]() noexcept {
         for (const auto* type : info->indexTypes) {
             auto value = machine->popValue();
-            type->freeValue(value);
+            type->freeValue(&value);
         }
         if (write) {
             auto value = machine->popValue();
-            info->valueType->freeValue(value);
+            info->valueType->freeValue(&value);
         }
         auto savedReceiver = machine->popValue();
-        info->classType->freeValue(savedReceiver);
+        info->classType->freeValue(&savedReceiver);
         machine->popThis();
     };
-
-    try {
-        machine->callNativeIndexer(indexerId, receiver, write);
-    } catch (...) {
-        releaseArguments();
-        if (!write) {
-            info->valueType->freeValue(machine->getResult());
-        }
-        throw;
+    std::optional<RuntimeValueGuard> resultGuard;
+    if (!write) {
+        resultGuard.emplace(*info->valueType, &machine->getResult());
     }
-    releaseArguments();
+
+    BOOST_SCOPE_EXIT_ALL(&) {
+        releaseArguments();
+    };
+
+    machine->callNativeIndexer(indexerId, receiver, write);
+    if (resultGuard) {
+        resultGuard->release();
+    }
 }
 
 } // namespace
@@ -67,10 +96,6 @@ void op_breakpoint(VirtualMachine* /*interpreter*/) {
 
 void op_stop(VirtualMachine* interpreter) {
     interpreter->stop(interpreter->getResult());
-}
-
-void op_yield(VirtualMachine* interpreter) {
-    interpreter->yield(interpreter->getResult());
 }
 
 void op_return(VirtualMachine* interpreter) {
@@ -211,7 +236,7 @@ void op_code_load_default_r(VirtualMachine* interpreter) {
     if (!type || (*type)->isVoid()) {
         interpreter->fault("Invalid type for default value");
     }
-    (*type)->initValue(interpreter->getResult());
+    (*type)->initValue(&interpreter->getResult());
 }
 
 void op_call_script_function(VirtualMachine* interpreter) {
@@ -222,10 +247,20 @@ void op_call_script_method(VirtualMachine* interpreter) {
     interpreter->callScriptMethod(interpreter->nextIndex());
 }
 
-void op_call_script_constructor(VirtualMachine* interpreter) {
-    const auto address = interpreter->nextIndex();
-    const auto typeId = TypeId{interpreter->nextId()};
-    interpreter->callScriptConstructor(address, typeId);
+void op_create_script_object(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    interpreter->getResult().setObjectValue(interpreter->createScriptObject(constructorId));
+}
+
+void op_create_script_struct(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    const auto distance = interpreter->nextIndex();
+    auto* destination = distance == NOMAD_INVALID_INDEX
+        ? nullptr : interpreter->peekStack(distance).getStorageAddress();
+    const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
+    RuntimeValueGuard destinationGuard(*constructor->getConstructedType(), destination);
+    interpreter->createScriptStruct(destination, constructorId);
+    destinationGuard.release();
 }
 
 void op_call_native_function(VirtualMachine* interpreter) {
@@ -236,19 +271,20 @@ void op_call_native_method(VirtualMachine* interpreter) {
     interpreter->callNativeMethod(CallableId{interpreter->nextId()});
 }
 
-void op_call_native_constructor(VirtualMachine* interpreter) {
+void op_create_native_object(VirtualMachine* interpreter) {
     const auto constructorId = CallableId{interpreter->nextId()};
-    try {
-        interpreter->callNativeConstructor(constructorId);
-    } catch (...) {
-        const auto* constructor = interpreter->getRuntime()->getNativeConstructor(constructorId);
-        const auto& parameters = constructor->getParameters();
-        for (auto index = NomadIndex{0}; index < parameters.size(); ++index) {
-            auto argument = interpreter->peekStack(index);
-            parameters[index].type->freeValue(argument);
-        }
-        throw;
-    }
+    interpreter->getResult().setObjectValue(interpreter->createNativeObject(constructorId));
+}
+
+void op_create_native_struct(VirtualMachine* interpreter) {
+    const auto constructorId = CallableId{interpreter->nextId()};
+    const auto distance = interpreter->nextIndex();
+    auto* destination = distance == NOMAD_INVALID_INDEX
+        ? nullptr : interpreter->peekStack(distance).getStorageAddress();
+    const auto* constructor = interpreter->getRuntime()->getConstructor(constructorId);
+    RuntimeValueGuard destinationGuard(*constructor->getConstructedType(), destination);
+    interpreter->createNativeStruct(destination, constructorId);
+    destinationGuard.release();
 }
 
 void op_native_property_get(VirtualMachine* interpreter) {
@@ -267,118 +303,237 @@ void op_native_index_get(VirtualMachine* interpreter) {
     callNativeIndexer(interpreter, false);
 }
 
+void op_stored_property_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->setResult(interpreter->getStoredProperty(offset));
+}
+
+void op_object_stored_property_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getResult().copyObjectValue(interpreter->getStoredProperty(offset));
+}
+
+void op_stored_property_set(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getStoredProperty(offset) = interpreter->getResult();
+}
+
+void op_object_stored_property_set(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    auto& property = interpreter->getStoredProperty(offset);
+    RuntimeValue copy;
+    copy.copyObjectValue(interpreter->getResult());
+    property.freeObjectValue();
+    property = copy;
+}
+
 void op_native_index_set(VirtualMachine* interpreter) {
     callNativeIndexer(interpreter, true);
 }
 
 // Parameter operations
 void op_parameter_load_r(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    auto& value = interpreter->getParameter(parameterId);
+    auto& value = interpreter->getParameterStorage(offset, 1)[0];
 
     interpreter->setResult(value);
 }
 
 void op_parameter_load_i(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    auto& value = interpreter->getParameter(parameterId);
+    auto& value = interpreter->getParameterStorage(offset, 1)[0];
 
     interpreter->setIntermediate(value);
 }
 
 void op_parameter_push(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    auto& value = interpreter->getParameter(parameterId);
+    auto& value = interpreter->getParameterStorage(offset, 1)[0];
 
     interpreter->pushValue(value);
 }
 
 void op_object_parameter_load_r(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    interpreter->getResult().copyObjectValue(interpreter->getParameter(parameterId));
+    interpreter->getResult().copyObjectValue(interpreter->getParameterStorage(offset, 1)[0]);
 }
 
 void op_object_parameter_load_i(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    interpreter->getIntermediate().copyObjectValue(interpreter->getParameter(parameterId));
+    interpreter->getIntermediate().copyObjectValue(interpreter->getParameterStorage(offset, 1)[0]);
 }
 
 void op_object_parameter_push(VirtualMachine* interpreter) {
-    const auto parameterId = interpreter->nextId();
+    const auto offset = interpreter->nextIndex();
 
-    interpreter->pushObjectValue(interpreter->getParameter(parameterId));
+    interpreter->pushObjectValue(interpreter->getParameterStorage(offset, 1)[0]);
 }
 
 void op_parameter_set(VirtualMachine* interpreter) {
-    interpreter->setParameter(interpreter->nextId(), interpreter->getResult());
+    const auto offset = interpreter->nextIndex();
+    interpreter->getParameterStorage(offset, 1)[0] = interpreter->getResult();
 }
 
 void op_object_free_parameter(VirtualMachine* interpreter) {
-    interpreter->freeObjectParameter(interpreter->nextId());
+    const auto offset = interpreter->nextIndex();
+    interpreter->getParameterStorage(offset, 1)[0].freeObjectValue();
+}
+
+void op_storage_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->setResult(interpreter->getStorage(offset));
+}
+
+void op_storage_push(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->pushValue(interpreter->getStorage(offset));
+}
+
+void op_object_storage_load_r(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getResult().copyObjectValue(interpreter->getStorage(offset));
+}
+
+void op_object_storage_push(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->pushObjectValue(interpreter->getStorage(offset));
+}
+
+void op_storage_set(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getStorage(offset) = interpreter->getResult();
+}
+
+void op_object_free_storage(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->getStorage(offset).freeObjectValue();
+}
+
+void op_stored_property_address_push(VirtualMachine* interpreter) {
+    const auto ownerOffset = interpreter->nextIndex();
+    const auto firstOffset = interpreter->nextIndex();
+    const auto lastOffset = interpreter->nextIndex();
+    auto* address = interpreter->getStoredPropertyAddress(
+        interpreter->peekStack(ownerOffset),
+        firstOffset,
+        lastOffset
+    );
+    interpreter->pushStorageAddress(address);
+}
+
+void op_local_address_push(VirtualMachine* interpreter) {
+    const auto offset = interpreter->nextIndex();
+    interpreter->pushStorageAddress(interpreter->getLocalAddress(offset));
+}
+
+void op_parameter_address_push(VirtualMachine* interpreter) {
+    const auto distance = interpreter->nextIndex();
+    interpreter->pushStorageAddress(interpreter->getParameterAddress(distance));
+}
+
+void op_storage_parameter_address_push(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->pushStorageAddress(&interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_load_r(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->setResult(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_load_i(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->setIntermediate(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_push(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->pushValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_object_storage_parameter_load_r(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getResult().copyObjectValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_object_storage_parameter_load_i(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getIntermediate().copyObjectValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_object_storage_parameter_push(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->pushObjectValue(interpreter->getStorageParameter(pointerOffset, fieldOffset));
+}
+
+void op_storage_parameter_set(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getStorageParameter(pointerOffset, fieldOffset) = interpreter->getResult();
+}
+
+void op_object_free_storage_parameter(VirtualMachine* interpreter) {
+    const auto pointerOffset = interpreter->nextIndex();
+    const auto fieldOffset = interpreter->nextIndex();
+    interpreter->getStorageParameter(pointerOffset, fieldOffset).freeObjectValue();
 }
 
 void op_function_variable_set(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    interpreter->setFunctionVariableValue(variableId, interpreter->getResult());
+    const auto offset = interpreter->nextIndex();
+    interpreter->getLocalStorage(offset, 1)[0] = interpreter->getResult();
 }
 
 
 void op_function_variable_get_r(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->setResult(value);
 }
 
 void op_function_variable_object_get_r(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->getResult().copyObjectValue(value);
 }
 
 void op_function_variable_get_i(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->setIntermediate(value);
 }
 
 void op_function_variable_object_get_i(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->getIntermediate().copyObjectValue(value);
 }
 
 void op_function_variable_push(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->pushValue(value);
 }
 
 void op_function_variable_object_push(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{interpreter->nextId()};
-
-    RuntimeValue value;
-    interpreter->getFunctionVariableValue(variableId, value);
+    const auto offset = interpreter->nextIndex();
+    const auto value = interpreter->getLocalStorage(offset, 1)[0];
 
     interpreter->pushObjectValue(value);
 }
@@ -388,7 +543,7 @@ void op_constant_get_r(VirtualMachine* machine) {
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
-    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->getRuntime()->getConstantType(id)->copyValue(&value, &copy);
     machine->setResult(copy);
 }
 
@@ -397,7 +552,7 @@ void op_constant_get_i(VirtualMachine* machine) {
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
-    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->getRuntime()->getConstantType(id)->copyValue(&value, &copy);
     machine->setIntermediate(copy);
 }
 
@@ -406,7 +561,7 @@ void op_constant_push(VirtualMachine* machine) {
     RuntimeValue value;
     machine->getRuntime()->getConstantValue(id, value);
     RuntimeValue copy;
-    machine->getRuntime()->getConstantType(id)->copyValue(value, copy);
+    machine->getRuntime()->getConstantType(id)->copyValue(&value, &copy);
     machine->pushValue(copy);
 }
 
@@ -954,7 +1109,7 @@ void op_object_init_r(VirtualMachine* interpreter) {
 }
 
 void op_object_new(VirtualMachine* interpreter) {
-    interpreter->createScriptObject(TypeId{interpreter->nextId()});
+    interpreter->allocateScriptObject(TypeId{interpreter->nextId()});
 }
 
 void op_object_init_i(VirtualMachine* interpreter) {
@@ -974,9 +1129,8 @@ void op_object_free_i(VirtualMachine* interpreter) {
 }
 
 void op_object_free_variable(VirtualMachine* interpreter) {
-    const auto variableId = VariableId{toNomadId(interpreter->nextIndex())};
-
-    interpreter->freeObjectVariable(variableId);
+    const auto offset = interpreter->nextIndex();
+    interpreter->getLocalStorage(offset, 1)[0].freeObjectValue();
 }
 
 void op_object_free_stack(VirtualMachine* interpreter) {
@@ -1066,7 +1220,8 @@ void op_dynamic_format_execute(VirtualMachine* machine) {
 
     auto* formatText = machine->getStringResult();
     machine->setResult(RuntimeValue{});
-    InterpreterContext context(*machine, *function);
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter, *function);
 
     const auto result = formatDynamicString(formatText->getText(), context, function->getPath(), line, column);
 

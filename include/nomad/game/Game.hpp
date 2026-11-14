@@ -15,6 +15,7 @@
 #include <nomad/game/GameOptions.hpp>
 #include <nomad/game/InputManager.hpp>
 
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/Variable.hpp>
 
@@ -36,6 +37,7 @@ class ResourceManager;
 class Scene;
 class ScriptFunction;
 class Closure;
+class VirtualMachine;
 
 class GameException final : public NomadException {
 public:
@@ -363,6 +365,7 @@ private:
 
     std::unique_ptr<Runtime> m_ownedRuntime;
     Runtime* m_runtime = nullptr;
+    std::unique_ptr<VirtualMachine> m_virtualMachine;
     GameExecutionContext m_currentContext;
 
     NomadString m_language = "en";

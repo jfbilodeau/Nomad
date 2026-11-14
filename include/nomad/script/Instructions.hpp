@@ -9,7 +9,6 @@ class VirtualMachine;
 void instructionNop(VirtualMachine * interpreter);
 void instructionReturn(VirtualMachine * interpreter);
 void instructionReturnZero(VirtualMachine * interpreter);
-void instructionYield(VirtualMachine * interpreter);
 void instructionCallNativeFunction(VirtualMachine* interpreter);
 void instructionCallFunction(VirtualMachine * interpreter);
 void instructionJump(VirtualMachine * interpreter);

@@ -6,6 +6,7 @@
 
 #include <nomad/script/Documentation.hpp>
 
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -29,6 +30,7 @@ struct Parameter {
     NomadDocField;
 
     [[nodiscard]] NomadString getTypeName() const;
+    [[nodiscard]] NomadIndex getStackValueCount() const;
 };
 
 Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
@@ -41,6 +43,13 @@ struct TemplateParameter {
     NomadString name;
     std::variant<const Type*, TypeParameterIndex> type;
     NomadDocField;
+};
+
+struct CallStorageLayout {
+    NomadIndex argumentSlotCount;
+    std::optional<NomadIndex> receiverOffset;
+    std::optional<NomadIndex> returnOffset;
+    NomadIndex stackSlotCount;
 };
 
 TemplateParameter defTemplateParameter(
@@ -74,6 +83,12 @@ public:
     [[nodiscard]] CallableSource getSource() const;
     [[nodiscard]] const std::vector<Parameter>& getParameters() const;
     [[nodiscard]] NomadIndex getParameterCount() const;
+    [[nodiscard]] NomadIndex getParameterOffset(NomadId parameterId) const;
+    [[nodiscard]] NomadIndex getParameterStorageSize() const;
+    // Compiler metadata only; explicit parameter layout excludes hidden storage pointers.
+    [[nodiscard]] CallStorageLayout getCallStorageLayout() const;
+    // Use resolved call-site widths for specialized arguments such as event dispatch.
+    [[nodiscard]] CallStorageLayout getCallStorageLayout(NomadIndex argumentSlotCount) const;
     // The type of the value the callable yields; void when it yields nothing.
     [[nodiscard]] const Type* getReturnType() const;
     // Method: the receiver's type. Constructor: the declaring class, which may differ from the constructed type

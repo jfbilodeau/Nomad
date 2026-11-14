@@ -107,15 +107,24 @@ FormatTemplate parseFormatTemplate(const NomadStringView format) {
         std::optional<NomadIndex> diagnosticIndex;
         if (!end || empty) {
             diagnosticIndex = parsed.diagnostics.size();
+            const auto code = end ?
+                FormatTemplateDiagnosticCode::EmptyPlaceholder :
+                FormatTemplateDiagnosticCode::MissingClosingBrace;
+
             parsed.diagnostics.push_back({
                 end ? "Empty placeholder in format string" : "Missing '}' in format string",
                 placeholderStart,
                 length,
+                code
             });
         }
 
+        const auto type = diagnosticIndex ?
+            FormatTemplateSegmentType::Error :
+            FormatTemplateSegmentType::Placeholder;
+
         parsed.segments.push_back({
-            diagnosticIndex ? FormatTemplateSegmentType::Error : FormatTemplateSegmentType::Placeholder,
+            type,
             NomadString(text),
             placeholderStart,
             length,

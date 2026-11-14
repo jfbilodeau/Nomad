@@ -4,8 +4,9 @@
 
 #include <nomad/Nomad.hpp>
 
-#include <nomad/script/Event.hpp>
+#include <nomad/script/Callable.hpp>
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/Event.hpp>
 
 #include <memory>
 #include <variant>

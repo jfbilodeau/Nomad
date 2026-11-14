@@ -213,7 +213,7 @@ int dumpCommand(DumpParameters& parameters, const std::vector<NomadString>& argu
         const auto* function = runtime.getScriptFunction(runtime.getFunctionId(*parameters.function));
         if (function == nullptr) {
             formatDiagnostic({
-                DiagnosticSeverity::Error, "Unknown function '" + *parameters.function + "'",
+                CompilerDiagnosticSeverity::Error, "Unknown function '" + *parameters.function + "'",
                 paths.sources.empty() ? NomadString{} : pathToGenericUtf8(paths.sources.front()),
                 NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX
             }, std::cerr);

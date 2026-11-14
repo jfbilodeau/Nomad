@@ -6,20 +6,25 @@
 #include <nomad/compiler/ClassDeclaration.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/CompilerException.hpp>
+#include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/FunctionParameterTypeTarget.hpp>
 #include <nomad/compiler/FunctionReturnTypeTarget.hpp>
 #include <nomad/compiler/LoopStatement.hpp>
 #include <nomad/compiler/NativePropertyTypeTarget.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 #include <nomad/compiler/StatementParsers.hpp>
+#include <nomad/compiler/StructDeclaration.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/compiler/statements/EventStatement.hpp>
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
-#include <nomad/script/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
+#include <nomad/script/StructType.hpp>
 
 #include <nomad/system/String.hpp>
 
@@ -37,22 +42,92 @@ Compiler::Compiler(Runtime *runtime, std::vector<Instruction>& instructions):
     }
 
     registerParseStatementFn("const", StatementAvailability::Compiler, parseConstStatement, preParseConstStatement);
-    registerParseStatementFn("enum", StatementAvailability::Compiler, parseEnumStatement, preParseEnumStatement);
+    registerParseStatementFn(
+        "enum",
+        StatementAvailability::Compiler,
+        parseEnumStatement,
+        preParseEnumStatement,
+        StatementBlockMode::Statement
+    );
     registerParseStatementFn("event", StatementAvailability::Compiler, parseEventStatement, preParseEventStatement);
-    registerParseStatementFn("fun", StatementAvailability::Compiler, parseFunStatement, preParseFunStatement);
-    registerParseStatementFn("hub", StatementAvailability::Compiler, parseHubStatement, preParseHubStatement);
-    registerParseStatementFn("class", StatementAvailability::Compiler, parseClassStatement, preParseClassStatement);
-    registerParseStatementFn("open", StatementAvailability::Compiler, parseOpenStatement, preParseOpenStatement);
+    registerParseStatementFn(
+        "fun",
+        StatementAvailability::Compiler,
+        parseFunStatement,
+        preParseFunStatement,
+        StatementBlockMode::Inline,
+        isFunStatementBlock
+    );
+    registerParseStatementFn(
+        "hub",
+        StatementAvailability::Compiler,
+        parseHubStatement,
+        preParseHubStatement,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "class",
+        StatementAvailability::Compiler,
+        parseClassStatement,
+        preParseClassStatement,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "struct",
+        StatementAvailability::Compiler,
+        parseStructStatement,
+        preParseStructStatement,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "open",
+        StatementAvailability::Compiler,
+        parseOpenStatement,
+        preParseOpenStatement,
+        StatementBlockMode::Statement,
+        isOpenStatementBlock
+    );
     registerParseStatementFn("assert", StatementAvailability::Compiler, parseAssertStatement);
-    registerParseStatementFn("if", StatementAvailability::Both, parseIfStatement);
+    registerParseStatementFn(
+        "if",
+        StatementAvailability::Both,
+        parseIfStatement,
+        nullptr,
+        StatementBlockMode::Statement,
+        isIfStatementBlock
+    );
     registerParseStatementFn("params", StatementAvailability::Compiler, nullptr, preParseParamsStatement);
     registerParseStatementFn("return", StatementAvailability::Compiler, parseReturnStatement);
-    registerParseStatementFn("while", StatementAvailability::Both, parseWhileStatement);
-    registerParseStatementFn("until", StatementAvailability::Both, parseUntilStatement);
-    registerParseStatementFn("do", StatementAvailability::Both, parseDoStatement);
+    registerParseStatementFn(
+        "while",
+        StatementAvailability::Both,
+        parseWhileStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "until",
+        StatementAvailability::Both,
+        parseUntilStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
+    registerParseStatementFn(
+        "do",
+        StatementAvailability::Both,
+        parseDoStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
     registerParseStatementFn("break", StatementAvailability::Both, parseBreakStatement);
     registerParseStatementFn("continue", StatementAvailability::Both, parseContinueStatement);
-    registerParseStatementFn("for", StatementAvailability::Both, parseForStatement);
+    registerParseStatementFn(
+        "for",
+        StatementAvailability::Both,
+        parseForStatement,
+        nullptr,
+        StatementBlockMode::Statement
+    );
 
 }
 
@@ -159,9 +234,37 @@ void Compiler::registerParseStatementFn(
     const NomadString& name,
     const StatementAvailability availability,
     const ParseStatementFn fn,
-    const PreParseStatementFn preFn)
-{
-    m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability });
+    const PreParseStatementFn preFn,
+    const StatementBlockMode blockMode,
+    const StatementBlockFn blockFn
+) {
+    const auto [registration, inserted] =
+        m_statements.emplace(name, ParseStatementFnRegistration{ preFn, fn, availability, blockMode, blockFn });
+    if (!inserted) {
+        throw NomadBug("Statement '" + name + "' is already registered");
+    }
+}
+
+bool Compiler::statementOpensBlock(const Tokenizer* tokens, const NomadIndex tokenIndex) const {
+    const auto registration = m_statements.find(tokens->getTokenAt(tokenIndex));
+    if (registration == m_statements.end()) {
+        return false;
+    }
+    const auto& statement = registration->second;
+    switch (statement.blockMode) {
+    case StatementBlockMode::None:
+        return false;
+    case StatementBlockMode::Statement:
+        if (tokenIndex != 0) {
+            return false;
+        }
+        break;
+    case StatementBlockMode::Inline:
+        break;
+    default:
+        reportInternalError("Unknown statement block mode");
+    }
+    return statement.blockFn == nullptr || statement.blockFn(tokens);
 }
 
 bool Compiler::isStatement(const NomadString& name) const {
@@ -289,6 +392,10 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
 
     if (callable != nullptr && callable->asScriptFunction() != nullptr) {
         return IdentifierType::ScriptFunction;
+    }
+
+    if (m_runtime->getEventId(name).isValid()) {
+        return IdentifierType::Event;
     }
 
     if (m_runtime->getDynamicVariableId(name).isValid()) {
@@ -453,7 +560,7 @@ const Property* Compiler::resolveClassField(
         reportInternalError("Class field resolution requires an object receiver");
     }
     const auto report = [&](const NomadString& message) {
-        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
+        context->addError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
     };
     IdentifierDefinition receiverDefinition;
     if (!resolveIdentifier("this", this, function, receiverDefinition)) {
@@ -480,7 +587,7 @@ const Property* Compiler::resolveObjectField(
     const NomadIndex column
 ) {
     const auto report = [&](const NomadString& message) {
-        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
+        context->addError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
     };
     if (name.empty() || name.find('.') != NomadString::npos) {
         report("Expected an unqualified class field name: '" + name + "'");
@@ -513,12 +620,74 @@ const Property* Compiler::resolveObjectField(
         }
         return property;
     }
-    const auto id = m_runtime->registerProperty(owner->getId(), name, valueType);
+    const auto id = m_runtime->getTypeManager().registerScriptClassProperty(owner->getId(), name, valueType);
     if (id.isInvalid()) {
         report("Cannot register class field '" + name + "'");
         return nullptr;
     }
     m_externalFields.push_back({id, function != nullptr ? function->getPath() : NomadString{}, line, column});
+    return m_runtime->getProperty(id);
+}
+
+const Property* Compiler::resolveStructField(
+    CompilerContext* context,
+    ScriptCallableBase* function,
+    const NomadString& name,
+    const Type* valueType,
+    const bool allowDeclaration,
+    const NomadIndex line,
+    const NomadIndex column
+) {
+    const auto* receiver = getReceiverType(function);
+    const auto* owner = receiver != nullptr ? receiver->asStructType() : nullptr;
+    if (owner == nullptr) {
+        reportInternalError("Struct field resolution requires a struct receiver");
+    }
+    const auto report = [&](const NomadString& message) {
+        context->addError(message, function->getPath(), line, column);
+    };
+    IdentifierDefinition receiverDefinition;
+    if (!resolveIdentifier("this", this, function, receiverDefinition)) {
+        report("Cannot capture the struct receiver 'this'");
+        return nullptr;
+    }
+    if (name.empty() || name.find('.') != NomadString::npos) {
+        report("Expected an unqualified struct field name: '" + name + "'");
+        return nullptr;
+    }
+    for (const auto* method : owner->getMethods()) {
+        if (method->getName() == name) {
+            report("Struct field '" + name + "' conflicts with a method");
+            return nullptr;
+        }
+    }
+    const auto* property = owner->getProperty(name);
+    if (property == nullptr && !allowDeclaration) {
+        report("Unknown struct field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType == nullptr) {
+        report("Cannot determine type of struct field '" + name + "'");
+        return nullptr;
+    }
+    if (valueType->isVoid() || valueType->isInternal()) {
+        report("Invalid type for struct field '" + name + "'");
+        return nullptr;
+    }
+    if (property != nullptr) {
+        if (property->getValueType() != valueType) {
+            report("Cannot assign type '" + valueType->getTypeName() + "' to struct field '" + name +
+                "' of type '" + property->getValueType()->getTypeName() + "'");
+            return nullptr;
+        }
+        return property;
+    }
+    const auto id = m_runtime->getTypeManager().registerScriptStructProperty(owner->getId(), name, valueType);
+    if (id.isInvalid()) {
+        report("Cannot register struct field '" + name + "'");
+        return nullptr;
+    }
+    m_internalFields.insert(id);
     return m_runtime->getProperty(id);
 }
 
@@ -532,8 +701,8 @@ void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
             continue;
         }
         const auto* property = m_runtime->getProperty(field.id);
-        context->reportWarning(
-            "Externally introduced field '" + property->getClassType()->getTypeName() + "." +
+        context->addWarning(
+            "Externally introduced field '" + property->getOwnerType()->getTypeName() + "." +
                 property->getName() + "' is assigned but never read",
             field.sourceName, field.line, field.column
         );
@@ -661,7 +830,7 @@ NomadIndex Compiler::addFloat(NomadFloat value) {
 }
 
 NomadIndex Compiler::addLoadConstant(const ConstantId constantId, const ExpressionTarget target) {
-    return addLoadTarget({op_constant_get_r, op_constant_get_i, op_constant_push}, constantId.id, target);
+    return addLoadTarget(op_constant_get_r, op_constant_get_i, op_constant_push, constantId.id, target);
 }
 
 NomadIndex Compiler::addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target) {
@@ -741,7 +910,7 @@ NomadIndex Compiler::addLoadIntegerValue(const NomadInteger value, const Express
         return addInteger(value);
     }
 
-    this->reportInternalError("BUG: Invalid expression target for float value");
+    this->reportInternalError("BUG: Invalid expression target for integer value");
 }
 
 NomadIndex Compiler::addLoadFloatValue(NomadFloat value, const ExpressionTarget target) {
@@ -802,30 +971,12 @@ NomadIndex Compiler::addLoadStringValue(const NomadString& value, const Expressi
     this->reportInternalError("BUG: Invalid expression target for string value");
 }
 
-NomadIndex Compiler::addLoadTarget(const TargetOpCodes& opCodes, const NomadId operand, const ExpressionTarget target) {
-    switch (target) {
-    case ExpressionTarget::Result:
-        addOpCode(opCodes.result);
-        return addId(operand);
-
-    case ExpressionTarget::Intermediate:
-        addOpCode(opCodes.intermediate);
-        return addId(operand);
-
-    case ExpressionTarget::Stack:
-        addOpCode(opCodes.stack);
-        return addId(operand);
-    }
-
-    reportInternalError("BUG: Invalid expression target");
-}
-
-NomadIndex Compiler::addLoadFunctionVariable(const VariableId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadFunctionVariable, variableId.id, target);
+NomadIndex Compiler::addLoadFunctionVariable(const NomadIndex offset, const Type* type, const ExpressionTarget target) {
+    return type->emitLoadFunctionVariable(*this, offset, target);
 }
 
 NomadIndex Compiler::addLoadDynamicVariable(const DynamicVariableId variableId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadDynamicVariable, variableId.id, target);
+    return type->emitLoadDynamicVariable(*this, variableId.id, target);
 }
 
 NomadIndex Compiler::addLoadContextVariable(
@@ -833,59 +984,47 @@ NomadIndex Compiler::addLoadContextVariable(
     const Type* type,
     const ExpressionTarget target
 ) {
-    return addLoadTarget(type->getTypeOpCodes()->loadContextVariable, contextVariableId.id, target);
+    return type->emitLoadContextVariable(*this, contextVariableId.id, target);
 }
 
-NomadIndex Compiler::addLoadParameter(const NomadIndex parameterId, const Type* type, const ExpressionTarget target) {
-    return addLoadTarget(type->getTypeOpCodes()->loadParameter, toNomadId(parameterId), target);
+NomadIndex Compiler::addLoadParameter(const NomadIndex offset, const Type* type, const ExpressionTarget target) {
+    return type->emitLoadParameter(*this, offset, target);
 }
 
 NomadIndex Compiler::addPushResult(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->copyResultToStack);
+    return type->emitCopyResultToStack(*this);
 }
 
 void Compiler::addMoveResult(const Type* type, const ExpressionTarget target) {
     switch (target) {
     case ExpressionTarget::Result:
-        break;
+        return;
 
     case ExpressionTarget::Intermediate:
-        addOpCode(type->getTypeOpCodes()->moveResultToIntermediate);
-        break;
+        type->emitMoveResultToIntermediate(*this);
+        return;
 
     case ExpressionTarget::Stack:
-        addOpCode(type->getTypeOpCodes()->moveResultToStack);
-        break;
+        type->emitMoveResultToStack(*this);
+        return;
     }
+    reportInternalError("BUG: Invalid expression target");
 }
 
 void Compiler::addMoveIntermediateToResult(const Type* type) {
-    addOpCode(type->getTypeOpCodes()->moveIntermediateToResult);
+    type->emitMoveIntermediateToResult(*this);
 }
 
 NomadIndex Compiler::addPushIntermediate(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->pushIntermediate);
+    return type->emitPushIntermediate(*this);
 }
 
 NomadIndex Compiler::addPopResult(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->popResult);
+    return type->emitPopResult(*this);
 }
 
 NomadIndex Compiler::addPopIntermediate(const Type* type) {
-    return addOpCode(type->getTypeOpCodes()->popIntermediate);
-}
-
-void Compiler::addFreeValue(const InstructionFn freeOpCode) {
-    if (freeOpCode != nullptr) {
-        addOpCode(freeOpCode);
-    }
-}
-
-void Compiler::addFreeValue(const InstructionFn freeOpCode, const NomadIndex operand) {
-    if (freeOpCode != nullptr) {
-        addOpCode(freeOpCode);
-        addIndex(operand);
-    }
+    return type->emitPopIntermediate(*this);
 }
 
 NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments) {
@@ -898,6 +1037,351 @@ NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, Sc
     addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
+}
+
+void Compiler::addFunctionCallInstruction(const Function* function) {
+    if (function->asScriptFunction() != nullptr) {
+        addOpCode(OpCodes::op_call_script_function);
+        addFunctionLink(function->getId(), m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_function);
+        addId(function->getId().id);
+    }
+}
+
+void Compiler::addMethodCallInstruction(const Method* method) {
+    if (method->asScriptMethod() != nullptr) {
+        addOpCode(OpCodes::op_call_script_method);
+        addFunctionLink(method->getId(), m_instructions.size());
+        addIndex(0);
+    } else {
+        addOpCode(OpCodes::op_call_native_method);
+        addId(method->getId().id);
+    }
+}
+
+void Compiler::addFunctionCallIntoLocal(
+    const CallableId targetFunctionId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const VariableId destinationId
+) {
+    const auto* target = m_runtime->getFunction(targetFunctionId);
+    if (target == nullptr || function == nullptr || arguments == nullptr) {
+        reportInternalError("Struct destination call requires a resolved function, caller, and arguments");
+    }
+    const auto* returnType = target->getReturnType();
+    const auto* destinationType = function->getVariableType(destinationId);
+    if (returnType == nullptr || !returnType->isStruct() || destinationType == nullptr ||
+        !returnType->sameType(destinationType) || arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct destination call requires a same-type local and free-function arguments");
+    }
+    const auto layout = target->getCallStorageLayout(arguments->getArgumentCount());
+    const auto destinationOffset = function->getVariableOffset(destinationId);
+    addOpCode(OpCodes::op_push_this);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_local_address_push);
+        addIndex(destinationOffset);
+    }
+    arguments->compile(this, function);
+    addFunctionCallInstruction(target);
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    addOpCode(OpCodes::op_pop_this);
+}
+
+void Compiler::addFunctionCallIntoReturn(
+    const CallableId targetFunctionId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    const auto* target = m_runtime->getFunction(targetFunctionId);
+    if (target == nullptr || function == nullptr || arguments == nullptr) {
+        reportInternalError("Struct return call requires a resolved function, caller, and arguments");
+    }
+    const auto* returnType = target->getReturnType();
+    if (returnType == nullptr || !returnType->isStruct() || function->getReturnType() != returnType ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct return call requires a matching caller result and free-function arguments");
+    }
+    const auto layout = target->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.returnOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Struct return call requires matching destination storage");
+    }
+    addOpCode(OpCodes::op_push_this);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    arguments->compile(this, function);
+    addFunctionCallInstruction(target);
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    addOpCode(OpCodes::op_pop_this);
+}
+
+void Compiler::addStructMethodCall(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const IdentifierDefinition& receiver,
+    const VariableId destinationId
+) {
+    if (function == nullptr) {
+        reportInternalError("Struct method call requires a resolved caller");
+    }
+    auto root = receiver;
+    switch (root.identifierType) {
+    case IdentifierType::FunctionVariable:
+        root.valueType = function->getVariableType(root.variableId);
+        break;
+    case IdentifierType::Parameter:
+        (void)function->getParameterOffset(root.parameterId);
+        root.valueType = function->getParameterType(root.parameterId);
+        break;
+    case IdentifierType::Receiver:
+        root.valueType = function->getClassType();
+        break;
+    default:
+        reportInternalError("Struct method receiver requires local, parameter, or borrowed receiver storage");
+    }
+    addStructMethodCall(methodId, function, arguments, StorageLocation(root), destinationId);
+}
+
+void Compiler::addStructMethodCall(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const StorageLocation& receiver,
+    const VariableId destinationId
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    if (method == nullptr || function == nullptr || arguments == nullptr ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct method call requires a resolved method, caller, and explicit arguments");
+    }
+    const auto* receiverType = method->getClassType();
+    const auto* returnType = method->getReturnType();
+    if (receiverType == nullptr || !receiverType->isStruct() || returnType == nullptr) {
+        reportInternalError("Struct method call requires a resolved struct receiver and return type");
+    }
+    if (receiver.getType() != receiverType) {
+        reportInternalError("Struct method receiver storage has the wrong type");
+    }
+    receiver.validate(function);
+    const auto returnsStruct = returnType->isStruct();
+    if ((returnsStruct && (destinationId.isInvalid() || function->getVariableType(destinationId) != returnType)) ||
+        (!returnsStruct && destinationId.isValid())) {
+        reportInternalError("Struct method result requires a matching local only for struct returns");
+    }
+    const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    receiver.emitRetainOwner(*this, function);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_local_address_push);
+        addIndex(function->getVariableOffset(destinationId));
+    }
+    if (layout.receiverOffset.has_value()) {
+        receiver.emitAddress(*this, function, layout.returnOffset.has_value() ? 1 : 0);
+    }
+    arguments->compile(this, function);
+    addMethodCallInstruction(method);
+    addFreeArguments(arguments);
+    const auto hiddenSlotCount = layout.stackSlotCount - layout.argumentSlotCount;
+    if (hiddenSlotCount == 1) {
+        addOpCode(OpCodes::op_pop_1);
+    } else if (hiddenSlotCount == 2) {
+        addOpCode(OpCodes::op_pop_2);
+    }
+    receiver.emitFreeOwner(*this, function);
+}
+
+void Compiler::addStructMethodCallIntoReturn(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const StorageLocation& receiver
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    if (method == nullptr || function == nullptr || arguments == nullptr ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct method return call requires a resolved method, caller, and explicit arguments");
+    }
+    const auto* receiverType = method->getClassType();
+    const auto* returnType = method->getReturnType();
+    if (receiverType == nullptr || !receiverType->isStruct() || returnType == nullptr ||
+        !returnType->isStruct() || function->getReturnType() != returnType ||
+        receiver.getType() != receiverType) {
+        reportInternalError("Struct method return call requires matching receiver storage and caller result");
+    }
+    receiver.validate(function);
+    const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.returnOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Struct method return call requires matching destination storage");
+    }
+    receiver.emitRetainOwner(*this, function);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    if (layout.receiverOffset.has_value()) {
+        receiver.emitAddress(*this, function, layout.returnOffset.has_value() ? 1 : 0);
+    }
+    arguments->compile(this, function);
+    addMethodCallInstruction(method);
+    addFreeArguments(arguments);
+    const auto hiddenSlotCount = layout.stackSlotCount - layout.argumentSlotCount;
+    if (hiddenSlotCount == 1) {
+        addOpCode(OpCodes::op_pop_1);
+    } else if (hiddenSlotCount == 2) {
+        addOpCode(OpCodes::op_pop_2);
+    }
+    receiver.emitFreeOwner(*this, function);
+}
+
+void Compiler::addObjectMethodCallIntoLocal(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    Expression& receiver,
+    const VariableId destinationId
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    if (method == nullptr || function == nullptr || arguments == nullptr ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Object method destination call requires a resolved method, caller, and explicit arguments");
+    }
+    const auto* ownerType = method->getClassType();
+    const auto* receiverType = receiver.getType();
+    const auto* returnType = method->getReturnType();
+    if (ownerType == nullptr || !ownerType->isClass() || receiverType == nullptr ||
+        !receiverType->isClass() || !ownerType->acceptsArgument(receiverType) ||
+        returnType == nullptr || !returnType->isStruct() ||
+        destinationId.isInvalid() || function->getVariableType(destinationId) != returnType) {
+        reportInternalError("Object method destination call requires a class receiver and matching struct local");
+    }
+    const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    addOpCode(OpCodes::op_push_this);
+    receiver.compile(this, function, ExpressionTarget::Intermediate);
+    addPushIntermediate(receiverType);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_local_address_push);
+        addIndex(function->getVariableOffset(destinationId));
+    }
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(layout.stackSlotCount);
+    addMethodCallInstruction(method);
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    receiverType->emitFreeStackValue(*this, 0);
+    addOpCode(OpCodes::op_pop_1);
+    addOpCode(OpCodes::op_pop_this);
+}
+
+void Compiler::addObjectMethodCallIntoReturn(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    Expression& receiver
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    if (method == nullptr || function == nullptr || arguments == nullptr ||
+        arguments->getReceiverType() != nullptr) {
+        reportInternalError("Object method return call requires a resolved method, caller, and explicit arguments");
+    }
+    const auto* ownerType = method->getClassType();
+    const auto* receiverType = receiver.getType();
+    const auto* returnType = method->getReturnType();
+    if (ownerType == nullptr || !ownerType->isClass() || receiverType == nullptr ||
+        !receiverType->isClass() || !ownerType->acceptsArgument(receiverType) ||
+        returnType == nullptr || !returnType->isStruct() || function->getReturnType() != returnType) {
+        reportInternalError("Object method return call requires a class receiver and matching caller result");
+    }
+    const auto layout = method->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.returnOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Object method return call requires matching destination storage");
+    }
+    addOpCode(OpCodes::op_push_this);
+    receiver.compile(this, function, ExpressionTarget::Intermediate);
+    addPushIntermediate(receiverType);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    arguments->compile(this, function);
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(layout.stackSlotCount);
+    addMethodCallInstruction(method);
+    addFreeArguments(arguments);
+    if (layout.returnOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+    receiverType->emitFreeStackValue(*this, 0);
+    addOpCode(OpCodes::op_pop_1);
+    addOpCode(OpCodes::op_pop_this);
+}
+
+void Compiler::addObjectSetterCall(
+    const CallableId methodId,
+    ScriptCallableBase* function,
+    Expression& receiver,
+    Expression& value,
+    const VariableId stagingId
+) {
+    const auto* method = m_runtime->getMethod(methodId);
+    const auto* receiverType = receiver.getType();
+    const auto* valueType = value.getType();
+    if (method == nullptr || function == nullptr || receiverType == nullptr ||
+        !receiverType->isClass() || valueType == nullptr || method->getClassType() == nullptr ||
+        !method->getClassType()->acceptsArgument(receiverType) || method->getParameterCount() != 1 ||
+        method->getParameters()[0].type == nullptr ||
+        !method->getParameters()[0].type->acceptsArgument(valueType) ||
+        method->getReturnType() == nullptr || !method->getReturnType()->isVoid()) {
+        reportInternalError("Object setter call requires a matching class receiver and one-argument void method");
+    }
+    if (method->getParameterStorageSize() != valueType->getSize()) {
+        reportInternalError("Object setter call requires a complete value argument matching the parameter storage");
+    }
+    if (valueType->isStruct() &&
+        (stagingId.isInvalid() || function->getVariableType(stagingId) != valueType)) {
+        reportInternalError("Object setter call requires a matching reserved struct staging local");
+    }
+    addOpCode(OpCodes::op_push_this);
+    receiver.compile(this, function, ExpressionTarget::Intermediate);
+    addPushIntermediate(receiverType);
+    if (valueType->isStruct()) {
+        value.compileIntoLocal(this, function, stagingId);
+        const auto offset = function->getVariableOffset(stagingId);
+        valueType->emitPushFunctionVariable(*this, offset);
+        valueType->emitFreeFunctionVariable(*this, offset);
+    } else {
+        value.compile(this, function, ExpressionTarget::Stack);
+    }
+    addOpCode(OpCodes::op_bind_this_from_stack);
+    addIndex(method->getParameterStorageSize());
+    addMethodCallInstruction(method);
+    valueType->emitFreeStackValue(*this, 0);
+    const auto size = valueType->getSize();
+    if (size != 0) {
+        addOpCode(OpCodes::op_pop_n);
+        addIndex(size);
+    }
+    receiverType->emitFreeStackValue(*this, 0);
+    addOpCode(OpCodes::op_pop_1);
+    addOpCode(OpCodes::op_pop_this);
 }
 
 void Compiler::addFreeArguments(const ArgumentList* arguments) {
@@ -913,14 +1397,14 @@ void Compiler::addFreeArguments(const ArgumentList* arguments) {
 
     for (const auto& argument : arguments->getArguments()) {
         if (const auto* argumentType = argument->getType()) {
-            addFreeValue(argumentType->getTypeOpCodes()->freeStack, stackOffset);
+            argumentType->emitFreeStackValue(*this, stackOffset);
         }
 
         stackOffset += argument->getStackValueCount();
     }
 
     if (const auto* receiverType = arguments->getReceiverType()) {
-        addFreeValue(receiverType->getTypeOpCodes()->freeStack, stackOffset);
+        receiverType->emitFreeStackValue(*this, stackOffset);
     }
     switch (stackCount) {
     case 1:
@@ -952,35 +1436,93 @@ NomadIndex Compiler::addNativeFunctionCall(const CallableId nativeFunctionId, Sc
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addScriptConstructorCall(
+NomadIndex Compiler::addScriptObjectCreation(
     const CallableId constructorId,
-    const TypeId typeId,
     ScriptCallableBase* function,
     const ArgumentList* arguments
 ) {
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-    addOpCode(OpCodes::op_call_script_constructor);
-    addFunctionLink(constructorId, m_instructions.size());
-    addIndex(0);
-    addId(typeId.id);
+    addOpCode(OpCodes::op_create_script_object);
+    addId(constructorId.id);
     addFreeArguments(arguments);
-    addOpCode(OpCodes::op_move_this_to_r);
     addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
 }
 
-NomadIndex Compiler::addNativeConstructorCall(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
+NomadIndex Compiler::addNativeObjectCreation(const CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments) {
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
-    addOpCode(OpCodes::op_call_native_constructor);
+    addOpCode(OpCodes::op_create_native_object);
     addId(constructorId.id);
     addFreeArguments(arguments);
-    addOpCode(OpCodes::op_move_this_to_r);
     addOpCode(OpCodes::op_pop_this);
 
     return m_instructions.size() - 1;
+}
+
+void Compiler::addStructCreationIntoLocal(
+    const CallableId constructorId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments,
+    const VariableId destinationId
+) {
+    const auto* constructor = m_runtime->getConstructor(constructorId);
+    const auto* type = constructor != nullptr ? constructor->getConstructedType() : nullptr;
+    if (type == nullptr || !type->isStruct() ||
+        function->getVariableType(destinationId) != type) {
+        reportInternalError("Struct creation requires a resolved constructor and matching local destination");
+    }
+    const auto offset = function->getVariableOffset(destinationId);
+    type->emitFreeFunctionVariable(*this, offset);
+    const auto layout = constructor->getCallStorageLayout(arguments->getArgumentCount());
+    if (layout.receiverOffset.has_value()) {
+        addOpCode(OpCodes::op_local_address_push);
+        addIndex(offset);
+    }
+    arguments->compile(this, function);
+    addOpCode(constructor->asNativeConstructor() != nullptr
+        ? OpCodes::op_create_native_struct : OpCodes::op_create_script_struct);
+    addId(constructorId.id);
+    addIndex(layout.receiverOffset.value_or(NOMAD_INVALID_INDEX));
+    addFreeArguments(arguments);
+    if (layout.receiverOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
+}
+
+void Compiler::addStructCreationIntoReturn(
+    const CallableId constructorId,
+    ScriptCallableBase* function,
+    const ArgumentList* arguments
+) {
+    const auto* constructor = m_runtime->getConstructor(constructorId);
+    const auto* type = constructor != nullptr ? constructor->getConstructedType() : nullptr;
+    if (type == nullptr || !type->isStruct() || function == nullptr || arguments == nullptr ||
+        function->getReturnType() != type || arguments->getReceiverType() != nullptr) {
+        reportInternalError("Struct return creation requires a resolved constructor, matching caller result, and arguments");
+    }
+    const auto layout = constructor->getCallStorageLayout(arguments->getArgumentCount());
+    const auto callerLayout = function->getCallStorageLayout();
+    if (layout.receiverOffset.has_value() != callerLayout.returnOffset.has_value()) {
+        reportInternalError("Struct return creation requires matching destination storage");
+    }
+    if (callerLayout.returnOffset.has_value()) {
+        type->emitFreeStorageParameter(*this, *callerLayout.returnOffset, 0);
+        addOpCode(OpCodes::op_storage_parameter_address_push);
+        addIndex(*callerLayout.returnOffset);
+        addIndex(0);
+    }
+    arguments->compile(this, function);
+    addOpCode(constructor->asNativeConstructor() != nullptr
+        ? OpCodes::op_create_native_struct : OpCodes::op_create_script_struct);
+    addId(constructorId.id);
+    addIndex(layout.receiverOffset.value_or(NOMAD_INVALID_INDEX));
+    addFreeArguments(arguments);
+    if (layout.receiverOffset.has_value()) {
+        addOpCode(OpCodes::op_pop_1);
+    }
 }
 
 NomadIndex Compiler::addScriptMethodCall(
@@ -1096,17 +1638,17 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             tokens.getTokenAt(1) == "=") {
             const auto name = context->qualifyDeclaration(statement);
             if (statement.find('.') != NomadString::npos) {
-                context->reportError("Hub variable declarations require an unqualified member name", &tokens);
+                context->addError("Hub variable declarations require an unqualified member name", &tokens);
             } else if (!m_hubVariableDeclarations.insert(name).second) {
-                context->reportError("Hub variable '" + name + "' has more than one initializer", &tokens);
+                context->addError("Hub variable '" + name + "' has more than one initializer", &tokens);
             } else if (m_runtime->registerHubVariable(name).isInvalid()) {
-                context->reportError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
+                context->addError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
             }
         }
         if (statement == "enum") {
             continue; // Enum pre-parsing consumes its own closing end.
         }
-        for (auto count = parser::countBlockOpenings(&tokens); count > 0; --count) {
+        for (auto count = parser::countBlockOpenings(this, &tokens); count > 0; --count) {
             blocks.push_back({context->getHub(), false});
         }
     }
@@ -1142,7 +1684,7 @@ bool Compiler::resolveFunction(CompilerContext* context, const FunctionCompilati
         CompilerContext initializerContext(this, context->getMode(), nullptr, true);
         initializerContext.setHub(source.function->getHub());
         const auto resolved = source.ast->resolve(&initializerContext, source.function);
-        context->reportDiagnostics(initializerContext.getDiagnostics());
+        context->addDiagnostics(initializerContext.getDiagnostics());
         return resolved;
     }
     return source.ast->resolve(context, source.function);
@@ -1156,7 +1698,7 @@ void Compiler::checkReturnPaths(CompilerContext* context, const FunctionCompilat
         return;
     }
 
-    context->reportError(
+    context->addError(
         "Missing `return` at the end of function '" + source.function->getName() + "'. It returns `" +
             returnType->getTypeName() + "`, so every path must end with a `return`",
         source.function->getPath(),
@@ -1207,7 +1749,7 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
     for (const auto& source: m_functions) {
         types.push_back(source.function->getReturnType());
         if (const auto* receiver = source.function->getClassType()) {
-            for (const auto* property : receiver->asClassType()->getProperties()) {
+            for (const auto* property : receiver->asCompositeType()->getProperties()) {
                 types.push_back(property->getValueType());
             }
         }
@@ -1225,17 +1767,91 @@ std::vector<const Type*> Compiler::collectInferredTypes() const {
              variableId = variableContext->getNextVariableId(variableId)) {
             types.push_back(variableContext->getVariableType(variableId));
         }
+    }
 
-        for (const auto& field : m_externalFields) {
-            types.push_back(m_runtime->getProperty(field.id)->getValueType());
-        }
+    for (const auto& field : m_externalFields) {
+        types.push_back(m_runtime->getProperty(field.id)->getValueType());
     }
 
     return types;
 }
 
+void Compiler::recordLocalRead(
+    const CallableId functionId,
+    const VariableId variableId,
+    const Expression* expression
+) {
+    m_localAccess[functionId][variableId].reads.insert(expression);
+}
+
+void Compiler::recordLocalAssignment(
+    const CallableId functionId,
+    const VariableId variableId,
+    const AssignmentStatement* statement
+) {
+    m_localAccess[functionId][variableId].assignments.insert(statement);
+}
+
+void Compiler::prepareNamedReturn(const FunctionCompilation& source) {
+    auto* function = source.function;
+    const auto* type = function->getReturnType();
+    if (source.kind != CompilationCallableTarget::Function || type == nullptr ||
+        !type->isStruct() || type->getSize() == 0) {
+        return;
+    }
+
+    const Statement* previous = nullptr;
+    const Statement* last = nullptr;
+    const auto* statements = source.ast->getStatements();
+    for (auto index = NomadIndex{0}; index < statements->getStatementCount(); ++index) {
+        const auto* statement = statements->getStatement(index);
+        if (statement->isDeclaration() || dynamic_cast<const NullStatement*>(statement) != nullptr) {
+            continue;
+        }
+        if (dynamic_cast<const ReturnStatementNode*>(last) != nullptr ||
+            (dynamic_cast<const AssignmentStatement*>(statement) == nullptr &&
+             dynamic_cast<const MemberAssignmentStatement*>(statement) == nullptr &&
+             dynamic_cast<const ExpressionStatement*>(statement) == nullptr &&
+             dynamic_cast<const CallStatementNode*>(statement) == nullptr &&
+             dynamic_cast<const ReturnStatementNode*>(statement) == nullptr)) {
+            return;
+        }
+        previous = last;
+        last = statement;
+    }
+    const auto* assignment = dynamic_cast<const AssignmentStatement*>(previous);
+    const auto* returned = dynamic_cast<const ReturnStatementNode*>(last);
+    if (assignment == nullptr || returned == nullptr || returned->getExpression() == nullptr ||
+        assignment->getExpression()->getType() != type ||
+        !assignment->getExpression()->supportsReturnDestination()) {
+        return;
+    }
+    const auto* identifier = returned->getExpression()->asIdentifierExpression();
+    if (identifier == nullptr || identifier->getIdentifier() != assignment->getIdentifier()) {
+        return;
+    }
+    const auto variable = function->getVariableId(assignment->getIdentifier());
+    const auto accesses = m_localAccess.find(function->getId());
+    if (variable.isInvalid() || accesses == m_localAccess.end()) {
+        return;
+    }
+    const auto entry = accesses->second.find(variable);
+    if (entry == accesses->second.end() || entry->second.reads.size() != 1 ||
+        !entry->second.reads.contains(identifier) || entry->second.assignments.size() != 1 ||
+        !entry->second.assignments.contains(assignment)) {
+        return;
+    }
+    for (const auto& nested : m_functions) {
+        if (nested.function->getParentId() == function->getId() && nested.function->isCaptured(variable)) {
+            return;
+        }
+    }
+    function->setNamedReturnVariable(variable, assignment->getStagingVariable(), returned->getStagingVariable());
+}
+
 void Compiler::compileFunction(const FunctionCompilation& source) {
     auto* function = source.function;
+    prepareNamedReturn(source);
     function->setFunctionStart(m_instructions.size());
     addFunctionEntry(function);
     source.ast->compile(this, function);
@@ -1247,9 +1863,37 @@ void Compiler::compileFunction(const FunctionCompilation& source) {
     function->setFunctionEnd(m_instructions.size());
 }
 
-void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
+void Compiler::addLoadProperty(const PropertyId id) {
+    addPropertyAccess(id, false);
+}
+
+void Compiler::addStoreProperty(const PropertyId id) {
+    addPropertyAccess(id, true);
+}
+
+void Compiler::addPropertyAccess(const PropertyId id, const bool write) {
+    const auto* property = m_runtime->getProperty(id);
+    if (property == nullptr) {
+        reportInternalError("Invalid property for compiled access");
+    }
+    const auto* type = property->getValueType();
+    if (property->asNativeProperty() != nullptr || property->getClassType() == nullptr ||
+        type->isStruct() || type->getSize() != 1) {
+        addOpCode(write ? OpCodes::op_native_property_set : OpCodes::op_native_property_get);
+        addId(id.id);
+        return;
+    }
+    if (type->getStorage() == TypeStorage::Object) {
+        addOpCode(write ? OpCodes::op_object_stored_property_set : OpCodes::op_object_stored_property_load_r);
+    } else {
+        addOpCode(write ? OpCodes::op_stored_property_set : OpCodes::op_stored_property_load_r);
+    }
+    addIndex(property->getClassType()->getFieldOffset(id));
+}
+
+void Compiler::compilePropertyInitializer(const FunctionCompilation& source) {
     auto* function = source.function;
-    const auto* owner = function->getClassType()->asClassType();
+    const auto* owner = function->getClassType()->asCompositeType();
     function->setFunctionStart(m_instructions.size());
     addFunctionEntry(function);
     source.ast->compile(this, function);
@@ -1257,13 +1901,34 @@ void Compiler::compileObjectInitializer(const FunctionCompilation& source) {
         if (property->asNativeProperty() != nullptr || property->hasExplicitInitializer()) {
             continue;
         }
+        if (owner->isStruct()) {
+            if (property->getValueType()->getSize() != 0) {
+                IdentifierDefinition receiver;
+                receiver.identifierType = IdentifierType::Receiver;
+                receiver.valueType = owner;
+                StorageLocation(receiver).getProperty(*property).emitAddress(*this, function);
+                addOpCode(OpCodes::op_pop_i);
+                property->getValueType()->emitInitStorage(*this, 0);
+            }
+            continue;
+        }
+        if (property->getValueType()->isStruct()) {
+            if (property->getValueType()->getSize() != 0) {
+                const auto storage = StorageLocation(property);
+                storage.emitRetainOwner(*this, function);
+                storage.emitAddress(*this, function);
+                addOpCode(OpCodes::op_pop_i);
+                property->getValueType()->emitInitStorage(*this, 0);
+                storage.emitFreeOwner(*this, function);
+            }
+            continue;
+        }
         addOpCode(OpCodes::op_code_load_default_r);
         addId(property->getValueType()->getId().id);
         addLoadReceiver(function, ExpressionTarget::Intermediate);
-        addOpCode(OpCodes::op_native_property_set);
-        addId(property->getId().id);
-        addFreeValue(property->getValueType()->getTypeOpCodes()->freeResult);
-        addFreeValue(owner->getTypeOpCodes()->freeIntermediate);
+        addStoreProperty(property->getId());
+        property->getValueType()->emitFreeResult(*this);
+        owner->emitFreeIntermediate(*this);
     }
     addFunctionReturn(function);
     function->setFunctionEnd(m_instructions.size());
@@ -1273,6 +1938,12 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
     auto* constructor = source.function;
     constructor->setFunctionStart(m_instructions.size());
     addFunctionEntry(constructor);
+    if (constructor->getClassType()->isStruct()) {
+        source.ast->compile(this, constructor);
+        addFunctionReturn(constructor);
+        constructor->setFunctionEnd(m_instructions.size());
+        return;
+    }
     const auto* type = constructor->getClassType()->asClassType();
     const auto methods = type->getMethods();
     const auto initializer = std::ranges::find_if(methods, [&](const auto* method) {
@@ -1293,29 +1964,31 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
 
 void Compiler::addFunctionEntry(const ScriptCallableBase* function) {
     const auto count = function->getVariableCount();
-    if (count > 0) {
+    const auto storageSize = function->getVariableStorageSize();
+    if (storageSize > 0) {
         addOpCode(OpCodes::op_stack_reserve);
-        addIndex(count);
+        addIndex(storageSize);
     }
     for (auto index = NomadIndex{0}; index < count; ++index) {
-        if (function->getVariableType(VariableId{toNomadId(index)})->isString()) {
-            addLoadStringValue("", ExpressionTarget::Result);
-            addOpCode(OpCodes::op_function_variable_set);
-            addId(toNomadId(index));
+        const auto id = VariableId{toNomadId(index)};
+        if (function->isVariableStoredLocally(id)) {
+            function->getVariableType(id)->emitInitFunctionVariable(*this, function->getVariableOffset(id));
         }
     }
 }
 
-void Compiler::addStoreParameter(const NomadId parameterId, const Type* type) {
-    if (type->needsFree()) {
-        addOpCode(OpCodes::op_object_free_parameter);
-        addId(parameterId);
-    }
-    addOpCode(OpCodes::op_parameter_set);
-    addId(parameterId);
+void Compiler::addStoreParameter(const NomadIndex offset, const Type* type) {
+    type->emitFreeParameter(*this, offset);
+    type->emitStoreParameter(*this, offset);
 }
 
 void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTarget target) {
+    if (const auto* receiver = function->getClassType(); receiver != nullptr && receiver->isStruct()) {
+        if (receiver->getSize() != 0) {
+            receiver->emitLoadStorageParameter(*this, *function->getCallStorageLayout().receiverOffset, 0, target);
+        }
+        return;
+    }
     if (function->getClassType() != nullptr) {
         if (target == ExpressionTarget::Intermediate) {
             addOpCode(OpCodes::op_copy_this_to_i);
@@ -1328,12 +2001,13 @@ void Compiler::addLoadReceiver(ScriptCallableBase* function, const ExpressionTar
         if (parameterId == NOMAD_INVALID_ID) {
             reportInternalError("Missing receiver capture");
         }
-        addLoadParameter(parameterId, function->getParameterType(parameterId), target);
+        addLoadParameter(function->getParameterOffset(parameterId), function->getParameterType(parameterId), target);
     }
 }
 
 void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
     const NomadIndex variableCount = function->getVariableCount();
+    const auto storageSize = function->getVariableStorageSize();
     if (variableCount == 0) {
         addOpCode(OpCodes::op_return);
 
@@ -1342,10 +2016,16 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
 
     // Free owned variables before releasing the function's variable slots.
     for (auto i = NomadIndex{0}; i < variableCount; ++i) {
-        addFreeValue(function->getVariableType(VariableId{toNomadId(i)})->getTypeOpCodes()->freeFunctionVariable, i);
+        const auto id = VariableId{toNomadId(i)};
+        if (function->isVariableStoredLocally(id)) {
+            function->getVariableType(id)->emitFreeFunctionVariable(*this, function->getVariableOffset(id));
+        }
     }
 
-    switch (variableCount) {
+    switch (storageSize) {
+    case 0:
+        addOpCode(OpCodes::op_return);
+        break;
     case 1:
         addOpCode(OpCodes::op_return_1);
         break;
@@ -1357,13 +2037,13 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
         break;
     default:
         addOpCode(OpCodes::op_return_n);
-        addIndex(variableCount);
+        addIndex(storageSize);
     }
 }
 
 void Compiler::registerScript(CompilerContext* context, const ScriptSource& script) {
     if (m_scripts.size() >= toNomadIndex(NOMAD_ID_MAX)) {
-        context->reportError("Maximum number of scripts reached", script.source.sourceName,
+        context->addError("Maximum number of scripts reached", script.source.sourceName,
             NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return;
     }
@@ -1390,7 +2070,7 @@ CallableId Compiler::createFunction(
     const auto existingFunctionId = m_runtime->getFunctionId(functionName);
     if (existingFunctionId != CallableId{}) {
         const auto* existingFunction = m_runtime->getScriptCallable(existingFunctionId);
-        context->reportError(
+        context->addError(
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return CallableId::INVALID;
@@ -1398,7 +2078,7 @@ CallableId Compiler::createFunction(
 
     const auto functionId = m_runtime->registerScriptFunction(functionName, source.sourceName, source.text);
     if (functionId == CallableId{}) {
-        context->reportError("Could not register function '" + functionName + "'",
+        context->addError("Could not register function '" + functionName + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return CallableId::INVALID;
     }
@@ -1449,7 +2129,7 @@ const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const 
 bool Compiler::isFieldInitializer(const ScriptCallableBase* function) const {
     while (function != nullptr) {
         if (std::ranges::any_of(m_functions, [&](const auto& source) {
-            return source.function == function && source.kind == CompilationCallableTarget::ObjectInitializer;
+            return source.function == function && source.kind == CompilationCallableTarget::PropertyInitializer;
         })) {
             return true;
         }
@@ -1514,7 +2194,7 @@ void Compiler::registerSources(CompilerContext* context, const SourceBatch& batc
             return;
         }
     }
-    context->reportDiagnostics(batch.diagnostics);
+    context->addDiagnostics(batch.diagnostics);
     for (const auto& script : batch.sources) {
         registerScript(context, script);
     }
@@ -1561,7 +2241,7 @@ void Compiler::registerScriptInitializer(
     throw NomadBug("Missing script initialization function");
 }
 
-const TypedValue* Compiler::getHubInitialValue(const NomadString& name) const {
+const InterpreterValue* Compiler::getHubInitialValue(const NomadString& name) const {
     if (m_allowInitialValueLookup) {
         for (const auto* initializer : m_scriptInitializers) {
             if (initializer->getIdentifier() == name) {
@@ -1590,7 +2270,7 @@ void Compiler::prepareScriptInitialization(CompilerContext* context) {
         } catch (const NomadBug&) {
             throw;
         } catch (const NomadException& exception) {
-            context->reportError(exception.what(), initializer->getSourceName(),
+            context->addError(exception.what(), initializer->getSourceName(),
                 initializer->getLine(), initializer->getColumn());
         }
     }
@@ -1605,14 +2285,9 @@ void Compiler::installScriptInitialValues() {
             m_runtime->setContextVariableValue(id, initialValue->getValue());
         } else {
             RuntimeValue value;
-            type->initValue(value);
-            try {
-                m_runtime->setContextVariableValue(id, value);
-            } catch (...) {
-                type->freeValue(value);
-                throw;
-            }
-            type->freeValue(value);
+            type->initValue(&value);
+            const RuntimeValueGuard guard(*type, &value);
+            m_runtime->setContextVariableValue(id, value);
         }
     }
 }
@@ -1645,9 +2320,9 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         } catch (const NomadBug&) {
             throw;
         } catch (const AstException& exception) {
-            context->reportError(exception.what(), sourceName, exception.getLine(), exception.getColumn());
+            context->addError(exception.what(), sourceName, exception.getLine(), exception.getColumn());
         } catch (const NomadException& exception) {
-            context->reportError(exception.what(), sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+            context->addError(exception.what(), sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         }
     };
 
@@ -1660,6 +2335,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         m_functionLinks.clear();
         m_functionCallDependencies.clear();
         m_returningFunctions.clear();
+        m_localAccess.clear();
         m_pendingFormatStrings.clear();
     };
     const auto cleanupGuard = std::unique_ptr<Compiler, decltype(cleanup)>(this, cleanup);
@@ -1755,7 +2431,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
             CompilerContext placeholderContext(this, context->getMode(), nullptr, pending.hubInitializer);
             placeholderContext.setHub(pending.hub);
             (void)pending.literal->parsePlaceholders(&placeholderContext, function, pending.sourceContent);
-            context->reportDiagnostics(placeholderContext.getDiagnostics());
+            context->addDiagnostics(placeholderContext.getDiagnostics());
         });
         if (hasNewErrors()) {
             return false;
@@ -1788,6 +2464,25 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         return false;
     }
 
+    for (const auto& source : m_functions) {
+        const auto* owner = source.function->getClassType();
+        if (source.kind != CompilationCallableTarget::PropertyInitializer ||
+            owner == nullptr || !owner->isStruct()) {
+            continue;
+        }
+        try {
+            m_runtime->getTypeManager().finalizeCompositeFieldLayout(owner->getId());
+        } catch (const NomadBug&) {
+            throw;
+        } catch (const NomadException& exception) {
+            context->addError(exception.what(), source.function->getPath(),
+                source.ast->getLine(), source.ast->getColumn());
+        }
+    }
+    if (hasNewErrors()) {
+        return false;
+    }
+
     reportExceptions({}, [&] {
         prepareScriptInitialization(context);
     });
@@ -1809,8 +2504,8 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
 
         reportExceptions(source.function->getPath(), [&] {
             switch (source.kind) {
-                case CompilationCallableTarget::ObjectInitializer:
-                    compileObjectInitializer(source);
+                case CompilationCallableTarget::PropertyInitializer:
+                    compilePropertyInitializer(source);
                     break;
                 case CompilationCallableTarget::Constructor:
                     compileConstructor(source);
@@ -1845,9 +2540,6 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         postCompile(context);
     });
 
-    if (!beginPhase(CompilationPhase::Completed)) {
-        return false;
-    }
     if (m_scriptInitializerId.isValid()) {
         reportExceptions({}, [&] {
             installScriptInitialValues();
@@ -1856,6 +2548,9 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         if (hasNewErrors()) {
             return false;
         }
+    }
+    if (!beginPhase(CompilationPhase::Completed)) {
+        return false;
     }
     log::info("Functions compiled");
 
@@ -1929,7 +2624,7 @@ void Compiler::postCompile(CompilerContext* compilerContext) {
             const auto variableName = context->getVariableName(variableId);
 
             if (!context->isWritten(variableId)) {
-                compilerContext->reportError("Variable '" + variableName + "' has not been initialized");
+                compilerContext->addError("Variable '" + variableName + "' has not been initialized");
             }
 
             if (!context->isRead(variableId)) {

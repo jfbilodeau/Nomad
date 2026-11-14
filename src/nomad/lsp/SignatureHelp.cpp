@@ -7,9 +7,9 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/CompositeType.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <boost/json.hpp>
 
@@ -68,7 +68,7 @@ std::vector<const Callable*> findCallables(
         if (!tokens.is(TokenType::Identifier)) return {};
         const Type* type = nullptr;
         const auto constructorName = tokens.currentToken().textValue;
-        if (const auto count = runtime.getParameterizedConstructorArgumentCount(constructorName)) {
+        if (const auto count = runtime.getTypeManager().getParameterizedConstructorArgumentCount(constructorName)) {
             tokens.next();
             if (!tokens.expect("<")) return {};
             std::vector<const Type*> arguments;
@@ -78,13 +78,15 @@ std::vector<const Callable*> findCallables(
                 arguments.push_back(argument);
             }
             if (!tokens.expect(">") || arguments.size() != *count) return {};
-            type = runtime.getTypeByName(runtime.getParameterizedConstructorName(constructorName, arguments));
+            const auto specializedName =
+                runtime.getTypeManager().getParameterizedConstructorName(constructorName, arguments);
+            type = runtime.getTypeManager().getTypeByName(specializedName);
         } else {
             type = parser::parseType(&context, &tokens);
         }
-        const auto* object = type ? type->asClassType() : nullptr;
-        if (object == nullptr) return {};
-        for (const auto* constructor : object->getConstructors()) callables.push_back(constructor);
+        const auto* composite = type ? type->asCompositeType() : nullptr;
+        if (composite == nullptr) return {};
+        for (const auto* constructor : composite->getConstructors()) callables.push_back(constructor);
     } else {
         std::vector<CallableId> overloads;
         runtime.getCallableOverloads(name, overloads);
@@ -97,8 +99,8 @@ std::vector<const Callable*> findCallables(
             for (auto index = NomadIndex{0}; index < runtime.getFunctionTableSize(); ++index) {
                 const auto* method = runtime.getMethod(CallableId{toNomadId(index)});
                 if (method == nullptr || method->getClassType() != receiver || method->getName() != member) continue;
-                const auto* object = receiver->asClassType();
-                if (object != nullptr && member == object->getInitializerName()) continue;
+                const auto* composite = receiver->asCompositeType();
+                if (composite != nullptr && member == composite->getInitializerName()) continue;
                 callables.push_back(method);
             }
         }
@@ -173,7 +175,7 @@ json::value createSignatureHelp(
     }
     Tokenizer source(&context, sourceName, linePrefix);
     if (!source.nextLine() || context.hasError()) return nullptr;
-    for (const auto* declaration : {"fun", "init", "class", "open", "hub", "enum", "const", "end"}) {
+    for (const auto* declaration : {"fun", "init", "class", "struct", "open", "hub", "enum", "const", "end"}) {
         if (source.is(declaration)) return nullptr;
     }
     const auto* receiver = findValueType("this");

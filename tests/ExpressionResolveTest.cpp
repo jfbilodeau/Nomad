@@ -8,7 +8,10 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
-#include <nomad/script/InterpreterContext.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -44,12 +47,14 @@ BOOST_AUTO_TEST_CASE(function_call_nodes_retain_the_resolved_target_across_catal
     }, {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType(), "").isValid());
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext evaluation(*machine);
-    expression.evaluate(evaluation);
+    const Interpreter evaluationEvaluator(*machine);
+    InterpreterContext evaluation(evaluationEvaluator);
+    const auto result = expression.evaluate(evaluation);
     BOOST_REQUIRE(!evaluation.hasError());
-    BOOST_REQUIRE(evaluation.getResult() != nullptr);
-    BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 11);
-    statement.evaluate(evaluation);
+    BOOST_TEST(result.getValue().getIntegerValue() == 11);
+    const auto statementResult = statement.evaluate(evaluation);
+    BOOST_TEST(statementResult.getType()->isVoid());
+    BOOST_TEST(evaluation.getResult() == nullptr);
     BOOST_TEST(!evaluation.hasError());
     BOOST_TEST(selectedCalls == 2);
 }
@@ -69,7 +74,7 @@ BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_identifier_without_throw
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
 
     const auto& diagnostic = context.getDiagnostics().front();
-    BOOST_TEST((diagnostic.severity == DiagnosticSeverity::Error));
+    BOOST_TEST((diagnostic.severity == CompilerDiagnosticSeverity::Error));
     BOOST_TEST(diagnostic.message == "Unknown identifier: missing");
     BOOST_TEST(diagnostic.line == 3);
     BOOST_TEST(diagnostic.column == 7);
@@ -101,8 +106,8 @@ BOOST_AUTO_TEST_CASE(statement_resolve_reports_errors_in_call_arguments)
     BOOST_TEST(!resolved);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
 
-    const auto* error = context.getFirstError();
-    BOOST_REQUIRE(error != nullptr);
+    const auto error = context.getFirstError();
+    BOOST_REQUIRE(error.has_value());
     BOOST_TEST(error->message == "Unknown identifier: missing");
     BOOST_TEST(error->line == 1);
     BOOST_TEST(error->column == 4);
@@ -144,8 +149,8 @@ BOOST_AUTO_TEST_CASE(assignment_resolve_reports_function_variable_type_mismatch)
     BOOST_TEST(!resolved);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
 
-    const auto* error = context.getFirstError();
-    BOOST_REQUIRE(error != nullptr);
+    const auto error = context.getFirstError();
+    BOOST_REQUIRE(error.has_value());
     BOOST_TEST(error->message.find("Cannot assign value of type") != NomadString::npos);
     BOOST_TEST(error->line == 2);
     BOOST_TEST(error->column == 3);

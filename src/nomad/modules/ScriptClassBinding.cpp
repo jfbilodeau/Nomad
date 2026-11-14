@@ -132,7 +132,7 @@ NomadObject* ScriptClassBinding::construct(VirtualMachine& machine) const {
     if (machine.getRuntime() != m_runtime) {
         bindingError("virtual machine belongs to another runtime");
     }
-    return machine.constructObject(m_constructorId, {});
+    return machine.createScriptObject(m_constructorId);
 }
 
 } // namespace nomad

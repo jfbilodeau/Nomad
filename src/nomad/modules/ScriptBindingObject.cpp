@@ -3,8 +3,11 @@
 #include <nomad/modules/ScriptBindingObject.hpp>
 
 #include <nomad/script/NomadStringObject.hpp>
+#include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptObject.hpp>
 
+#include <memory>
 #include <utility>
 
 namespace nomad {
@@ -57,15 +60,10 @@ ScriptBindingObject ScriptBindingObject::construct(
     const ScriptClassBinding& binding,
     VirtualMachine& machine
 ) {
-    auto* object = binding.construct(machine);
-    try {
-        auto result = ScriptBindingObject(binding, object);
-        releaseRef(object);
-        return result;
-    } catch (...) {
-        releaseRef(object);
-        throw;
-    }
+    const auto release = [](NomadObject* object) noexcept { nomad::releaseRef(object); };
+    const auto object = std::unique_ptr<NomadObject, decltype(release)>(binding.construct(machine), release);
+
+    return ScriptBindingObject(binding, object.get());
 }
 
 ScriptBindingObject ScriptBindingObject::construct(
@@ -138,14 +136,10 @@ void ScriptBindingObject::setFloat(NomadIndex slot, NomadFloat value) {
 
 void ScriptBindingObject::setString(NomadIndex slot, const NomadString& value) {
     const auto index = getFieldIndex(slot, BindingValueKind::String);
-    auto stored = RuntimeValue(value);
-    try {
-        m_object->setField(index, stored);
-    } catch (...) {
-        stored.freeObjectValue();
-        throw;
-    }
-    stored.freeObjectValue();
+    RuntimeValue stored;
+    const RuntimeValueGuard guard(*getRuntime().getStringType(), &stored);
+    stored.setStringValue(value);
+    m_object->setField(index, stored);
 }
 
 } // namespace nomad

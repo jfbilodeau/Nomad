@@ -15,9 +15,10 @@
 #include <nomad/compiler/StatementParsers.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/OpCode.hpp>
-#include <nomad/script/Type.hpp>
 
+#include <deque>
 #include <functional>
 #include <span>
 #include <unordered_map>
@@ -29,6 +30,8 @@ namespace nomad {
 // Forward declarations
 class Compiler;
 enum class BuildPhase;
+class Function;
+class Method;
 class Tokenizer;
 class FunctionBuilder;
 
@@ -41,14 +44,14 @@ enum class CompilationCallableTarget {
     Function = 1,
     Constructor,
     HubInitializer,
-    ObjectInitializer
+    PropertyInitializer
 };
 
-class Compiler {
+class Compiler : public OpCodeEmitter {
 public:
     explicit Compiler(Runtime* runtime, std::vector<Instruction>& instructions);
     Compiler(const Compiler& other) = delete;
-    ~Compiler();
+    ~Compiler() override;
 
     [[nodiscard]] Runtime* getRuntime() const;
 
@@ -59,7 +62,6 @@ public:
     void reportError(const NomadString& message, const ScriptCallableBase* function, const Tokenizer* tokenizer) const;
     [[noreturn]]
     void reportError(const NomadString& message, const NomadString& functionName, NomadIndex line, NomadIndex column) const;
-    [[noreturn]]
     [[noreturn]] void reportInternalError(const NomadString& message) const;
 
     // Statements
@@ -67,8 +69,11 @@ public:
         const NomadString& name,
         StatementAvailability availability,
         ParseStatementFn fn,
-        PreParseStatementFn preFn = nullptr
+        PreParseStatementFn preFn = nullptr,
+        StatementBlockMode blockMode = StatementBlockMode::None,
+        StatementBlockFn blockFn = nullptr
     );
+    [[nodiscard]] bool statementOpensBlock(const Tokenizer* tokens, NomadIndex tokenIndex) const;
     [[nodiscard]] bool isStatement(const NomadString& name) const;
     [[nodiscard]] bool getParseStatementFn(
         const NomadString& name,
@@ -104,7 +109,9 @@ public:
     ) const;
 
     // Identifier identification
+    // Classification recognizes variable-context prefixes even when the name is not a registered member.
     IdentifierType getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const;
+    // Definition resolution identifies exact members; unknown context members remain Unknown.
     void getIdentifierDefinition(const NomadString& name, const ScriptCallableBase* function, IdentifierDefinition& definition) const;
     [[nodiscard]] const Property* resolveClassField(
         CompilerContext* context,
@@ -125,6 +132,15 @@ public:
         NomadIndex line,
         NomadIndex column
     );
+    [[nodiscard]] const Property* resolveStructField(
+        CompilerContext* context,
+        ScriptCallableBase* function,
+        const NomadString& name,
+        const Type* valueType,
+        bool allowDeclaration,
+        NomadIndex line,
+        NomadIndex column
+    );
     void recordFieldRead(PropertyId id);
     [[nodiscard]] bool getNativeMemberConflict(const NomadString& identifier, const Type* type,
                                                   const ScriptCallableBase* function,
@@ -135,13 +151,15 @@ public:
 
     NomadIndex addOpCode(OpCodeId opCode);
     NomadIndex addOpCode(const NomadString& opCodeName);
-    NomadIndex addOpCode(InstructionFn opCode);
+    NomadIndex addOpCode(InstructionFn opCode) override;
     void addFunctionReturn(const ScriptCallableBase* function);
     void addFunctionEntry(const ScriptCallableBase* function);
     void addLoadReceiver(ScriptCallableBase* function, ExpressionTarget target);
-    void addStoreParameter(NomadId parameterId, const Type* type);
-    NomadIndex addId(NomadId id);
-    NomadIndex addIndex(NomadIndex index);
+    void addStoreParameter(NomadIndex offset, const Type* type);
+    void addLoadProperty(PropertyId id);
+    void addStoreProperty(PropertyId id);
+    NomadIndex addId(NomadId id) override;
+    NomadIndex addIndex(NomadIndex index) override;
     NomadIndex addInteger(NomadInteger value);
     NomadIndex addFloat(NomadFloat value);
     NomadIndex addLoadValue(const Type* type, const RuntimeValue& value, ExpressionTarget target);
@@ -150,12 +168,10 @@ public:
     NomadIndex addLoadFloatValue(NomadFloat value, ExpressionTarget target);
     NomadIndex addLoadIntegerValue(NomadInteger value, ExpressionTarget target);
     NomadIndex addLoadStringValue(const NomadString& value, ExpressionTarget target);
-    // Emit the opcode for `target` from `opCodes` followed by `operand`.
-    NomadIndex addLoadTarget(const TargetOpCodes& opCodes, NomadId operand, ExpressionTarget target);
-    NomadIndex addLoadFunctionVariable(VariableId variableId, const Type* type, ExpressionTarget target);
+    NomadIndex addLoadFunctionVariable(NomadIndex offset, const Type* type, ExpressionTarget target);
     NomadIndex addLoadDynamicVariable(DynamicVariableId variableId, const Type* type, ExpressionTarget target);
     NomadIndex addLoadContextVariable(ContextVariableId contextVariableId, const Type* type, ExpressionTarget target);
-    NomadIndex addLoadParameter(NomadIndex parameterId, const Type* type, ExpressionTarget target);
+    NomadIndex addLoadParameter(NomadIndex offset, const Type* type, ExpressionTarget target);
 
     NomadIndex addPushResult(const Type* type);
     // Moves a freshly computed value from the `r` register to target. String buffers are moved, not copied.
@@ -164,21 +180,83 @@ public:
     NomadIndex addPushIntermediate(const Type* type);
     NomadIndex addPopResult(const Type* type);
     NomadIndex addPopIntermediate(const Type* type);
-    // Emit a free opcode taken from `TypeOpCodes`. Emits nothing when `freeOpCode` is `nullptr` (plain values).
-    void addFreeValue(InstructionFn freeOpCode);
-    // Same, for free opcodes taking an operand (stack offset from the top or function variable index).
-    void addFreeValue(InstructionFn freeOpCode, NomadIndex operand);
-
     NomadIndex addScriptFunctionCall(CallableId targetFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
+    // Resolved free-function arguments; destination is a same-type, reserved struct local.
+    // Its fields must be cleared or valid owned values for the callee's destination emitter.
+    void addFunctionCallIntoLocal(
+        CallableId targetFunctionId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        VariableId destinationId
+    );
+    void addFunctionCallIntoReturn(
+        CallableId targetFunctionId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments
+    );
+    // Borrows a resolved struct local, parameter, or enclosing method receiver.
+    // Struct results require a reserved same-type destination, disjoint from the receiver and arguments.
+    void addStructMethodCall(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        const IdentifierDefinition& receiver,
+        VariableId destinationId = VariableId::INVALID
+    );
+    void addStructMethodCall(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        const StorageLocation& receiver,
+        VariableId destinationId = VariableId::INVALID
+    );
+    void addStructMethodCallIntoReturn(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        const StorageLocation& receiver
+    );
+    // Evaluates and retains the class receiver outside the callee's storage layout.
+    void addObjectMethodCallIntoLocal(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        Expression& receiver,
+        VariableId destinationId
+    );
+    void addObjectMethodCallIntoReturn(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        Expression& receiver
+    );
+    // Calls a void class method with one value; struct arguments use reserved staging storage.
+    void addObjectSetterCall(
+        CallableId methodId,
+        ScriptCallableBase* function,
+        Expression& receiver,
+        Expression& value,
+        VariableId stagingId = VariableId::INVALID
+    );
     NomadIndex addScriptMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
-    NomadIndex addScriptConstructorCall(
+    NomadIndex addScriptObjectCreation(
         CallableId constructorId,
-        TypeId typeId,
         ScriptCallableBase* function,
         const ArgumentList* arguments
     );
     NomadIndex addNativeFunctionCall(CallableId nativeFunctionId, ScriptCallableBase* function, const ArgumentList* arguments);
-    NomadIndex addNativeConstructorCall(CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments);
+    NomadIndex addNativeObjectCreation(CallableId constructorId, ScriptCallableBase* function, const ArgumentList* arguments);
+    void addStructCreationIntoLocal(
+        CallableId constructorId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments,
+        VariableId destinationId
+    );
+    void addStructCreationIntoReturn(
+        CallableId constructorId,
+        ScriptCallableBase* function,
+        const ArgumentList* arguments
+    );
     NomadIndex addNativeMethodCall(CallableId memberId, ScriptCallableBase* function, const ArgumentList* arguments);
     // After a call returns, free the arguments still on the stack.
     void addFreeArguments(const ArgumentList* arguments);
@@ -218,7 +296,7 @@ public:
         NomadId scriptId,
         std::unique_ptr<HubInitializerStatement> initializer
     );
-    [[nodiscard]] const TypedValue* getHubInitialValue(const NomadString& name) const;
+    [[nodiscard]] const InterpreterValue* getHubInitialValue(const NomadString& name) const;
     // Borrows an AST node until placeholder preparation, before type inference.
     void deferFormatString(
         FormatStringLiteral* literal,
@@ -227,6 +305,7 @@ public:
         NomadString hub,
         bool hubInitializer
     );
+    // Hooks registered during a phase start with the next phase.
     void registerPhaseHook(std::function<void(CompilerContext*, CompilationPhase)> hook);
     [[nodiscard]] const DeferredType* deferType(TypeReference reference);
     void registerDeferredTypeTarget(std::unique_ptr<DeferredTypeTarget> target);
@@ -243,6 +322,16 @@ public:
     [[nodiscard]] bool isRecursiveFunctionCall(CallableId callerFunctionId, CallableId calleeFunctionId) const;
     // Records that a function contains a `return` statement. Functions without one return void.
     void addReturningFunction(CallableId functionId);
+    void recordLocalRead(
+        CallableId functionId,
+        VariableId variableId,
+        const Expression* expression
+    );
+    void recordLocalAssignment(
+        CallableId functionId,
+        VariableId variableId,
+        const AssignmentStatement* statement
+    );
     void linkFunctions();
     void postCompile(CompilerContext* context);
 
@@ -251,6 +340,7 @@ public:
     NomadString generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line);
 
 private:
+    void addPropertyAccess(PropertyId id, bool write);
     std::vector<std::unique_ptr<DeferredType>> m_deferredTypes;
     std::vector<std::unique_ptr<DeferredTypeTarget>> m_deferredTypeTargets;
 
@@ -289,8 +379,11 @@ private:
     void reportFieldDiagnostics(CompilerContext* context) const;
     [[nodiscard]] std::vector<const Type*> collectInferredTypes() const;
     void compileFunction(const FunctionCompilation& function);
-    void compileObjectInitializer(const FunctionCompilation& initializer);
+    void prepareNamedReturn(const FunctionCompilation& function);
+    void compilePropertyInitializer(const FunctionCompilation& initializer);
     void compileConstructor(const FunctionCompilation& constructor);
+    void addFunctionCallInstruction(const Function* function);
+    void addMethodCallInstruction(const Method* method);
 
     Runtime* m_runtime;
 
@@ -298,6 +391,8 @@ private:
         PreParseStatementFn preFn;
         ParseStatementFn fn;
         StatementAvailability availability;
+        StatementBlockMode blockMode;
+        StatementBlockFn blockFn;
     };
 
     struct OpCodeRegistration {
@@ -311,10 +406,9 @@ private:
         NomadIndex callIndex;
     };
 
-//    Function* m_current_function;
     std::unordered_map<NomadString, ParseStatementFnRegistration> m_statements;
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
-    std::vector<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
+    std::deque<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
     std::vector<SourceRoot> m_sourceRoots;
     bool m_sourceRootsLoaded = false;
     std::vector<ScriptCompilation> m_scripts;
@@ -336,6 +430,11 @@ private:
     std::vector<FunctionLink> m_functionLinks;
     std::unordered_map<CallableId, std::unordered_set<CallableId, IdHash>, IdHash> m_functionCallDependencies;
     std::unordered_set<CallableId, IdHash> m_returningFunctions;
+    struct LocalAccess {
+        std::unordered_set<const Expression*> reads;
+        std::unordered_set<const AssignmentStatement*> assignments;
+    };
+    std::unordered_map<CallableId, std::unordered_map<VariableId, LocalAccess, IdHash>, IdHash> m_localAccess;
     std::vector<Instruction>& m_instructions;
 };
 

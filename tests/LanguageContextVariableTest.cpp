@@ -2,9 +2,10 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -69,6 +70,35 @@ BOOST_AUTO_TEST_CASE(context_ids_support_lookup_iteration_and_catalog_growth)
     BOOST_TEST(count == originalCount + 65);
     BOOST_TEST(visitedId == lastId);
     BOOST_TEST(runtime.getNextVariableContextId(lastId) == VariableContextId::INVALID);
+}
+
+BOOST_AUTO_TEST_CASE(identifier_classification_distinguishes_context_prefixes_from_registered_variables)
+{
+    Runtime runtime;
+    const auto contextId = runtime.registerVariableContext(
+        "values", "values.", std::make_unique<SimpleVariableContext>()
+    );
+    BOOST_REQUIRE(contextId.isValid());
+    const auto variableId = runtime.registerContextVariable(contextId, "values.answer", runtime.getIntegerType());
+    BOOST_REQUIRE(variableId.isValid());
+    const auto compiler = runtime.createCompiler();
+
+    BOOST_TEST((compiler->getIdentifierType("values.", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition prefix{};
+    compiler->getIdentifierDefinition("values.", nullptr, prefix);
+    BOOST_TEST((prefix.identifierType == IdentifierType::Unknown));
+
+    BOOST_TEST((compiler->getIdentifierType("values.missing", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition missing{};
+    compiler->getIdentifierDefinition("values.missing", nullptr, missing);
+    BOOST_TEST((missing.identifierType == IdentifierType::Unknown));
+
+    BOOST_TEST((compiler->getIdentifierType("values.answer", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition answer{};
+    compiler->getIdentifierDefinition("values.answer", nullptr, answer);
+    BOOST_TEST((answer.identifierType == IdentifierType::ContextVariable));
+    BOOST_TEST(answer.contextVariableId == variableId);
+    BOOST_TEST(answer.valueType == runtime.getIntegerType());
 }
 
 BOOST_AUTO_TEST_CASE(global_handles_preserve_context_and_local_identity_after_growth)
@@ -197,19 +227,20 @@ BOOST_AUTO_TEST_CASE(interpreter_and_formatting_resolve_global_handles_in_multip
     runtime.registerVariableContext("first", "first.", std::make_unique<SimpleVariableContext>());
     runtime.registerVariableContext("second", "second.", std::make_unique<SimpleVariableContext>());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("first.value = 17", context));
-    BOOST_REQUIRE(Interpreter{}.execute("second.value = 29", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("second.value", context));
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
+    BOOST_REQUIRE(context.getInterpreter().execute("first.value = 17", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.value = 29", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.value", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
-    BOOST_REQUIRE(Interpreter{}.execute("second.value = first.value + second.value", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("$(\"{first.value}:{second.value}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.value = first.value + second.value", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$(\"{first.value}:{second.value}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "17:46");
-    BOOST_REQUIRE(Interpreter{}.execute("first.name = \"first\"", context));
-    BOOST_REQUIRE(Interpreter{}.execute("second.name = \"second\"", context));
-    BOOST_REQUIRE_MESSAGE(Interpreter{}.execute("second.name = $\"{second.name}!\"", context),
-        (context.getError() != nullptr ? *context.getError() : "Interpreter assignment failed"));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("second.name", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("first.name = \"first\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.name = \"second\"", context));
+    BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute("second.name = $\"{second.name}!\"", context),
+        (context.getFirstError().has_value() ? context.getFirstError()->message : "Interpreter assignment failed"));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.name", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "second!");
 
     auto compiler = runtime.createCompiler();

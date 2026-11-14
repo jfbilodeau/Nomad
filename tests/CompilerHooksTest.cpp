@@ -6,6 +6,7 @@
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -19,6 +20,7 @@ BOOST_AUTO_TEST_SUITE(compiler_hooks)
 BOOST_AUTO_TEST_CASE(executable_hooks_follow_phase_and_registration_order)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     const auto instructionCount = runtime.getInstructions().size();
@@ -60,8 +62,68 @@ BOOST_AUTO_TEST_CASE(executable_hooks_follow_phase_and_registration_order)
     }
     BOOST_CHECK(calls == expected);
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("answer"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("answer"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
+}
+
+BOOST_AUTO_TEST_CASE(hooks_registered_during_invocation_start_next_phase_without_resetting_state)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{{"answer", {"editor:answer", "return 42"}}}, {}});
+
+    struct HookObservations {
+        Compiler* compiler;
+        std::vector<std::pair<CompilationPhase, int>> calls;
+        std::vector<std::size_t> invocationCounts;
+    };
+    HookObservations observations{compiler.get(), {}, {}};
+    compiler->registerPhaseHook([&observations, invocationCount = std::size_t{0}](
+        CompilerContext*,
+        const CompilationPhase phase
+    ) mutable {
+        observations.calls.emplace_back(phase, 0);
+        if (phase == CompilationPhase::Configure) {
+            for (auto hookIndex = 1; hookIndex <= 16; ++hookIndex) {
+                observations.compiler->registerPhaseHook(
+                    [&observations, hookIndex](CompilerContext*, const CompilationPhase registeredPhase) {
+                        observations.calls.emplace_back(registeredPhase, hookIndex);
+                    }
+                );
+            }
+        }
+        observations.invocationCounts.push_back(++invocationCount);
+    });
+
+    BOOST_REQUIRE(compiler->compileScripts(&context));
+
+    const std::vector<CompilationPhase> phases{
+        CompilationPhase::Configure,
+        CompilationPhase::PreParse,
+        CompilationPhase::Parse,
+        CompilationPhase::PrepareFormatStrings,
+        CompilationPhase::Resolve,
+        CompilationPhase::Emit,
+        CompilationPhase::Link,
+        CompilationPhase::Verify,
+        CompilationPhase::Completed
+    };
+    std::vector<std::pair<CompilationPhase, int>> expectedCalls;
+    for (const auto phase : phases) {
+        expectedCalls.emplace_back(phase, 0);
+        if (phase != CompilationPhase::Configure) {
+            for (auto hookIndex = 1; hookIndex <= 16; ++hookIndex) {
+                expectedCalls.emplace_back(phase, hookIndex);
+            }
+        }
+    }
+
+    BOOST_CHECK(observations.calls == expectedCalls);
+    BOOST_REQUIRE(observations.invocationCounts.size() == phases.size());
+    for (auto index = std::size_t{0}; index < observations.invocationCounts.size(); ++index) {
+        BOOST_TEST(observations.invocationCounts[index] == index + 1);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(analysis_hooks_skip_emission_linking_and_verification)
@@ -107,6 +169,67 @@ BOOST_AUTO_TEST_CASE(analysis_hooks_skip_emission_linking_and_verification)
     BOOST_TEST(increment->getFunctionStart() == NOMAD_INVALID_INDEX);
 }
 
+BOOST_AUTO_TEST_CASE(completed_hooks_observe_installed_static_hub_values)
+{
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{
+        {"main", {"editor:main",
+            "hub startup\n"
+            "title = \"Initialized\"\n"
+            "end\n"
+            "return startup.title"}
+    }}, {}});
+    auto completed = false;
+    compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Completed) {
+            return;
+        }
+        const auto titleId = runtime.getContextVariableId("startup.title");
+        BOOST_REQUIRE(titleId.isValid());
+        RuntimeValue title;
+        runtime.getContextVariableValue(titleId, title);
+        BOOST_TEST(title.getStringValue() == "Initialized");
+        completed = true;
+    });
+
+    BOOST_REQUIRE(compiler->compileScripts(&context));
+    BOOST_TEST(completed);
+}
+
+BOOST_AUTO_TEST_CASE(completed_hooks_are_skipped_when_initializer_installation_fails)
+{
+    Runtime runtime;
+    const auto existingInitializerId = runtime.registerScriptFunction("existingInitializer", "existing.nomad", "");
+    BOOST_REQUIRE(existingInitializerId.isValid());
+    auto* existingInitializer = runtime.getScriptFunction(existingInitializerId);
+    BOOST_REQUIRE(existingInitializer != nullptr);
+    existingInitializer->setReturnType(runtime.getVoidType());
+    existingInitializer->setFunctionStart(runtime.getInstructions().size());
+    runtime.setScriptInitializer(existingInitializerId);
+
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {{
+        {"main", {"editor:main",
+            "hub startup\n"
+            "title = \"Initialized\"\n"
+            "end\n"
+            "return startup.title"}
+    }}, {}});
+    auto completed = false;
+    compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        completed = completed || phase == CompilationPhase::Completed;
+    });
+
+    BOOST_TEST(!compiler->compileScripts(&context));
+    BOOST_TEST(!completed);
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message ==
+        "Script initialization requires a compiled, parameterless void function before startup");
+}
+
 BOOST_AUTO_TEST_CASE(hook_errors_stop_remaining_hooks_and_phases)
 {
     const std::vector<CompilationPhase> phases{
@@ -130,7 +253,7 @@ BOOST_AUTO_TEST_CASE(hook_errors_stop_remaining_hooks_and_phases)
         compiler->registerPhaseHook([&](CompilerContext* hookContext, const CompilationPhase phase) {
             firstCalls.push_back(phase);
             if (phase == phases[failureIndex]) {
-                hookContext->reportError("Hook failed");
+                hookContext->addError("Hook failed");
             }
         });
         compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
@@ -181,7 +304,7 @@ BOOST_AUTO_TEST_CASE(input_errors_prevent_configuration_hooks)
     });
     compiler->registerSources(&context, {
         {{"answer", {"editor:answer", "return 42"}}},
-        {{DiagnosticSeverity::Error, "Loading failed", "loader", 1, 1}}
+        {{CompilerDiagnosticSeverity::Error, "Loading failed", "loader", 1, 1}}
     });
 
     BOOST_TEST(!compiler->compileScripts(&context));
@@ -216,6 +339,7 @@ BOOST_AUTO_TEST_CASE(semantic_errors_prevent_emission_and_completion_hooks)
 BOOST_AUTO_TEST_CASE(absent_optional_hooks_are_no_ops_and_compatibility_compiles)
 {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerPhaseHook({});
@@ -223,7 +347,7 @@ BOOST_AUTO_TEST_CASE(absent_optional_hooks_are_no_ops_and_compatibility_compiles
 
     BOOST_REQUIRE(compiler->compileFunctions(&context));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("answer"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("answer"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 }
 

@@ -2,7 +2,8 @@
 
 #pragma once
 
-#include <nomad/script/Type.hpp>
+#include <nomad/script/ClassType.hpp>
+#include <nomad/script/EnumType.hpp>
 
 namespace nomad {
 

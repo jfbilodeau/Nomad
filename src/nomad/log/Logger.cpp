@@ -6,6 +6,8 @@
 #include <nomad/log/FileSink.hpp>
 #include <nomad/log/MemorySink.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -175,26 +177,26 @@ void Logger::flush() {
     std::vector<LogEntry> entries;
     entries.swap(m_entries);
     const auto sinkCount = m_sinks.size();
-    m_delivering = true;
-    try {
-        for (auto index = NomadIndex{0}; index < sinkCount; ++index) {
-            auto* sink = m_sinks[index].sink.get();
-            if (!sink->getActive()) {
-                continue;
-            }
-            sink->begin();
-            for (const auto& entry : entries) {
-                if (sink->getActive() && entry.level >= sink->getLogLevel()) {
-                    sink->log(&entry);
-                }
-            }
-            sink->end();
-        }
-    } catch (...) {
+    BOOST_SCOPE_EXIT_ALL(&, this) {
         m_delivering = false;
-        throw;
+    };
+
+    m_delivering = true;
+    for (auto index = NomadIndex{0}; index < sinkCount; ++index) {
+        auto* sink = m_sinks[index].sink.get();
+        if (!sink->getActive()) {
+            continue;
+        }
+
+        sink->begin();
+        for (const auto& entry : entries) {
+            if (sink->getActive() && entry.level >= sink->getLogLevel()) {
+                sink->log(&entry);
+            }
+        }
+
+        sink->end();
     }
-    m_delivering = false;
 }
 
 void Logger::requireIdleDelivery() const {

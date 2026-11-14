@@ -49,18 +49,18 @@ the available symbols and inferred types.
 Project scripts include engine APIs and functions from the configured script roots;
 standalone scripts use language built-ins and functions from that document only.
 Registered engine variables (including `this.` and `other.`) and discovered script
-context variables are included. Object properties and methods are suggested
+context variables are included. Class and struct properties and methods are suggested
 after a receiver dot; inferred local and parameter types, as well as
 registered variable types, filter the candidates. Local variables and parameters
 are scoped to the current function and enclosing callbacks, and hover shows their
 types. Member hover shows the member signature and documentation. Named
-receivers can include chains of object properties, such as `this.name.length`.
+receivers can include chains of class or struct properties, such as `this.name.length`.
 For unknown receiver types, candidates list their receiver type in the details.
-Script class fields and ordinary methods are included, including fields inferred
+Script class and struct fields and ordinary methods are included, including fields inferred
 from constructor assignments. Each method overload has a separate completion
 entry with its parameter and return types; hover lists all overloads for the
-receiver's class. Constructor and method bodies also support `this.` member
-suggestions. Class constructors and generated initializers are not instance
+receiver's type. Constructor and method bodies also support `this.` member
+suggestions. Class and struct constructors and generated initializers are not instance
 member suggestions.
 Completion also works on unfinished member expressions such as `name.`.
 Other errors can still prevent local type inference.
@@ -74,6 +74,8 @@ request signature help with Ctrl+Shift+Space. Functions, methods on named receiv
 (including `this` and stored-field chains), and `new` expressions show native and
 script overloads, parameter descriptions, and return types. Constructors show the
 type they produce. Hidden source-location parameters are omitted.
+Struct arguments and results keep their logical type names; empty structs remain
+visible parameters even though they require no value slots.
 
 The active parameter follows argument expressions rather than individual words:
 spaces in strings or arithmetic do not advance it. Nested calls and parenthesized
@@ -107,5 +109,7 @@ only a line number and therefore highlight the start of that line.
 
 ## Syntax grammar
 
+- Class and struct declaration names, constructor headers, and block folding are
+  highlighted. `init` is a constructor keyword only at member-header positions.
 - Regenerate `syntaxes/nomad.tmLanguage.json` with
   `nomadc textmate --output editor/syntaxes/nomad.tmLanguage.json` from the repository root.

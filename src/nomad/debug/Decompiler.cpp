@@ -343,9 +343,6 @@ void decompile_instruction(DecompileState& state, const OpCodeRegistration& opco
         decompile_expression(state, DEFAULT_PREFIX);
     } else if (opcode.name == "i_return_zero") {
         state.end_line();
-    } else if (opcode.name == "i_yield") {
-        state.end_line();
-        decompile_expression(state, DEFAULT_PREFIX);
     } else if (opcode.name == "i_call_native_function") {
         const auto nativeFunction_id = state.function->get_op_code(state.index);
         state.index++;

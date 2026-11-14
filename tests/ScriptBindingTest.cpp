@@ -131,6 +131,10 @@ BOOST_AUTO_TEST_CASE(actual_generated_log_cpp_constructs_and_reads_and_writes_st
         BOOST_TEST(configuration.getMaxSizeBytes() == 120);
         auto* object = dynamic_cast<ScriptObject*>(configuration.getObject());
         BOOST_REQUIRE(object != nullptr);
+        const auto* nameField = object->getClassType()->getProperty("name");
+        BOOST_TEST(object->getField(
+            object->getClassType()->getFieldIndex(nameField->getId())
+        ).getObjectValue()->getReferenceCount() == 1U);
         const auto* field = object->getClassType()->getProperty("maxFiles");
         BOOST_TEST(object->getField(object->getClassType()->getFieldIndex(field->getId())).getIntegerValue() == 4);
         object->setField(object->getClassType()->getFieldIndex(field->getId()), RuntimeValue(NomadInteger{7}));
@@ -176,7 +180,7 @@ BOOST_AUTO_TEST_CASE(runtime_local_ids_and_wrong_runtime_receiver_and_machine_ar
     Runtime second;
     ScriptBindings firstBindings(first);
     ScriptBindings secondBindings(second);
-    BOOST_REQUIRE(second.createEnum("Padding", {{"Value", 1}}).isValid());
+    BOOST_REQUIRE(second.getTypeManager().createEnum("Padding", {{"Value", 1}}).isValid());
     auto secondCompiler = second.createCompiler();
     BOOST_REQUIRE(compileSources({{{"padding", {"padding.nomad",
         "class PaddingClass\nvalue = 1\nend\n"}}}, {}}, *secondCompiler).succeeded());
@@ -354,7 +358,7 @@ BOOST_AUTO_TEST_CASE(resolved_bindings_are_shared_and_keep_stable_slots_without_
     BOOST_TEST(&second.getBinding() == &binding);
     BOOST_TEST(&wrapped.getBinding() == &binding);
 
-    BOOST_REQUIRE(runtime.registerProperty(
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(
         binding.getClassType()->getId(), "extension", runtime.getIntegerType()
     ).isValid());
     BOOST_TEST(binding.getPropertyId(0) == activeId);
@@ -367,6 +371,33 @@ BOOST_AUTO_TEST_CASE(resolved_bindings_are_shared_and_keep_stable_slots_without_
     auto wrappedAfterExtension = log_SinkConfiguration(bindings, first.getObject());
     BOOST_TEST(&wrappedAfterExtension.getBinding() == &binding);
     BOOST_TEST(wrappedAfterExtension.getActive() == first.getActive());
+}
+
+BOOST_AUTO_TEST_CASE(struct_fields_are_rejected_without_poisoning_scalar_binding_contracts) {
+    for (const auto* fields : {"", "number = 1\n", "number = 1\ntext = \"value\"\n"}) {
+        Runtime runtime;
+        ScriptBindings bindings(runtime);
+        auto compiler = runtime.createCompiler();
+        const auto source = NomadString{"struct Value\n"} + fields +
+            "end\nclass Settings\nvalue = new Value\nend\nclass ScalarSettings\ncount = 3\nend\n";
+        const auto result = compileSources({{{"settings", {"settings.nomad", source}}}, {}}, *compiler);
+        BOOST_REQUIRE(result.succeeded());
+        const BindingClass unsupported{"Settings", {{"value", "Value"}}, {}};
+        BOOST_CHECK_EXCEPTION(
+            (void)bindings.getClassBinding(unsupported),
+            NomadException,
+            [](const NomadException& exception) {
+                return NomadString{exception.what()}.find("unsupported field type for 'value'") != NomadString::npos;
+            }
+        );
+        VirtualMachine machine(&runtime);
+        const BindingClass supported{"ScalarSettings", {{"count", "int"}}, {}};
+        auto settings = ScriptBindingObject::construct(bindings, machine, supported);
+        BOOST_TEST(settings.getInteger(0) == 3);
+        settings.setInteger(0, 7);
+        BOOST_TEST(settings.getInteger(0) == 7);
+        BOOST_TEST(&settings.getBinding() == &bindings.getClassBinding(supported));
+    }
 }
 
 BOOST_AUTO_TEST_CASE(helper_owns_contract_snapshots_and_failed_bindings_do_not_poison_the_cache) {

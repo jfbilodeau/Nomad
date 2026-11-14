@@ -4,6 +4,8 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/LoggerObject.hpp>
 #include <nomad/log/LogSinkObject.hpp>
@@ -25,6 +27,7 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <sstream>
 #include <utility>
 
@@ -37,6 +40,7 @@ struct LogConfigurationFixture {
     boost::dll::shared_library library;
     Logger logger;
     Runtime runtime;
+    std::unique_ptr<VirtualMachine> virtualMachine = runtime.createVirtualMachine();
     LogSinkId memoryId;
     RuntimeValue savedSink;
     NomadString savedSinkType = "log.ConsoleSink";
@@ -98,15 +102,15 @@ struct LogConfigurationFixture {
         const auto text = "fun " + name + " savedSink:" + savedSinkType + "\n" + source + "\nend\n";
         compiler->registerSources(&context, {{{name + "Source", {name + ".nomad", text}}}, {}});
         const auto success = compiler->compileFunctions(&context);
-        const auto* error = context.getFirstError();
-        const auto message = error == nullptr ? NomadString("Unknown compilation error") : error->message;
+        const auto error = context.getFirstError();
+        const auto message = error.has_value() ? error->message : NomadString("Unknown compilation error");
         BOOST_REQUIRE_MESSAGE(success, message);
         return runtime.getFunctionId(name);
     }
 
     RuntimeValue execute(const NomadString& source) {
         RuntimeValue result;
-        runtime.executeFunction(compile(source), {savedSink}, result);
+        virtualMachine->executeFunction(compile(source), {savedSink}, result);
         return result;
     }
 
@@ -154,7 +158,7 @@ BOOST_AUTO_TEST_CASE(configuration_objects_are_script_objects_with_matching_defa
     BOOST_TEST(base->getFieldCount() == 2U);
     BOOST_TEST(field(*base, "active").getBooleanValue());
     BOOST_TEST(field(*base, "level").getIntegerValue() == static_cast<NomadInteger>(LogLevel::Info));
-    runtime.getTypeByName("log.SinkConfiguration")->freeValue(baseValue);
+    runtime.getTypeByName("log.SinkConfiguration")->freeValue(&baseValue);
 
     auto fileValue = execute("return new log.FileSinkConfiguration");
     const auto* file = dynamic_cast<ScriptObject*>(fileValue.getObjectValue());
@@ -168,7 +172,7 @@ BOOST_AUTO_TEST_CASE(configuration_objects_are_script_objects_with_matching_defa
     BOOST_TEST(field(*file, "rotateAtStartup").getBooleanValue());
     BOOST_TEST(field(*file, "maxSizeBytes").getIntegerValue() == 10 * 1024 * 1024);
     BOOST_TEST(field(*file, "maxFiles").getIntegerValue() == 10);
-    runtime.getTypeByName("log.FileSinkConfiguration")->freeValue(fileValue);
+    runtime.getTypeByName("log.FileSinkConfiguration")->freeValue(&fileValue);
     BOOST_TEST(!std::filesystem::exists(directory.getPath() / "logs"));
     BOOST_TEST(runtime.getTypeByName("log.ConsoleSinkConfiguration") == nullptr);
     BOOST_TEST(runtime.getNativeFunctionId("log.createMemorySink").isInvalid());
@@ -311,7 +315,7 @@ BOOST_AUTO_TEST_CASE(staged_file_settings_remain_adjustable_before_activation) {
     BOOST_TEST(execute("return savedSink.maxFiles").getIntegerValue() == 0);
     auto path = execute("return log.getFilePath savedSink");
     BOOST_TEST(path.getStringObject()->getString() == pathToUtf8(directory.getPath() / "logs" / "application.log"));
-    runtime.getStringType()->freeValue(path);
+    runtime.getStringType()->freeValue(&path);
 }
 
 BOOST_AUTO_TEST_CASE(absolute_directories_are_supported_and_configuration_is_copied) {
@@ -485,10 +489,15 @@ BOOST_AUTO_TEST_CASE(signed_rotation_limit_updates_fail_without_changing_the_liv
         std::pair{std::numeric_limits<NomadInteger>::min(), NomadInteger{7}},
         std::pair{NomadInteger{128}, std::numeric_limits<NomadInteger>::min()}
     }) {
-        BOOST_CHECK_THROW(machine->runNativeFunction(
+        const InterpreterValue arguments[]{
+            {runtime.getTypeByName(savedSinkType), savedSink},
+            {runtime.getIntegerType(), RuntimeValue{size}},
+            {runtime.getIntegerType(), RuntimeValue{files}}
+        };
+        BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.runFunction(
             runtime.getNativeFunctionId("log.setFileRotationLimits"),
-            {savedSink, RuntimeValue(size), RuntimeValue(files)}
-        ), NomadException);
+            arguments
+        )), NomadException);
         BOOST_TEST(file->getMaxSizeBytes() == 64);
         BOOST_TEST(file->getMaxFiles() == 3);
     }
@@ -573,8 +582,8 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_file_operations_on_console_sinks_and_sink_
         ) + operation + "\nend\n";
         fileCompiler->registerSources(&fileContext, {{{name + "FileSource", {name + "-file.nomad", fileSource}}}, {}});
         const auto succeeded = fileCompiler->compileFunctions(&fileContext);
-        const auto* error = fileContext.getFirstError();
-        BOOST_TEST_CONTEXT((error == nullptr ? "File operations compiled successfully" : error->message)) {
+        const auto error = fileContext.getFirstError();
+        BOOST_TEST_CONTEXT((error.has_value() ? error->message : "File operations compiled successfully")) {
             BOOST_TEST(succeeded);
             BOOST_TEST(!fileContext.hasError());
         }
@@ -595,8 +604,8 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_file_operations_on_console_sinks_and_sink_
             compiler->registerSources(&context, {{{name + "Source", {name + ".nomad", source}}}, {}});
             const auto shouldSucceed = parameterType == actualType;
             const auto succeeded = compiler->compileFunctions(&context);
-            const auto* error = context.getFirstError();
-            BOOST_TEST_CONTEXT((error == nullptr ? "Sink argument compiled successfully" : error->message)) {
+            const auto error = context.getFirstError();
+            BOOST_TEST_CONTEXT((error.has_value() ? error->message : "Sink argument compiled successfully")) {
                 BOOST_TEST(succeeded == shouldSucceed);
                 BOOST_TEST(context.hasError() == !shouldSucceed);
             }
@@ -613,7 +622,7 @@ BOOST_AUTO_TEST_CASE(configuration_lifetimes_do_not_retain_objects_after_executi
     const auto before = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 20; ++index) {
         RuntimeValue result;
-        runtime.executeFunction(id, {savedSink}, result);
+        virtualMachine->executeFunction(id, {savedSink}, result);
         BOOST_TEST(result.getIntegerValue() == 10);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);

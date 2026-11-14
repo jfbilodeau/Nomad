@@ -32,7 +32,7 @@ void validateSearchOperands(VirtualMachine* virtualMachine, const NomadString& r
 
 void registerBuiltInNativeMembers(Runtime* runtime) {
     const auto stringTypeId = runtime->getTypeId("string");
-    const auto indexerId = runtime->addIndexer(stringTypeId, {
+    const auto indexerId = runtime->getTypeManager().registerNativeClassIndexer(stringTypeId, {
         .valueTypeId = stringTypeId,
         .indexTypes = {runtime->getIntegerType()->getId()},
         .getter = [](VirtualMachine* machine) {
@@ -53,7 +53,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
     if (indexerId.isInvalid()) {
         throw NomadException("Failed to register string indexer");
     }
-    const auto lengthId = runtime->addProperty(stringTypeId, {
+    const auto lengthId = runtime->getTypeManager().registerNativeClassProperty(stringTypeId, {
         .valueType = runtime->getIntegerType(),
         .name = "length",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -71,7 +71,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("The number of characters (Unicode code points) in the string.")
     });
 
-    const auto byteLengthId = runtime->addProperty(stringTypeId, {
+    const auto byteLengthId = runtime->getTypeManager().registerNativeClassProperty(stringTypeId, {
         .valueType = runtime->getIntegerType(),
         .name = "byteLength",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -81,7 +81,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("The number of bytes in the UTF-8 encoding of the string.")
     });
 
-    const auto isEmptyId = runtime->addProperty(stringTypeId, {
+    const auto isEmptyId = runtime->getTypeManager().registerNativeClassProperty(stringTypeId, {
         .valueType = runtime->getBooleanType(),
         .name = "isEmpty",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -94,7 +94,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         throw NomadException("Failed to register string properties");
     }
 
-    const auto toUpperId = runtime->addMethod(stringTypeId, {
+    const auto toUpperId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "toUpper",
         .parameters = {},
         .returnTypeId = stringTypeId,
@@ -107,7 +107,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("Return an uppercase copy of the string.")
     });
 
-    const auto toLowerId = runtime->addMethod(stringTypeId, {
+    const auto toLowerId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "toLower",
         .parameters = {},
         .returnTypeId = stringTypeId,
@@ -120,7 +120,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("Return a lowercase copy of the string.")
     });
 
-    const auto trimId = runtime->addMethod(stringTypeId, {
+    const auto trimId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "trim",
         .parameters = {},
         .returnTypeId = stringTypeId,
@@ -133,7 +133,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("Return a copy with whitespace removed from both ends.")
     });
 
-    const auto trimStartId = runtime->addMethod(stringTypeId, {
+    const auto trimStartId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "trimStart",
         .parameters = {},
         .returnTypeId = stringTypeId,
@@ -146,7 +146,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("Return a copy with whitespace removed from the beginning.")
     });
 
-    const auto trimEndId = runtime->addMethod(stringTypeId, {
+    const auto trimEndId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "trimEnd",
         .parameters = {},
         .returnTypeId = stringTypeId,
@@ -163,7 +163,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         {stringTypeId, "text", NomadParamDoc("The text to find")},
     };
 
-    const auto startsWithId = runtime->addMethod(stringTypeId, {
+    const auto startsWithId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "startsWith",
         .parameters = stringSearchParameters,
         .returnTypeId = runtime->getTypeId("bool"),
@@ -177,7 +177,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("Return true when the string starts with the given text.")
     });
 
-    const auto endsWithId = runtime->addMethod(stringTypeId, {
+    const auto endsWithId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "endsWith",
         .parameters = stringSearchParameters,
         .returnTypeId = runtime->getTypeId("bool"),
@@ -191,7 +191,7 @@ void registerBuiltInNativeMembers(Runtime* runtime) {
         .documentation = NomadDoc("Return true when the string ends with the given text.")
     });
 
-    const auto containsId = runtime->addMethod(stringTypeId, {
+    const auto containsId = runtime->getTypeManager().registerNativeClassMethod(stringTypeId, {
         .name = "contains",
         .parameters = stringSearchParameters,
         .returnTypeId = runtime->getTypeId("bool"),

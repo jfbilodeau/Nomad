@@ -110,13 +110,15 @@ NativeConstructor::NativeConstructor(
     std::vector<Parameter> parameters,
     NomadString doc
 ):
-    Constructor(CallableSource::Native, std::move(name), classType, std::move(parameters), createdType, std::move(doc)),
-    m_fn(std::move(fn))
+    Constructor(CallableSource::Native, std::move(name), classType, std::move(parameters),
+        classType->isStruct() ? classType->getRuntime()->getVoidType() : createdType, std::move(doc)),
+    m_fn(std::move(fn)),
+    m_createdType(createdType)
 {
 }
 
 const Type* NativeConstructor::getConstructedType() const {
-    return getReturnType();
+    return m_createdType;
 }
 
 } // namespace nomad

@@ -28,8 +28,8 @@ KeyValueType::KeyValueType(
     }
 }
 
-void KeyValueType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(new KeyValueObject(getTypeArguments()[0], getTypeArguments()[1]));
+void KeyValueType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(new KeyValueObject(getTypeArguments()[0], getTypeArguments()[1]));
 }
 
 } // namespace nomad

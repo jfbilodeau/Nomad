@@ -11,6 +11,7 @@
 namespace nomad::test {
 
 LanguageTestFixture::LanguageTestFixture() :
+    m_virtualMachine(m_runtime.createVirtualMachine()),
     m_compiler(m_runtime.createCompiler()),
     m_context(std::make_unique<CompilerContext>(m_compiler.get())) {
     registerSystemFunctions(&m_runtime);
@@ -20,6 +21,10 @@ LanguageTestFixture::~LanguageTestFixture() = default;
 
 Runtime& LanguageTestFixture::getRuntime() {
     return m_runtime;
+}
+
+VirtualMachine& LanguageTestFixture::getVirtualMachine() {
+    return *m_virtualMachine;
 }
 
 Compiler& LanguageTestFixture::getCompiler() {
@@ -58,13 +63,13 @@ NomadIndex LanguageTestFixture::getErrorCount() const {
     return m_context == nullptr ? 0 : m_context->getErrorCount();
 }
 
-const Diagnostic* LanguageTestFixture::findError(const NomadString& messageFragment) const {
+const CompilerDiagnostic* LanguageTestFixture::findError(const NomadString& messageFragment) const {
     if (m_context == nullptr) {
         return nullptr;
     }
 
     for (const auto& diagnostic: m_context->getDiagnostics()) {
-        if (diagnostic.severity == DiagnosticSeverity::Error &&
+        if (diagnostic.severity == CompilerDiagnosticSeverity::Error &&
             diagnostic.message.find(messageFragment) != NomadString::npos) {
             return &diagnostic;
         }
@@ -100,7 +105,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
 
     try {
         m_runtime.initializeScripts();
-        m_runtime.executeFunction(functionId, arguments, result);
+        m_virtualMachine->executeFunction(functionId, arguments, result);
     } catch (const VirtualMachineException& exception) {
         outcome.fault = exception.what();
 
@@ -117,7 +122,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
     }
 
     outcome.returnTypeName = returnType->getTypeName();
-    outcome.text = returnType->toString(result);
+    outcome.text = returnType->toString(&result);
 
     if (returnType == m_runtime.getIntegerType()) {
         outcome.integerValue = result.getIntegerValue();
@@ -127,7 +132,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
         outcome.booleanValue = result.getBooleanValue();
     }
 
-    returnType->freeValue(result);
+    returnType->freeValue(&result);
     outcome.leakedStrings = RuntimeValue::getLiveStringCount() - liveStringsBefore;
 
     return outcome;

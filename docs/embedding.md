@@ -7,19 +7,45 @@ See [building from source](building.md) for toolchain requirements and the
 
 ## Ownership
 
-The host owns the `Runtime`, its virtual machines, and interpreter contexts.
-Destroy contexts before their borrowed VM, and destroy VMs before the runtime.
+The host owns the `Runtime`, interpreters, virtual machines, and interpreter
+contexts. Destroy contexts before their borrowed interpreter, interpreters before
+their borrowed VM, and VMs before the runtime.
 Types and callables used by a context must remain valid.
 
 - `Runtime` owns registered APIs, types, callables, and bytecode.
 - `VirtualMachine` executes compiled functions and provides the execution
   environment for native calls, object members, and dynamic variables.
-- `InterpreterContext` borrows a VM and owns interpreter variables, its latest
-  typed result, and its latest error. It can additionally borrow a script frame.
-- `Interpreter` is stateless. Pass a context to each execution; keep that context
-  to retain interpreter variables between executions.
+- `InterpreterContext` borrows an interpreter and owns interpreter
+  variables, its latest typed result, and its latest error. It can additionally
+  borrow a script frame.
+- `Interpreter` borrows one VM and provides execution and value operations.
+  Pass the interpreter when constructing a context; the context obtains its VM
+  from that interpreter. Keep the context to retain interpreter
+  variables between executions. `context.getInterpreter()` returns the supplied
+  instance by const reference; contexts may share an interpreter without sharing
+  their variables or results. Temporary interpreters cannot be borrowed.
 
-Neither the interpreter nor its context creates or owns a VM.
+Neither the interpreter nor its context creates or owns a VM. Interpreters are
+noncopyable, and `interpreter.getVirtualMachine()` returns the borrowed VM by reference.
+
+`Runtime::createVirtualMachine()` returns a new caller-owned VM. Retain that VM
+for repeated execution; Runtime does not cache or own an ordinary execution VM.
+Each VM has independent stacks, results, receivers, and execution state, while
+registered APIs and shared variables belong to their common runtime.
+
+Use `machine->executeFunction(functionId, arguments)` to execute and discard a
+scalar/reference/void result without copying it. The overload taking a
+`RuntimeValue& returnValue` supplies an owned copy; free that copy through the
+function's return type. Supply separate output storage, not the VM's result
+register. Closure-pointer overloads provide the same ownership contract.
+Explicit struct arguments/results require typed interpreter calls instead.
+
+The host is responsible for calling `Runtime::initializeScripts()` before
+executing scripts that need shared initialization. VM execution does not
+perform initialization or check whether it has run.
+Runtime executes that once-only initialization using a temporary VM, then
+discards it.
+Raw VM `run` and prepared-frame execution retain their lower-level contracts.
 
 ## Experimental generated script bindings
 
@@ -43,6 +69,10 @@ for example `log.FileSinkConfiguration` becomes `log_FileSinkConfiguration`
 in `nomad::generated::log`. Stored fields expose `getXXX()` and `setXXX(value)`.
 Enum names and numeric mappings are preserved. Unsupported names and collisions
 are errors rather than silently renamed APIs.
+
+Generated wrappers remain class-based. Struct declarations and struct-valued
+binding fields are rejected, including one-slot and empty structs; use the
+typed interpreter APIs below for complete struct values instead.
 
 Enum fields additionally expose an integer getter and setter overload:
 
@@ -379,15 +409,16 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-`addProperty(TypeId, NativePropertyDefinition)`,
-`addMethod(TypeId, NativeMethodDefinition)`,
-`addConstructor(TypeId, NativeConstructorDefinition)`, and
-`addIndexer(TypeId, NativeIndexerDefinition)` register native members
-using their creation inputs. `addIterable(TypeId, NativeInterableDefinition)`
-registers a native factory method and its iterable association.
+Use the explicit TypeManager registration APIs, including `registerNativeClassIndexer` and
+`registerNativeClassIterable`. The latter registers a native factory method
+and its iterable association. Include `<nomad/script/NativeMember.hpp>` for
+the native member creation definitions.
+Register native class accessors through
+`runtime.getTypeManager().registerNativeClassProperty(ownerId, definition)`.
 Their metadata structures are now named `NativePropertyInfo`,
 `NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
-`getNativePropertyInfo`, `getNativeIndexerInfo`, and `getIterableInfo`;
+`Runtime::getNativePropertyInfo`, `Runtime::getNativeIndexerInfo`, and
+`TypeManager::getIterableInfo`;
 `NativeProperty::getInfo()` returns a property snapshot.
 
 Fallible metadata snapshot lookups return `std::optional<Info>`. An empty
@@ -396,14 +427,121 @@ parameter is retained or reused from an earlier lookup. A getter on an
 already-valid descriptor, such as `NativeProperty::getInfo()`, returns its
 snapshot directly.
 
+`Runtime::getNativeIndexerInfo(id)` instead returns borrowed const metadata,
+or `nullptr` for an invalid or unregistered ID. It does not copy callbacks.
+
 ### Type lookup
 
-`Runtime::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
+Include `<nomad/script/Type.hpp>` for the base `Type`, storage categories, and
+lifecycle and bytecode-emission APIs. Concrete built-in descriptors such as `IntegerType`,
+`StringType` and the hidden source-location types are declared in
+`<nomad/script/BaseTypes.hpp>`. Include `<nomad/script/EnumType.hpp>` for
+`EnumType` and `EnumValueDefinition`. The category bases have dedicated headers:
+`<nomad/script/ValueType.hpp>`, `<nomad/script/CompositeType.hpp>`, and
+`<nomad/script/ClassType.hpp>`. Include the descriptor's header when deriving
+from it or accessing its category-specific APIs.
+
+Use `Type::isClass()`, `isStruct()`, and `isComposite()` to query type categories.
+Classes and structs are composite types; an empty struct is still a struct and
+not `void`. Use `asClassType()`, `asStructType()`, or `asCompositeType()` when you
+need the corresponding descriptor instead of a boolean result.
+
+`Runtime::getTypeManager()` returns the runtime-owned `TypeManager` by reference;
+the const runtime overload returns a const reference. Include
+`<nomad/script/TypeManager.hpp>` to use its APIs. The manager and its descriptors
+remain valid for the lifetime of the runtime; returned descriptor pointers are
+borrowed, remain stable as types are registered, and must not be deleted.
+
+`TypeManager::getTypeId(name)` returns a `TypeId`, or `TypeId::INVALID`
 when the type is not registered. Pass it to `getType(id)` to retrieve an optional
 `const Type*`; invalid or unregistered IDs return an empty optional. Type IDs
 belong to the runtime that issued them and remain stable as more types are
 registered. They do not implicitly convert to integers or other ID categories.
 Event parameter definitions use `TypeId` for their `typeId` field.
+
+`getTypeByName(name)` returns a borrowed descriptor or `nullptr`.
+`getTypes(types)` appends registered descriptors to the supplied vector without
+clearing its existing entries. `getTypeCount()` counts all reserved IDs,
+including IDs that do not yet have a descriptor. `ownsType(type)` checks both
+runtime ownership and catalog identity.
+
+The existing Runtime lookup methods remain available with the same behavior.
+Finalize layouts through `runtime.getTypeManager().finalizeCompositeFieldLayout(id)`.
+Declare stored fields with
+`TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
+Register native class accessors with `TypeManager::registerNativeClassProperty`.
+Register class methods and constructors with the explicit
+native/script class APIs on TypeManager. The manager also exposes
+`registerNativeStructMethod` and `registerScriptStructMethod`.
+Native property accessors remain class-only and are registered through TypeManager.
+Register struct constructors with
+`TypeManager::registerNativeStructConstructor(ownerId, definition)` or
+`registerScriptStructConstructor(ownerId, parameters, path, source)`.
+Struct constructors construct their declaring type; unlike class native
+factories, they cannot specify a different constructed type. Invalid owners,
+invalid parameters, empty native callbacks, and duplicate signatures are
+rejected without publishing a callable. Native/script duplicates share the
+same owner constructor catalog.
+
+Struct constructor callables return `void`; `Constructor::getConstructedType()`
+identifies the struct value produced by construction. Their call layout includes
+one borrowed destination receiver pointer after the explicit argument slots for
+a nonempty struct, and no receiver pointer for an empty struct. There is no
+separate return pointer. Finalize the composite layout before querying this ABI.
+Class factories still return their declared constructed class type.
+
+Registered native and script struct constructors support `new` expressions into
+local destinations, including staged assignments, argument copies, returns,
+and class property initializers. Compiled source can declare closed structs with
+field initializers, constructor-inferred fields, overloaded `init` bodies, and
+methods. Structs may be nested inline in structs and classes. Copies, ordinary
+parameters, and returns have independent struct storage; contained class fields
+retain reference semantics. Methods mutate their stored receiver. Empty structs
+occupy no slots but still run constructor and method side effects. The interpreter
+supports owned struct values, construction, and free-function arguments/results;
+it can also read and assign stored struct properties through named, frame-backed,
+nested, class-owned, and temporary roots. Interpreted method calls borrow named, frame-backed,
+nested, object-owned, and temporary struct receivers. Host snapshot-based
+struct-method calls return explicit updated receiver/result values.
+
+Register class and struct types with
+`TypeManager::registerClass` and `registerStruct`. Enum, opaque-ID, and callback
+creation also belong to TypeManager. Callable
+IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
+are low-level catalog operations: they do not register namespace members or
+check namespace collisions. `catalogType()` requires a non-null descriptor
+owned by the same runtime and an unused reserved ID, otherwise it throws
+`NomadException`. An unused reserved ID is absent from lookup and enumeration.
+
+`TypeManager::registerType(descriptor)` publishes a completed descriptor in its
+namespace and transfers ownership to the manager. It requires a non-null
+descriptor owned by the same runtime with an unused reserved ID; invalid
+ownership, reservations, or hub collisions throw `NomadException`.
+Callback descriptors are not published as hub type members; event descriptors
+retain their event namespace entry. Prefer the class/struct creation APIs for
+ordinary registration.
+
+Runtime maintains hub indexes through `canRegisterTypeName(name)` and
+`publishTypeNamespace(type)`. The former checks hub-name and member collisions,
+not identifier syntax or catalog duplication. The latter requires a same-runtime
+descriptor with an unused reserved ID and publishes a borrowed namespace entry;
+it does not take ownership. It is a low-level coordination operation: the
+descriptor must immediately be cataloged and remain alive for the runtime's
+lifetime. Ordinary hosts should use manager registration instead.
+
+`TypeManager::finalizeCompositeFieldLayout(id)` finalizes class or struct
+stored-field layouts, including nested inline structs. Invalid IDs and
+non-composite types throw `NomadException`. Mutable category accessors return
+only catalog-owned descriptors, or `nullptr` when the requested owner does
+not match; stored-field additions remain subject to layout freezing.
+
+`Type::getSize()` returns the number of `RuntimeValue` slots occupied by a value,
+not its size in bytes. `void` occupies zero slots; current value types and class
+references occupy one slot. A class reference occupies one slot regardless of
+the number of fields in its instance. Types deriving directly from `Type` must
+implement this pure virtual method; `ValueType` and `ClassType` provide the
+one-slot implementation. Querying the size of an unresolved compiler-deferred
+type throws `NomadException`, as does querying its storage category.
 
 Strong IDs are invalid when default-constructed. Use `isValid()` and
 `isInvalid()` to check their numeric validity; these checks do not verify that
@@ -412,10 +550,39 @@ strong IDs as keys in standard unordered containers.
 Streaming an ID prints its type and numeric value, for example `CallableId{42}`
 or `CallableId{-1}`.
 
+#### Type-owned bytecode emission
+
+`OpCodeEmitter` and `ExpressionTarget` are declared in
+`<nomad/script/OpCode.hpp>`. `ExpressionTarget` selects the result register,
+intermediate register, or stack. `Compiler` implements `OpCodeEmitter` directly.
+Custom emitters implement `addOpCode(InstructionFn)`, `addId(NomadId)`, and
+`addIndex(NomadIndex)`; each returns the position of the appended instruction word.
+`addLoadTarget` selects one of three supplied instruction functions, writes it
+and its ID operand, and returns the operand position. Invalid targets raise
+`NomadBug`.
+
+Type descriptors provide virtual `emitInit*`, `emitFree*`, `emitLoad*`,
+`emitStore*`, and register copy/move/push/pop operations. These accept an
+`OpCodeEmitter`, not a compiler, and write directly to its output without an
+intermediate instruction collection. Operand IDs and offsets retain their
+existing VM meanings.
+
+Default value operations use bitwise register traffic and emit no initialization
+or cleanup. Class types emit reference-aware loads, copies, transfers, and
+cleanup; string types specialize initialization for empty strings. Runtime
+`initValue`, `copyValue`, and `freeValue` remain separate from bytecode emission.
+`needsFree()` is a virtual ownership query, independent of opcode selection:
+false by default and true for class references.
+
+The former `TargetOpCodes`, `TypeOpCodes`, and `getTypeOpCodes()` APIs have been
+removed. Custom descriptors must override emission operations instead of setting
+opcode-table fields. Types deriving directly from `Type` also implement
+`emitFreeParameter`; `ValueType` and `ClassType` supply their category's behavior.
+
 
 ### Class registration
 
-`Runtime::registerClass(name, mode, documentation = {})` registers a class
+`TypeManager::registerClass(name, mode, documentation = {})` registers a class
 type and returns its `TypeId`. The mode is required:
 `ClassMode::Opened` permits external script member declarations, while
 `ClassMode::Closed` prevents them. Neither mode makes existing properties
@@ -434,7 +601,7 @@ which must outlive the descriptor. `Type::getId()` returns the immutable,
 runtime-local ID. Use it when passing an existing descriptor to an ID-based API;
 name lookup does not distinguish callback signatures.
 
-`registerClass<Descriptor>(name, mode, arguments...)` creates specialized
+`TypeManager::registerClass<Descriptor>(name, mode, arguments...)` creates specialized
 `ClassType` subclasses. It calls
 `Descriptor(Runtime*, TypeId, name, mode, arguments...)`, forwarding additional arguments.
 Invalid registration requests are rejected before calling the descriptor constructor.
@@ -447,16 +614,31 @@ until the descriptor is registered. Constructors may create other types without
 changing the reserved ID. Failed creation leaves an unused ID; IDs are never
 reassigned, and `getTypes()` lists only registered descriptors. Construct
 standalone, unregistered descriptors with `TypeId::INVALID`. Registration is
-managed by the runtime's creation APIs rather than a public `registerType()`.
+managed by the runtime-owned manager's creation APIs. Runtime's class creation
+overloads remain compatibility wrappers.
 
 Type creation does not register constructors or finalize a script field layout.
 
 ### Enum creation
 
-`Runtime::createEnum(name, values, documentation = {})` creates an enum and
+`TypeManager::createEnum(name, values, documentation = {})` creates an enum and
 returns its `TypeId`. Each `EnumValueDefinition` supplies a member name and an
 explicit integer value. The runtime owns the resulting type and copies or moves
 the supplied names, values, and documentation.
+
+Access it through `runtime.getTypeManager()`. Enum constants and equality operators are registered in Runtime
+with their existing IDs and calling conventions.
+`Runtime::registerEnumOperators(type)` registers enum equality/inequality for
+an already registered same-runtime enum. Invalid ownership throws
+`NomadException`; duplicate operators are rejected. Ordinary hosts should use
+manager enum creation rather than register operators separately.
+
+`TypeManager::registerOpaqueIdType(name, documentation)` creates a borrowed
+opaque-ID descriptor with the existing name and namespace rules.
+`TypeManager::getCallbackType(parameterTypes, returnType)` interns callback descriptors by
+their exact parameter and return-type pointers. Matching signatures reuse a
+descriptor; different signatures have distinct IDs even when their type names
+match. `TypeManager::getPredicateType()` returns the parameterless boolean callback type.
 
 Creation also registers typed constants named `EnumName.MemberName` and
 same-enum equality and inequality operators. Existing script enum syntax is
@@ -477,6 +659,12 @@ Include `<nomad/script/Runtime.hpp>` for `ConstantId`.
 rejected without replacing the original value. `getConstantId(name)` returns
 `ConstantId::INVALID` when absent. Constant IDs belong to the runtime that issued
 them and remain stable as more constants are registered.
+
+Direct and hub constant registration require a non-void, non-internal type
+registered with the same runtime. Struct types are rejected, including empty,
+one-slot, multi-slot, and unfinalized structs. Invalid types are logged and
+return `ConstantId::INVALID` without publishing a constant or hub member or
+retaining the supplied value. Strings and class references remain supported.
 
 Pass a registered ID to `getConstantName`, `getConstantType`, or
 `getConstantValue`. The value is borrowed; the runtime retains ownership.
@@ -588,6 +776,149 @@ lookups and the end of context-local iteration return `VariableId::INVALID`.
 The type does not implicitly convert to integers, `ContextVariableId`, or
 other ID categories. Numeric validity does not verify ownership.
 
+`VariableMap::getVariableOffset(id)` returns the variable's physical slot offset,
+the sum of the preceding variables' `Type::getSize()` values.
+`getStorageSize()` returns the total slot count, or zero for an empty map.
+Logical IDs and `getVariableCount()` remain independent of physical slot counts.
+Queries reflect the current metadata after variable registration or type changes;
+they do not allocate storage or change existing VM access.
+
+`ScriptCallableBase::getVariableOffset(id)` and `getVariableStorageSize()`
+expose the same physical layout queries for script function, method, and
+constructor locals, excluding locals and temporaries whose storage has been
+eliminated. `isVariableStoredLocally(id)` identifies variables with physical local
+offsets. `getNamedReturnVariable()` identifies a local backed by the function's
+return destination, or returns `VariableId::INVALID`. Requesting a physical
+offset for a return-backed local or eliminated temporary throws `NomadBug`.
+Logical IDs, names, types, and `getVariableCount()` remain available independently
+of these physical storage choices.
+Local bytecode uses compiler-computed physical offsets for load, store, and
+cleanup, and frames reserve/pop physical slot totals. Logical IDs remain stable
+when sizes change. VM host-facing local APIs and frame-backed interpreter access
+resolve those IDs through callable metadata; instruction execution does not.
+`VirtualMachine::getFunctionVariableStorage(id)` borrows the complete local value
+from the active script frame. The mutable overload returns
+`std::span<RuntimeValue>`; the const overload returns
+`std::span<const RuntimeValue>`. Both use the local's logical `VariableId` and
+return exactly its type's slot count. Empty structs return an empty view with a
+null data pointer. Native callbacks access their enclosing active script
+frame's locals, not their native argument slots.
+
+For an optimized named struct return, the local view borrows the actual return
+destination. During initialization, inspection sees the contents written so far,
+not an independent default-initialized local or an atomic whole-value assignment.
+Frame writes change the same result and can affect the value returned.
+Ineligible locals retain separate local storage. Interpreter-owned evaluation
+and snapshots still copy; an interpreter context attached to a compiled frame
+borrows that frame's live storage.
+
+The caller supplies a valid local ID belonging to the active compiled callable
+with physical local or named-return storage, and keeps its frame alive while
+using the view. Eliminated compiler temporaries have no borrowable local storage.
+Lookup does not copy values,
+retain references, or transfer ownership. Mutating borrowed slots changes the
+live local; use the type's assignment operations when replacing owned values.
+The existing scalar value accessors remain for scalar/reference locals.
+`getLocalStorage(offset, count)` remains the physical-range API.
+
+Local instruction operands use full-width `Index` values, and instruction dumps
+show numeric offsets. Parameter load/store/cleanup bytecode also uses full-width
+physical offsets computed with `getParameterOffset(parameterId)`. Scalar accesses
+address one slot below the argument anchor at that offset. Parameter IDs remain
+logical metadata; native callback parameter APIs and argument shapes are unchanged.
+
+Struct-local cleanup releases owned stored fields, including fields in nested
+structs. Empty structs and fields that need no cleanup emit no cleanup
+instructions. Local storage initialization supplies empty strings for stored
+string fields, including fields in nested structs; other fields retain their
+cleared defaults. It does not run script field initializers or constructors.
+`Type::emitInitFunctionVariable(emitter, offset)` targets reserved, cleared local
+storage, not an existing owned value. Aggregate local loads and stores are not
+single-register operations; complete struct values use typed copies or stack
+storage.
+
+`Type::emitCopyFunctionVariable(emitter, sourceOffset, destinationOffset)`
+copies between same-type local ranges, replacing owned destination fields.
+Ranges must be disjoint or identical; identical ranges and empty types emit
+nothing. Nested structs copy their scalar fields independently and retain
+their reference fields without copying the referenced objects.
+
+`Type::emitAssignFunctionVariable(emitter, sourceOffset, destinationOffset,
+scratchOffset)` supports overlapping source and destination ranges by staging
+the complete source in a same-type scratch local before replacement. Scratch
+must be disjoint from both ranges and contain cleared or valid owned storage.
+Its owned fields are released afterward; it can be reused and cleaned up at
+function return. Identical source/destination ranges and empty types emit
+nothing and leave scratch unchanged. Both emission APIs require valid reserved local ranges and
+resolved sizes. They clobber the scalar result register using the existing
+local load/store ownership conventions; callers must not retain an owned
+result there across these operations or treat the register afterward as an
+additional owned copy. They do not allocate scratch locals or evaluate source
+expressions; use resolved expression/storage APIs for those operations.
+
+`Expression::compileIntoLocal(compiler, callable, destinationId)` compiles a
+resolved expression into a same-type local. Scalar expressions replace the
+local using their existing result-register path. Struct-local identifiers copy
+into disjoint local storage; identical source/destination locals are a no-op.
+Struct parameter identifiers also copy into local storage, preserving the
+parameter's value. Registered aggregate-returning calls, stored property reads,
+and `new` expressions also support local destinations. The destination ID is
+resolved to a physical offset during emission, and its storage must be reserved
+before execution. This API does not allocate temporary locals or stage assignment
+targets. It follows the same result-register ownership preconditions as local
+copy emission.
+
+Compiled struct-local assignments allocate a same-type staging local during
+resolution. The RHS completes there before destination replacement; owned
+staging fields are released after each assignment. Staging locals participate
+in physical frame reservation and return cleanup, but their internal names
+are hidden by `getVisibleVariableName`. Repeated resolution reuses the same
+staging local. Scalar assignments retain their existing path. Struct parameter
+targets use the same staging contract and replace the parameter copy, not the
+caller's original value. Stored-field and call-result assignments also stage
+complete struct values before replacement. Interpreter assignments use their
+own typed-storage path rather than these emission APIs.
+
+`Type::emitCopyParameterToFunctionVariable(emitter, parameterOffset,
+destinationOffset)` replaces a same-type local from a disjoint parameter block.
+Nested fields use physical parameter offsets in reverse anchor-relative order
+while destination fields retain increasing local offsets. It follows the local
+copy result-register ownership contract and does not allocate storage.
+`StructType::emitFreeParameter` releases owned nested fields and clears their
+slots. It is explicit: function return does not release caller-owned arguments.
+Empty types emit nothing; nonempty ranges require valid storage and finalized
+layouts. Struct parameter sources can be assigned to locals using existing
+assignment staging.
+`Type::emitCopyFunctionVariableToParameter(emitter, sourceOffset, parameterOffset)`
+copies disjoint same-type local storage into a parameter block, replacing its
+owned fields. Nested parameter field offsets use the same reversed order as
+parameter-to-local copying. It follows the same result-register ownership
+preconditions and does not allocate storage. Compiled struct parameter assignment
+stages the entire RHS first, including for self-assignment and parameter sources.
+Argument ownership and cleanup responsibility remain with the caller.
+
+Struct local and parameter identifier arguments push field copies directly
+onto the argument stack without allocating `$argument` staging locals.
+Other struct expression forms retain hidden `$argument`-prefixed same-type
+staging locals allocated during resolution. Each such RHS completes in staging, then
+`Type::emitPushFunctionVariable` pushes an owned copy in increasing field-slot
+order and staging ownership is released. The caller releases nested argument
+fields after the call using `StructType::emitFreeStackValue`, then pops physical
+argument slots. Arguments still evaluate right-to-left. Empty structs consume
+zero argument slots; scalar and specialized event argument shapes are unchanged.
+Local and parameter struct sources and struct-returning calls are supported.
+Legacy scalar host argument containers do not accept structs; interpreter calls
+use complete typed storage.
+Struct local/parameter load emission supports `ExpressionTarget::Stack`, returning
+the first emitted operand position, or `NOMAD_INVALID_INDEX` for empty structs.
+Result and intermediate register loads remain unsupported.
+
+An offset query requires resolved sizes for the preceding variables; a total-size
+query requires resolved sizes for every variable. Missing types, deferred-size
+queries, and slot-count overflow throw `NomadException`. An invalid or out-of-range
+ID passed to `getVariableOffset()` also throws `NomadException`; an in-range ID
+does not prove ownership by this map.
+
 Parameter positions, capture-list positions, and stack offsets remain numeric.
 Compiler identifier metadata separates `variableId` from `parameterId`.
 Capture metadata retains `CaptureSource`; read `variableId` only for
@@ -597,6 +928,415 @@ variable source or a numeric `NomadId` for a parameter source, followed by the
 name and type. `flagVariableAsCaptured` and `flagParameterAsCaptured` provide
 the corresponding source-specific registration APIs.
 
+### Borrowed struct call storage
+
+Low-level integrations using `InterpreterCallFrame` (include
+`<nomad/interpreter/InterpreterCallFrame.hpp>`) can borrow writable result slots
+with `RuntimeValue* getResult() const`. `getResultSize()` reports the complete
+result width; empty structs and void return zero and use a null pointer.
+The view is valid only within the call frame's lifetime and does not transfer
+ownership. After execution, use `getResultValue()` to copy the complete result
+into an independently owned `InterpreterValue`. Ordinary host calls should
+prefer the typed `Interpreter` invocation APIs.
+
+The VM supports internal borrowed storage pointers on its existing value stack.
+`RuntimeValue::setStorageAddress()` and `getStorageAddress()` store/read a
+`RuntimeValue*` without ownership changes. An address slot must never be treated
+as an object value or passed to object cleanup.
+
+For a low-level call fixture, push a required destination pointer, then a required
+receiver pointer, then explicit arguments in their existing right-to-left order.
+If explicit arguments occupy `N` slots, the receiver pointer is at parameter
+offset `N`; the destination pointer is at `N + 1` with a receiver, or `N` without
+one. Empty structs require no pointers. Hidden pointers are excluded from logical
+parameter metadata and do not change explicit parameter offsets.
+
+`VirtualMachine::getLocalAddress(offset)` addresses the first local slot at a
+physical offset. `getParameterAddress(distance)` uses the distance from the active
+argument anchor to the first slot of a block, not its logical parameter ID.
+For a block at parameter offset `offset` with width `size`, that distance is
+`offset + size - 1`, folded by the compiler for nonempty blocks.
+`pushStorageAddress(address)` pushes one borrowed pointer slot.
+`getStorageParameter(pointerOffset, fieldOffset)` accesses a field through the
+pointer parameter; const VM access exposes a read-only field reference.
+
+These are trusted internal APIs. Callers must supply valid nonempty ranges,
+storage-pointer slots, and physical offsets; access does not perform span,
+presence, width, or type checks. Storage and enclosing owners must remain alive
+and stable throughout the operation. No address is required for empty structs.
+
+Address and indirect-access opcodes use full-width `Index` operands. Scalar
+loads/pushes copy slots; reference loads/pushes retain objects. Indirect stores
+follow existing result-to-storage ownership transfer: release any previous owned
+field first, store the result, and do not treat the result register afterward as
+an additional owned copy. Explicit indirect cleanup releases and clears fields.
+These operations do not allocate destination storage or select initialization
+versus replacement behavior.
+
+Existing script/native calls and returns use their ordinary parameter anchors.
+Nested calls and synchronous host reentry restore those anchors; no additional
+aggregate-state register or per-call allocation is required. Callers clean owned
+argument fields and pop hidden pointers without object cleanup. The earlier
+`StructCallState`, binding accessors, and separate snapshot vector are removed.
+
+`Callable::getCallStorageLayout()` and the script-callable view expose
+compiler-side `CallStorageLayout` metadata: `argumentSlotCount`, optional
+`receiverOffset` and `returnOffset`, and `stackSlotCount` for arguments plus
+required hidden pointers. Existing logical parameter counts and physical
+parameter offsets exclude these descriptors. Nonempty struct method receivers
+use one pointer; nonempty struct results use one pointer. Empty structs and
+scalar/void results need no return pointer. Ordinary object receivers and saved
+call-frame slots are not included.
+
+The overload `getCallStorageLayout(argumentSlotCount)` accepts a compiler-resolved
+physical call-site width, including specialized event-dispatch arguments.
+Without it, the query uses ordinary signature layout and retains its
+call-site-dependent-width errors. Signature queries require resolved parameter
+sizes; both overloads require resolved return/receiver sizes and reject total
+slot overflow with `NomadException`. These queries do not change VM call paths
+or save metadata values on the stack.
+
+`Compiler::addFunctionCallIntoLocal(targetId, caller, arguments, destinationId)`
+emits a resolved script/native free-function call into a same-type reserved struct
+local. It pushes a destination address only for a nonempty result, evaluates
+arguments in their existing right-to-left order, emits the ordinary call,
+cleans argument ownership, and pops the unowned destination pointer. Empty
+results emit no pointer or pointer cleanup. The destination must contain cleared
+or valid owned fields for the callee's destination emission; use a separate
+staging local before replacing an existing live target when required.
+This API does not resolve arguments, initialize storage, run constructors, or
+choose copy-elision eligibility.
+
+`Compiler::addFunctionCallIntoReturn(targetId, caller, arguments)` calls a
+resolved script/native free function using the enclosing callable's struct
+return destination. Both return types must match, arguments must contain only
+explicit free-function arguments, and destination fields must be cleared or
+valid owned values. Empty results require no destination pointer. The API does
+not reserve local storage or stage an existing assignment target.
+
+`Compiler::addStructCreationIntoReturn(constructorId, caller, arguments)`
+constructs a struct in the enclosing callable's return destination. The
+constructed type must match the caller's result, and arguments must contain
+only explicit constructor arguments. Destination fields must be cleared or
+valid owned values and disjoint from borrowed sources; their previous ownership
+is released before construction. Empty structs omit the destination pointer
+but still evaluate arguments and execute initialization and constructor bodies.
+Use separate staging storage when replacing an existing live assignment target.
+
+Custom struct expressions can opt into this return path by overriding
+`Expression::supportsReturnDestination()` and `onCompileIntoReturn`.
+`compileIntoReturn(compiler, caller)` requires a resolved expression with the
+same struct type as the enclosing callable's result. Expressions default to
+the existing local-and-copy return path unless they opt in.
+
+Compiled free-function expressions returning a struct support local destinations,
+including staged assignments and struct arguments. Script `return` statements
+support struct locals, parameters, and nested function calls. Returned fields are
+copied into the caller's destination before local cleanup, except that
+`return makePoint ...` forwards a struct-returning free-function call directly
+to that destination, and `return new Point ...` constructs there directly,
+without an intermediate return local or copy. `return point.copy ...` also
+forwards a struct result from a method on a struct or class receiver. This also
+works inside methods, without confusing the result destination with the receiver.
+Parameter/property returns and ineligible locals retain their copy paths.
+Compiled free functions also support a conservative named-return case: a fresh,
+uncaptured, nonempty struct local initialized by a return-forwardable expression
+and immediately returned at the end of a straight-line body. It must have the
+exact result type, no other reads or assignments, and no competing return or
+control-flow paths. Parameters, receivers, empty structs, intervening statements,
+and broader mutable-local cases keep their existing paths. Optimized locals
+expose the actual in-progress return destination to frame inspection, as
+described under [local variable IDs](#local-variable-ids).
+Existing assignment
+targets are replaced only after their source expression finishes. Discarded
+struct results are released, and empty results still execute their side effects.
+Interpreter-owned evaluation retains ordinary copies, without NRVO.
+
+`Compiler::addStructMethodCall(methodId, caller, arguments, receiver,
+destinationId)` emits resolved script/native method calls borrowing a struct
+local, ordinary parameter, or enclosing struct-method receiver. `receiver` is
+an `IdentifierDefinition` with the corresponding storage category and ID.
+Arguments contain only explicit arguments; do not set their object receiver
+type. Struct results require a same-type reserved destination local, even when
+empty. Scalar/reference/void results require no destination; scalar/reference
+results use the ordinary result register.
+
+Nonempty result and receiver pointers are pushed in that order before explicit
+arguments. Empty storage contributes no pointer. Parameter addresses use
+precomputed anchor distances; nested methods forward the enclosing receiver
+pointer. Explicit arguments remain owned copies and retain their existing
+evaluation order and cleanup. The borrowed receiver is not copied, retained, or
+freed by the call emitter. Destination fields must be cleared or valid owned
+values, with storage disjoint from the receiver and arguments.
+
+The callee accesses its struct receiver through the hidden storage parameter,
+not `VirtualMachine::getThis()`. Existing call frames preserve the enclosing
+object receiver without an additional `push_this`/`pop_this` pair. This emission
+API does not register methods, resolve source expressions, or compile method
+bodies.
+
+`Compiler::addStructMethodCallIntoReturn(methodId, caller, arguments, receiver)`
+forwards a native/script method's struct result into the enclosing callable's
+return destination. The method must have a struct receiver and the same result
+type as the caller. `receiver` is a resolved `StorageLocation`; explicit arguments
+must not include an object receiver. Destination fields must be cleared or valid
+owned values, disjoint from borrowed receiver and argument storage. Enclosing
+class owners are retained across argument evaluation and the call, then released.
+Empty receivers and results omit only their respective hidden pointers. This API
+does not allocate receiver temporaries or stage assignment targets.
+
+`Compiler::addObjectMethodCallIntoLocal(methodId, caller, arguments, receiver,
+destinationId)` emits a native/script class-method call returning a struct into
+a same-type reserved local. `receiver` is a resolved class-valued `Expression`;
+arguments contain only explicit arguments, without an object receiver type.
+The receiver is evaluated once before right-to-left argument evaluation and
+retained until the call finishes. Replacing its original variable during argument
+evaluation does not redirect the call. Destination fields must be cleared or
+valid owned values; use disjoint staging storage when replacing an existing
+assignment target.
+
+`Compiler::addObjectMethodCallIntoReturn(methodId, caller, arguments, receiver)`
+instead forwards the enclosing callable's same-type struct return destination.
+It does not register an intermediate return local or copy. Neither emitter
+changes the caller's enclosing object receiver. Empty results execute the call
+without a destination pointer; one-slot structs still use struct return storage.
+
+Compiled native/script class methods can return structs for local values,
+arguments, property initializers, staged assignments, discarded calls, and
+temporary-rooted field access. Returned structs own independent field storage;
+contained class references retain ordinary shared reference semantics.
+
+Compiled member expressions can call registered struct methods on locals,
+ordinary parameters, a struct method's `this`, and nested struct properties
+rooted in that storage. They can also borrow stored struct properties from
+class objects, including nested structs and temporary class-object results.
+The object expression is evaluated once before explicit arguments, and its
+owned reference remains on the stack until argument and descriptor cleanup
+complete. Replacing the original variable during argument evaluation does not
+change the object receiving the call. Calls mutate the borrowed
+receiver, while explicit struct arguments remain independent copies. Struct
+results support assignment, arguments, returns, and discarded call statements.
+A script method can copy or return `this`, or pass it as an ordinary struct
+argument; those uses copy its fields rather than expose the borrowed address.
+Empty receivers and results still execute their calls.
+
+Compiled struct method calls also accept temporary receivers, such as
+`(new Point 3).move 2` or `(makePoint).read`. The receiver is evaluated once
+before explicit arguments, and its owned fields are released when the call
+finishes. Returned strings, class references, and struct copies remain valid
+after that release. Chained method returns and empty temporary receivers follow
+the same rules. Interpreter struct construction and member calls remain separate.
+
+Stored struct properties rooted in locals, ordinary struct parameters,
+borrowed struct `this`, class objects, or temporary struct values can be read
+and assigned in compiled scripts.
+Nested scalar/reference properties load and store directly. Struct property
+values can be copied into locals, passed as ordinary arguments, or returned.
+Aggregate property assignments evaluate the complete right-hand side in reserved
+local storage before replacing the property, including self-assignment and
+method calls that mutate the target. Reference properties retain ordinary
+reference semantics. Empty property calls and assignment expressions still
+execute their side effects.
+
+Temporary-rooted access, such as `(makePoint).x`, `(new Outer).point.x`, or
+`(makeOuter).point.move 2`, evaluates the complete root once before the
+assignment's right-hand side or the method's explicit arguments. The complete
+root remains alive until the read, assignment, or call finishes, then its owned
+fields are released. Extracted strings, class references, and struct copies
+remain independently owned. Assigning to or calling a mutating method on a
+temporary field changes only that temporary, except for shared class references
+stored in its fields. Empty fields still evaluate and release their root.
+The interpreter can read stored struct properties through these roots and owns
+the extracted value. It can invoke methods on stored and temporary struct
+receivers and assign their stored fields. Method-backed native struct-valued
+properties support interpreter access; their getters return owned temporaries,
+not stored-field aliases.
+
+Object-owned reads evaluate the owner once and keep it alive until copied values
+are independently owned. Writes retain the original owner and capture the
+destination before evaluating the RHS. Replacing the owner's former variable
+during the RHS therefore does not redirect the assignment. Aggregate writes
+stage the complete value before replacement, including self-assignment and
+RHS method calls that mutate the destination. Reference properties keep their
+ordinary reference semantics.
+
+Class properties can have struct-valued explicit initializers, and constructor
+assignments can infer struct-valued properties. Their default initialization
+uses existing type defaults recursively; copying or initializing storage does
+not run a struct constructor. Existing initializer restrictions on user-written
+`this` expressions remain unchanged.
+
+Struct closure captures copy complete values, including nested and empty
+structs; contained class references remain shared. See
+[closure capture storage](#closure-capture-storage) and
+[typed callback invocation](#typed-callback-invocation).
+
+`Expression::getStorageLocation()` returns an optional compiler-only
+`StorageLocation` for an addressable local, parameter, borrowed receiver, or
+stored struct property. Its logical root remains stable until physical offsets
+are computed during emission. Types and nested property layouts must be
+finalized before deriving properties or emitting storage operations.
+`getProperty(property)` derives same-owner stored struct property storage.
+`emitLoad` loads scalar/reference registers or pushes owned aggregate copies;
+`emitStoreResult` replaces a scalar/reference leaf and transfers ownership of
+the result register. `emitCopyToLocal` and `emitCopyFromLocal` require same-type
+locals and disjoint or identical ranges; overlapping replacements require prior
+staging. `emitAddress` pushes a non-owning pointer for nonempty storage and
+nothing for empty storage. `Compiler::addStructMethodCall` also accepts this
+storage description for nested receivers. These operations do not allocate
+runtime call state or perform runtime alias checks.
+`emitAssignment(compiler, caller, expression, stagingVariable)` performs the
+complete assignment lowering. The expression must be resolved and same-type;
+struct assignments require a same-type reserved staging local disjoint from
+the destination and source. Scalar/reference assignments need no staging local.
+
+`StorageLocation(ownerExpression, property)` describes a stored struct property
+of a resolved class expression. The expression must have the property's owner
+type and remain alive through emission; native properties are not supported.
+`getProperty` can further select nested stored struct properties.
+`StorageLocation(property)` instead selects the enclosing class receiver; the
+caller must have the matching resolved receiver type.
+Both forms support receiver addresses, value loads, local copies, and assignments.
+`emitRetainOwner` evaluates the class expression into one owned stack slot;
+`emitFreeOwner` releases and pops that slot when it is back at the stack top.
+For object-owned locations, `emitAddress` takes the owner's current stack
+distance, including any result descriptor already pushed. The struct-method
+call emitter sequences these operations automatically. Ordinary local,
+parameter, and borrowed receiver roots emit no owner retention or cleanup.
+Empty receivers still evaluate and retain
+their class owner, but emit no receiver address.
+Object-owned `emitLoad` and `emitCopyToLocal` evaluate and release their owner
+automatically. Low-level `emitStoreResult` and `emitCopyFromLocal` instead
+require a captured destination address in intermediate and a retained owner;
+use `emitAssignment` to prepare and clean up that scope.
+
+`StorageLocation(valueExpression, variableId)` describes a resolved temporary
+struct in a same-type reserved local. The expression must remain alive through
+emission, and the local must be disjoint from destinations and argument storage.
+`getProperty` preserves this root's lifetime across nested field selection.
+`emitRetainOwner(compiler, caller)` evaluates the root into the local;
+`emitFreeOwner(compiler, caller)` releases the complete root's owned fields.
+Value loads, local copies, assignments, and struct method calls sequence these
+operations automatically, including zero-slot fields. Low-level address and
+store/copy-from-local operations require the caller to establish and clean up
+this lifetime scope; they do not reevaluate the root.
+
+`op_stored_property_address_push(ownerOffset, firstOffset, lastOffset)` provides
+the address primitive for object-owned struct access. `ownerOffset` is
+the distance from the current stack top to an already-retained object, measured
+before the address is pushed. The other operands are inclusive physical slot
+offsets within that object, computed by the compiler. All three are full-width
+index operands. The opcode requires a nonempty, ordered range
+(`firstOffset <= lastOffset`) and pushes exactly one borrowed storage pointer.
+It preserves the owner and both value registers without retaining or releasing
+the object.
+
+`VirtualMachine::getStoredPropertyAddress(receiver, firstOffset, lastOffset)`
+exposes the same borrowed pointer contract. Both entry points check that the
+receiver has script-object storage and that its actual allocation contains the
+last slot before forming an address. This rejects missing storage on older
+instances after class extension. Ordered bounds and a live owner remain caller
+requirements. Empty structs do not request an address; their owner evaluation
+and method side effects execute without a pointer.
+
+This primitive itself does not manage owner lifetimes. Compiled method calls
+retain the evaluated owner through argument evaluation and the borrowed call,
+then release it without clobbering scalar/reference results. The existing
+fatal-fault contract still applies; this lowering adds no exception unwinding.
+
+Indirect value operations use the trusted borrowed address in intermediate:
+`op_storage_load_r`, `op_storage_push`, `op_object_storage_load_r`,
+`op_object_storage_push`, `op_storage_set`, and `op_object_free_storage`.
+Each takes one full-width physical slot offset and performs no further type,
+capacity, or alias check. Reference loads/pushes retain their copied value;
+stores transfer result ownership after any required destination release.
+`VirtualMachine::getStorage(offset)` exposes the same unchecked, borrowed slot.
+The address must remain valid and its owner alive for the entire operation.
+
+The corresponding type-owned APIs are `emitLoadStorage`, `emitFreeStorage`,
+`emitInitStorage`, `emitCopyFunctionVariableToStorage`, and
+`emitCopyStorageToFunctionVariable`. Nested structs emit recursive field
+operations. Copies require same-type disjoint storage and replace
+owned destination fields. They preserve the address and clobber result.
+Stack loads preserve result and the address while pushing owned field copies
+in increasing physical order; an intermediate-target load overwrites the
+borrowed address after reading. Struct result/intermediate loads remain
+unsupported. Empty types emit no field access or address dereference.
+Initialization supplies existing defaults without running constructors.
+
+The type-owned emission APIs also support borrowed storage:
+
+- `emitCopyFunctionVariableToStorageParameter(emitter, sourceOffset,
+  pointerOffset, fieldOffset)` replaces a borrowed destination from a local.
+- `emitCopyParameterToStorageParameter(emitter, sourceOffset, pointerOffset,
+  fieldOffset)` replaces it from an ordinary parameter block.
+- `emitCopyStorageParameterToFunctionVariable(emitter, pointerOffset,
+  fieldOffset, destinationOffset)` replaces a local from borrowed storage.
+- `emitFreeStorageParameter(emitter, pointerOffset, fieldOffset)` releases and
+  clears owned fields without releasing the pointer or enclosing owner.
+- `emitLoadStorageParameter(emitter, pointerOffset, fieldOffset, target)` loads a
+  scalar/reference field or pushes a struct's field copies in increasing order.
+  Struct result/intermediate register loads remain unsupported. The return value
+  is the first pointer operand position, or `NOMAD_INVALID_INDEX` for empty types.
+
+All offsets are physical and resolved at emission. Nested parameter source
+offsets remain reverse anchor-relative; borrowed fields and locals use increasing
+offsets. The caller must provide finalized types, same-type disjoint source and
+destination ranges, and cleared or valid owned destination fields. For possible
+overlap, stage the source in disjoint local storage first; these APIs do not
+allocate scratch, perform alias checks, or provide scratch-backed aggregate
+replacement themselves. Copies retain reference fields and clobber the result
+register under the existing local-copy ownership contract. Empty types emit
+nothing. Initialization supplies existing type defaults separately and does not
+run constructors.
+
+Compiled source and the interpreter support struct construction and free-function
+arguments/results. All execution is synchronous; suspension and resumption are
+not supported. `VirtualMachine::run` is the raw scalar script invocation entry point;
+it rejects struct arguments and returns instead of treating them as single slots.
+Use the typed Interpreter invocation APIs for host function and method calls.
+The former VM `runScript`, `runNative`, `runNativeFunction`, `runNativeMethod`,
+and `runScriptMethod` wrappers have been removed.
+
+Low-level VM execution uses `captureExecutionState()` and
+`restoreExecutionState(state)` for instruction, stack, parameter, local,
+receiver, and running state. Snapshots borrow receiver/storage references;
+they do not retain values or preserve result/intermediate registers.
+Restoration does not release values in discarded stack slots.
+
+For scoped restoration, include `<nomad/script/ExecutionStateGuard.hpp>` and
+create `const ExecutionStateGuard state(machine)` before changing the VM state.
+The guard restores the complete execution snapshot on normal scope exit and
+exception unwinding. It cannot be copied or moved. The VM and borrowed receiver
+and storage must outlive the guard. `release()` leaves the current execution
+state active without restoring the snapshot.
+
+The guard does not preserve result/intermediate registers or release stack
+values. When using `InterpreterCallFrame`, construct the guard after preparing
+the frame so execution state is restored before the frame releases its arguments.
+Keep a narrower scope when restoration must happen before consuming the result.
+
+`enterScriptFrame(address, receiver)` requires a validated compiled entry address
+and arguments/hidden pointers already on the stack. It starts script execution
+and enters a frame. `executeScript()` executes bytecode until stopping.
+`enterNativeFrame(receiver)` binds the current stack arguments and receiver
+without executing a callback or changing the running flag.
+The optional receiver defaults to an empty value for free functions and
+struct methods; struct receiver pointers follow `Callable::getCallStorageLayout()`.
+
+The caller owns argument, receiver, and result storage, invokes native callbacks,
+and restores the enclosing execution state before releasing and popping arguments.
+The typed Interpreter APIs perform these steps synchronously. VM faults
+remain fatal; these primitives are not fault-recovery or value-unwinding APIs.
+Execution exceptions do not unwind bytecode-owned arguments, including arguments
+to a failed constructor. Do not resume a failed execution or assume all abandoned
+stack values have been released.
+
+`pushStorage(storage)` copies contiguous raw slots onto the VM stack without
+retaining references. The caller supplies ownership for those slots and must
+eventually release and pop them. The complete range must fit; an overflow fails
+before changing the stack. An empty view pushes no slots.
+
 ### Class type property metadata
 
 `ClassType` describes both native and script-defined class types. `isOpen()` reports
@@ -604,22 +1344,44 @@ whether external script declarations may extend it. Closed types are not immutab
 `Type::asClassType()` returns the same descriptor as a borrowed `const ClassType*`
 for class types and their subclasses, including strings, or `nullptr` for other types.
 
+`ClassType` inherits member metadata from the abstract `CompositeType` base
+(include `<nomad/script/CompositeType.hpp>`). `Type::asCompositeType()` returns that
+descriptor as a borrowed `const CompositeType*` for classes, their subclasses,
+and structs,
+or `nullptr` for types without composite metadata. The composite view exposes the type
+name, openness, initializer name, properties, constructors, methods, and field
+layout queries. It refers to the same member catalog and IDs as the class view.
+Existing `ClassType` member APIs remain available through
+`<nomad/script/ClassType.hpp>`. Class values retain their one-slot reference and
+ownership behavior.
+
 Register the owner type with the runtime before declaring its properties.
-`Runtime::registerProperty(ownerTypeId, name, valueType)` declares a stored/script
+`TypeManager::registerScriptClassProperty(ownerTypeId, name, valueType)` declares a stored/script
 property and returns a `PropertyId`, or `PropertyId::INVALID` on failure.
-The owner ID is resolved within that runtime and must identify a class type.
+The owner ID is resolved within the manager's runtime and must identify a class type.
 The value type must also be registered with the same runtime and must be public
 and non-void. Repeating a declaration with the same name and type returns its
 existing ID. Conflicting declarations are logged and rejected without changing
 the type's properties. Host declarations are permitted on both open and closed
 types; openness controls whether scripts may add external declarations.
 
+`registerScriptStructProperty(ownerTypeId, name, valueType)` provides the same
+stored-field contract for struct owners. Each operation rejects the other
+owner category, invalid or unused IDs, and invalid value types with a logged
+error. Field names are stored as supplied; identifier syntax is validated by
+the compiler, not by these registration operations. These declarations create storage metadata,
+not native accessor callbacks. Names already used by native properties or
+methods are rejected. Register stored fields through TypeManager's explicit
+class or struct operation; the owner category is selected by the host.
+
 `Runtime::getProperty(id)` returns metadata for native or script properties;
 `getNativeProperty(id)` returns only native properties. Invalid or unregistered
 IDs return `nullptr`. Include `<nomad/script/Property.hpp>` for `PropertyId`
 and common metadata, and `<nomad/script/NativeProperty.hpp>` for native metadata.
 Use `getId()`, `getClassType()`, `getName()`, `getValueType()`, and `getDoc()`
-to inspect a property. `hasExplicitInitializer()` reports whether a stored field
+to inspect a class property. `getOwnerType()` returns its borrowed
+`const CompositeType*` owner; `getClassType()` retains the class-specific view.
+`hasExplicitInitializer()` reports whether a stored field
 has a declaration initializer; assignments inside constructor bodies do not set
 this flag. `Runtime::setPropertyHasExplicitInitializer(propertyId, value)` updates
 that metadata for a stored property and rejects invalid IDs and native properties.
@@ -628,16 +1390,148 @@ the owner's properties as borrowed const pointers. IDs and pointers remain
 stable as more properties are registered and are valid for the owning runtime's
 lifetime. Property IDs are runtime-wide, not per-object field offsets.
 
-`ClassType::getFieldIndex(id)` returns the zero-based owner-local slot for a
-stored/script property. Slots remain stable when properties are appended.
-Native properties do not occupy slots; native, invalid, and other owners'
-property IDs return `NOMAD_INVALID_INDEX`. Slot order follows successful
+`ClassType::getFieldIndex(id)` returns the zero-based owner-local logical index
+for a stored/script property. Indices remain stable when properties are appended.
+Native properties do not occupy field indices; native, invalid, and other owners'
+property IDs return `NOMAD_INVALID_INDEX`. Index order follows successful
 registration order, not necessarily source declaration order.
+
+`ClassType::getFieldOffset(id)` returns the stored field's zero-based physical
+offset in `RuntimeValue` slots. It sums the current `Type::getSize()` values of
+preceding stored fields. `getFieldStorageSize()` sums all stored field sizes.
+Native properties contribute no slots, even when their value types are unresolved;
+these queries do not invoke property callbacks. Empty and native-only field
+layouts have storage size zero, while the class's reference size remains one.
+
+Without explicit finalization, offsets and storage size are calculated on demand.
+A zero-width field retains
+its logical index and property ID and can share an offset with another field.
+Offsets require resolved sizes only for preceding stored fields; total storage
+size requires all stored field sizes. Required unresolved-size errors propagate,
+and arithmetic overflow raises `NomadException`. Unlike `getFieldIndex()`, the
+offset query raises `NomadException` for native, missing, or other owners'
+property IDs. Representable offsets, including the maximum `NomadIndex`, are
+valid results rather than invalid-ID sentinels. These metadata queries do not
+allocate or resize object storage; use physical offsets or complete field views
+rather than assuming one slot per stored field.
+
+`TypeManager::finalizeCompositeFieldLayout(typeId)` explicitly finalizes the stored-field
+layout using an ID from the owning runtime. Invalid IDs and non-composite types
+raise `NomadException`. Type descriptors remain available through const pointers;
+`isFieldLayoutFinalized()` reports whether finalization succeeded. It recursively
+finalizes stored inline-struct dependencies, but does not traverse class-reference
+fields or native properties. Direct and indirect inline cycles, required
+unresolved sizes, and arithmetic overflow raise `NomadException`. A failed owner
+remains unfinalized and can be retried after its metadata is corrected;
+successfully finalized dependencies remain finalized.
+
+After finalization, `getFieldStorageSize()` returns the cached total. Empty
+layouts finalize successfully with size zero. Field offsets remain available
+through the existing queries, and a class's reference size remains one.
+`getLayoutSize()` and `getFieldLayouts()` provide `noexcept` runtime views of
+the total slot count and each stored field's type, offset, and width. They
+require a finalized layout; calling either before successful finalization
+terminates the process. Empty stored fields are included with width zero;
+native properties are excluded. The views remain valid for the descriptor's
+lifetime, including repeated finalization and later native-member registration.
+Repeated finalization is a no-op. New stored-field registrations are logged and
+rejected after finalization; redeclaring an existing field with the same name and
+type retains its ID. Native properties, methods, constructors, initializer flags,
+and stored field values may still change without altering the layout.
+Finalization is explicit: ordinary compilation does not automatically finalize
+existing class layouts.
 
 Compiled code and the interpreter can read and assign stored properties on
 host-provided, initialized `ScriptObject` instances, as well as instances created
 with `new`. Script construction runs field initialization before the selected
 source `init` body. Classes without a source `init` have a parameterless constructor.
+
+### Host-owned struct storage
+
+`StructType` is declared in `<nomad/script/StructType.hpp>` and derives from
+`CompositeType`, not `ClassType`. Register a closed descriptor with
+`TypeManager::registerStruct(name, documentation = {})`, add stored fields with
+`runtime.getTypeManager().registerScriptStructProperty(ownerId, name, valueType)`,
+then call `runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId)`.
+Invalid or reserved names are logged and registration returns `TypeId::INVALID`.
+Use `Type::asStructType()` to inspect its category.
+
+`getSize()` and `needsFree()` require a finalized layout; otherwise they throw
+`NomadException`. Nested inline dependencies finalize recursively. Empty structs
+occupy zero slots and remain distinct from void. Types match by descriptor
+identity, not by name across runtimes.
+
+Supply contiguous, cleared `RuntimeValue` storage for initialization or copying
+into fresh storage. Initialization applies field defaults without running script
+constructors. Copying preserves inline scalar values and retains references held
+by string and class fields. `freeValue` releases stored fields, including nested
+structs; native properties are not storage. Failed initialization or copying
+releases destination resources and clears every destination slot; no caller
+cleanup is needed for the failed operation. Failed copying does not preserve
+the previous destination value.
+Cleanup is `noexcept` and requires finalized metadata, even for an empty struct;
+unfinalized struct cleanup terminates rather than throwing.
+Direct copying requires disjoint source and destination, except self-copy;
+use `assignValue` with disjoint scratch for overlapping replacement.
+
+Zero-slot lifecycle operations accept null pointers and access no slots.
+Formatting currently returns the type name without inspecting its fields.
+
+`Type::toString(const RuntimeValue* value, NomadString& text)` and the
+string-returning overload borrow the actual complete value storage:
+`getSize()` contiguous slots, with `nullptr` permitted only for a zero-sized
+value. For scalars/references, pass the address of their slot; for structs,
+pass the beginning of their complete storage. Do not pass a default value or
+copy just the first slot of a struct. The caller must keep storage and referenced
+objects alive throughout conversion. Conversion does not consume ownership.
+
+Format evaluation releases owned dynamic-getter results even if the getter or
+conversion throws. Borrowed context variables and frame storage remain owned
+by their source.
+
+Custom type overrides must use the pointer signature rather than the previous
+`const RuntimeValue&` signature. Existing class/struct defaults still print
+the type name, but value-dependent overrides can inspect every slot. Rebuild
+custom native types/modules against the updated headers.
+
+Compiled source and the interpreter support construction, field access,
+assignment, arguments/results, methods, and captures for registered structs.
+Struct values use complete slot storage, not `NomadObject` boxes. Use
+`Interpreter::construct`, `runFunction`, and typed method APIs for host calls;
+they return owned `InterpreterValue` results and accept arguments in logical
+parameter order. See [struct construction and calls](#struct-construction-calls-and-frame-inspection).
+
+Single-register struct emission remains invalid, including for one-slot and
+empty structs. Do not pass complete struct values through single-slot object,
+constant, or raw argument APIs. Struct-valued native properties require
+[method-backed accessors](#method-backed-native-properties), not scalar property
+callbacks. Compiler type arguments containing structs and built-in struct
+equality remain unsupported; compare fields explicitly. Calls execute synchronously.
+
+### Borrowed VM storage
+
+`VirtualMachine::getLocalStorage(offset, count)`, `getParameterStorage(offset, count)`,
+and `getEnclosingParameterStorage(offset, count)` return contiguous borrowed slot
+views. Each has mutable and const overloads. Offsets and counts are physical,
+not logical variable or parameter IDs. Views must not outlive their owning frame;
+the VM stack does not relocate during calls.
+
+Local offsets start at the active script frame's variable base. Parameter offsets
+count slots from the parameter anchor toward lower addresses; a block of width
+`count` starts at `anchor - offset - (count - 1)` and its fields run in increasing
+address order. Enclosing-parameter views use the script frame's anchor even during
+a native call. Empty requests return empty views without address arithmetic.
+These are trusted accessors: nonempty requests require a valid active frame and
+offsets/counts belonging to the intended value within reserved live storage.
+The compiler supplies valid physical ranges for compiled code; hosts must obey
+the same contract. Invalid nonempty ranges violate the API contract and are not
+reported as VM faults. Stack allocation, reservation, and frame-entry operations
+retain their capacity checks.
+
+These low-level APIs do not initialize, copy, or release values. Direct writes
+must obey the type's ownership contracts. Existing scalar accessors, argument
+APIs remain scalar/reference-only; these views alone do not initialize or invoke
+aggregate calls. Use typed invocation APIs for complete struct values.
 
 ### Script object storage
 
@@ -646,9 +1540,56 @@ instance storage for stored properties. Construct it with a `const ClassType*`
 whose field layout has been resolved. The runtime and its type descriptors must
 outlive the object. Native properties do not occupy storage slots.
 
-Direct allocation captures the field layout and zeroes storage without running
+Direct allocation snapshots each stored field's type, physical offset, and size.
+Inline struct layouts must be finalized before allocation; allocation does not
+freeze an enclosing open class. Each instance's storage remains fixed if fields
+are later added to that class. Native properties have no stored-field index.
+`getFieldCount()` counts logical stored fields, not physical slots.
+`getField(index)` and `setField(index, value)` use logical stored-field indices
+and support only single-slot, non-struct fields. Their physical offsets may
+differ from their indices when an earlier field is a struct.
+
+Compiled single-slot scalar/reference stored-property access uses specialized
+opcodes with full-width physical offsets. The compiler selects stored versus
+native access and the field's ownership behavior; execution does not resolve
+property IDs, field indices, declared types, or stored-field widths.
+Reference writes copy/retain the result before releasing the previous field;
+the result remains owned by the caller. Self-assignment preserves ownership.
+Explicit initializers, inferred defaults, constructor writes, and ordinary
+property reads/assignments use the same compiler selection path.
+
+The VM still checks that the receiver is a non-null `ScriptObject` and that the
+offset fits its allocated storage. These facts are not established by the
+compiler for all host/native receivers or instances allocated before an open
+class gained fields. `getStorageSize()` reports actual allocated slots;
+`getStorageValue(offset)` is a trusted unchecked physical-slot API.
+Native accessors and checked host/interpreter property APIs retain their existing
+behavior. Stored struct fields use complete typed storage, with nested
+scalar/reference access and staged whole-field replacement.
+
+The specialized opcode names use stored-property terminology:
+`op_stored_property_load_r`, `op_object_stored_property_load_r`,
+`op_stored_property_set`, and `op_object_stored_property_set`.
+`VirtualMachine::getStoredProperty(offset)` accesses the physical slot on the
+intermediate-register receiver with the receiver/capacity guards described above.
+
+Use `getFieldStorage(index)` for a borrowed contiguous view of a stored field,
+including an inline struct. The const overload returns read-only slots; the
+mutable overload permits direct mutation. The object must remain alive throughout
+the borrow. Empty structs return empty views and still have distinct logical
+field indices. Native accessor results are not field-storage views.
+`setFieldStorage(index, source, scratch)` copies exactly one field's slots using
+its type's assignment operation. Source width must match the field size. Supply
+at least `Type::getAssignmentScratchSize()` cleared scratch slots, disjoint from
+source and destination, when required. Source and destination may alias or
+overlap; assignment stages the copy before releasing the destination. Invalid
+indices, scalar access to structs, incorrect source widths, and insufficient
+scratch storage throw `NomadException`. Direct view writes must follow the type's
+ownership and lifecycle contracts; use the assignment API to replace owned values.
+
+Direct allocation zeroes storage without running
 type defaults or field initializer expressions. To create a ready-to-use script
-instance from the host, use `VirtualMachine::constructObject()` with a compiled
+instance from the host, use `VirtualMachine::createScriptObject()` with a compiled
 constructor. Every generated constructor calls the class's `$init` before its
 source body. `$init` evaluates explicit field initializers in source order, then
 initializes the remaining fields with their declared type's default value.
@@ -661,8 +1602,10 @@ The type stores its fully qualified initializer name, available through
 
 Compile the class and complete field discovery before allocating the object.
 Initialize script-level hub variables with `initializeScripts()` first when
-required. Host construction rejects invalid constructor IDs, argument counts,
-and uncompiled constructors. If a field initializer fails, later initializers
+required. Creation APIs trust the compiler to provide a valid constructor ID,
+the correct native/script and object/struct entry point, a fully compiled body,
+and the selected signature's stack arguments. Direct host callers must satisfy
+the same preconditions. If a field initializer fails, later initializers
 and the source constructor body do not run, and no instance is returned.
 Destruction releases owned field values, including values stored in a partially
 populated object.
@@ -683,24 +1626,60 @@ new instance becomes active. Script construction produces an instance of the
 declared class. A native factory may produce a different registered type.
 A native factory returning null raises `VirtualMachineException`.
 
-`VirtualMachine::constructObject(constructorId, arguments)` invokes a registered
-native or compiled script constructor. Arguments are borrowed and must match the
-selected constructor's parameter types and count. The returned object owns one
-reference, which the caller must release. Host construction leaves existing
-result and intermediate values unchanged and restores the active receiver,
-including when called from a native callback. Script constructor callables have a
-`void` return type; `Constructor::getConstructedType()` reports the type produced
-by construction, including native factories whose produced type differs from
-their owner. Script construction releases the failed
-instance at a host construction boundary if initialization or the body throws.
+`VirtualMachine::createNativeObject(constructorId)` invokes a native factory.
+`createScriptObject(constructorId)` allocates a script object and executes its
+compiled initializer and constructor body. Both consume prepared stack arguments,
+not an argument container. The returned object owns one reference, which the
+caller must release.
+
+Push owned argument copies right-to-left. Within each struct argument, push its
+physical slots in increasing order. After the call, the caller releases the
+current argument values and pops their slots; a script constructor can reassign
+its copied parameters. These APIs do not release or pop the caller's arguments.
+They preserve existing result and intermediate values and restore the active
+receiver and call frame, including on exceptions and native-callback reentry.
+The compiler emits dedicated native/script object creation opcodes; each selects
+its entry point without native/script dispatch.
+
+`createNativeStruct(destination, constructorId)` and
+`createScriptStruct(destination, constructorId)` initialize fresh, correctly sized
+`RuntimeValue*` storage. They do not allocate a struct or release a previous value.
+For nonempty structs, push the borrowed destination pointer before the explicit
+arguments; pop it after argument cleanup. Empty structs omit the pointer and can
+pass `nullptr`, but still execute initialization and constructor side effects.
+Destinations may be on the fixed VM stack or in caller-owned heap storage.
+The caller owns their field values and eventually calls the struct type's
+`freeValue`. Assignment must stage creation before replacing a live destination.
+
+Registered generated property initializers run before native or script struct
+constructor bodies. They evaluate explicit property initializers in order and
+default-initialize remaining properties. Without a registered property initializer,
+creation supplies ordinary type defaults before the constructor body.
+Copying a nested struct does not execute its constructor.
+
+The low-level VM creation entry points allocate no argument or bookkeeping storage.
+Native factories and script objects allocate their actual object storage;
+initializer and constructor code can itself allocate values. Struct lifecycle
+operations traverse properties without allocating temporary catalogs.
+Interpreter construction evaluates arguments right-to-left, copies complete
+argument values, and keeps destination storage alive through initialization and
+the constructor body.
+
+Script and struct constructor callables have a `void` return type;
+`Constructor::getConstructedType()` reports the produced value type, including
+native object factories whose produced class differs from their owner.
+Failed script object creation releases its instance. Failed struct creation can
+leave partially initialized fields; direct callers must release them.
 VM faults are fatal to execution: stop execution and do not resume or reuse the
 faulted VM. Fault recovery and complete release of nested frames, temporary
 arguments, or instances are not supported yet. Class
-initialization and constructor bodies cannot yield. Compile and initialize
+initialization and constructor bodies execute synchronously. Compile and initialize
 required script-level hub variables before using this lower-level VM API.
 
-Native constructors that allocate `ScriptObject` storage must explicitly supply
+Native factories that allocate `ScriptObject` storage must explicitly supply
 any required field values. Direct allocation does not run a defaults-only pass.
+The low-level `allocateScriptObject(typeId)` operation only allocates raw storage
+and binds it as `this`; it does not invoke a constructor.
 
 `getClassType()` and `getFieldCount()` describe the instance. `getField(index)`
 returns a borrowed const value; `setField(index, value)` copies a value of the
@@ -730,12 +1709,15 @@ native-only.
 
 ### Native property creation
 
-`Runtime::addProperty(TypeId id, NativePropertyDefinition definition)` registers
+`TypeManager::registerNativeClassProperty(TypeId id, NativePropertyDefinition definition)` registers
 a native property and returns its `PropertyId`. The owner ID must identify a
 class type in that runtime. `definition.valueType` takes a `const Type*` from the
 same runtime, or a placeholder obtained from its configured compiler's
 `deferType(reference)`. The resolved value type must be public and non-void.
 Host registration is permitted on both open and closed types.
+Include `<nomad/script/NativeMember.hpp>` for `NativePropertyDefinition`.
+Properties require class owners; struct owner IDs are rejected. Struct-valued
+properties can use registered native accessor methods, described below.
 
 Provide a getter, a setter, or both. A getter-only property is read-only; a
 setter-only property is write-only. The runtime owns the registered name,
@@ -745,7 +1727,7 @@ the callbacks are invoked.
 For an already registered class type identified by `typeId`:
 
 ```cpp
-const auto propertyId = runtime.addProperty(typeId, {
+const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
     .valueType = runtime.getIntegerType(),
     .name = "answer",
     .getter = [](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
@@ -759,11 +1741,88 @@ if (propertyId.isInvalid()) {
 }
 ```
 
-Invalid IDs, non-class owners, invalid value types or names, missing callbacks,
+Invalid IDs, non-class owners, invalid value types, missing callbacks,
 and conflicting members are logged and return `PropertyId::INVALID` without
 registering a property. Duplicate native properties are rejected even if their
 definitions match. Use the existing property and native member lookup APIs to
 retrieve the registered metadata.
+
+Registration adds the property to Runtime's shared native-member indexes without
+running callbacks or adding stored-field slots. It remains permitted after
+class field layout finalization. Runtime retains property lookup and deferred
+type-resolution APIs.
+
+#### Method-backed native properties
+
+Instead of callbacks, supply `getterMethodId`, `setterMethodId`, or both in
+`NativePropertyDefinition`. Register those methods first using ordinary native
+method APIs. The getter must belong to the property's exact owner, take no
+arguments, and return the property's value type. The setter must belong to the
+same owner, take one argument of that type, and return `void`. The value type
+must already be resolved and registered; deferred types retain the callback-only
+registration path. Do not mix callbacks and method IDs on one property.
+Invalid methods, owners, or signatures are logged and rejected without
+publishing the property or executing a callback.
+
+```cpp
+const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(ownerTypeId, {
+    .valueType = pointType,
+    .name = "point",
+    .documentation = "A point snapshot.",
+    .getterMethodId = getPointMethodId,
+    .setterMethodId = setPointMethodId
+});
+```
+
+Method-backed properties add no stored-field slots. Metadata snapshots expose
+their method IDs; `getFn` and `setFn` remain empty for this form. A getter-only
+property is read-only, and a setter-only property is write-only. Scalar,
+reference, struct, and empty-struct values use the existing typed method-call
+contracts, including independent struct arguments/results and synchronous
+aggregate calls.
+
+Use `InterpreterObjectReceiver::getProperty`/`setProperty`, context receiver
+setters, or interpreted source after registering the methods. Getters produce
+owned snapshots. Whole-property assignment invokes the setter after evaluating
+the RHS. Setting a field or calling a mutating method through a getter result
+changes only the temporary snapshot; it does not invoke the setter automatically.
+This remains allowed for getter-only properties. Contained class references
+retain their ordinary shared reference semantics. To persist a field update,
+read the snapshot, produce a replacement, and assign the complete property.
+
+Failures propagate as exceptions to typed host callers and as diagnostics from
+interpreter source execution. Argument/result cleanup still occurs, but accessor side effects,
+including setter changes before an exception, are not rolled back.
+Compiled source supports method-backed reads and whole-property writes using
+ordinary native method calls. Getter results can initialize locals/fields, serve
+as copied arguments, be discarded, or provide temporary-rooted field access.
+A direct `return owner.point` can forward a struct getter into the caller's
+return storage without an intermediate return local/copy. Whole-struct writes
+stage the RHS before invoking the setter with an independent argument copy.
+The receiver is evaluated and retained before the RHS; replacing its original
+variable during the RHS does not redirect the setter. Empty getters/setters
+still execute without value slots. Getter-only temporary mutation remains
+allowed without automatic writeback.
+
+`Compiler::addObjectSetterCall(methodId, caller, receiver, value, stagingId)`
+emits a resolved one-value, void class-method call. `receiver` and `value` are
+resolved expressions matching the method signature and physical parameter
+storage. Struct values require a same-type reserved staging local disjoint from
+the source; scalar/reference values need no staging ID. The emitter retains the
+receiver across RHS evaluation, releases copied argument storage after the call,
+and restores the enclosing object receiver.
+
+The VM's raw property APIs still reject method-backed properties; use typed
+receiver APIs or compiled source instead. Existing scalar callback properties
+are unchanged. Compiled fatal-fault recovery and failure-path cleanup remain
+unsupported.
+
+For low-level integration, `Runtime::canRegisterNativeMember` checks registered
+class ownership, collisions, and shared native-member parameter signatures,
+returning an error description on failure. `Runtime::catalogNativeProperty(id)`
+indexes an already registered native property; invalid IDs, stored properties,
+duplicate indexing, and incompatible signatures throw `NomadException`.
+Ordinary host code should use the manager registration API instead.
 
 Deferred properties receive their permanent `PropertyId` immediately. Compilation
 resolves their value types before parsing script bodies, in both analysis and
@@ -777,10 +1836,15 @@ used after their owning compiler is destroyed.
 
 ### Native method creation
 
-`Runtime::addMethod(TypeId id, NativeMethodDefinition definition)` registers a
+`TypeManager::registerNativeClassMethod(TypeId id, NativeMethodDefinition definition)` registers a
 native method and returns its `CallableId`. The owner ID must identify an object
 type. Parameter and return-type IDs are resolved in the same runtime; IDs are
 runtime-local and must not be transferred between runtimes.
+
+`registerNativeStructMethod(id, definition)` provides the corresponding
+registration for struct owners. The class and struct entry points reject the
+other owner category. Both publish methods in the same callable and native-member catalogs.
+Struct callbacks use the borrowed storage ABI above, not `getThis()`.
 
 Each `ParameterDefinition` supplies its type ID, name, and documentation.
 Parameters must have nonempty names and non-void types. Compiler-supplied
@@ -788,7 +1852,7 @@ parameter types retain their existing calling conventions. The return type may
 be `void`, but otherwise must be public. The callback must be nonempty.
 
 ```cpp
-const auto methodId = runtime.addMethod(typeId, {
+const auto methodId = runtime.getTypeManager().registerNativeClassMethod(typeId, {
     .name = "move",
     .parameters = {{runtime.getTypeId("float"), "distance", "Distance to move."}},
     .returnTypeId = runtime.getTypeId("void"),
@@ -825,6 +1889,29 @@ Each category offers conversions to its implementation: `asNativeFunction()` /
 with its specialized type, or `nullptr` when the implementation does not match.
 Script methods and script constructors are available on compiled classes.
 
+`Callable::getParameterOffset(parameterId)` returns the physical stack-slot
+offset of a logical parameter, measured from the first parameter.
+`getParameterStorageSize()` returns the total parameter slot count, or zero for
+an empty parameter list. Both queries are also available through
+`ScriptCallableBase`. They use current metadata, include captures already
+appended to the parameter list, and exclude receivers, saved call frames, and
+return destinations. They do not change logical positions, parameter counts,
+VM parameter access, or the calling convention.
+
+`Parameter::getStackValueCount()` reports the parameter's stack width. Ordinary
+values use `Type::getSize()`; event callbacks occupy two slots even though their
+type's value size is one. Compiler-supplied source parameters occupy their usual
+single slot. Event dispatch includes an event-specific payload, so its complete
+width is call-site-dependent: querying that width, a callable's total size
+containing it, or a later parameter's offset throws `NomadException`. The offset
+of the dispatch parameter itself remains computable if all preceding widths are
+known. This does not restrict dispatch calls; their arguments are still expanded
+at the call site.
+
+Missing/deferred parameter sizes, slot-count overflow, and invalid or out-of-range
+parameter positions also produce `NomadException`. Offset queries require only
+the preceding widths; total-size queries require every width.
+
 `getScriptCallables(callables)` lists all script functions, methods, and
 constructors, including nested callbacks and generated class initializers.
 `getScriptCallableAtLine(sourceName, line)` finds the innermost matching script
@@ -846,9 +1933,10 @@ not own instruction formatting.
 Methods are qualified by their declaring type, and constructor and method call
 targets are identified by name and callable ID.
 
-Use `resolveFunction(name, argumentTypes)`, `resolveMethod(classType, name,
-argumentTypes)`, or `resolveConstructor(classType, argumentTypes)` to select an
+Use `resolveFunction(name, argumentTypes)`, `resolveMethod(receiverType, name,
+argumentTypes)`, or `resolveConstructor(ownerType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
+Method and constructor resolution accept class or struct owners.
 The selected ID or pointer can be retained without repeating name resolution.
 Function overloads are selected by parameter count and types, independently of
 their implementation. Different parameter counts require all parameters to be
@@ -866,7 +1954,8 @@ do not implicitly convert to integers or other ID categories.
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-`addProperty` returns a `PropertyId`; `addMethod` returns
+`TypeManager::registerNativeClassProperty` returns a `PropertyId`;
+`TypeManager::registerNativeClassMethod` and `registerNativeStructMethod` return
 the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
 `CallableId::INVALID`, respectively.
 `getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
@@ -901,7 +1990,7 @@ source/bytecode lookups continue to exclude methods and constructors.
 script function, method, or constructor, and `nullptr` for native or invalid IDs.
 Const runtimes return a const interface. `Callable::asScriptCallable()` provides
 the same view from a descriptor. Method and constructor descriptors remain owned
-by their declaring class type; they are not returned by `getFunction(id)` or
+by their declaring composite type; they are not returned by `getFunction(id)` or
 `getScriptFunction(id)`.
 
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
@@ -911,8 +2000,8 @@ the shared implementation template. The common compilation interface is in
 `<nomad/script/ScriptCallableBase.hpp>`. No receiver parameter is synthesized by
 the callable constructors.
 
-`Runtime::registerScriptMethod(typeId, name, parameters, path, source)` and
-`registerScriptConstructor(typeId, parameters, path, source)` publish script
+`TypeManager::registerScriptClassMethod(typeId, name, parameters, path, source)` and
+`registerScriptClassConstructor(typeId, parameters, path, source)` publish script
 signatures on a runtime-owned class type. They return an invalid ID and log an
 error for an invalid owner, unsupported parameter types, or duplicate signatures.
 These registration APIs associate members with their receiver type without adding
@@ -920,6 +2009,29 @@ an implicit local or a receiver to the explicit parameter list. A parameter name
 `this` is invalid. The supplied
 source is retained for compiler diagnostics; registration alone does not parse,
 compile, or enable invocation of the member.
+
+Register constructors through the manager's explicit class/struct APIs.
+Callable IDs and category lookup APIs remain runtime-wide. Class descriptors
+own their methods and constructors; returned pointers are borrowed for the
+runtime's lifetime. Registration does not run native callbacks or alter stored
+field layouts, and remains available after field layout finalization.
+Struct owner IDs are rejected by these class APIs.
+
+`TypeManager::registerScriptStructMethod(typeId, name, parameters, path, source)`
+registers the corresponding struct-method signature. Class owner IDs are rejected.
+`registerScriptStructConstructor(typeId, parameters, path, source)` provides the
+corresponding struct-constructor registration.
+Register script methods through the manager's explicit owner-category API. Struct descriptors
+own their methods under the same runtime-lifetime contract. Registration alone
+still does not parse or compile the retained source; embedding code must supply
+the method body through the existing compiler integration APIs.
+
+Include `<nomad/script/NativeMember.hpp>` for `ParameterDefinition`,
+`NativeMethodDefinition`, and `NativeConstructorDefinition`.
+For low-level integration, `Runtime::catalogNativeMethod(id)` indexes an
+already registered native method for member lookup. Invalid IDs, other callable
+categories, duplicate indexing, and incompatible shared signatures throw
+`NomadException`. Ordinary host code should use manager registration instead.
 
 ## API reference generation
 
@@ -938,7 +2050,9 @@ methods together with script fields and methods, grouped by receiver type.
 Fields are read/write, and each method overload shows its parameter and return
 types. `generateNativeMemberDocumentation(runtime, output)` remains native-only.
 
-These generators do not invoke scripts or native callbacks. The compiler tooling
+These generators do not invoke scripts or native callbacks. Native functions
+with unresolved signatures can be documented using their declared type names;
+generation does not resolve or enable those functions. The compiler tooling
 compiles source inputs before generating their reference.
 
 ## Module configuration
@@ -1013,38 +2127,38 @@ use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 
 Use `registerHubNativeFunction(hubId, name, function, parameters, returnType, documentation)`
 to register a native function with a local member name, such as `"info"` in hub
-`"log"`. The name must be a simple identifier, not a qualified name.
+`"log"`. The supplied name is appended to the hub name without identifier validation.
 The function is available under its qualified name and shares overload resolution,
 documentation, and compiler-supplied source parameters with `registerNativeFunction`.
-Both open and closed hubs accept host registrations. Invalid hub IDs, names,
+Both open and closed hubs accept host registrations. Invalid hub IDs,
 callbacks, type references, and conflicting declarations are logged and return
 `CallableId::INVALID` without adding a function. Referenced types must belong to
 the receiving runtime; hidden source parameter types are supported.
 
 Use `registerHubScriptFunction(hubId, name, path, source)` to register a script
-function descriptor with a simple local name. It returns a `CallableId` and
+function descriptor with a host-supplied member name. It returns a `CallableId` and
 preserves the path and source in the shared callable catalog, just as
 `registerScriptFunction` does. Registration alone does not compile the body or
 make it executable. Both hub modes accept host registration. Invalid owners,
-nonlocal names, conflicting members, and existing callable names are logged and
+conflicting members and existing callable names are logged and
 return `CallableId::INVALID`; this API does not introduce script overloads.
 Use compiler source registration for normal source compilation.
 
-Use `registerHubVariable(hubId, name)` to declare a variable using a simple local
+Use `registerHubVariable(hubId, name)` to declare a variable using a host-supplied
 name. It returns a `ContextVariableId` for the same storage used by
 `registerHubVariable(qualifiedName)`. Variables start without a resolved type;
 script assignments resolve their types through the existing compilation path.
 For host-declared variables, supply a compiled parameterless `void` initialization
 function through `setScriptInitializer` when no generated script initializer exists.
-They remain writable in both open and closed hubs. Invalid owners, nonlocal
-names, duplicates, conflicts, and registration after script initialization are
+They remain writable in both open and closed hubs. Invalid owners,
+duplicates, conflicts, and registration after script initialization are
 logged and return `ContextVariableId::INVALID`.
 
 Use `registerHubClass(hubId, name, mode, documentation = {})` to register a class
 with a local name, such as `"ConsoleSink"` in hub `"log"`. It returns a `TypeId` and
-exposes the class as `log.ConsoleSink`. The name must be a simple identifier.
+exposes the class as `log.ConsoleSink`. Member names are not checked for identifier syntax.
 The hub may be open or closed; `ClassMode` independently controls whether scripts
-may extend the class. Invalid hub IDs, local names, class modes, and conflicting
+may extend the class. Invalid hub IDs, class modes, and conflicting
 declarations are logged and return `TypeId::INVALID`.
 
 `registerHubClass<Descriptor>(hubId, name, mode, arguments...)` also supports
@@ -1054,8 +2168,8 @@ additional arguments through the same registration path as
 registered using the returned class ID and the existing member APIs.
 
 Use `registerHubEnum(hubId, name, values, documentation = {})` to register an enum
-with a local name, such as `"Platform"` in hub `"os"`. Enum value names must also
-be simple identifiers. It returns a `TypeId`; the enum and its typed constants
+with a local name, such as `"Platform"` in hub `"os"`. Enum value names are not
+checked for identifier syntax, but must be non-empty. It returns a `TypeId`; the enum and its typed constants
 are available as `os.Platform` and `os.Platform.ValueName`. Empty value lists,
 duplicate names or numeric values, and conflicting declarations fail without
 publishing the enum or any of its values.
@@ -1067,9 +2181,15 @@ Object values are retained; the caller remains responsible for releasing its
 original reference. The value must match the supplied type, just as with
 `registerConstant`.
 
-Both APIs accept open and closed hubs. Invalid hub IDs, nonlocal names, invalid
+Both APIs accept open and closed hubs. Invalid hub IDs, invalid
 types, and conflicts are logged and return the corresponding invalid ID.
 Existing qualified-name registration APIs remain available.
+
+Host member names are stored as supplied, including names that are not valid
+script identifiers. The compiler validates names in source declarations;
+host registration does not make an otherwise invalid identifier usable in
+script syntax. Existing namespace qualification and internal-name handling
+still apply.
 
 Other native APIs still use qualified names with their existing runtime
 registration functions. Scripts may add distinct members only to native
@@ -1087,7 +2207,7 @@ observe typed defaults or the value assigned so far.
 After compilation and resource preparation, call `ModuleHost::run()` to
 initialize scripts and invoke the runnable module. The module receives fully
 initialized scripting state and owns its entry-point convention. The game
-module executes `game.entry` through `Runtime::executeFunction`.
+module executes `game.entry` through its retained caller-owned VM.
 
 Use `ModuleHost::compileProject()` to load configured script roots and compile them.
 It returns a `CompilationResult` containing diagnostics and error/warning counts;
@@ -1117,8 +2237,9 @@ are destroyed, and both are destroyed before module libraries are unloaded.
 and does not create a runtime, replace the compiler, or execute scripts.
 Results own diagnostics and error/warning counts; `succeeded()` means there are
 no errors, so warnings alone do not fail compilation.
-`<nomad/compiler/Diagnostic.hpp>` provides `DiagnosticSeverity`, `Diagnostic`,
-and `formatDiagnostic`, independently of compiler contexts.
+`<nomad/compiler/CompilerDiagnostic.hpp>` provides `CompilerDiagnosticSeverity`,
+`CompilerDiagnostic`, `CompilerDiagnosticCode`, and `formatDiagnostic`,
+independently of compiler contexts.
 `formatDiagnostic(diagnostic, stream)` writes to an existing `std::ostream`
 without adding a newline. The string-returning overload produces the same text.
 
@@ -1156,9 +2277,9 @@ repeated successful calls do nothing. `VirtualMachine::run` never performs
 initialization automatically. Analysis resolves initializers but installs neither
 initial values nor executable initialization. `initializeScripts` rejects
 analysis-only hub variables.
-Initialization failure propagates to the caller, is not retried, and prevents
-subsequent high-level script execution. Use a fresh runtime for a new application
-execution.
+Initialization failure propagates to the caller and is not retried. The host
+must stop script execution after such a failure; VM execution does not enforce
+that precondition. Use a fresh runtime for a new application execution.
 
 ## Source input and compilation
 
@@ -1212,14 +2333,22 @@ matching backing files. Module hosts configure their resolved module roots
 automatically, including for compiler tools using the host's runtime.
 
 Custom statements register with
-`registerParseStatementFn(name, availability, parser, preParser)`.
+`registerParseStatementFn(name, availability, parser, preParser, blockMode, blockClassifier)`.
 The required `StatementAvailability` is `Compiler`, `Interpreter`, or `Both`;
 dispatch rejects a statement in an unavailable mode before calling its parser.
 The optional pre-parser receives `PreParsePhase::Declarations` first, then
 `PreParsePhase::Signatures`. Publish early type/namespace declarations in the
 first phase and resolve signatures in the second without registering declarations
 again. Interpreter-only statements do not run pre-parsers during compilation.
-Both enums and the callback types are declared in `<nomad/compiler/Parser.hpp>`.
+Statements default to `StatementBlockMode::None`. Use `Statement` for a block
+opened at the start of a line, or `Inline` for a block that can start anywhere
+on the line, such as a callback. Each opening requires a matching `end`.
+The optional `StatementBlockFn` classifier receives the complete current line
+through a read-only `Tokenizer` and returns whether that occurrence opens a
+block. Block discovery does not advance the tokenizer; classifiers must not
+consume input. Compiler declaration scans and language-server source scans use
+these registrations.
+The enums and callback types are declared in `<nomad/compiler/Parser.hpp>`.
 Parser and AST callbacks receive a `ScriptCallableBase*`, so the same callbacks
 can work with script functions, methods, and constructors. The interface exposes
 parameters, local variables, captures, source locations, and compilation ranges;
@@ -1300,7 +2429,7 @@ and module lifecycle are preserved.
 ## Persistent interpretation
 
 ```cpp
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -1310,46 +2439,72 @@ and module lifecycle are preserved.
 void interpretInput() {
     nomad::Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    nomad::InterpreterContext context(*machine);
-    const nomad::Interpreter interpreter;
+    const nomad::Interpreter interpreter(*machine);
+    nomad::InterpreterContext context(interpreter);
 
     if (!interpreter.execute("score = 10", context) ||
-        !interpreter.evaluateExpression("score + 5", context)) {
-        std::cerr << *context.getError() << '\n';
+        !interpreter.execute("score + 5", context)) {
+        if (const auto error = context.getFirstError()) {
+            std::cerr << error->message << '\n';
+        }
+
         return;
     }
     const auto* result = context.getResult();
-    std::cout << result->getType()->toString(result->getValue()) << '\n';
+    std::cout << result->getType()->toString(result->getStorage().data()) << '\n';
 }
 ```
 
 `execute(source, context)` accepts assignments, supported function calls, and
 multiline `if`, `while`, `until`, `do`, and `for` statements. It also accepts a
-single expression. `evaluateExpression(source, context)`
-requires exactly one non-void expression; assignments and statements are rejected.
-Each entry point clears the context's previous result and error.
+single expression, empty input, and void calls. This is the single general
+source-execution API; the former public `evaluateExpression` API has been removed.
+Use `context.getResult()` for the owned typed result, including a void value when
+the input produces no value. Each call clears the context's previous result and
+diagnostics. Syntax, type-resolution, and execution failures return `false` with
+diagnostics and no result.
 
-Both entry points also accept `SourceText`, using its name for input diagnostics:
+The `SourceText` overload uses its name for input diagnostics:
 
 ```cpp
 const nomad::SourceText input{"console:input", "score + 5"};
-const auto succeeded = interpreter.evaluateExpression(input, context);
+const auto succeeded = interpreter.execute(input, context);
 ```
 
-The string overloads preserve the existing context source name. Interpretation
+The string overload preserves the existing context source name. Interpretation
 continues to share the compiler's tokenizer, parser, and type resolver; it does
 not register input as a compiled function. Declarations, `return`, assertions,
 and inline callbacks remain unsupported by the interpreter. Loops execute
 synchronously on the caller's thread.
 
+Resolved AST nodes can also be evaluated directly. `Expression::evaluate`,
+`Statement::evaluate`, and `StatementList::evaluate` return owned
+`InterpreterValue` values rather than publishing intermediate values through
+the context. Expressions return their value, assignments return the assigned
+snapshot, and statements without a value return typed `void`. Statement lists
+return the last executed statement's value. `ArgumentList::evaluate` returns
+owned arguments in logical parameter order after evaluating them right-to-left.
+
+Direct AST evaluation throws on execution failure. `execute` converts those
+failures to diagnostics and publishes the final successful result in the
+context; explicit host callers can publish a returned value with
+`context.setResult(value)`. Struct values retain independent storage, without
+interpreter return-destination forwarding or RVO. Bindings, diagnostics, and loop
+control remain in the context. Property/indexer assignments preserve their
+receiver and right-hand-side evaluation order.
+
+Publishing an lvalue with `setResult(value)` copies it; publishing an owned
+temporary or `std::move(value)` transfers its ownership into the context.
+
+Call and constructor arguments evaluate right-to-left, matching compiled code;
+method receivers still evaluate before their arguments. This also applies to
+existing scalar interpreter calls, which previously evaluated arguments
+left-to-right.
+
 Loop bindings are ordinary mutable locals or compatible parameters and remain
 available after the loop. Frame-backed interpretation can reassign script
 parameters without replacing the caller's arguments; their declared types remain
 fixed. Callback captures retain the values present when the callback was created.
-
-The `SourceText` expression overload optionally accepts a one-based source line,
-so expressions embedded in a larger input retain their scope and diagnostic
-location.
 
 Use `hasError()` to check for errors and `hasWarning()` to check for warnings.
 Warnings alone do not indicate failure. To display all diagnostics from the latest
@@ -1365,20 +2520,606 @@ if (!succeeded) {
 }
 ```
 
-`getError()` provides the first error message, or null when there are no errors.
+`getFirstError()` returns an owned `std::optional<CompilerDiagnostic>` containing
+the complete first error, or `std::nullopt` when there are no errors. The snapshot
+remains valid after context diagnostics are changed or cleared. Save the returned
+optional when inspecting several fields rather than requesting repeated copies.
 Each new evaluation clears previous diagnostics; inspect or copy them before
 executing more input. Call `clearError()` to dismiss both errors and warnings
 without starting another evaluation.
 
-Results are owned by the context. Copy a result using `TypedValue` if it must
+`resetEvaluation()` clears diagnostics, releases the current result, and resets
+loop control. It preserves variables, parameters, receiver bindings, and active
+evaluation lifetimes. Use the individual clear methods when only part of that
+state should be discarded.
+
+For parsing an expression in statement position without execution,
+`parser::parseStatementExpression(context, callable, tokens)` parses from the
+current token, requires end of line, and permits void member calls. Syntax errors
+return null with context diagnostics. The caller chooses between this operation
+and statement parsing; resolution and evaluation are separate operations.
+
+`Tokenizer(context, sourceName, source, firstLine)` accepts an optional one-based
+source-line origin, defaulting to 1. Diagnostics and `getLineIndex()` use mapped
+source coordinates; `getLineCount()`, `getLine()`, and `getSource()` describe only
+the supplied text. Before advancement and after `reset()`, the line coordinate is
+`firstLine - 1`. Invalid origins or overflowing line ranges throw
+`std::invalid_argument`. No leading blank lines are needed for source fragments.
+
+`reportInputError(source, message)` appends an error using `source.sourceName`
+and unspecified line/column positions. It does not clear existing diagnostics,
+results, or loop control.
+
+`copyCompilerDiagnostic(diagnostics, sourceName)` appends independent copies of
+compiler diagnostics in reporting order, using the supplied input source name.
+Severity, message, line, column, code, and subject are preserved; the originals
+are unchanged.
+Existing context diagnostics are retained, and an empty input adds nothing.
+
+Compiler diagnostics default to `CompilerDiagnosticCode::General`. Unresolved identifier
+expressions report `CompilerDiagnosticCode::UnknownIdentifier`, with the identifier in
+`subject`; their ordinary compiler message remains unchanged.
+`CompilerContext::addDiagnostic(diagnostic)` and `addDiagnostics(diagnostics)`
+copy the complete metadata and update severity counts. `addError(...)` and
+`addWarning(...)` add ordinary general diagnostics without inferring a code from
+their wording. The compiler context's `getFirstError()` also returns an owned
+optional diagnostic snapshot. Text formatting of diagnostics is
+unchanged. C++ hosts using the extended diagnostic structures must be rebuilt.
+
+Results are owned by the context. Copy a result using `InterpreterValue` if it must
 survive another evaluation; do not free the context's result manually.
 `listVariables()` lists interpreter-owned variables, not borrowed frame slots.
 Different contexts have independent interpreter variables even when borrowing
 the same VM. Access to a shared context or VM must be serialized by the host.
 
+### Struct construction, calls, and frame inspection
+
+The interpreter can construct registered structs and pass or return complete
+struct values through native and compiled script free functions. For example,
+`point = new Point 3 4` runs the registered initializer and selected constructor;
+`copy = transform point` passes an independent struct copy and owns the returned
+value. Struct constructor parameters may themselves be structs. Class
+constructors can also accept struct arguments.
+
+The interpreter can also read and assign complete struct values supplied by the
+host or present in an active compiled script frame. For example,
+`copy = point` creates an independent field-wise copy, and
+`point = point` safely preserves the value. Contained class references retain
+their ordinary reference semantics. Empty structs remain typed values even
+though they occupy no slots.
+
+Empty constructors and calls still execute their side effects. Returning an
+empty struct retains its type without a slot pointer. A function call used as a
+statement releases its result, including owned fields in a returned struct.
+All calls execute synchronously; suspension and resumption are not supported.
+
+Include `<nomad/interpreter/InterpreterValue.hpp>` to use immutable interpreter values
+independently of an interpreter context. `InterpreterValue(type, storage)` copies a
+`std::span<const RuntimeValue>` containing
+exactly `type->getSize()` contiguous slots. The type's layout must be finalized.
+`getStorage()` borrows the complete owned value. Copies own separate slot
+storage; moving a value preserves its slot addresses. The runtime and type
+metadata must outlive the value. Every value owns contiguous storage sized to
+its type: scalars occupy one allocated slot, structs occupy their complete field
+layout, and empty structs and void values allocate no slots. `getValue()`
+provides checked scalar access, while `getStorage()` exposes the complete value.
+Void and moved-from values have no scalar slot; calling `getValue()` on them
+throws `std::invalid_argument` rather than returning a placeholder.
+
+An `InterpreterValue` has no field setters or writable storage views. Copy/move
+assignment replaces the complete value; it does not edit its fields. Struct
+copies have independent storage. Strings and class references are retained for
+the value's lifetime; referenced class objects retain their normal mutable
+reference semantics.
+
+`Interpreter::getProperty(receiver, property)` returns an owned field value.
+`setProperty(receiver, property, value)` returns a new `InterpreterValue` with
+that field replaced. Neither operation modifies its inputs or retains returned
+values. Each accepts either:
+
+- A runtime-local `PropertyId` for a direct stored field of the receiver's type.
+  An ID for a nested field cannot be applied directly to its outer struct.
+- A `NomadStringView` containing a field name or dotted path, such as `"leaf"` or
+  `"leaf.number"`, relative to the supplied receiver.
+
+The receiver and every intermediate owner must be structs. Nested structs copy
+by value; strings and class-valued fields retain reference semantics. Class
+references can be read or replaced as final fields, but paths cannot traverse
+class objects or native accessors yet. Empty fields return their type and an
+empty storage view without a slot pointer.
+
+For example:
+
+```cpp
+const Interpreter interpreter(*machine);
+const auto leaf = interpreter.getProperty(rootValue, "leaf");
+const auto number = interpreter.getProperty(leaf, numberPropertyId);
+const auto updated = interpreter.setProperty(rootValue, "leaf.number", replacement);
+```
+
+The replacement must have the final field's exact type. Unknown names, invalid
+or wrong-owner IDs, empty paths/segments, non-struct owners, and incompatible
+replacement types throw `std::invalid_argument`. Failed copying releases partial
+results and leaves both inputs unchanged. These value operations require no
+interpreter context and do not change a context's result.
+
+`Interpreter::setProperty(structType, storage, property, value)` instead updates
+borrowed mutable struct storage. The span must contain exactly
+`structType.getSize()` slots; empty structs use empty spans. The selector accepts
+the same direct IDs and field names/dotted paths as the immutable-value overload.
+Only the selected field is copied and replaced; unrelated fields are not copied.
+Copying completes before the previous field value is released, including for
+self-assignment. A failed field copy leaves that destination unchanged.
+Invalid selectors, mismatched value types, and incorrect span widths throw
+`std::invalid_argument` before replacement. The caller must keep the borrowed
+storage alive throughout the operation. This overload returns no value and
+does not change context results or immutable snapshots.
+
+Use the span overloads of `InterpreterContext::setVariable(name, type, storage)`
+and `setResult(type, storage)` for structs. Both copy the complete value before
+releasing what they replace, so their own storage can be supplied as the source.
+`setResult(const InterpreterValue&)` likewise takes an owned copy.
+`getVariableStorage(name)` and `getVariableStorageById(variableId)` borrow
+complete variable storage; `getResult()->getStorage()` borrows result storage.
+Assignments to an existing context-owned variable of the same type preserve its
+slot addresses and update its contents. Adding other variables does not relocate
+those slots. Changing a variable's type or clearing it removes its old storage
+from name/ID lookup. During evaluation, that storage remains alive until the
+outermost evaluation exits; outside evaluation it is released immediately.
+Replacing a result invalidates result views. Copy into an `InterpreterValue` when
+an independent snapshot must survive those operations.
+
+An empty view can mean either an empty struct or a missing variable; check
+`getVariableType` or `getVariableTypeById` to distinguish them. Empty struct
+views contain no slot pointer. The scalar constructors, setters, `getValue()`,
+and `getVariableValue` accessors reject structs with `std::invalid_argument`,
+including one-slot and empty structs; use complete storage views instead.
+Incorrect view sizes also throw `std::invalid_argument` without replacing the
+previous value.
+
+Frame-backed contexts borrow locals and ordinary parameters from the active
+script callable. `getParameterStorage(parameterId)` and the span overload of
+`setParameter(parameterId, storage)` accept logical parameter IDs and select
+their complete physical ranges, including when a native callback inspects the
+enclosing script frame. Writes preserve declared types and affect the borrowed
+frame, not the original caller's copied arguments. New interpreter variables
+remain context-owned. Borrowed frame storage is valid only while that frame is
+active; it must not be used after the frame returns.
+
+`getReceiverStorage()` borrows the complete struct receiver of an active
+method or constructor frame, including from an intervening native callback.
+It returns an empty view without a pointer for an empty struct. Calling it on
+a non-frame context or a class/free-function frame throws `NomadBug`.
+The interpreter can read `this` and its stored fields in such struct frames;
+the resulting values are owned copies, not mutable receiver aliases.
+
+### Mutable interpreter storage
+
+Include `<nomad/interpreter/InterpreterStorage.hpp>` for an owning, mutable slot
+buffer. `InterpreterStorage(type, source)` copies exactly `type->getSize()` slots
+using the type's lifecycle operations. The type and finalized layout must remain
+valid until the storage is destroyed. The owner is noncopyable and has a fixed
+type; destruction releases its contained values.
+
+`getStorage()` returns a const view; `getMutableStorage()` exposes the live slots
+for borrowed receiver access. Their addresses remain stable for the owner's
+lifetime. `assign(source)` replaces the contents without resizing the buffer.
+Source and destination may overlap, including self-assignment. Copy failures
+leave the destination unchanged; null types and incorrect view sizes throw
+`std::invalid_argument`. Zero-sized structs retain their type with empty views
+and accept empty assignments.
+
+Use typed assignment or receiver operations when replacing reference-valued
+slots so that their ownership is maintained. Constructing an `InterpreterValue`
+from the const view creates an independent snapshot; neither snapshot contents
+nor ordinary struct arguments become mutable aliases.
+
+Context-owned variables use these buffers. Frame-backed variables continue using
+VM storage, and published context results remain immutable `InterpreterValue`
+snapshots. A borrowed receiver does not keep its backing owner alive: destroy it
+before replacing or destroying that owner. Ordinary struct parameters and
+published results remain independent snapshots.
+
+### Advanced AST receiver access
+
+`InterpreterReceiver`, `InterpreterObjectReceiver`, and
+`InterpreterStructReceiver` are public AST evaluation types. Ordinary embedding
+and invocation code continues to use `InterpreterValue`; receiver wrappers are
+not required Interpreter inputs or results. Their headers are under
+`nomad/interpreter/`.
+
+`InterpreterContext::getReceiver()` returns the context's receiver wrapper, or
+`nullptr` when there is no receiver. Active class and struct method/constructor
+frames have wrappers, including empty structs. Receiver access validates that
+the originating script frame is still active. The returned wrapper must not be
+used after that frame or context ends.
+
+The common API provides `getType()`, `getValue()`, `getProperty(property)`,
+`setProperty(property, value)`, and `callMethod(methodId, arguments)`.
+Reads and method results return owned typed values. Property
+selectors are IDs or names; dotted paths traverse nested stored struct fields.
+Direct object properties can use registered native accessors. Execution and
+copy failures throw; general source execution reports them through diagnostics.
+
+For a resolved AST receiver location, include
+`<nomad/compiler/StorageLocation.hpp>` and call
+`location.withReceiver(context, operation, prepare)`. The operation accepts an
+`InterpreterReceiver&` and returns an owned `InterpreterValue`. The optional
+preparation callback runs before the operation, after evaluating and retaining
+any object owner or temporary root; use it to evaluate call arguments.
+Context storage is checked again after preparation. Same-type assignments remain
+visible, while an unassigned or retyped context root produces an exception before
+method execution. Receiver and borrowed views must not escape the operation.
+Ordinary AST evaluation still uses `Expression::evaluate(context)`.
+
+Object owners and temporary backing storage remain alive until the operation
+finishes. Context-owned struct storage and VM frames are borrowed, not retained.
+Clearing or retyping a context-owned variable during evaluation retires its old
+storage until the outermost evaluation exits, including failure paths. An active
+receiver continues using that old storage without overwriting the new binding.
+Nested interpretation does not release its caller's retired storage. Same-type
+updates still modify the existing buffer in place. Variable names and logical
+IDs remain stable; retired storage is not exposed by variable lookup/listing.
+Contexts and borrowed VM frames must themselves remain alive.
+
+Source execution, formatting, direct AST evaluation, and scoped storage-location
+operations establish these evaluation lifetimes automatically. Hosts manually
+holding context-backed receivers can keep the guard returned by
+`context.beginEvaluation()` in a local variable to establish the same lifetime.
+Its destructor ends that evaluation on normal return or exception. Create guards
+through the context; do not manually call `endEvaluation()` while a guard is
+active. Guards cannot be copied or moved, and the context must outlive them.
+Views must not outlive the outermost guard. No variable renaming or logical-ID
+compaction occurs.
+
+`getMutableVariableStorageById`, `getMutableParameterStorage`, and
+`getMutableReceiverStorage` provide the corresponding live context/frame views.
+Frame-backed access performs the same frame validation as the const accessors.
+An empty variable view can still mean a missing variable or a zero-sized struct;
+query its type to distinguish them. These APIs do not change assignment ordering.
+
+`Interpreter::createObjectReceiver(classType, object)` returns a
+`std::unique_ptr<InterpreterObjectReceiver>`. The receiver retains the supplied
+non-null object and releases that reference when destroyed; the caller's
+reference is unchanged. The interpreter and type must outlive the receiver.
+Value snapshots retain that same object, and field updates remain shared.
+Strings are class types and use this factory too. A frame-backed object receiver
+refers to the script frame's receiver even when a native callback temporarily
+uses a different VM receiver. Directly constructed object receivers also retain
+their objects.
+
+`Interpreter::createStructReceiver(structType, storage)` returns a
+`std::unique_ptr<InterpreterStructReceiver>` borrowing mutable storage. The
+factory does not copy, retain, or free the struct's slots. Its interpreter, type,
+and backing storage must remain alive, and the storage address must remain
+stable until the receiver is destroyed. Updates through the receiver reach that
+storage; `getValue()` returns an independent snapshot. Zero-sized structs are
+valid: their storage pointer may be null, including when they contain zero-sized
+stored fields.
+
+Directly constructed `InterpreterStructReceiver` wrappers also borrow storage
+using a struct type and live storage address. For a mutable temporary or private
+copy, keep an `InterpreterStorage` owner alive separately. The wrapper never
+owns or frees struct slots. Empty structs retain their logical type despite
+requiring no storage slots.
+
+For already resolved calls, `Interpreter::runFunction(functionId, arguments)`
+and `Interpreter::construct(constructorId, arguments)` use the interpreter's
+borrowed VM and take `std::span<const InterpreterValue>` in logical parameter order.
+They dispatch native and compiled script callables and return an owned
+`InterpreterValue`; no `InterpreterContext` is required or modified.
+Use a registered constructor ID for construction, including struct constructors
+whose callable return type is void. Native class factories return the registered
+constructed type, which can differ from their declaring type.
+
+Arguments must belong to the VM's runtime and match the resolved signature's
+type-acceptance and storage rules. Invalid IDs, wrong callable kinds, unresolved
+signatures, uncompiled script bodies, and mismatched arguments throw
+`std::invalid_argument` before execution. Execution and value-copy failures
+propagate to the caller. Argument structs are independent copies; contained
+class references retain their shared reference semantics. Results remain valid
+after the interpreter, context, arguments, or VM are destroyed, provided the
+runtime/type descriptors still exist.
+
+Interpreter struct results are returned as independent values. The interpreter
+does not forward caller destinations or apply return-value optimization to
+struct storage.
+
+Completed calls preserve the enclosing VM registers/frame. Script calls execute
+synchronously for scalar and struct signatures. For captured functions, use the
+closure overload described below rather than passing a function ID.
+Fatal VM fault recovery remains unsupported.
+Call `context.setResult(result)` explicitly to publish a returned value in a
+context. The context no longer exposes function-execution or construction APIs.
+The legacy `Runtime::executeNativeFunction` context adapter has been removed.
+Use typed interpreter arguments for both scalar and struct calls. For example:
+
+```cpp
+const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{25}});
+const auto result = interpreter.runFunction(functionId, {&argument, 1});
+context.setResult(result);
+```
+
+Host call failures propagate as exceptions instead of being converted into
+context diagnostics by an adapter. The call APIs do not publish or clear
+context results. Callers decide how to store returned values and report
+caught exceptions.
+The VM's raw scalar invocation API retains its aggregate-storage restrictions.
+
+`Interpreter::runObjectMethod(receiver, methodId, arguments)` invokes a registered
+native or compiled script method and returns an owned `InterpreterValue`.
+Supply a typed receiver and arguments in logical parameter order; no context
+is required, and results are published only when the caller stores them.
+The overload `runObjectMethod(classType, object, methodId, arguments)` accepts a
+raw object receiver and retains it for the duration of the call.
+Receiver and argument types must match the method's signature and belong to
+the interpreter's runtime. Invalid IDs/kinds, receiver types, argument counts
+or types, null object receivers, and uncompiled methods throw
+`std::invalid_argument` before execution.
+
+This method API supports class receivers with scalar, reference, struct, or
+empty-struct arguments and scalar, reference, struct, empty-struct, or void
+results. Struct receivers use the separate `runStructMethod` entry points.
+Source evaluation still evaluates the receiver first and arguments right-to-left.
+Struct arguments and results own independent field-wise storage, including
+nested structs. Empty structs retain their logical argument/result positions
+without physical slots. Arguments are copied; mutations of referenced class objects remain shared,
+including changes made before a method throws. Method results retain returned
+objects and strings independently of the receiver, arguments, interpreter,
+and VM, provided their runtime/type descriptors remain alive.
+
+Completed method calls restore the enclosing VM frame and result/intermediate
+registers. All methods execute synchronously. Script methods and native methods
+with any struct argument or result restore the caller's running state, including
+empty-struct signatures. Scalar-only native methods propagate `stop` to the VM's
+running state.
+Execution and value-copy failures propagate to host callers; fatal VM fault
+recovery remains unsupported. Property/accessor execution is separate from
+this method API.
+
+After method bodies have been compiled, interpreted source can use these
+aggregate class methods for arguments, assignments, property reads on returned
+structs, or discarded calls. Receiver objects are retained across argument
+evaluation and invocation: clearing or replacing their former variable during
+argument evaluation does not redirect the call or destroy the receiver.
+Compiled source supports these struct-returning class-method expressions too,
+including forwarded returns and temporary-rooted property reads.
+
+For struct receivers, use
+`Interpreter::runStructMethod(receiver, methodId, arguments)`. It accepts
+complete typed arguments, including structs and empty structs, and invokes
+native or compiled script methods. It returns a `StructMethodResult`, declared
+in `<nomad/interpreter/Interpreter.hpp>`, containing:
+
+- `receiver`: an owned copy of the updated struct receiver.
+- `result`: the method's owned scalar, reference, struct, empty, or void result.
+
+The method operates on a private receiver copy. Input struct fields and argument
+copies are independent; contained class objects keep their shared reference
+semantics. Even when a method returns `this`, the two returned structs have
+independent storage. Empty structs keep their type without a storage pointer.
+Both returned values can outlive their inputs, interpreter, and VM, provided
+their runtime/type descriptors remain alive.
+
+This API does not publish results or replace context bindings. For example:
+
+```cpp
+const auto invocation = interpreter.runStructMethod(receiver, methodId, arguments);
+context.setVariable("value", invocation.receiver.getType(), invocation.receiver.getStorage());
+context.setResult(invocation.result);
+```
+
+Receiver/owner and argument validation follows the typed method-call rules
+above; a class receiver is not accepted by this struct-specific entry point.
+Execution or copying failures throw without returning a replacement/result
+pair. This is not a transaction for shared objects: mutations of contained
+class objects remain visible even if the call fails.
+
+Struct-method calls are synchronous, for either native or
+script methods. They preserve the enclosing execution frame, current object
+receiver, and result/intermediate registers. Fatal VM fault recovery remains
+unsupported. This snapshot-based host API does not automatically replace
+context variables.
+
+### Borrowed struct-method invocation
+
+`Interpreter::runStructMethod(structType, storage, methodId, arguments)` accepts
+a mutable span containing exactly the struct's physical slots. It invokes the
+method against that storage and returns only the owned method result.
+`InterpreterStructReceiver::callMethod(methodId, arguments)` uses this live
+invocation contract. There is no receiver copy or writeback step. Zero-sized
+structs use empty spans and still execute their methods.
+
+After struct declarations and method bodies have been compiled, interpreted
+source can call methods on variables, frame locals, copied ordinary parameters,
+`this`, nested stored fields, object-owned fields, and temporary structs.
+For a `Counter.next` method that increments and returns `this.value`:
+
+```nomad
+c = new Counter
+total = c.next + c.next
+```
+
+Each invocation updates `c` before returning its result: `c.value` is `2` and
+`total` is `3`. Assignments such as `copy = c`, ordinary struct parameters, and
+returned struct values still have independent storage.
+
+Receiver expressions and object/temporary owners are evaluated once before
+right-to-left explicit argument evaluation. Context-backed locations are
+rechecked before invocation, preserving same-type argument changes and reporting
+cleared or retyped roots without using an invalidated address. Object field
+receivers continue using the evaluated, retained owner even when its former
+variable is replaced by an argument.
+
+Borrowed calls are synchronous. Mutations performed before a
+method throws or its result cannot be copied remain visible; argument and result
+cleanup and enclosing VM state restoration still occur. Source execution
+reports failures as diagnostics and clears its published result, without
+committing the failed assignment's target. Hosts must keep borrowed backing
+storage alive throughout the method, including native reentry.
+
+`listVariables()` displays struct type names rather than formatting their
+fields. Stored fields can be read through struct variables, ordinary parameters,
+borrowed struct `this`, class-owned structs, and temporary construction/call
+results. For example, `copy = holder.value.point` owns a field-wise struct copy,
+and `(makeOuter).point.name` retains the extracted string after releasing the
+temporary root. Nested scalar/reference fields and one-slot/empty structs are
+supported. Empty reads still evaluate their receiver's side effects. Contained
+class references remain shared; their existing property/method APIs remain
+available.
+
+Stored fields rooted in named struct variables, frame locals/parameters,
+struct `this`, class-owned structs, and temporary construction/call results can
+be assigned, including nested fields and complete struct fields.
+For example, `root.leaf.number = 31`, `root.leaf = source`, and
+`this.leaf.text = "updated"` are supported. The RHS completes before replacement.
+Copies remain independent, contained class references remain shared, and empty
+field assignments still evaluate the RHS. Object and temporary owners are
+evaluated once before the RHS and retained until the write finishes. Replacing
+an owner variable during the RHS does not redirect the write to a new object.
+Context-owned struct locations are rechecked after the RHS: same-type replacement
+uses the current storage, while clearing or retyping the root reports a diagnostic
+without committing the selected field. A temporary-rooted write changes only that
+temporary, apart from contained shared class objects, and returns an owned
+assignment value.
+
+`InterpreterContext::setVariableProperty(name, property, value)` updates a
+stored field in a named variable or frame parameter/local.
+`setReceiverProperty(property, value)` updates a property through the active
+class or struct receiver wrapper. Each accepts either a direct `PropertyId` or
+a field name/dotted stored-struct path.
+Struct updates assign only the selected field in current storage, so unrelated
+fields are not copied and field changes made during the RHS are preserved.
+Failed field copying before replacement leaves that destination unchanged;
+RHS side effects remain visible. Object updates affect the shared instance; native
+accessor side effects are not rolled back. These setters do not change the
+context's result; source assignment
+statements separately publish their owned assignment snapshots.
+
+Method-backed native struct-valued properties support typed interpreter/host
+receiver access and compiled getter/setter calls. Struct captures, typed callback
+invocation, and struct-aware format expressions are supported.
+
+### Closure capture storage
+
+`Closure` owns one flat buffer containing complete captures in logical capture
+order. Scalars/references occupy their normal slots, structs occupy all their
+field slots, and empty structs remain logical captures without physical slots.
+Struct snapshots have independent storage; contained class references retain
+their ordinary shared semantics. A copied struct receiver is a value snapshot,
+whereas a captured class receiver retains the same object.
+
+`Closure(function, std::move(storage))` adopts a
+`std::vector<RuntimeValue>` containing exactly the declared capture slots, with
+valid owned values for those types. Ownership transfer is explicit: the
+constructor now accepts an rvalue vector rather than copying an lvalue vector.
+On successful construction, it takes the buffer without copying its slot values.
+Null functions, unresolved/void capture types, and mismatched storage widths throw
+`std::invalid_argument` before moving the buffer. A caller passing a named buffer
+retains responsibility for its owned values if validation fails. The closure is
+noncopyable; the function/type metadata and its owning runtime must outlive it.
+
+- `getCaptureCount()` reports logical captures, not slots or parameter count.
+- `getCaptureType(index)` returns the declared capture type.
+- `getCaptureStorage(index)` borrows that capture's complete immutable slots.
+  Empty captures return an empty span with no slot pointer.
+- `getCaptureValue(index)` retains scalar/reference access. Any struct capture,
+  including a one-slot or empty struct, requires `getCaptureStorage` and throws
+  `std::invalid_argument` through the scalar accessor.
+- Invalid capture indices throw `std::out_of_range`; they no longer return a
+  placeholder value or null type.
+
+`VirtualMachine::createClosure(runtime, functionId)` copies captures from the
+enclosing active script frame using the declared physical local/parameter
+offsets and borrowed receiver layout. The runtime must match the VM, the ID must
+identify a script function, and captures must belong to that active parent.
+Invalid requests fault explicitly rather than returning an empty closure.
+`captureCurrentFrame(function)` returns owned `InterpreterValue` snapshots from
+the current script frame, not an enclosing native-call parameter frame.
+Both paths copy full struct values, preserve zero-slot capture positions, and
+release completed/partial copies when copying throws.
+
+### Typed callback invocation
+
+`Interpreter::runFunction(closure, arguments)` accepts a `const Closure&` and
+explicit `InterpreterValue` arguments in logical parameter order. Do not append
+capture arguments yourself. The interpreter supplies complete owned capture
+copies after the explicit arguments and returns an owned typed result.
+The closure's script function must be compiled and registered in the interpreter's
+runtime. Invalid explicit counts/types, foreign closures, and uncompiled targets
+throw `std::invalid_argument` without executing the callback.
+
+Scalar/reference, empty-struct, and complete struct arguments/results are
+supported. Explicit struct parameters and captured structs have independent
+invocation storage. Modifying them does not replace the caller's value or the
+closure's saved snapshot. Repeated invocation starts from the same captured
+struct values; contained class objects remain shared, including mutations
+performed before a callback throws. Returned values can outlive the interpreter,
+VM, closure, and inputs while their runtime/type metadata remains alive.
+
+Source callbacks can capture struct locals, parameters, and struct `this`,
+including nested and empty structs. Captures are snapshots taken when the closure
+is created. Nested callbacks propagate complete value copies from their enclosing
+callback's current invocation. Captured class receivers retain ordinary object
+identity; captured struct receivers do not write back to the original receiver.
+
+All callback calls execute synchronously, including zero-slot signatures.
+Typed calls restore enclosing VM registers/frame and running state.
+Copying/execution failures propagate to the host;
+temporary argument/result cleanup occurs, but shared-object side effects are
+not rolled back. Fatal VM fault recovery remains unsupported.
+
+`VirtualMachine::executeFunction(closure, rawArguments)` and its raw-result overload
+also accept struct captures, so existing event/game callback adapters can invoke
+them without reading captures as scalars. These adapters retain their scalar/
+reference explicit-argument and scalar/reference/void result limits. Use the typed
+interpreter overload for aggregate explicit arguments or results.
+
+`VirtualMachine::run(closure, rawArgumentSpan)` provides the raw closure-call
+contract on a caller-owned VM. It borrows the explicit arguments and the closure's
+capture spans, copying each value directly into its invocation stack storage.
+Typed closure calls follow the same ownership rule: each explicit argument and
+capture receives one owned invocation copy, not an intermediate value snapshot.
+Argument mutation cannot alter the closure's storage. Empty captures contribute
+no slots, and insufficient argument stack capacity is reported before copying.
+The raw VM overload accepts only scalar/reference explicit arguments and
+scalar/reference/void results. Its completed result is owned by the VM result
+register; hosts copy or release it through the declared result type.
+
+For already prepared calls, `VirtualMachine::executeFunction(function)` and
+`executeClosure(closure)` require
+the complete copied arguments and any hidden return pointer to be on the stack
+in the callable's physical layout. It executes the body without copying values.
+The caller owns argument/result cleanup. Both functions return `void`; completion
+and exceptions restore the enclosing execution frame and running state.
+This low-level entry point
+does not validate host arguments or allocate call storage.
+
+The former `VirtualMachine::yield`, `hasYielded`, suspension status returns,
+and configurable aggregate-yield diagnostic overload have been removed.
+`ExecutionState` no longer contains a yield flag, and the runtime no longer
+registers `op_yield`. C++ hosts using these APIs must be updated and rebuilt.
+Execution failures continue to propagate as exceptions; `stop` still terminates
+the current execution.
+
+Compiled format literals use compiler-resolved lookups or generated compiled
+functions, executed directly by the VM. They do not construct an `Interpreter`
+or `InterpreterContext`. Their shared call-storage owner copies captures directly
+from the current VM frame into invocation slots, supplies complete return
+storage, and releases owned values after conversion. No capture-value vectors
+or intermediate result snapshots are required. Empty values pass a null storage
+pointer to conversion. Raw single-slot lookup APIs cannot provide multi-slot
+values and report an explicit storage error rather than supplying a dummy value.
+
+Dynamic templates and interpreted format literals use
+`Interpreter::formatString` to evaluate placeholder expressions. Both execution
+paths share type conversion and storage/lifetime machinery, not expression
+evaluation. The interim frame-context `Interpreter::runFunction` overload has
+been removed.
+
 ## Parameterized types
 
-`Runtime::registerParameterizedType(name, argumentCount, factory, initializer = {})`
+`TypeManager::registerParameterizedType(name, argumentCount, factory, initializer = {})`
 registers a type family. The factory has the signature
 `std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)`. It receives
 the owning runtime, reserved specialization ID, and resolved type arguments.
@@ -1386,9 +3127,9 @@ It returns a fully constructed, unregistered descriptor carrying that runtime
 and ID. It must not register the
 returned descriptor itself, including through `registerClass`.
 
-The runtime validates and registers the descriptor, then calls the optional
+The runtime-owned manager validates and registers the descriptor, then calls the optional
 initializer with `(Runtime*, TypeId)`. The ID identifies the registered
-specialization and can be used to retrieve it and add its members. The runtime
+specialization and can be used to retrieve it and add its members. The manager
 caches the specialization after initialization succeeds.
 `getParameterizedType(name, arguments)` creates a specialization on first use
 and reuses it on subsequent requests without rerunning either callback. Arguments must
@@ -1398,22 +3139,45 @@ return null.
 `getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
 or an empty optional if the family is not registered.
 
+Access these APIs and their factory/initializer type aliases through TypeManager.
+Constructor-inference and member-template registration also belong to TypeManager.
+Factory and initializer callbacks retain their `Runtime*` parameters; use
+`runtime->getTypeManager()` inside them. `getParameterizedTypeNames(names)` appends family
+names in registration order without clearing existing entries.
+`getMemberTemplateSignature(name)` returns family template metadata only;
+`Runtime::getMemberSignature(name)` continues to combine it with native members.
+
+Runtime's low-level `publishTypeFamilyNamespace(name, argumentCount)` publishes
+a registered manager-owned family into hub indexes. Missing families, mismatched
+arity, and namespace collisions throw `NomadException`. Families registered
+before their hub are included when that hub is created.
+`Runtime::canRegisterMemberSignature` checks a proposed member against the
+shared parser signature without registering it; an incompatible proposal
+returns false and an error description. Ordinary hosts should use the manager
+registration APIs.
+
 Requesting a specialization creates a descriptor, not an object. The compiler resolves parameterized
 annotations in script parameters, function parameters, and event declarations
 through the same registration API.
+
+The script compiler rejects struct type arguments, including structs nested in
+another argument and arguments chosen by constructor inference. Ordinary
+non-struct specializations remain supported. Registering a host type family does
+not make the built-in collections accept struct elements.
 
 ### Constructor inference signatures
 
 After registering a parameterized type family, hosts can register one constructor
 inference signature with `registerConstructorTemplate(name, parameters)`.
 These declarations are independent of whether the concrete constructor is native
-or script-defined; executable script-defined types are not yet supported.
+or script-defined. They describe inference only; hosts must separately register
+and compile or implement the selected constructor.
 Each `TemplateParameter` describes either a concrete `Type*` or a
 `TypeParameterIndex{index}` referring to the family's zero-based type-argument position.
 For example, for an already registered two-argument family named `Pair`:
 
 ```cpp
-if (!runtime.registerConstructorTemplate(
+if (!runtime.getTypeManager().registerConstructorTemplate(
     "Pair",
     {
         nomad::defTemplateParameter("key", nomad::TypeParameterIndex{0}, "The key."),
@@ -1464,7 +3228,7 @@ selects `Pair<string int>`. Argument expressions can include variables and neste
 inferred constructors. Deduction does not execute argument expressions.
 The selected specialization is reused through the normal type registry, and its
 concrete constructor must still match the arguments. Hosts register that
-constructor with `addConstructor`, usually in the type-family
+constructor with `TypeManager::registerNativeClassConstructor`, usually in the type-family
 initializer. Compiled scripts and the interpreter both support inferred
 construction through the existing native constructor execution paths.
 
@@ -1474,13 +3238,101 @@ construction through the existing native constructor execution paths.
 is null, and its text representation is its type name. Specialized types may
 provide other default values and formatting.
 
-`Type::initValue(value)` initializes a fresh value with the type's default.
-Implement it when defining a type descriptor, and release initialized values
-through `freeValue` when they are no longer needed.
+The type lifecycle functions use pointers to the first slot of one typed value:
 
-Register a constructor through `Runtime::addConstructor(typeId, definition)`.
+```cpp
+virtual void initValue(RuntimeValue* storage) const = 0;
+virtual void copyValue(
+    const RuntimeValue* source,
+    RuntimeValue* destination
+) const = 0;
+virtual void freeValue(RuntimeValue* storage) const noexcept;
+```
+
+Provide `getSize()` contiguous, valid `RuntimeValue` slots. Nonempty values require
+non-null pointers. Zero-slot types, including `void`, access no storage and may
+receive `nullptr`; their lifecycle operations do not alter a supplied slot.
+
+`initValue(&value)` initializes cleared, unowned storage with the type's default;
+it does not run script constructors or release existing contents.
+`copyValue(&source, &destination)` copies into cleared storage or replaces an
+owned value. Class and string copies retain their existing reference semantics,
+and self-copy is supported. Release owned contents through `freeValue(&value)`;
+this does not release the storage itself. If initialization or copying throws,
+the operation releases all destination resources and clears every destination
+slot before propagating the exception. No caller cleanup is needed for that
+failed operation. Failed copying may discard the previous destination value;
+use `assignValue` when it must be preserved. All lifecycle overrides must honor
+these guarantees, including host-defined types.
+All `freeValue` overrides must be `noexcept`. Lifecycle operations require valid runtime
+metadata: using an unresolved compiler placeholder or an unfinalized struct
+for cleanup terminates the process. Checked layout queries continue to report
+invalid metadata with exceptions. Initialization, copying, and assignment may
+still throw; mutable collection defaults remain independently allocated.
+
+Use `RuntimeValueGuard` from `<nomad/script/RuntimeValueGuard.hpp>` to release
+owned contents of existing typed storage automatically on scope exit:
+
+```cpp
+const auto* type = runtime.getStringType();
+RuntimeValue value;
+const RuntimeValueGuard guard(*type, &value);
+value.setStringValue("hello");
+```
+
+The guard adopts cleanup without initializing, copying, retaining, or allocating.
+It calls the type's `freeValue` on normal exit, early return, or exception;
+it never releases the slot storage itself. The type and `getSize()` contiguous
+slots must outlive the guard. Storage must contain cleared or valid owned
+contents, and null storage is permitted only for zero-slot types with valid
+metadata. Do not guard borrowed references.
+
+After transferring ownership elsewhere, call `guard.release()` on a non-const
+guard to disarm cleanup. This does not clear or modify the slots or change
+reference counts. The guard cannot be copied or moved, and its constructor,
+destructor, and `release()` do not throw. `RuntimeValue` itself remains non-owning.
+
+Assignment uses one API with optional external scratch:
+
+```cpp
+NomadIndex getAssignmentScratchSize() const;
+void assignValue(
+    const RuntimeValue* source,
+    RuntimeValue* destination,
+    RuntimeValue* scratch = nullptr
+) const;
+```
+
+`getAssignmentScratchSize()` returns zero for values occupying zero or one slot,
+and `getSize()` for larger values. Zero-slot assignment accesses no storage and
+accepts null pointers. Single-slot assignments such as
+`assignValue(&source, &destination)` use one local temporary without allocating
+scratch on the heap.
+
+For larger values, supply `getSize()` cleared, valid `RuntimeValue` slots.
+Supplied scratch must be disjoint from source and destination; source and
+destination may overlap, including self-assignment. Missing required scratch
+raises `NomadException` with the type name and required slot count.
+
+Assignment copies into scratch before releasing the destination, preserving the
+previous value if copying fails. The prepared contents transfer into destination
+storage, and scratch is cleared after success or failure.
+Initialization and script constructors do not run during copying.
+
+This API manages existing slot storage; it does not reserve VM frames or enable
+struct declarations. An already-owned staged return result can transfer directly
+when aggregate execution is implemented, without an additional assignment copy.
+
+Hosts overriding these functions must use the pointer signatures; existing
+callers passing a `RuntimeValue` reference must instead pass its address.
+
+Register a constructor through
+`TypeManager::registerNativeClassConstructor(typeId, definition)`.
 `NativeConstructorDefinition` supplies parameter definitions, a `function` callback, and
 documentation. By default, the constructor creates its declaring type.
+The overload taking `(typeId, createdTypeId, definition)` registers a constructor
+that creates another registered public class type while retaining its declaring
+owner. Existing constructor signature and reserved-name rules apply.
 `ClassType::getConstructors()`
 lists that type's registered constructors as borrowed `const Constructor*`
 pointers, in registration order. These pointers remain valid until the runtime
@@ -1490,12 +3342,12 @@ type, not its result type.
 Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-const auto typeId = runtime.registerClass("Example", nomad::ClassMode::Closed);
+const auto typeId = runtime.getTypeManager().registerClass("Example", nomad::ClassMode::Closed);
 const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
 }
-const auto constructorId = runtime.addConstructor(typeId, {
+const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(typeId, {
     .parameters = {{runtime.getIntegerType()->getId(), "size", ""}},
     .function = [](nomad::VirtualMachine* machine) {
         machine->getResult().setObjectValue(new ExampleObject(machine->getIntegerParameter(0)));
@@ -1514,14 +3366,14 @@ signatures are rejected, even if their parameter names differ. Use an empty para
 list for a parameterless constructor.
 
 When a class creates a different kind of object, use
-`addConstructor(typeId, createdTypeId, definition)`.
+`runtime.getTypeManager().registerNativeClassConstructor(typeId, createdTypeId, definition)`.
 Different overloads of one class may then create different types. The created type must be a public
 class type.
 
 All IDs are local to the receiving runtime. Invalid or non-class owner/result IDs,
 invalid parameter IDs, and missing callbacks are rejected before a constructor is
 published. Definitions are owned inputs; modifying one after registration does not
-change the registered constructor. `addConstructor` returns its `CallableId`.
+change the registered constructor. Registration returns its `CallableId`.
 
 Constructor parameters follow the same conventions as native function
 parameters, including `$file`, `$function`, and `$line`.
@@ -1539,11 +3391,14 @@ Validate value restrictions inside the callback: construction runs at evaluation
 time in both compiled scripts and the interpreter.
 
 For a constructor with type arguments, use
-`registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
+`TypeManager::registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
 initializer receives the specialized name and resolved type arguments; it registers
-a type with that name and its constructors with `addConstructor`.
+a type with that name and its constructors with `registerNativeClassConstructor`.
 Specializations are reused on subsequent requests through
-`getParameterizedConstructorName(name, arguments)`.
+`TypeManager::getParameterizedConstructorName(name, arguments)`. The manager owns
+the family registrations and specialization cache. Existing Runtime registration
+and lookup methods remain compatibility wrappers. `getParameterizedConstructorNames`
+appends registered family names to the supplied vector.
 
 ## Deferred native function signatures
 
@@ -1692,7 +3547,7 @@ explicit script types.
 
 ## Native object methods
 
-Use `Runtime::addMethod(typeId, NativeMethodDefinition{...})`
+Use `runtime.getTypeManager().registerNativeClassMethod(typeId, NativeMethodDefinition{...})`
 for methods on a registered class type. Read the instance inside the callback:
 
 ```cpp
@@ -1702,7 +3557,8 @@ for methods on a registered class type. Read the instance inside the callback:
 }
 ```
 
-Use `registerNativeFunction` for a global function and `addMethod` for a
+Use `registerNativeFunction` for a global function and the manager's
+`registerNativeClassMethod` or `registerNativeStructMethod` for a
 method on a class type identified by its runtime-local `TypeId`.
 Global function lookup and enumeration exclude methods.
 
@@ -1719,16 +3575,18 @@ instance must outlive the call.
 Object methods may mutate the instance through parameter and temporary references.
 They do not replace the receiver binding or roll back changes to object contents.
 Script-defined methods use the same receiver and argument ownership contracts.
-To invoke an already compiled script method from the host, use
-`VirtualMachine::runScriptMethod(methodId, arguments, receiver)`. Arguments and
-the receiver are borrowed; the method's return value is available through
-`getResult()`. Release an owned object result after use. The prior active receiver
-is restored after the call. Invalid IDs, uncompiled methods, and incorrect
-argument counts raise `VirtualMachineException`.
+To invoke a native or already compiled script method from the host, use
+`Interpreter::runObjectMethod(receiver, methodId, arguments)` with owned typed
+values. It returns an owned value instead of leaving a result in VM registers.
+The prior active receiver and registers are restored after the call. Invalid
+IDs, uncompiled methods, and incorrect argument counts raise
+`std::invalid_argument` before execution. Use `runStructMethod` for struct
+receivers and its independent receiver/result snapshots.
 
 ## Native indexers
 
-Register an indexer with `addIndexer(typeId, NativeIndexerDefinition{...})`.
+Register an indexer with
+`TypeManager::registerNativeClassIndexer(typeId, NativeIndexerDefinition{...})`.
 The definition supplies `valueTypeId`, a non-empty `std::vector<TypeId>` named
 `indexTypes`, `getter`, `setter`, and `documentation`.
 The index vector specifies the number and types of indices. All IDs are local
@@ -1740,10 +3598,11 @@ overloading.
 Registration and `getNativeIndexerId(classType, indexCount)` return an
 `IndexerId`, or `IndexerId::INVALID` on failure or missing lookup. Registration
 failures are logged. Include `<nomad/script/NativeMember.hpp>` for the ID and
-`NativeIndexerInfo`. IDs are runtime-local and remain stable as more
+`NativeIndexerDefinition` and `NativeIndexerInfo`. Runtime retains the indexer
+ID catalog and lookup operations. IDs are runtime-local and remain stable as more
 indexers are registered. They do not implicitly convert to integers or other
-ID categories. `getNativeIndexerInfo(id)` returns
-`std::optional<NativeIndexerInfo>`, empty for invalid or unregistered IDs.
+ID categories. `getNativeIndexerInfo(id)` returns a borrowed
+`const NativeIndexerInfo*`, or `nullptr` for invalid or unregistered IDs.
 
 Invalid or non-class owner IDs, invalid value/index IDs, and definitions with
 neither callback are rejected without publishing an indexer. Definitions are
@@ -1751,9 +3610,9 @@ owned inputs; modifying one after registration does not change the registered
 indexer.
 
 ```cpp
-const auto info = runtime.getNativeIndexerInfo(id);
+const auto* info = runtime.getNativeIndexerInfo(id);
 if (info) {
-    // Inspect the detached metadata snapshot through info->...
+    // Inspect the borrowed metadata through info->...
 }
 ```
 
@@ -1763,7 +3622,9 @@ returns a borrowed `const NativeIndexerInfo*`, or `nullptr` when absent.
 `Runtime::getNativeIndexers()` enumerates the runtime-wide borrowed catalog in
 registration order. Both enumerate const metadata pointers; these pointers
 remain valid as more indexers are registered, until the runtime destroys their
-owning types. `getNativeIndexerInfo` returns a metadata copy.
+owning types. `getNativeIndexerInfo` returns the same type-owned metadata
+without copying its index types, documentation, or callbacks. Keep the runtime
+alive while using a borrowed pointer; callers cannot mutate the metadata.
 
 Hosts retaining a mutable registered class type may also call
 `ClassType::registerNativeIndexer(runtime, info)`. This existing low-level
@@ -1776,7 +3637,7 @@ Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
-const auto indexerId = runtime.addIndexer(classType->getId(), {
+const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(classType->getId(), {
     .valueTypeId = runtime.getStringType()->getId(),
     .indexTypes = {runtime.getIntegerType()->getId()},
     .getter = [](nomad::VirtualMachine* machine) {
@@ -1812,7 +3673,7 @@ Built-in string methods use the same object-method API. Read the instance with
 `getThisAs<Object>()`:
 
 ```cpp
-const auto methodId = runtime.addMethod(runtime.getTypeId("string"), {
+const auto methodId = runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
     .name = "textSize",
     .parameters = {},
     .returnTypeId = runtime.getTypeId("int"),
@@ -1848,27 +3709,29 @@ compiler support:
    type. Implement `onMoveNext(RuntimeValue&)`: return `true` after writing one
    owned element into its empty output, or `false` at completion. The cursor must
    retain any source objects it needs and release them when destroyed.
-2. Obtain the cursor's script type with `runtime.getIteratorType(elementType)`.
+2. Obtain the cursor's script type with
+   `runtime.getTypeManager().getIteratorType(elementType)`.
    It exposes parameterless `moveNext` and the read-only `current` property.
    Reading `current` before a successful advance or after completion faults.
-3. Use `addIterable` to register a parameterless native factory method and its
+3. Use `TypeManager::registerNativeClassIterable` to register a parameterless native factory method and its
    association with the source type. The factory returns a fresh cursor of that
    iterator type. Its name is not prescribed:
 
 ```cpp
-runtime.addIterable(sourceType->getId(), {
+runtime.getTypeManager().registerNativeClassIterable(sourceType->getId(), {
     .valueTypeId = elementType->getId(),
     .factory = {
         .name = "iterator",
         .parameters = {},
-        .returnTypeId = runtime.getIteratorType(elementType)->getId(),
+        .returnTypeId = runtime.getTypeManager().getIteratorType(elementType)->getId(),
         .function = createIterator,
         .documentation = ""
     }
 });
 ```
 
-`NativeInterableDefinition` supplies the element type ID and a
+`NativeInterableDefinition`, declared in `<nomad/script/NativeMember.hpp>`,
+supplies the element type ID and a
 `NativeMethodDefinition` for the factory. All IDs are runtime-local. The source
 must be a class type, and the element type must be registered, public, and
 non-void. The factory must have a callback, take no arguments (including
@@ -1878,13 +3741,14 @@ Duplicate associations, conflicting member names, and invalid registrations thro
 resolving the iterator type may create its registered specialization.
 The runtime owns the factory metadata and callback; changing the input definition
 after registration does not change the registered factory.
-`getIterableInfo(sourceType)` returns an optional association containing its
-factory ID.
+`TypeManager::getIterableInfo(sourceType)` returns an optional association
+containing its factory ID. Obtain iterator specializations with
+`TypeManager::getIteratorType(elementType)`.
 
 The source `ClassType` owns its iterable association. Include
-`<nomad/script/Type.hpp>` for `IterableInfo`.
+`<nomad/script/ClassType.hpp>` for `IterableInfo`.
 `ClassType::getIterableInfo()` returns an optional snapshot containing
-the element type, iterator type, and factory `CallableId`. Runtime lookup returns
+the element type, iterator type, and factory `CallableId`. Manager lookup returns
 the same snapshot, or an empty optional for a non-iterable or foreign-runtime type.
 Hosts retaining a mutable registered class type may call
 `ClassType::registerIterableType(runtime, elementType, factory)` directly;
@@ -1905,8 +3769,8 @@ constructors. This lets scripts access members before any concrete specializatio
 has been created:
 
 ```cpp
-if (!runtime.registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
-    !runtime.registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
+if (!runtime.getTypeManager().registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
+    !runtime.getTypeManager().registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
     throw nomad::NomadException("Failed to register KeyValue member signatures");
 }
 ```
@@ -1916,7 +3780,7 @@ declaration takes no parameters. For methods, supply `TemplateParameter` entries
 using concrete types or `TypeParameterIndex`:
 
 ```cpp
-if (!runtime.registerMemberTemplate(
+if (!runtime.getTypeManager().registerMemberTemplate(
     "Box", "store", nomad::MemberType::Method,
     {nomad::defTemplateParameter("value", nomad::TypeParameterIndex{0}, "")}
 )) {
@@ -1947,7 +3811,7 @@ overload queries continue to return only concrete members.
 
 ## Native object properties
 
-Use `addProperty(typeId, NativePropertyDefinition{...})`.
+Use `runtime.getTypeManager().registerNativeClassProperty(typeId, NativePropertyDefinition{...})`.
 Either callback may be empty for a write-only or read-only property. Both
 callbacks access the borrowed instance through `getThisAs<T>()`.
 
@@ -1958,7 +3822,7 @@ assign that local to `result`; this retains object references without reading th
 output's previous contents.
 
 ```cpp
-const auto propertyId = runtime.addProperty(typeId, {
+const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
     .valueType = runtime.getFloatType(),
     .name = "value",
     .getter = [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {
@@ -2018,9 +3882,9 @@ const auto* callable = machine.getCurrentCallable();
 if (callable == nullptr) {
     throw nomad::NomadBug("An active script callable is required");
 }
-nomad::InterpreterContext context(machine, *callable);
-const nomad::Interpreter interpreter;
-const auto succeeded = interpreter.evaluateExpression("value + local", context);
+const nomad::Interpreter interpreter(machine);
+nomad::InterpreterContext context(interpreter, *callable);
+const auto succeeded = interpreter.execute("value + local", context);
 ```
 
 The context borrows live local and parameter values, not copies. Writes to frame
@@ -2029,6 +3893,11 @@ are supported; member frames also expose their receiver as `this`.
 New interpreter variables stay in the context and never change the compiled
 callable's locals, parameters, or captures. `context.getCallable()` exposes
 context-owned resolution metadata representing both sets of variables.
+`getCallable()` has mutable and const overloads, both validating any borrowed
+script frame before access. The mutable overload is intended for parsing and
+resolving interpreter input. The callable remains owned by the context and is
+not registered with the runtime. Access through an invalidated frame-backed
+context throws `NomadBug`, including read-only access.
 `context.getFunction()` remains function-only and returns `nullptr` for member
 frames. `machine.getCurrentFunction()` likewise remains function-only.
 
@@ -2044,9 +3913,9 @@ compiled function. Interpretation does not introduce new compiled captures.
 
 Syntax and resolution errors are recorded in the context and return `false`.
 Assignment validation happens before evaluating its right-hand side.
-`execute` also reports execution exceptions through the context.
-`evaluateExpression` propagates execution faults from called code; it does not
-turn arbitrary function failures into malformed-template diagnostics.
+`execute` also reports execution exceptions through the context, clears any
+partial result, and returns `false`. Direct typed host calls such as
+`runFunction` and `runObjectMethod` retain their exception contracts.
 
 An execution fault is fatal even when `execute` reports it through the context
 rather than throwing. Do not continue evaluating code on the faulted VM.
@@ -2068,12 +3937,31 @@ Console and frame evaluation do not require separate compiler modes.
 ## Dynamic format strings
 
 The script format string operator `$expression` and interpreted format literals use the same
-runtime template evaluator. C++ hosts can call `formatDynamicString` (declared in
-`nomad/script/FormatString.hpp`) with a template, context, source name, line, and column.
+runtime template evaluator. C++ hosts can call `Interpreter::formatString` with a template, context, source
+name, line, and column. The existing free `formatDynamicString` function
+(declared in `nomad/script/FormatString.hpp`) delegates to the context's interpreter
+and accepts the same arguments.
 Its `DynamicFormatResult` contains partial text plus structured diagnostics for
 that template. Each diagnostic includes a message, source location, and zero-based
 byte offset and length in the template. Diagnostics are also logged; nested
 templates emit their own diagnostics.
+
+Whole structs format as their type name, matching ordinary class objects; fields
+are not enumerated, including for empty structs. Explicit fields such as
+`{point.x}` and `{player.location.name}` use ordinary expression evaluation and
+the field type's existing string conversion. Complete struct intermediates and
+returns never require scalar `InterpreterValue::getValue()` access.
+
+Compiled expression placeholders own captured struct copies. Mutating such a
+copy does not write back to the original struct, while contained class objects
+retain shared identity. Dynamic templates use live context/frame receivers.
+Both preserve left-to-right placeholder evaluation, existing diagnostics, and
+ownership of extracted strings and temporary results.
+
+Placeholders require exactly one non-void expression. Assignments, statements,
+and multiline input are rejected before execution. Placeholder evaluation retains
+the supplied source line for resolution and diagnostics; these restrictions do
+not apply to general source input passed to `execute`.
 
 Syntax and resolution errors become inline markers and processing continues after
 a closed bad placeholder. Execution exceptions from called code propagate,

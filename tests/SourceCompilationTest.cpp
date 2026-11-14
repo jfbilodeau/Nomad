@@ -9,11 +9,12 @@
 #include <nomad/game/Cardinal.hpp>
 #include <nomad/game/Game.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 
 #include <TestDirectory.hpp>
 
@@ -69,7 +70,7 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     runtime.registerNativeFunction(
         "test.accept",
         [](VirtualMachine*) {},
-        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
         runtime.getVoidType(),
         ""
     );
@@ -112,7 +113,7 @@ BOOST_AUTO_TEST_CASE(runtime_looks_up_script_members_and_nested_callbacks_by_sou
 {
     Runtime runtime;
     runtime.registerNativeFunction("accept", [](VirtualMachine*) {},
-        {defParameter("callback", runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
+        {defParameter("callback", runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()), "")},
         runtime.getVoidType(), "");
     const SourceBatch batch{{{"main", {"editor:members",
         "class Counter\n"
@@ -243,7 +244,7 @@ BOOST_AUTO_TEST_CASE(batch_loading_errors_prevent_compilation)
 {
     const SourceBatch batch{
         {{"broken", {"untitled:broken", "return missing"}}},
-        {{DiagnosticSeverity::Error, "Could not load dependency", "untitled:dependency", 3, 4}}
+        {{CompilerDiagnosticSeverity::Error, "Could not load dependency", "untitled:dependency", 3, 4}}
     };
     Runtime runtime;
     auto compiler = runtime.createCompiler();
@@ -262,7 +263,7 @@ BOOST_AUTO_TEST_CASE(batch_loading_warnings_allow_compilation)
 {
     const SourceBatch batch{
         {{"answer", {"untitled:answer", "return 42"}}},
-        {{DiagnosticSeverity::Warning, "Source warning", "untitled:answer", 1, 1}}
+        {{CompilerDiagnosticSeverity::Warning, "Source warning", "untitled:answer", 1, 1}}
     };
     Runtime runtime;
     auto compiler = runtime.createCompiler();
@@ -428,7 +429,9 @@ BOOST_AUTO_TEST_CASE(dumps_script_constructors_methods_and_their_call_targets)
     BOOST_TEST(instructions.str().find("constructor Counter amount:int") != NomadString::npos);
     BOOST_TEST(instructions.str().find("method Counter.read") != NomadString::npos);
     BOOST_TEST(instructions.str().find("method Counter$init") != NomadString::npos);
-    BOOST_TEST(instructions.str().find("call_script_constructor") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("create_script_object") != NomadString::npos);
+    BOOST_TEST(instructions.str().find("Counter (" + std::to_string(
+        runtime.getTypeByName("Counter")->asClassType()->getConstructors()[0]->getId().id) + ")") != NomadString::npos);
     BOOST_TEST(instructions.str().find("call_script_method") != NomadString::npos);
     BOOST_TEST(instructions.str().find("Counter.read (") != NomadString::npos);
     BOOST_TEST(instructions.str().find("Unknown") == NomadString::npos);
@@ -593,6 +596,65 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     BOOST_TEST(nativeMembers.str().find("### `Counter`") == NomadString::npos);
     BOOST_TEST(nativeMembers.str().find("### `model.Point`") == NomadString::npos);
     BOOST_TEST(nativeMembers.str().find("#### `length` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(callbackCalls == 0);
+}
+
+BOOST_AUTO_TEST_CASE(generates_struct_fields_and_logical_signatures_without_execution)
+{
+    TestDirectory directory("nomad_compilation_test_struct_reference");
+    const auto source = directory.write("structs.nomad",
+        "hub model\n"
+        "struct Empty\ninit\nprobe\nend\nend\n"
+        "struct Leaf\ntext = \"reference\"\n"
+        "init number:int\nprobe\nthis.number = number\nend\n"
+        "init text:string\nprobe\nthis.number = text.length\nthis.text = text\nend\n"
+        "fun read delta:int\nreturn this.number + delta\nend\n"
+        "fun read suffix:string\nreturn $\"{this.text}{suffix}\"\nend\n"
+        "fun copy value:model.Leaf empty:model.Empty\nreturn value\nend\n"
+        "fun clear\nreturn\nend\nend\n"
+        "struct Container\nempty = new model.Empty\nleaf = new model.Leaf 3\nend\nend\n"
+        "fun consume value:model.Container empty:model.Empty\nreturn value\nend\n"
+        "probe\nreturn 0");
+    Runtime runtime;
+    const auto hostType = runtime.getTypeManager().registerStruct("HostDocumented", "A host-registered struct.");
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(hostType, "hostNumber", runtime.getIntegerType()).isValid());
+    auto callbackCalls = 0;
+    runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },
+        {}, runtime.getVoidType(), "");
+    auto compiler = runtime.createCompiler();
+    const auto result = compileSources(loadSourcePaths(std::vector{source}), *compiler);
+    BOOST_REQUIRE_MESSAGE(result.succeeded(),
+        (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
+    std::ostringstream documentation;
+    generateDocumentation(&runtime, documentation);
+    const auto text = documentation.str();
+    for (const auto* expected : {
+        "### `HostDocumented`", "A host-registered struct.",
+        "Constructor: `new model.Empty` -> `model.Empty`",
+        "Constructor: `new model.Leaf number:int` -> `model.Leaf`",
+        "Constructor: `new model.Leaf text:string` -> `model.Leaf`",
+        "Constructor: `new model.Container` -> `model.Container`",
+        "#### `hostNumber` (*read/write field*)\n\n`hostNumber:int`",
+        "#### `empty` (*read/write field*)\n\n`empty:model.Empty`",
+        "#### `leaf` (*read/write field*)\n\n`leaf:model.Leaf`",
+        "#### `number` (*read/write field*)\n\n`number:int`",
+        "#### `text` (*read/write field*)\n\n`text:string`",
+        "`read delta:int -> int`", "`read suffix:string -> string`",
+        "`copy value:model.Leaf empty:model.Empty -> model.Leaf`", "`clear -> void`",
+        "- `value:model.Container`", "- `empty:model.Empty`", "`returns model.Container`"
+    }) {
+        BOOST_TEST_CONTEXT(expected) {
+            BOOST_TEST(text.find(expected) != NomadString::npos);
+        }
+    }
+    BOOST_TEST(text.find("`read delta:int -> int`") < text.find("`read suffix:string -> string`"));
+    BOOST_TEST(text.find("$init") == NomadString::npos);
+    BOOST_TEST(text.find("$return") == NomadString::npos);
+    BOOST_TEST(text.find("- `this:") == NomadString::npos);
+    std::ostringstream nativeMembers;
+    generateNativeMemberDocumentation(&runtime, nativeMembers);
+    BOOST_TEST(nativeMembers.str().find("### `model.Leaf`") == NomadString::npos);
+    BOOST_TEST(nativeMembers.str().find("### `model.Container`") == NomadString::npos);
     BOOST_TEST(callbackCalls == 0);
 }
 

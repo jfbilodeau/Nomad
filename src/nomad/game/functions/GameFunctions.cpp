@@ -44,7 +44,7 @@ void Game::initGameFunctions() {
         }, {
             defParameter(
                 "function",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("The function to execute to initialize the scene. Return the scene id.")
             )
         },
@@ -104,7 +104,7 @@ void Game::initGameFunctions() {
             ),
             defParameter(
                 "postCreateFunction",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to execute once the scene is created.")
             )
         },
@@ -136,11 +136,11 @@ void Game::initGameFunctions() {
         },
         {
             defParameter(
-                "function", m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                "function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("The function to execute to initialize the scene.")
             ),
             defParameter(
-                "postCreateFunction", m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                "postCreateFunction", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to execute once the scene is created.")
             )
         },
@@ -223,7 +223,7 @@ void Game::initGameFunctions() {
                 RuntimeValue value;
 
                 if (type) {
-                    (*type)->copyValue(interpreter->peekStack(static_cast<NomadIndex>(i) + 1), value);
+                    (*type)->copyValue(&interpreter->peekStack(static_cast<NomadIndex>(i) + 1), &value);
                 } else {
                     log::error("Invalid type id for event parameter: " + toString(parameter.typeId.id));
                 }

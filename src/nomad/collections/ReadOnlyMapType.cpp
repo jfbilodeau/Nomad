@@ -23,8 +23,8 @@ ReadOnlyMapType::ReadOnlyMapType(
     }
 }
 
-void ReadOnlyMapType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(new MapObject(getTypeArguments()[1]));
+void ReadOnlyMapType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(new MapObject(getTypeArguments()[1]));
 }
 
 } // namespace nomad

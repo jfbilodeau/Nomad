@@ -23,6 +23,8 @@ public:
     explicit ReturnStatementNode(NomadIndex line, NomadIndex column, std::unique_ptr<Expression> expression);
 
     [[nodiscard]] NomadBoolean alwaysReturns() const override;
+    [[nodiscard]] const Expression* getExpression() const;
+    [[nodiscard]] VariableId getStagingVariable() const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -30,6 +32,8 @@ protected:
 
 private:
     std::unique_ptr<Expression> m_expression;
+    VariableId m_stagingVariable = VariableId::INVALID;
+    bool m_forwardReturn = false;
 };
 
 std::unique_ptr<Statement> parseReturnStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);

@@ -16,6 +16,28 @@ class VirtualMachine;
 
 using InstructionFn = void (*)(VirtualMachine*);
 
+enum class ExpressionTarget {
+    Result,
+    Intermediate,
+    Stack
+};
+
+class OpCodeEmitter {
+public:
+    virtual ~OpCodeEmitter() = default;
+
+    virtual NomadIndex addOpCode(InstructionFn instruction) = 0;
+    virtual NomadIndex addId(NomadId id) = 0;
+    virtual NomadIndex addIndex(NomadIndex index) = 0;
+    NomadIndex addLoadTarget(
+        InstructionFn result,
+        InstructionFn intermediate,
+        InstructionFn stack,
+        NomadId operand,
+        ExpressionTarget target
+    );
+};
+
 struct Instruction {
     explicit Instruction(const InstructionFn fn) : fn(fn) {}
     explicit Instruction(const RuntimeValue& value) : value(value) {}
@@ -44,6 +66,7 @@ enum class Operand {
     ContextVariableId,
     FormatString,
     Index,
+    Callable,
 };
 
 DeclareId(OpCodeId);
@@ -69,7 +92,6 @@ namespace OpCodes {
 // OpCode definitions
 DECLARE_OP_CODE(op_nop)
 DECLARE_OP_CODE(op_stop)
-DECLARE_OP_CODE(op_yield)
 DECLARE_OP_CODE(op_return)
 DECLARE_OP_CODE(op_return_1)
 DECLARE_OP_CODE(op_return_2)
@@ -108,12 +130,18 @@ DECLARE_OP_CODE(op_code_load_default_r)
 // Callable operations
 DECLARE_OP_CODE(op_call_script_function)
 DECLARE_OP_CODE(op_call_script_method)
-DECLARE_OP_CODE(op_call_script_constructor)
+DECLARE_OP_CODE(op_create_script_object)
+DECLARE_OP_CODE(op_create_script_struct)
 DECLARE_OP_CODE(op_call_native_function)
 DECLARE_OP_CODE(op_call_native_method)
-DECLARE_OP_CODE(op_call_native_constructor)
+DECLARE_OP_CODE(op_create_native_object)
+DECLARE_OP_CODE(op_create_native_struct)
 DECLARE_OP_CODE(op_native_property_get)
 DECLARE_OP_CODE(op_native_property_set)
+DECLARE_OP_CODE(op_stored_property_load_r)
+DECLARE_OP_CODE(op_object_stored_property_load_r)
+DECLARE_OP_CODE(op_stored_property_set)
+DECLARE_OP_CODE(op_object_stored_property_set)
 DECLARE_OP_CODE(op_native_index_get)
 DECLARE_OP_CODE(op_native_index_set)
 
@@ -126,6 +154,26 @@ DECLARE_OP_CODE(op_object_parameter_load_i)
 DECLARE_OP_CODE(op_object_parameter_push)
 DECLARE_OP_CODE(op_parameter_set)
 DECLARE_OP_CODE(op_object_free_parameter)
+
+// Internal borrowed storage operations
+DECLARE_OP_CODE(op_storage_load_r)
+DECLARE_OP_CODE(op_storage_push)
+DECLARE_OP_CODE(op_object_storage_load_r)
+DECLARE_OP_CODE(op_object_storage_push)
+DECLARE_OP_CODE(op_storage_set)
+DECLARE_OP_CODE(op_object_free_storage)
+DECLARE_OP_CODE(op_stored_property_address_push)
+DECLARE_OP_CODE(op_local_address_push)
+DECLARE_OP_CODE(op_parameter_address_push)
+DECLARE_OP_CODE(op_storage_parameter_address_push)
+DECLARE_OP_CODE(op_storage_parameter_load_r)
+DECLARE_OP_CODE(op_storage_parameter_load_i)
+DECLARE_OP_CODE(op_storage_parameter_push)
+DECLARE_OP_CODE(op_object_storage_parameter_load_r)
+DECLARE_OP_CODE(op_object_storage_parameter_load_i)
+DECLARE_OP_CODE(op_object_storage_parameter_push)
+DECLARE_OP_CODE(op_storage_parameter_set)
+DECLARE_OP_CODE(op_object_free_storage_parameter)
 
 // Variable operations
 DECLARE_OP_CODE(op_constant_get_r)

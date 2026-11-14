@@ -45,5 +45,4 @@ bool preParseOpenClassStatement(
     PreParsePhase phase
 );
 std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);
-
 } // namespace nomad

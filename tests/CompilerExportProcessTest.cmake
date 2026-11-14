@@ -15,6 +15,10 @@ file(WRITE "${PROJECT}/nomad.toml"
     "[scripts]\ndirectories = [\"res/scripts\"]\n[resources]\ndirectory = \"res\"\n")
 set(SCRIPT "${PROJECT}/res/scripts/main.nomad")
 file(WRITE "${SCRIPT}"
+    "struct ExportEmpty\nend\n"
+    "struct ExportPoint\ntext = \"export\"\ninit number:int\nthis.number = number\nend\n"
+    "fun read delta:int\nreturn this.number + delta\nend\nend\n"
+    "fun exportedStruct value:ExportPoint empty:ExportEmpty\nreturn value\nend\n"
     "fun exportedAnswer\nreturn 42\nend\nfun otherAnswer\nreturn 1\nend\nassert false\nreturn exportedAnswer\n")
 
 nomadRunTestCommand("Dump without executing source"
@@ -25,6 +29,10 @@ nomadRunTestCommand("Dump selected function"
 if(SELECTED MATCHES "function otherAnswer")
     message(FATAL_ERROR "Selected dump included another function")
 endif()
+
+nomadRunTestCommand("Dump logical struct parameters without executing source"
+    COMMAND "${NOMADC}" dump "${PROJECT}" --function exportedStruct
+    OUTPUT_MATCH "function exportedStruct value:ExportPoint empty:ExportEmpty")
 
 nomadRunTestCommand("Reject unknown dump function" EXPECT_FAILURE
     COMMAND "${NOMADC}" dump "${PROJECT}" --function missing
@@ -39,6 +47,23 @@ nomadRunTestCommand("Generate documentation without executing source"
 file(READ "${DOCUMENTATION}" CONTENTS)
 if(NOT CONTENTS MATCHES "exportedAnswer" OR NOT CONTENTS MATCHES "## Functions")
     message(FATAL_ERROR "Documentation did not contain the compiled API")
+endif()
+foreach(EXPECTED IN ITEMS
+    "Constructor: `new ExportPoint number:int` -> `ExportPoint`"
+    "#### `number`" "`read delta:int -> int`" "value:ExportPoint" "empty:ExportEmpty")
+    string(FIND "${CONTENTS}" "${EXPECTED}" POSITION)
+    if(POSITION EQUAL -1)
+        message(FATAL_ERROR "Documentation omitted a logical struct declaration: ${EXPECTED}")
+    endif()
+endforeach()
+
+set(GRAMMAR "${NOMAD_TEST_ROOT}/nomad.tmLanguage.json")
+nomadRunTestCommand("Generate struct declaration grammar"
+    COMMAND "${NOMADC}" textmate "${PROJECT}" --output "${GRAMMAR}")
+file(READ "${GRAMMAR}" GRAMMAR_JSON)
+string(JSON STRUCT_PATTERN_TYPE TYPE "${GRAMMAR_JSON}" repository structs patterns)
+if(NOT STRUCT_PATTERN_TYPE STREQUAL "ARRAY")
+    message(FATAL_ERROR "TextMate grammar omitted struct declaration patterns")
 endif()
 
 file(WRITE "${SCRIPT}" "return missingExportValue\n")

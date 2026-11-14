@@ -6,15 +6,19 @@
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/ScriptObject.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <sstream>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -34,7 +38,7 @@ bool prepareMembers(CompilerContext& context, Tokenizer& tokens, ScriptCallableB
 }
 
 void registerCallbackTestFunctions(Runtime& runtime) {
-    const auto* callbackType = runtime.getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType());
+    const auto* callbackType = runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType());
     for (const auto* name : {"factory", "invoke"}) {
         BOOST_REQUIRE(runtime.registerNativeFunction(
             name, [](VirtualMachine*) {}, {defParameter("callback", callbackType, "")},
@@ -146,7 +150,7 @@ BOOST_AUTO_TEST_CASE(duplicate_classes_are_rejected_even_when_open)
         }
     }
     LanguageTestFixture fixture;
-    BOOST_REQUIRE(fixture.getRuntime().registerClass("Point", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(fixture.getRuntime().getTypeManager().registerClass("Point", ClassMode::Closed).isValid());
     fixture.addFunction("main", "class Point\nend");
     BOOST_TEST(!fixture.compile());
 }
@@ -183,7 +187,7 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
     fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.registerClass("Point", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass("Point", ClassMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     std::unique_ptr<Statement> statement;
@@ -305,7 +309,7 @@ BOOST_AUTO_TEST_CASE(member_overloads_register_distinct_parameter_types_on_the_c
     fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.registerClass("Point", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerClass("Point", ClassMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     Tokenizer tokens(&context, "overloads.nomad",
@@ -392,8 +396,9 @@ BOOST_AUTO_TEST_CASE(class_declarations_are_not_supported_by_the_interpreter)
     for (const auto* source : {"class Point\nend", "open class Point\nend"}) {
         Runtime runtime;
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
-        BOOST_TEST(!Interpreter{}.execute(source, context));
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
+        BOOST_TEST(!context.getInterpreter().execute(source, context));
         BOOST_TEST(context.hasError());
         BOOST_TEST(runtime.getTypeByName("Point") == nullptr);
     }
@@ -614,7 +619,7 @@ BOOST_AUTO_TEST_CASE(field_initializers_reject_receiver_reads_captures_and_forma
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     RuntimeValue result;
-    fixture.getRuntime().executeFunction(fixture.getRuntime().getFunctionId("main"), {}, result);
+    fixture.getVirtualMachine().executeFunction(fixture.getRuntime().getFunctionId("main"), {}, result);
     auto* object = result.asObject<ScriptObject>();
     BOOST_TEST(object->getField(0).getIntegerValue() == 10);
     BOOST_TEST(object->getField(1).getIntegerValue() == 23);
@@ -643,11 +648,11 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     BOOST_TEST(first->getFieldIndex(first->getProperty("y")->getId()) == 1u);
     BOOST_TEST(first->getFieldIndex(secondId) == NOMAD_INVALID_INDEX);
     BOOST_TEST(first->getFieldIndex(PropertyId{}) == NOMAD_INVALID_INDEX);
-    BOOST_TEST(runtime.registerProperty(first->getId(), "x", runtime.getIntegerType()) == firstId);
-    BOOST_REQUIRE(runtime.registerProperty(first->getId(), "later", runtime.getBooleanType()).isValid());
+    BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "x", runtime.getIntegerType()) == firstId);
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "later", runtime.getBooleanType()).isValid());
     BOOST_TEST(first->getFieldIndex(firstId) == 0u);
     BOOST_TEST(first->getFieldIndex(first->getProperty("later")->getId()) == 2u);
-    const auto nativeId = runtime.addProperty(first->getId(), {
+    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(first->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
@@ -656,7 +661,7 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     });
     BOOST_REQUIRE(nativeId.isValid());
     BOOST_TEST(first->getFieldIndex(nativeId) == NOMAD_INVALID_INDEX);
-    const auto lastId = runtime.registerProperty(first->getId(), "last", runtime.getBooleanType());
+    const auto lastId = runtime.getTypeManager().registerScriptClassProperty(first->getId(), "last", runtime.getBooleanType());
     BOOST_REQUIRE(lastId.isValid());
     BOOST_TEST(first->getFieldIndex(lastId) == 3u);
 }
@@ -686,9 +691,9 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     registerCallbackTestFunctions(runtime);
-    const auto otherId = runtime.registerClass("Other", ClassMode::Closed);
+    const auto otherId = runtime.getTypeManager().registerClass("Other", ClassMode::Closed);
     BOOST_REQUIRE(otherId.isValid());
-    BOOST_REQUIRE(runtime.addProperty(otherId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(otherId, {
         .valueType = runtime.getFloatType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadFloat{1.0}}; },
@@ -730,7 +735,7 @@ BOOST_AUTO_TEST_CASE(member_callbacks_capture_this_and_format_placeholders_use_m
         if (phase != CompilationPhase::Parse) return;
         auto& runtime = fixture.getRuntime();
         const auto* type = runtime.getTypeByName("Point");
-        const auto* callback = runtime.getCallbackType({}, type);
+        const auto* callback = runtime.getTypeManager().getCallbackType({}, type);
         BOOST_REQUIRE(runtime.registerNativeFunction(
             "receiverFactory", [](VirtualMachine*) {}, {defParameter("callback", callback, "")}, type, ""
         ).isValid());
@@ -821,6 +826,33 @@ BOOST_AUTO_TEST_CASE(external_open_class_fields_are_shared_across_functions_and_
     }
 }
 
+BOOST_AUTO_TEST_CASE(external_field_inference_is_stable_across_variable_context_counts)
+{
+    for (const auto contextCount : {NomadIndex{0}, NomadIndex{5}}) {
+        LanguageTestFixture fixture;
+        for (auto contextIndex = NomadIndex{0}; contextIndex < contextCount; ++contextIndex) {
+            const auto contextName = "extra" + std::to_string(contextIndex);
+            BOOST_REQUIRE(fixture.getRuntime().registerVariableContext(
+                contextName, contextName + ".", std::make_unique<SimpleVariableContext>()
+            ).isValid());
+        }
+
+        fixture.addFunction("types", "open class Point\nend");
+        fixture.addFunction("aRead", "fun read point:Point\nreturn point.extra\nend");
+        fixture.addFunction("zWrite", "fun write point:Point\npoint.extra = inferredValue\nend");
+        fixture.addFunction("zzValue", "fun inferredValue\nreturn 42\nend");
+
+        BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+        const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
+        BOOST_REQUIRE(type->getProperty("extra") != nullptr);
+        BOOST_TEST(type->getProperty("extra")->getValueType() == fixture.getRuntime().getIntegerType());
+        const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("read"));
+        BOOST_REQUIRE(read != nullptr);
+        BOOST_TEST(read->getReturnType() == fixture.getRuntime().getIntegerType());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(unread_external_fields_warn_once_at_the_introducing_assignment)
 {
     LanguageTestFixture fixture;
@@ -831,9 +863,9 @@ BOOST_AUTO_TEST_CASE(unread_external_fields_warn_once_at_the_introducing_assignm
     CompilerContext context(&fixture.getCompiler());
     BOOST_TEST(fixture.getCompiler().compileScripts(&context));
     BOOST_TEST(context.getWarningCount() == 1u);
-    const Diagnostic* warning = nullptr;
+    const CompilerDiagnostic* warning = nullptr;
     for (const auto& diagnostic : context.getDiagnostics()) {
-        if (diagnostic.severity == DiagnosticSeverity::Warning) warning = &diagnostic;
+        if (diagnostic.severity == CompilerDiagnosticSeverity::Warning) warning = &diagnostic;
     }
     BOOST_REQUIRE(warning != nullptr);
     BOOST_TEST(warning->message == "Externally introduced field 'Point.extra' is assigned but never read");
@@ -896,9 +928,9 @@ BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_nati
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto id = runtime.registerClass("Host", ClassMode::Opened);
+    const auto id = runtime.getTypeManager().registerClass("Host", ClassMode::Opened);
     BOOST_REQUIRE(id.isValid());
-    BOOST_REQUIRE(runtime.addProperty(id, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(id, {
         .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
@@ -931,7 +963,7 @@ BOOST_AUTO_TEST_CASE(external_fields_resolve_nested_receivers_and_captured_alias
     fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
         if (phase != CompilationPhase::Parse) return;
         auto& runtime = fixture.getRuntime();
-        BOOST_REQUIRE(runtime.registerProperty(
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(
             runtime.getTypeByName("Outer")->getId(), "inner", runtime.getTypeByName("Inner")
         ).isValid());
     });
@@ -956,9 +988,9 @@ BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
     for (const auto sourceParameter : {false, true}) {
         LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
-        const auto id = runtime.registerClass("Other", ClassMode::Closed);
+        const auto id = runtime.getTypeManager().registerClass("Other", ClassMode::Closed);
         BOOST_REQUIRE(id.isValid());
-        BOOST_REQUIRE(runtime.addMethod(id, {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(id, {
             .name = "extra",
             .parameters = {{
                 sourceParameter ? runtime.getLineNumberType()->getId() : runtime.getIntegerType()->getId(), "value", ""
@@ -988,6 +1020,37 @@ BOOST_AUTO_TEST_CASE(missing_native_method_arguments_still_report_source_errors)
     BOOST_TEST(!fixture.compile());
     BOOST_REQUIRE(fixture.hasError("No overload of 'value.contains' accepts 0 argument(s)"));
     BOOST_TEST(!fixture.hasError("Internal error"));
+}
+
+BOOST_AUTO_TEST_CASE(stored_property_opcodes_preserve_initializer_assignment_and_receiver_ownership) {
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "class Child\nnumber = 2\nlabel = \"child\"\nend\n"
+        "class Owner\nnumber = 1\nlabel = \"owner\"\nchild = new Child\n"
+        "init number:int\nthis.number = number\nend\nend\n"
+        "fun replace owner:Owner\nowner.child = new Child\nreturn \"replacement\"\nend\n"
+        "owner = new Owner 17\nowner.number = owner.number + owner.child.number\n"
+        "owner.label = owner.label\nowner.child = owner.child\n"
+        "owner.label = replace owner\nreturn owner.label");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    auto& runtime = fixture.getRuntime();
+    std::ostringstream dump;
+    dumpInstructions(runtime, dump);
+    for (const auto& name : {OpCodes::op_stored_property_load_r, OpCodes::op_stored_property_set,
+        OpCodes::op_object_stored_property_load_r, OpCodes::op_object_stored_property_set}) {
+        BOOST_TEST(dump.str().find(name) != NomadString::npos);
+    }
+    BOOST_TEST(dump.str().find(OpCodes::op_native_property_get) == NomadString::npos);
+    BOOST_TEST(dump.str().find(OpCodes::op_native_property_set) == NomadString::npos);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (auto index = 0; index < 3; ++index) {
+        const auto outcome = fixture.execute("main");
+        BOOST_REQUIRE(!outcome.fault.has_value());
+        BOOST_TEST(outcome.text == "replacement");
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

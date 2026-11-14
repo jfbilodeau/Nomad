@@ -1,6 +1,6 @@
 #pragma once
 
-#include <nomad/script/Type.hpp>
+#include <nomad/script/ClassType.hpp>
 
 namespace nomad {
 
@@ -15,7 +15,7 @@ public:
         const Type* valueType
     );
 
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
 };
 
 } // namespace nomad

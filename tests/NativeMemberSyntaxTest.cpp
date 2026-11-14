@@ -29,7 +29,7 @@ std::unique_ptr<Expression> parseExpression(CompilerContext& context, ScriptFunc
     auto expression = parser::parseExpression(&context, function, &tokens);
 
     if (expression && !tokens.endOfLine()) {
-        context.reportError("Test expression was not fully parsed", &tokens);
+        context.addError("Test expression was not fully parsed", &tokens);
     }
 
     return expression;
@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_SUITE(native_member_syntax)
 BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_concrete_members) {
     Runtime runtime;
     auto specializations = NomadIndex{0};
-    BOOST_REQUIRE(runtime.registerParameterizedType(
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
         "Box", 1,
         [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
             ++specializations;
@@ -52,19 +52,19 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             const auto* type = owningRuntime->getType(id).value();
             const auto* classType = static_cast<const ClassType*>(type);
             const auto* valueType = classType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.addConstructor(classType->getId(), {
+            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(classType->getId(), {
                 .parameters = {{valueType->getId(), "value", ""}},
                 .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); },
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addProperty(classType->getId(), {
+            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(classType->getId(), {
                 .valueType = valueType,
                 .name = "declaredProperty",
                 .getter = [](VirtualMachine*, RuntimeValue&) {},
                 .setter = {},
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.addMethod(classType->getId(), {
+            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
                 .name = "declaredMethod",
                 .parameters = {
                     {valueType->getId(), "value", ""},
@@ -76,11 +76,11 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             }).isValid());
         }
     ));
-    BOOST_REQUIRE(runtime.registerConstructorTemplate("Box", {
+    BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate("Box", {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredProperty", MemberType::Property));
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredMethod", MemberType::Method, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Box", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Box", "declaredMethod", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, ""),
         defTemplateParameter("line", runtime.getLineNumberType(), "")
     }));
@@ -161,7 +161,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
@@ -173,7 +173,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
 
     BOOST_REQUIRE(expression != nullptr);
     BOOST_TEST(!expression->resolve(&context, nullptr));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("write-only") != NomadString::npos);
 }
 
@@ -189,7 +189,7 @@ BOOST_AUTO_TEST_CASE(rejects_writing_read_only_property) {
 
     BOOST_REQUIRE(statement != nullptr);
     BOOST_TEST(!statement->resolve(&context, &function));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("read-only") != NomadString::npos);
 }
 
@@ -199,7 +199,7 @@ BOOST_AUTO_TEST_CASE(allows_assigning_write_only_property) {
     CompilerContext context(compiler.get());
     ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
-    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
@@ -219,7 +219,7 @@ BOOST_AUTO_TEST_CASE(chained_assignment_reads_receiver_but_only_requires_final_s
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
@@ -247,7 +247,7 @@ BOOST_AUTO_TEST_CASE(rejects_assignment_to_method) {
 
     BOOST_REQUIRE(statement != nullptr);
     BOOST_TEST(!statement->resolve(&context, &function));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("Cannot assign to method") != NomadString::npos);
 }
 
@@ -256,7 +256,7 @@ BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "clear",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -289,8 +289,9 @@ BOOST_AUTO_TEST_CASE(preserves_existing_qualified_identifier) {
 
 BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_names) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     runtime.registerVariableContext("entity", "this.", std::make_unique<SimpleVariableContext>());
-    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
@@ -313,7 +314,7 @@ BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_name
     BOOST_TEST(runtime.getContextVariableId("this.length").isValid());
 
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("test"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("test"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 23);
 }
 
@@ -329,7 +330,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_indexer_syntax_and_types) {
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileFunctions(&context));
-            BOOST_REQUIRE(context.getFirstError() != nullptr);
+            BOOST_REQUIRE(context.getFirstError().has_value());
             if (NomadString(source).find("= \"x\"") != NomadString::npos) {
                 BOOST_TEST(context.getFirstError()->message.find("read-only") != NomadString::npos);
             }

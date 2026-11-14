@@ -5,6 +5,8 @@
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
 #include <array>
@@ -25,14 +27,17 @@ static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativeIn
 static_assert(std::is_same_v<decltype(ParameterDefinition{}.typeId), TypeId>);
 static_assert(std::is_same_v<decltype(NativeMethodDefinition{}.returnTypeId), TypeId>);
 static_assert(std::is_same_v<decltype(NativePropertyDefinition{}.valueType), const Type*>);
+static_assert(std::is_same_v<decltype(NativePropertyDefinition{}.getterMethodId), CallableId>);
+static_assert(std::is_same_v<decltype(NativePropertyDefinition{}.setterMethodId), CallableId>);
 static_assert(std::is_same_v<decltype(NativeIndexerDefinition{}.indexTypes), std::vector<TypeId>>);
 static_assert(std::is_same_v<decltype(NativeInterableDefinition{}.factory), NativeMethodDefinition>);
 static_assert(std::is_same_v<decltype(NativePropertyInfo{}.id), PropertyId>);
+static_assert(std::is_same_v<decltype(NativePropertyInfo{}.getterMethodId), CallableId>);
 static_assert(std::is_same_v<decltype(std::declval<const NativeProperty&>().getInfo()), NativePropertyInfo>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativePropertyInfo(PropertyId{})),
     std::optional<NativePropertyInfo>>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativeIndexerInfo(IndexerId{})),
-    std::optional<NativeIndexerInfo>>);
+    const NativeIndexerInfo*>);
 static_assert(!std::is_same_v<NativePropertyDefinition, NativePropertyInfo>);
 static_assert(!std::is_same_v<NativeIndexerDefinition, NativeIndexerInfo>);
 static_assert(std::is_aggregate_v<ParameterDefinition>);
@@ -67,7 +72,7 @@ NativeFunctionFn methodFunction() {
 }
 
 const ClassType* registerTestType(Runtime& runtime) {
-    const auto descriptorId = runtime.registerClass<ClassType>("TestObject", ClassMode::Closed);
+    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("TestObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
     return type;
@@ -79,7 +84,7 @@ BOOST_AUTO_TEST_SUITE(native_members)
 
 BOOST_AUTO_TEST_CASE(add_method_resolves_ids_and_owns_registered_metadata_and_callback) {
     Runtime runtime;
-    const auto typeId = runtime.registerClass("MethodOwner", ClassMode::Closed);
+    const auto typeId = runtime.getTypeManager().registerClass("MethodOwner", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = runtime.getType(typeId).value()->asClassType();
     auto calls = 0;
@@ -90,7 +95,7 @@ BOOST_AUTO_TEST_CASE(add_method_resolves_ids_and_owns_registered_metadata_and_ca
         .function = [&](VirtualMachine*) { ++calls; },
         .documentation = "Returns an answer."
     };
-    const auto id = runtime.addMethod(typeId, definition);
+    const auto id = runtime.getTypeManager().registerNativeClassMethod(typeId, definition);
     BOOST_REQUIRE(id.isValid());
     definition.name = "changed";
     definition.parameters.clear();
@@ -119,7 +124,7 @@ BOOST_AUTO_TEST_CASE(add_method_resolves_ids_and_owns_registered_metadata_and_ca
     method->getFn()(nullptr);
     BOOST_TEST(calls == 1);
 
-    const auto voidId = runtime.addMethod(typeId, {
+    const auto voidId = runtime.getTypeManager().registerNativeClassMethod(typeId, {
         .name = "clear",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -132,7 +137,7 @@ BOOST_AUTO_TEST_CASE(add_method_resolves_ids_and_owns_registered_metadata_and_ca
 
 BOOST_AUTO_TEST_CASE(add_method_rejects_invalid_definitions_without_partial_registration) {
     Runtime runtime;
-    const auto typeId = runtime.registerClass("MethodOwner", ClassMode::Opened);
+    const auto typeId = runtime.getTypeManager().registerClass("MethodOwner", ClassMode::Opened);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = runtime.getType(typeId).value()->asClassType();
     NativeMethodDefinition definition{
@@ -147,44 +152,39 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_invalid_definitions_without_partial_regi
     for (const auto ownerId : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("int"), runtime.getTypeId("void")
     }) {
-        BOOST_TEST(runtime.addMethod(ownerId, definition).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(ownerId, definition).isInvalid());
     }
     for (const auto returnTypeId : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getFileNameType()->getId()
     }) {
         auto invalidDefinition = definition;
         invalidDefinition.returnTypeId = returnTypeId;
-        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(typeId, std::move(invalidDefinition)).isInvalid());
     }
     for (const auto parameterTypeId : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("void")
     }) {
         auto invalidDefinition = definition;
         invalidDefinition.parameters.push_back({parameterTypeId, "second", ""});
-        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
-    }
-    for (const auto* name : {"", "invalid.name"}) {
-        auto invalidDefinition = definition;
-        invalidDefinition.name = name;
-        BOOST_TEST(runtime.addMethod(typeId, std::move(invalidDefinition)).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(typeId, std::move(invalidDefinition)).isInvalid());
     }
     auto unnamedParameter = definition;
     unnamedParameter.parameters[0].name.clear();
-    BOOST_TEST(runtime.addMethod(typeId, std::move(unnamedParameter)).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(typeId, std::move(unnamedParameter)).isInvalid());
     auto missingFunction = definition;
     missingFunction.function = {};
-    BOOST_TEST(runtime.addMethod(typeId, std::move(missingFunction)).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(typeId, std::move(missingFunction)).isInvalid());
     BOOST_TEST(type->getMethods().empty());
     std::vector<MemberReference> membersAfter;
     runtime.getNativeMembers(membersAfter);
     BOOST_TEST(membersAfter == membersBefore);
-    BOOST_REQUIRE(runtime.addMethod(typeId, std::move(definition)).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(typeId, std::move(definition)).isValid());
 }
 
 BOOST_AUTO_TEST_CASE(add_method_rejects_conflicts_and_preserves_compatible_receiver_overloads) {
     Runtime runtime;
-    const auto firstId = runtime.registerClass("FirstMethodOwner", ClassMode::Closed);
-    const auto secondId = runtime.registerClass("SecondMethodOwner", ClassMode::Opened);
+    const auto firstId = runtime.getTypeManager().registerClass("FirstMethodOwner", ClassMode::Closed);
+    const auto secondId = runtime.getTypeManager().registerClass("SecondMethodOwner", ClassMode::Opened);
     BOOST_REQUIRE(firstId.isValid());
     BOOST_REQUIRE(secondId.isValid());
     const auto* first = runtime.getType(firstId).value()->asClassType();
@@ -195,10 +195,10 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_conflicts_and_preserves_compatible_recei
         .function = methodFunction(),
         .documentation = "Original method."
     };
-    const auto methodId = runtime.addMethod(firstId, definition);
+    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(firstId, definition);
     BOOST_REQUIRE(methodId.isValid());
-    BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
-    const auto secondMethodId = runtime.addMethod(secondId, {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(firstId, definition).isInvalid());
+    const auto secondMethodId = runtime.getTypeManager().registerNativeClassMethod(secondId, {
         .name = "convert",
         .parameters = {{runtime.getTypeId("float"), "value", ""}},
         .returnTypeId = runtime.getTypeId("float"),
@@ -206,20 +206,20 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_conflicts_and_preserves_compatible_recei
         .documentation = ""
     });
     BOOST_REQUIRE(secondMethodId.isValid());
-    BOOST_TEST(runtime.addMethod(secondId, definition).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(secondId, definition).isInvalid());
     definition.name = "stored";
-    BOOST_REQUIRE(runtime.registerProperty(first->getId(), "stored", runtime.getIntegerType()).isValid());
-    BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "stored", runtime.getIntegerType()).isValid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(firstId, definition).isInvalid());
     definition.name = "native";
-    BOOST_REQUIRE(runtime.addProperty(firstId, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(firstId, {
         runtime.getIntegerType(), "native", propertyGetter(), {}, ""
     }).isValid());
-    BOOST_TEST(runtime.addMethod(firstId, definition).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(firstId, definition).isInvalid());
     definition.name = "convert";
     definition.parameters.push_back({runtime.getTypeId("int"), "extra", ""});
-    const auto thirdId = runtime.registerClass("ThirdMethodOwner", ClassMode::Closed);
+    const auto thirdId = runtime.getTypeManager().registerClass("ThirdMethodOwner", ClassMode::Closed);
     BOOST_REQUIRE(thirdId.isValid());
-    BOOST_TEST(runtime.addMethod(thirdId, definition).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(thirdId, definition).isInvalid());
     std::vector<MemberReference> overloads;
     runtime.getNativeMemberOverloads("convert", overloads);
     BOOST_REQUIRE(overloads.size() == 2u);
@@ -230,7 +230,7 @@ BOOST_AUTO_TEST_CASE(add_method_rejects_conflicts_and_preserves_compatible_recei
 
 BOOST_AUTO_TEST_CASE(add_property_owns_its_definition_and_exposes_registered_callbacks_and_metadata) {
     Runtime runtime;
-    const auto typeId = runtime.registerClass("PropertyOwner", ClassMode::Closed);
+    const auto typeId = runtime.getTypeManager().registerClass("PropertyOwner", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = static_cast<const ClassType*>(runtime.getType(typeId).value());
     NomadInteger storedValue = 7;
@@ -249,7 +249,7 @@ BOOST_AUTO_TEST_CASE(add_property_owns_its_definition_and_exposes_registered_cal
         },
         .documentation = "Stored value."
     };
-    const auto id = runtime.addProperty(typeId, definition);
+    const auto id = runtime.getTypeManager().registerNativeClassProperty(typeId, definition);
     BOOST_REQUIRE(id.isValid());
     definition.valueType = runtime.getFloatType();
     definition.name = "changed";
@@ -295,18 +295,18 @@ BOOST_AUTO_TEST_CASE(add_property_owns_its_definition_and_exposes_registered_cal
 BOOST_AUTO_TEST_CASE(add_property_accepts_read_only_and_write_only_properties_on_open_and_closed_types) {
     Runtime runtime;
     for (const auto mode : {ClassMode::Opened, ClassMode::Closed}) {
-        const auto typeId = runtime.registerClass(
+        const auto typeId = runtime.getTypeManager().registerClass(
             mode == ClassMode::Opened ? "OpenedProperties" : "ClosedProperties", mode
         );
         BOOST_REQUIRE(typeId.isValid());
-        const auto readOnlyId = runtime.addProperty(typeId, {
+        const auto readOnlyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = runtime.getIntegerType(),
             .name = "readOnly",
             .getter = propertyGetter(),
             .setter = {},
             .documentation = "Read only."
         });
-        const auto writeOnlyId = runtime.addProperty(typeId, {
+        const auto writeOnlyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
             .valueType = runtime.getIntegerType(),
             .name = "writeOnly",
             .getter = {},
@@ -326,9 +326,107 @@ BOOST_AUTO_TEST_CASE(add_property_accepts_read_only_and_write_only_properties_on
     }
 }
 
+BOOST_AUTO_TEST_CASE(manager_native_properties_preserve_catalog_identity_and_frozen_layouts) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = runtime.getTypeManager().registerClass("ManagedProperties", ClassMode::Closed);
+    const auto* owner = manager.getTypeByName("ManagedProperties")->asClassType();
+    const auto storedId = manager.registerScriptClassProperty(ownerId, "stored", runtime.getIntegerType());
+    BOOST_REQUIRE(storedId.isValid());
+    manager.finalizeCompositeFieldLayout(ownerId);
+    auto getterCalls = 0;
+    auto setterCalls = 0;
+    NomadInteger stored = 42;
+    const NativePropertyDefinition definition{
+        .valueType = runtime.getIntegerType(),
+        .name = "managed",
+        .getter = [&](VirtualMachine*, RuntimeValue& result) {
+            ++getterCalls;
+            result.setIntegerValue(stored);
+        },
+        .setter = [&](VirtualMachine*, const RuntimeValue& value) {
+            ++setterCalls;
+            stored = value.getIntegerValue();
+        },
+        .documentation = "Managed accessor."
+    };
+    const auto id = manager.registerNativeClassProperty(ownerId, definition);
+    BOOST_REQUIRE(id.isValid());
+    const auto* property = runtime.getNativeProperty(id);
+    BOOST_REQUIRE(property != nullptr);
+    BOOST_TEST(property == owner->getProperty("managed"));
+    BOOST_TEST(property == runtime.getProperty(id));
+    BOOST_TEST(property->getDoc() == "Managed accessor.");
+    BOOST_TEST(property->getValueType() == runtime.getIntegerType());
+    BOOST_TEST(property->isTypeResolved());
+    BOOST_TEST(runtime.getNativeMemberId(owner, "managed") == MemberReference{id});
+    std::vector<MemberReference> overloads;
+    runtime.getNativeMemberOverloads("managed", overloads);
+    BOOST_REQUIRE(overloads.size() == 1U);
+    BOOST_TEST(overloads.front() == MemberReference{id});
+    BOOST_TEST(getterCalls == 0);
+    BOOST_TEST(setterCalls == 0);
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(owner->getFieldStorageSize() == 1U);
+    BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+    BOOST_CHECK_THROW((void)owner->getFieldOffset(id), NomadException);
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, definition).isInvalid());
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(id), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(storedId), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(PropertyId::INVALID), NomadException);
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("managed") == 1U);
+    const auto info = property->getInfo();
+    RuntimeValue value;
+    info.getFn(nullptr, value);
+    BOOST_TEST(value.getIntegerValue() == 42);
+    info.setFn(nullptr, RuntimeValue(NomadInteger{7}));
+    BOOST_TEST(stored == 7);
+    BOOST_TEST(getterCalls == 1);
+    BOOST_TEST(setterCalls == 1);
+}
+
+BOOST_AUTO_TEST_CASE(manager_native_property_rejections_do_not_publish_members) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = runtime.getTypeManager().registerClass("PropertyRegistration", ClassMode::Closed);
+    const auto structId = runtime.getTypeManager().registerStruct("NotAClass");
+    const auto* owner = manager.getTypeByName("PropertyRegistration")->asClassType();
+    NativePropertyDefinition definition{
+        .valueType = runtime.getIntegerType(),
+        .name = "candidate",
+        .getter = propertyGetter()
+    };
+    BOOST_TEST(manager.registerNativeClassProperty(structId, definition).isInvalid());
+    BOOST_TEST(manager.registerNativeClassProperty(manager.reserveTypeId(), definition).isInvalid());
+    const auto methodOwnerId = runtime.getTypeManager().registerClass("MethodRegistration", ClassMode::Closed);
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(methodOwnerId, {
+        .name = "candidate",
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [](VirtualMachine*) {},
+        .documentation = ""
+    }).isValid());
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    BOOST_TEST(owner->getProperties().empty());
+    BOOST_TEST(runtime.getNativeMemberId(owner, "candidate") == MemberReference{});
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("candidate") == 1U);
+    definition.name = "noAccessors";
+    definition.getter = {};
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    definition.name = "stored";
+    definition.getter = propertyGetter();
+    const auto storedId = manager.registerScriptClassProperty(ownerId, "stored", runtime.getIntegerType());
+    BOOST_REQUIRE(storedId.isValid());
+    BOOST_TEST(manager.registerNativeClassProperty(ownerId, definition).isInvalid());
+    BOOST_TEST(runtime.getNativeProperty(storedId) == nullptr);
+    BOOST_TEST(runtime.getNativeMemberOverloadCount("stored") == 0U);
+    BOOST_TEST(owner->getPropertyCount() == 1U);
+}
+
 BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_registration) {
     Runtime runtime;
-    const auto typeId = runtime.registerClass("PropertyOwner", ClassMode::Closed);
+    const auto typeId = runtime.getTypeManager().registerClass("PropertyOwner", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = static_cast<const ClassType*>(runtime.getType(typeId).value());
     NativePropertyDefinition definition{
@@ -338,7 +436,7 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
         .setter = propertySetter(),
         .documentation = "Original documentation."
     };
-    const auto beforeId = runtime.addProperty(typeId, definition);
+    const auto beforeId = runtime.getTypeManager().registerNativeClassProperty(typeId, definition);
     BOOST_REQUIRE(beforeId.isValid());
     std::vector<MemberReference> membersBefore;
     runtime.getNativeMembers(membersBefore);
@@ -347,7 +445,7 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
     for (const auto invalidOwner : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getTypeId("int"), runtime.getTypeId("void")
     }) {
-        BOOST_TEST(runtime.addProperty(invalidOwner, definition).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(invalidOwner, definition).isInvalid());
     }
     Runtime otherRuntime;
     for (const auto* invalidValueType : {
@@ -356,17 +454,12 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
     }) {
         auto invalidDefinition = definition;
         invalidDefinition.valueType = invalidValueType;
-        BOOST_TEST(runtime.addProperty(typeId, std::move(invalidDefinition)).isInvalid());
-    }
-    for (const auto* invalidName : {"", "invalid.name"}) {
-        auto invalidDefinition = definition;
-        invalidDefinition.name = invalidName;
-        BOOST_TEST(runtime.addProperty(typeId, std::move(invalidDefinition)).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(invalidDefinition)).isInvalid());
     }
     auto inaccessibleDefinition = definition;
     inaccessibleDefinition.getter = {};
     inaccessibleDefinition.setter = {};
-    BOOST_TEST(runtime.addProperty(typeId, std::move(inaccessibleDefinition)).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(inaccessibleDefinition)).isInvalid());
 
     BOOST_TEST(type->getProperty("value") == nullptr);
     BOOST_TEST(type->getProperties().size() == 1u);
@@ -378,14 +471,14 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_re
     BOOST_TEST(original->name == "before");
     BOOST_TEST(original->doc == "Original documentation.");
     definition.name = "after";
-    const auto afterId = runtime.addProperty(typeId, std::move(definition));
+    const auto afterId = runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(definition));
     BOOST_REQUIRE(afterId.isValid());
     BOOST_TEST(afterId.id == beforeId.id + 1);
 }
 
 BOOST_AUTO_TEST_CASE(add_property_rejects_duplicate_and_conflicting_members) {
     Runtime runtime;
-    const auto typeId = runtime.registerClass("PropertyOwner", ClassMode::Closed);
+    const auto typeId = runtime.getTypeManager().registerClass("PropertyOwner", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = static_cast<const ClassType*>(runtime.getType(typeId).value());
     NativePropertyDefinition definition{
@@ -395,14 +488,14 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_duplicate_and_conflicting_members) {
         .setter = propertySetter(),
         .documentation = "Original documentation."
     };
-    const auto originalId = runtime.addProperty(typeId, definition);
+    const auto originalId = runtime.getTypeManager().registerNativeClassProperty(typeId, definition);
     BOOST_REQUIRE(originalId.isValid());
     auto readOnlyDefinition = definition;
     readOnlyDefinition.name = "readOnly";
     readOnlyDefinition.setter = {};
-    BOOST_REQUIRE(runtime.addProperty(typeId, std::move(readOnlyDefinition)).isValid());
-    BOOST_REQUIRE(runtime.registerProperty(type->getId(), "stored", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.addMethod(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(readOnlyDefinition)).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "stored", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "method",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -412,15 +505,15 @@ BOOST_AUTO_TEST_CASE(add_property_rejects_duplicate_and_conflicting_members) {
     std::vector<MemberReference> membersBefore;
     runtime.getNativeMembers(membersBefore);
 
-    BOOST_TEST(runtime.addProperty(typeId, definition).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, definition).isInvalid());
     auto conflictingDefinition = definition;
     conflictingDefinition.valueType = runtime.getFloatType();
     conflictingDefinition.documentation = "Replacement documentation.";
-    BOOST_TEST(runtime.addProperty(typeId, std::move(conflictingDefinition)).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(conflictingDefinition)).isInvalid());
     for (const auto* name : {"readOnly", "stored", "method"}) {
         auto duplicateDefinition = definition;
         duplicateDefinition.name = name;
-        BOOST_TEST(runtime.addProperty(typeId, std::move(duplicateDefinition)).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, std::move(duplicateDefinition)).isInvalid());
     }
 
     const auto original = runtime.getNativePropertyInfo(originalId);
@@ -512,10 +605,114 @@ BOOST_AUTO_TEST_CASE(native_creation_definitions_own_their_inputs_without_regist
     BOOST_TEST(runtime.getNativeIndexers().size() == originalIndexerCount);
 }
 
+BOOST_AUTO_TEST_CASE(method_backed_properties_validate_accessor_signatures_and_preserve_metadata_and_layout) {
+    Runtime runtime;
+    const auto ownerId = runtime.getTypeManager().registerClass("MethodPropertyOwner", ClassMode::Closed);
+    const auto otherOwnerId = runtime.getTypeManager().registerClass("OtherMethodPropertyOwner", ClassMode::Closed);
+    const auto* owner = runtime.getTypeByName("MethodPropertyOwner")->asClassType();
+    const auto valueId = runtime.getTypeManager().registerStruct("MethodPropertyValue");
+    const auto* valueType = runtime.getTypeByName("MethodPropertyValue");
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
+    runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
+    auto calls = 0;
+    const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "getValue", .parameters = {}, .returnTypeId = valueId,
+        .function = [&](VirtualMachine*) { ++calls; }
+    });
+    const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "setValue", .parameters = {{valueId, "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(), .function = [&](VirtualMachine*) { ++calls; }
+    });
+    const auto wrongGetter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "getWrongValue", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = methodFunction()
+    });
+    const auto getterWithArgument = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "getWithArgument", .parameters = {{valueId, "value", ""}}, .returnTypeId = valueId,
+        .function = methodFunction()
+    });
+    const auto wrongSetter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "setWrongValue", .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(), .function = methodFunction()
+    });
+    const auto returningSetter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        .name = "setReturningValue", .parameters = {{valueId, "value", ""}}, .returnTypeId = valueId,
+        .function = methodFunction()
+    });
+    const auto otherGetter = runtime.getTypeManager().registerNativeClassMethod(otherOwnerId, {
+        .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = methodFunction()
+    });
+    const auto scriptGetter = runtime.getTypeManager().registerScriptClassMethod(ownerId, "getScriptValue", {}, "getter.nomad", "return 0");
+    BOOST_REQUIRE(scriptGetter.isValid());
+    runtime.getScriptCallable(scriptGetter)->setReturnType(valueType);
+    const auto functionId = runtime.registerNativeFunction("propertyFunction", methodFunction(), {}, valueType, "");
+    BOOST_REQUIRE(getter.isValid() && setter.isValid() && wrongGetter.isValid() && getterWithArgument.isValid() &&
+        wrongSetter.isValid() && returningSetter.isValid() && otherGetter.isValid() && functionId.isValid());
+    NativePropertyDefinition definition{
+        .valueType = valueType, .name = "methodValue", .documentation = "Method-backed value.",
+        .getterMethodId = getter, .setterMethodId = setter
+    };
+    const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, definition);
+    BOOST_REQUIRE(id.isValid());
+    const auto readOnlyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        .valueType = valueType, .name = "readOnlyValue", .getterMethodId = getter
+    });
+    const auto writeOnlyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        .valueType = valueType, .name = "writeOnlyValue", .setterMethodId = setter
+    });
+    BOOST_REQUIRE(readOnlyId.isValid() && writeOnlyId.isValid());
+    auto info = runtime.getNativePropertyInfo(id).value();
+    BOOST_TEST(info.getterMethodId == getter);
+    BOOST_TEST(info.setterMethodId == setter);
+    BOOST_TEST(!info.getFn);
+    BOOST_TEST(!info.setFn);
+    BOOST_TEST(info.valueType == valueType);
+    BOOST_TEST(info.doc == "Method-backed value.");
+    info.getterMethodId = CallableId::INVALID;
+    definition.getterMethodId = CallableId::INVALID;
+    BOOST_TEST(runtime.getNativePropertyInfo(id)->getterMethodId == getter);
+    BOOST_TEST(owner->getFieldStorageSize() == 0U);
+    BOOST_TEST(owner->getFieldIndex(id) == NOMAD_INVALID_INDEX);
+    BOOST_TEST(owner->isFieldLayoutFinalized());
+    BOOST_TEST(runtime.getNativePropertyInfo(readOnlyId)->setterMethodId.isInvalid());
+    BOOST_TEST(runtime.getNativePropertyInfo(writeOnlyId)->getterMethodId.isInvalid());
+    std::ostringstream documentation;
+    generateMemberDocumentation(&runtime, documentation);
+    BOOST_TEST(documentation.str().find("#### `methodValue` (*read/write property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `readOnlyValue` (*read-only property*)") != NomadString::npos);
+    BOOST_TEST(documentation.str().find("#### `writeOnlyValue` (*write-only property*)") != NomadString::npos);
+    for (const auto invalidGetter : {functionId, otherGetter, wrongGetter, getterWithArgument, scriptGetter}) {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+            .valueType = valueType, .name = "rejectedGetter", .getterMethodId = invalidGetter
+        }).isInvalid());
+    }
+    for (const auto invalidSetter : {getter, wrongSetter, returningSetter, functionId}) {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+            .valueType = valueType, .name = "rejectedSetter", .setterMethodId = invalidSetter
+        }).isInvalid());
+    }
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        .valueType = valueType, .name = "mixed", .getter = propertyGetter(), .setterMethodId = setter
+    }).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        .valueType = valueType, .name = "noAccessors"
+    }).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        .valueType = runtime.getVoidType(), .name = "voidValue", .getterMethodId = getter
+    }).isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        .valueType = valueType, .name = "methodValue", .getterMethodId = getter
+    }).isInvalid());
+    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(owner, "rejectedGetter")) == MemberType::Unknown));
+    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(owner, "rejectedSetter")) == MemberType::Unknown));
+    BOOST_TEST(calls == 0);
+}
+
 BOOST_AUTO_TEST_CASE(native_property_info_is_a_snapshot_of_registered_metadata) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
-    const auto id = runtime.addProperty(type->getId(), {
+    const auto id = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = propertyGetter(),
@@ -547,7 +744,7 @@ BOOST_AUTO_TEST_CASE(native_property_info_is_a_snapshot_of_registered_metadata) 
         PropertyId{NOMAD_ID_MAX - 1}, PropertyId{NOMAD_ID_MAX}}) {
         BOOST_TEST(!runtime.getNativePropertyInfo(invalid).has_value());
     }
-    const auto methodId = runtime.addMethod(type->getId(), {
+    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "read",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -566,7 +763,7 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
     Runtime runtime;
     auto specializations = NomadIndex{0};
     for (const auto* family : {"Family", "Other"}) {
-        BOOST_REQUIRE(runtime.registerParameterizedType(
+        BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType(
             family, 1,
             [&](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
                 ++specializations;
@@ -575,13 +772,13 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
             }
         ));
     }
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "declaredProperty", MemberType::Property));
     const std::vector<TemplateParameter> parameters = {
         defTemplateParameter("value", TypeParameterIndex{0}, ""),
         defTemplateParameter("line", runtime.getLineNumberType(), "")
     };
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Other", "declaredMethod", MemberType::Method, parameters));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Other", "declaredMethod", MemberType::Method, parameters));
     BOOST_TEST(specializations == 0u);
     BOOST_TEST(runtime.getNativeMemberOverloadCount("declaredMethod") == 0u);
     auto signature = runtime.getMemberSignature("declaredMethod");
@@ -594,36 +791,36 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
     BOOST_TEST(runtime.getMemberSignature("declaredMethod")->parameters.size() == 2u);
     BOOST_TEST(!runtime.getMemberSignature("missing").has_value());
 
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
-    BOOST_TEST(!runtime.registerMemberTemplate("Missing", "member", MemberType::Property));
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "invalid.name", MemberType::Property));
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "unknownKind", MemberType::Unknown));
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Other", "declaredProperty", MemberType::Method));
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "withArguments", MemberType::Property, parameters));
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "badIndex", MemberType::Method, {
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "declaredMethod", MemberType::Method, parameters));
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Missing", "member", MemberType::Property));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "invalid.name", MemberType::Property));
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "unknownKind", MemberType::Unknown));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Other", "declaredProperty", MemberType::Method));
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "withArguments", MemberType::Property, parameters));
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "badIndex", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{1}, "")
     }));
     IntegerType foreignType(&runtime, TypeId::INVALID);
     for (const auto* type : {static_cast<const Type*>(nullptr), runtime.getVoidType(), static_cast<const Type*>(&foreignType)}) {
-        BOOST_TEST(!runtime.registerMemberTemplate("Family", "badType", MemberType::Method, {
+        BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "badType", MemberType::Method, {
             defTemplateParameter("value", type, "")
         }));
     }
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "badName", MemberType::Method, {
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "badName", MemberType::Method, {
         defTemplateParameter("", TypeParameterIndex{0}, "")
     }));
     BOOST_TEST(!runtime.getMemberSignature("badType").has_value());
     BOOST_TEST(!runtime.getMemberSignature("badIndex").has_value());
     BOOST_TEST(!runtime.getMemberSignature("badName").has_value());
     const auto* classType = registerTestType(runtime);
-    BOOST_TEST(runtime.addMethod(classType->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
         .name = "declaredMethod",
         .parameters = {{runtime.getTypeId("int"), "value", ""}},
         .returnTypeId = runtime.getTypeId("void"),
         .function = methodFunction(),
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addMethod(classType->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
         .name = "declaredMethod",
         .parameters = {
             {runtime.getTypeId("int"), "value", ""},
@@ -633,7 +830,7 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
         .function = methodFunction(),
         .documentation = ""
     }).isInvalid());
-    BOOST_REQUIRE(runtime.addMethod(classType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
         .name = "declaredMethod",
         .parameters = {
             {runtime.getTypeId("int"), "value", ""},
@@ -643,28 +840,28 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
         .function = methodFunction(),
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.addProperty(classType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(classType->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "declaredProperty",
         .getter = propertyGetter(),
         .setter = {},
         .documentation = ""
     }).isValid());
-    const auto* callbackType = runtime.getCallbackType({}, runtime.getVoidType());
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "declaredCallback", MemberType::Method, {
+    const auto* callbackType = runtime.getTypeManager().getCallbackType({}, runtime.getVoidType());
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "declaredCallback", MemberType::Method, {
         defTemplateParameter("callback", callbackType, "")
     }));
-    BOOST_TEST(!runtime.registerMemberTemplate("Other", "declaredCallback", MemberType::Method, {
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Other", "declaredCallback", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_TEST(runtime.addMethod(classType->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
         .name = "declaredCallback",
-        .parameters = {{runtime.getCallbackType({}, runtime.getBooleanType())->getId(), "callback", ""}},
+        .parameters = {{runtime.getTypeManager().getCallbackType({}, runtime.getBooleanType())->getId(), "callback", ""}},
         .returnTypeId = runtime.getTypeId("void"),
         .function = methodFunction(),
         .documentation = ""
     }).isInvalid());
-    BOOST_REQUIRE(runtime.addMethod(classType->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
         .name = "declaredCallback",
         .parameters = {{callbackType->getId(), "callback", ""}},
         .returnTypeId = runtime.getTypeId("void"),
@@ -676,34 +873,34 @@ BOOST_AUTO_TEST_CASE(member_templates_register_without_specializing_and_validate
 
 BOOST_AUTO_TEST_CASE(member_templates_validate_against_existing_concrete_members) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerParameterizedType("Family", 1, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
+    BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType("Family", 1, [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<ClassType>(owningRuntime, id, "Family<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments
         );
     }));
     const auto* type = registerTestType(runtime);
-    BOOST_REQUIRE(runtime.addMethod(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "existingMethod",
         .parameters = {{runtime.getTypeId("int"), "value", ""}},
         .returnTypeId = runtime.getTypeId("void"),
         .function = methodFunction(),
         .documentation = ""
     }).isValid());
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Property));
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method));
-    BOOST_TEST(!runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "existingMethod", MemberType::Property));
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "existingMethod", MemberType::Method));
+    BOOST_TEST(!runtime.getTypeManager().registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
         defTemplateParameter("value", runtime.getLineNumberType(), "")
     }));
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "existingMethod", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_REQUIRE(runtime.addMethod(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "zeroArguments",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
         .function = methodFunction(),
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "zeroArguments", MemberType::Property));
+    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Family", "zeroArguments", MemberType::Property));
 }
 
 BOOST_AUTO_TEST_CASE(string_type_getter_returns_concrete_descriptor) {
@@ -720,14 +917,14 @@ BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
     Runtime runtime;
 
     const auto readOnlyId = runtime.getNativeMemberId(runtime.getStringType(), "length");
-    const auto writeOnlyId = runtime.addProperty(runtime.getTypeId("string"), {
+    const auto writeOnlyId = runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
         .setter = propertySetter(),
         .documentation = NomadDoc("Write-only value")
     });
-    const auto readWriteId = runtime.addProperty(runtime.getTypeId("string"), {
+    const auto readWriteId = runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = propertyGetter(),
@@ -763,7 +960,7 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
     Runtime runtime;
 
     const auto methodId =
-        runtime.addMethod(runtime.getTypeId("string"), {
+        runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
             .name = "replace",
             .parameters = {
                                             {runtime.getTypeId("string"), "from", NomadDoc("Text to replace")},
@@ -789,7 +986,7 @@ BOOST_AUTO_TEST_CASE(registers_method_metadata) {
 BOOST_AUTO_TEST_CASE(rejects_duplicate_member_name_on_same_type) {
     Runtime runtime;
 
-    BOOST_REQUIRE(runtime.addProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = propertyGetter(),
@@ -797,7 +994,7 @@ BOOST_AUTO_TEST_CASE(rejects_duplicate_member_name_on_same_type) {
         .documentation = NomadDoc("Property")
     }).isValid());
 
-    BOOST_TEST(runtime.addMethod(runtime.getTypeId("string"), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "value",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -811,7 +1008,7 @@ BOOST_AUTO_TEST_CASE(allows_compatible_member_names_on_different_types) {
     const auto* type = registerTestType(runtime);
 
     const auto stringId =
-        runtime.addMethod(runtime.getTypeId("string"), {
+        runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
             .name = "find",
             .parameters = {{runtime.getTypeId("string"), "value", NomadDoc("Value")}},
             .returnTypeId = runtime.getTypeId("int"),
@@ -819,7 +1016,7 @@ BOOST_AUTO_TEST_CASE(allows_compatible_member_names_on_different_types) {
             .documentation = NomadDoc("Find string")
         });
     const auto integerId =
-        runtime.addMethod(type->getId(), {
+        runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
             .name = "find",
             .parameters = {{runtime.getTypeId("int"), "value", NomadDoc("Value")}},
             .returnTypeId = runtime.getTypeId("bool"),
@@ -841,7 +1038,7 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
 
-    BOOST_REQUIRE(runtime.addMethod(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "find",
         .parameters = {{runtime.getTypeId("string"), "value", NomadDoc("Value")}},
         .returnTypeId = runtime.getTypeId("int"),
@@ -849,7 +1046,7 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
         .documentation = NomadDoc("Find string")
     }).isValid());
 
-    BOOST_TEST(runtime.addMethod(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
         .name = "find",
         .parameters = {
                                                    {runtime.getTypeId("int"), "value", NomadDoc("Value")},
@@ -863,14 +1060,14 @@ BOOST_AUTO_TEST_CASE(rejects_incompatible_member_shapes) {
 
 BOOST_AUTO_TEST_CASE(rejects_invalid_member_definitions) {
     Runtime runtime;
-    BOOST_TEST(runtime.addMethod(runtime.getTypeId("string"), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "convert",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("string"),
         .function = {},
         .documentation = NomadDoc("No function")
     }).isInvalid());
-    BOOST_TEST(runtime.addMethod(runtime.getTypeId("string"), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "convert",
         .parameters = {},
         .returnTypeId = TypeId::INVALID,
@@ -885,14 +1082,14 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     runtime.getNativeMembers(builtInMembers);
     const auto* type = registerTestType(runtime);
 
-    const auto stringMethodId = runtime.addMethod(runtime.getTypeId("string"), {
+    const auto stringMethodId = runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "convert",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("string"),
         .function = methodFunction(),
         .documentation = NomadDoc("Convert")
     });
-    const auto integerPropertyId = runtime.addProperty(type->getId(), {
+    const auto integerPropertyId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "sign",
         .getter = propertyGetter(),
@@ -917,6 +1114,56 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     BOOST_TEST(hasIntegerProperty);
 }
 
+BOOST_AUTO_TEST_CASE(native_metadata_queries_do_not_copy_callbacks) {
+    struct CallbackCapture {
+        explicit CallbackCapture(NomadInteger& copies): copies(copies) {}
+        CallbackCapture(const CallbackCapture& other): copies(other.copies) { ++copies; }
+        NomadInteger& copies;
+    };
+
+    Runtime runtime;
+    const auto* type = registerTestType(runtime);
+    auto copies = NomadInteger{0};
+    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "copyProbe",
+        .getter = [capture = CallbackCapture(copies)](VirtualMachine*, RuntimeValue& result) {
+            result.setIntegerValue(capture.copies);
+        }
+    });
+    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        .valueTypeId = runtime.getIntegerType()->getId(),
+        .indexTypes = {runtime.getIntegerType()->getId()},
+        .getter = [capture = CallbackCapture(copies)](VirtualMachine* machine) {
+            machine->setIntegerResult(capture.copies);
+        }
+    });
+    BOOST_REQUIRE(propertyId.isValid());
+    BOOST_REQUIRE(indexerId.isValid());
+    copies = 0;
+    BOOST_TEST((runtime.getNativeMemberId(type, "copyProbe") == MemberReference{propertyId}));
+    BOOST_TEST((runtime.getNativeMemberId(runtime.getStringType(), "copyProbe") == MemberReference{PropertyId::INVALID}));
+    std::vector<MemberReference> members;
+    runtime.getNativeMembers(type, members);
+    BOOST_REQUIRE(members.size() == 1U);
+    BOOST_TEST((members.front() == MemberReference{propertyId}));
+    runtime.getNativeMembers(members);
+    BOOST_TEST((std::ranges::find(members, MemberReference{propertyId}) != members.end()));
+    BOOST_TEST(copies == 0);
+
+    const auto* info = runtime.getNativeIndexerInfo(indexerId);
+    BOOST_REQUIRE(info != nullptr);
+    BOOST_TEST(info == type->getNativeIndexer(1));
+    BOOST_TEST(info == runtime.getNativeIndexers().back());
+    BOOST_TEST(runtime.getNativeIndexerId(type, 1) == indexerId);
+    BOOST_TEST(runtime.getNativeIndexerInfo(IndexerId::INVALID) == nullptr);
+    BOOST_TEST(copies == 0);
+
+    const auto snapshot = runtime.getNativePropertyInfo(propertyId);
+    BOOST_REQUIRE(snapshot.has_value());
+    BOOST_TEST(copies > 0);
+}
+
 BOOST_AUTO_TEST_CASE(add_indexer_resolves_ids_and_owns_metadata_and_callbacks) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
@@ -930,15 +1177,15 @@ BOOST_AUTO_TEST_CASE(add_indexer_resolves_ids_and_owns_metadata_and_callbacks) {
         .documentation = "Two-key indexer."
     };
     const auto originalCount = runtime.getNativeIndexers().size();
-    const auto id = runtime.addIndexer(type->getId(), definition);
+    const auto id = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), definition);
     BOOST_REQUIRE(id.isValid());
     definition.valueTypeId = runtime.getBooleanType()->getId();
     definition.indexTypes.clear();
     definition.getter = {};
     definition.setter = {};
     definition.documentation = "Changed.";
-    const auto info = runtime.getNativeIndexerInfo(id);
-    BOOST_REQUIRE(info.has_value());
+    const auto* info = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(info != nullptr);
     BOOST_TEST(info->id == id);
     BOOST_TEST(info->classType == type);
     BOOST_TEST(info->valueType == runtime.getStringType());
@@ -968,25 +1215,25 @@ BOOST_AUTO_TEST_CASE(add_indexer_preserves_access_modes_and_shared_index_count_r
     const auto integerId = runtime.getIntegerType()->getId();
     const auto getter = methodFunction();
     const auto setter = methodFunction();
-    const auto readId = runtime.addIndexer(type->getId(), {
+    const auto readId = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         integerId, {integerId}, getter, {}, "Read only."
     });
     BOOST_REQUIRE(readId.isValid());
-    const auto read = runtime.getNativeIndexerInfo(readId);
-    BOOST_REQUIRE(read.has_value());
+    const auto* read = runtime.getNativeIndexerInfo(readId);
+    BOOST_REQUIRE(read != nullptr);
     BOOST_TEST(static_cast<bool>(read->getFn));
     BOOST_TEST(!read->setFn);
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getStringType()->getId()},
         .getter = getter,
         .setter = setter,
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         integerId, {runtime.getStringType()->getId()}, getter, setter, ""
     }).isInvalid());
-    const auto writeId = runtime.addIndexer(type->getId(), {
+    const auto writeId = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId(), runtime.getStringType()->getId()},
         .getter = {},
@@ -994,21 +1241,21 @@ BOOST_AUTO_TEST_CASE(add_indexer_preserves_access_modes_and_shared_index_count_r
         .documentation = "Write only."
     });
     BOOST_REQUIRE(writeId.isValid());
-    const auto write = runtime.getNativeIndexerInfo(writeId);
-    BOOST_REQUIRE(write.has_value());
+    const auto* write = runtime.getNativeIndexerInfo(writeId);
+    BOOST_REQUIRE(write != nullptr);
     BOOST_TEST(!write->getFn);
     BOOST_TEST(static_cast<bool>(write->setFn));
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         integerId, {integerId, integerId}, getter, {}, ""
     }).isInvalid());
-    const auto otherTypeId = runtime.registerClass("WriteIndexerOwner", ClassMode::Closed);
+    const auto otherTypeId = runtime.getTypeManager().registerClass("WriteIndexerOwner", ClassMode::Closed);
     BOOST_REQUIRE(otherTypeId.isValid());
-    const auto otherId = runtime.addIndexer(otherTypeId, {
+    const auto otherId = runtime.getTypeManager().registerNativeClassIndexer(otherTypeId, {
         integerId, {integerId}, {}, setter, ""
     });
     BOOST_REQUIRE(otherId.isValid());
-    const auto other = runtime.getNativeIndexerInfo(otherId);
-    BOOST_REQUIRE(other.has_value());
+    const auto* other = runtime.getNativeIndexerInfo(otherId);
+    BOOST_REQUIRE(other != nullptr);
     BOOST_TEST(!other->getFn);
     BOOST_TEST(static_cast<bool>(other->setFn));
 }
@@ -1021,33 +1268,33 @@ BOOST_AUTO_TEST_CASE(add_indexer_rejects_invalid_definitions_without_partial_pub
     const NativeIndexerDefinition definition{integerId, {integerId}, getter, {}, ""};
     const auto originalCount = runtime.getNativeIndexers().size();
     for (const auto invalid : {TypeId::INVALID, TypeId{NOMAD_ID_MAX}, integerId}) {
-        BOOST_TEST(runtime.addIndexer(invalid, definition).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(invalid, definition).isInvalid());
     }
     for (const auto invalid : {
         TypeId::INVALID, TypeId{NOMAD_ID_MAX}, runtime.getVoidType()->getId(),
         runtime.getFileNameType()->getId()
     }) {
-        BOOST_TEST(runtime.addIndexer(type->getId(), {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             invalid, {integerId}, getter, {}, ""
         }).isInvalid());
-        BOOST_TEST(runtime.addIndexer(type->getId(), {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             integerId, {integerId, invalid}, getter, {}, ""
         }).isInvalid());
-        BOOST_TEST(runtime.addIndexer(type->getId(), {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             integerId, {invalid, integerId}, getter, {}, ""
         }).isInvalid());
     }
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         integerId, {}, getter, {}, ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         integerId, {integerId}, {}, {}, ""
     }).isInvalid());
     BOOST_TEST(runtime.getNativeIndexers().size() == originalCount);
     BOOST_TEST(type->getNativeIndexers().empty());
     BOOST_TEST(runtime.getNativeIndexerId(type, 1).isInvalid());
     BOOST_TEST(runtime.getNativeIndexerId(type, 2).isInvalid());
-    BOOST_REQUIRE(runtime.addIndexer(type->getId(), definition).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), definition).isValid());
 }
 
 BOOST_AUTO_TEST_CASE(indexer_registration_validates_types_and_accessors) {
@@ -1055,63 +1302,63 @@ BOOST_AUTO_TEST_CASE(indexer_registration_validates_types_and_accessors) {
     const auto* type = registerTestType(runtime);
     const NativeFunctionFn getter = [](VirtualMachine*) {};
     const NativeFunctionFn setter = [](VirtualMachine*) {};
-    BOOST_TEST(runtime.addIndexer(TypeId::INVALID, {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(TypeId::INVALID, {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {TypeId::INVALID},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getVoidType()->getId()},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = TypeId{NOMAD_ID_MAX},
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getVoidType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getFileNameType()->getId()},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = {},
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    const auto id = runtime.addIndexer(type->getId(), {
+    const auto id = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = {},
@@ -1120,22 +1367,22 @@ BOOST_AUTO_TEST_CASE(indexer_registration_validates_types_and_accessors) {
     });
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = getter,
         .setter = setter,
         .documentation = ""
     }).isInvalid());
-    const auto info = runtime.getNativeIndexerInfo(id);
-    BOOST_REQUIRE(info.has_value());
+    const auto* info = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(info != nullptr);
     BOOST_TEST(info->classType == type);
     BOOST_REQUIRE(info->indexTypes.size() == 1u);
     BOOST_TEST(info->indexTypes[0] == runtime.getIntegerType());
     BOOST_TEST(info->valueType == runtime.getIntegerType());
     BOOST_TEST(!info->getFn);
     BOOST_TEST(static_cast<bool>(info->setFn));
-    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID).has_value());
+    BOOST_TEST(runtime.getNativeIndexerInfo(IndexerId::INVALID) == nullptr);
     BOOST_TEST(runtime.getNativeIndexerId(runtime.getIntegerType(), 1).isInvalid());
 }
 
@@ -1146,7 +1393,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     const NativeFunctionFn setter = [](VirtualMachine*) {};
     const auto* integer = runtime.getIntegerType();
     const auto* string = runtime.getStringType();
-    BOOST_TEST(runtime.addIndexer(TypeId::INVALID, {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(TypeId::INVALID, {
         .valueTypeId = integer->getId(),
         .indexTypes = {integer->getId(), string->getId()},
         .getter = getter,
@@ -1154,7 +1401,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
         .documentation = ""
     }).isInvalid());
     ClassType unregistered(&runtime, TypeId::INVALID, "Unregistered", ClassMode::Closed);
-    BOOST_TEST(runtime.addIndexer(unregistered.getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(unregistered.getId(), {
         .valueTypeId = integer->getId(),
         .indexTypes = {integer->getId(), string->getId()},
         .getter = getter,
@@ -1165,21 +1412,21 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
         TypeId::INVALID, runtime.getVoidType()->getId(),
         runtime.getFileNameType()->getId(), TypeId{NOMAD_ID_MAX}
     }) {
-        BOOST_TEST(runtime.addIndexer(type->getId(), {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             .valueTypeId = integer->getId(),
             .indexTypes = {invalid, string->getId()},
             .getter = getter,
             .setter = {},
             .documentation = ""
         }).isInvalid());
-        BOOST_TEST(runtime.addIndexer(type->getId(), {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             .valueTypeId = integer->getId(),
             .indexTypes = {integer->getId(), invalid},
             .getter = getter,
             .setter = {},
             .documentation = ""
         }).isInvalid());
-        BOOST_TEST(runtime.addIndexer(type->getId(), {
+        BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             .valueTypeId = invalid,
             .indexTypes = {integer->getId(), string->getId()},
             .getter = getter,
@@ -1187,14 +1434,14 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
             .documentation = ""
         }).isInvalid());
     }
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = integer->getId(),
         .indexTypes = {integer->getId(), string->getId()},
         .getter = {},
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    const auto id = runtime.addIndexer(type->getId(), {
+    const auto id = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = integer->getId(),
         .indexTypes = {integer->getId(), string->getId()},
         .getter = getter,
@@ -1203,29 +1450,29 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     });
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getNativeIndexerId(type, 2) == id);
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = integer->getId(),
         .indexTypes = {integer->getId(), string->getId()},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_TEST(runtime.addIndexer(type->getId(), {
+    BOOST_TEST(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = integer->getId(),
         .indexTypes = {string->getId(), integer->getId()},
         .getter = getter,
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = integer->getId(),
         .indexTypes = {integer->getId()},
         .getter = {},
         .setter = setter,
         .documentation = ""
     }).isValid());
-    const auto info = runtime.getNativeIndexerInfo(id);
-    BOOST_REQUIRE(info.has_value());
+    const auto* info = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(info != nullptr);
     BOOST_TEST(info->id == id);
     BOOST_TEST(info->classType == type);
     BOOST_REQUIRE(info->indexTypes.size() == 2u);
@@ -1235,8 +1482,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_validate_metadata_and_coexist_with
     BOOST_TEST(static_cast<bool>(info->getFn));
     BOOST_TEST(static_cast<bool>(info->setFn));
     BOOST_TEST(runtime.getNativeIndexers().size() == 3u);
-    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId::INVALID).has_value());
-    BOOST_TEST(!runtime.getNativeIndexerInfo(IndexerId{toNomadId(runtime.getNativeIndexers().size())}).has_value());
+    BOOST_TEST(runtime.getNativeIndexerInfo(IndexerId::INVALID) == nullptr);
+    BOOST_TEST(runtime.getNativeIndexerInfo(IndexerId{toNomadId(runtime.getNativeIndexers().size())}) == nullptr);
     BOOST_TEST(runtime.getNativeIndexerId(integer, 2).isInvalid());
     std::ostringstream documentation;
     generateNativeMemberDocumentation(&runtime, documentation);
@@ -1250,7 +1497,7 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
     const NativeFunctionFn getter = [](VirtualMachine*) {};
-    const auto id = runtime.addIndexer(type->getId(), {
+    const auto id = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = getter,
@@ -1260,13 +1507,15 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
     BOOST_REQUIRE(id.isValid());
     const auto* original = type->getNativeIndexer(1);
     BOOST_REQUIRE(original != nullptr);
+    const auto* borrowed = runtime.getNativeIndexerInfo(id);
+    BOOST_TEST(borrowed == original);
     BOOST_TEST(original->id == id);
     BOOST_TEST(runtime.getNativeIndexers().back() == original);
     const auto ownedIndexers = type->getNativeIndexers();
     BOOST_REQUIRE(ownedIndexers.size() == 1U);
     BOOST_TEST(ownedIndexers[0] == original);
     for (auto count = NomadIndex{2}; count <= 32; ++count) {
-        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getIntegerType()->getId(),
             .indexTypes = std::vector<TypeId>(count, runtime.getIntegerType()->getId()),
             .getter = getter,
@@ -1275,10 +1524,10 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
         }).isValid());
     }
     for (auto index = 0; index < 32; ++index) {
-        const auto descriptorId = runtime.registerClass<ClassType>("Additional" + std::to_string(index), ClassMode::Closed);
+        const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("Additional" + std::to_string(index), ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* additional = runtime.getType(descriptorId).value()->asClassType();
-        BOOST_REQUIRE(runtime.addIndexer(additional->getId(), {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(additional->getId(), {
             .valueTypeId = runtime.getIntegerType()->getId(),
             .indexTypes = {runtime.getIntegerType()->getId()},
             .getter = getter,
@@ -1287,18 +1536,19 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
         }).isValid());
     }
     BOOST_TEST(type->getNativeIndexer(1) == original);
+    BOOST_TEST(runtime.getNativeIndexerInfo(id) == borrowed);
     BOOST_TEST(original->doc == "Stable indexer");
     BOOST_TEST(type->getNativeIndexers().size() == 32U);
     BOOST_TEST(runtime.getNativeIndexers()[toNomadIndex(id.id)] == original);
-    const auto info = runtime.getNativeIndexerInfo(id);
-    BOOST_REQUIRE(info.has_value());
+    const auto* info = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(info != nullptr);
     BOOST_TEST(info->id == id);
     BOOST_TEST(info->doc == "Stable indexer");
     BOOST_TEST(info->classType == type);
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == id);
     for (const auto invalid : {IndexerId::INVALID, IndexerId{-2},
         IndexerId{NOMAD_ID_MAX - 1}, IndexerId{NOMAD_ID_MAX}}) {
-        BOOST_TEST(!runtime.getNativeIndexerInfo(invalid).has_value());
+        BOOST_TEST(runtime.getNativeIndexerInfo(invalid) == nullptr);
     }
     BOOST_TEST(info->id == id);
     BOOST_TEST(info->doc == "Stable indexer");
@@ -1307,7 +1557,7 @@ BOOST_AUTO_TEST_CASE(indexer_ids_remain_stable_as_the_catalog_grows) {
 BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalog_membership) {
     Runtime runtime;
     Runtime other;
-    const auto descriptorId = runtime.registerClass("DirectIndexer", ClassMode::Closed);
+    const auto descriptorId = runtime.getTypeManager().registerClass("DirectIndexer", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     auto* type = const_cast<ClassType*>(runtime.getType(descriptorId).value()->asClassType());
     const auto originalCount = runtime.getNativeIndexers().size();
@@ -1365,10 +1615,9 @@ BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalo
     BOOST_TEST(type->getNativeIndexers().size() == 1U);
     BOOST_TEST(runtime.getNativeIndexers().size() == originalCount + 1);
     BOOST_TEST(type->getNativeIndexer(2) == nullptr);
-    auto snapshot = runtime.getNativeIndexerInfo(id);
-    BOOST_REQUIRE(snapshot.has_value());
-    snapshot->indexTypes.clear();
-    snapshot->getFn = {};
+    const auto* borrowed = runtime.getNativeIndexerInfo(id);
+    BOOST_REQUIRE(borrowed != nullptr);
+    BOOST_TEST(borrowed == registered);
     BOOST_TEST(registered->indexTypes.size() == 1U);
     BOOST_TEST(static_cast<bool>(registered->getFn));
 }
@@ -1384,7 +1633,7 @@ BOOST_AUTO_TEST_CASE(type_owned_indexer_callbacks_are_released_once_at_runtime_d
             delete value;
         });
         lifetime = callbackState;
-        BOOST_REQUIRE(runtime.addIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getIntegerType()->getId(),
             .indexTypes = {runtime.getIntegerType()->getId()},
             .getter = [callbackState](VirtualMachine*) {},
@@ -1406,8 +1655,8 @@ BOOST_AUTO_TEST_CASE(type_owned_indexer_callbacks_are_released_once_at_runtime_d
 
 BOOST_AUTO_TEST_CASE(string_indexer_is_read_only_and_documented) {
     Runtime runtime;
-    const auto info = runtime.getNativeIndexerInfo(runtime.getNativeIndexerId(runtime.getStringType(), 1));
-    BOOST_REQUIRE(info.has_value());
+    const auto* info = runtime.getNativeIndexerInfo(runtime.getNativeIndexerId(runtime.getStringType(), 1));
+    BOOST_REQUIRE(info != nullptr);
     BOOST_TEST(static_cast<bool>(info->getFn));
     BOOST_TEST(!info->setFn);
     BOOST_TEST(info->valueType == runtime.getStringType());
