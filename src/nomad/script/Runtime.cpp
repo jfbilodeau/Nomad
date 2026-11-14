@@ -2308,29 +2308,6 @@ CallableId Runtime::getFunctionId(const NomadString& name) const {
     return function == nullptr ? CallableId{} : function->getId();
 }
 
-ScriptFunction* Runtime::getFunctionAtLine(
-    const NomadString& sourceName,
-    const NomadIndex line
-) const {
-    ScriptFunction* selected = nullptr;
-    auto selectedSpan = NOMAD_INVALID_INDEX;
-    for (auto* callable : m_callables) {
-        if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
-            continue;
-        }
-        auto* function = static_cast<ScriptFunction*>(callable);
-        if (function->getPath() != sourceName) continue;
-        const auto start = function->getSourceStartLine();
-        const auto end = function->getSourceEndLine();
-        if (start == NOMAD_INVALID_INDEX || end == NOMAD_INVALID_INDEX || line < start || line > end) continue;
-        if (end - start <= selectedSpan) {
-            selected = function;
-            selectedSpan = end - start;
-        }
-    }
-    return selected;
-}
-
 std::optional<NomadString> Runtime::getFunctionName(CallableId functionId) const {
     const auto* function = getScriptFunction(functionId);
 
@@ -2339,20 +2316,6 @@ std::optional<NomadString> Runtime::getFunctionName(CallableId functionId) const
     }
 
     return function->getName();
-}
-
-ScriptFunction * Runtime::getFunctionByStartAddress(NomadIndex startAddress) const {
-    for (auto* callable : m_callables) {
-        if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
-            continue;
-        }
-        auto* function = static_cast<ScriptFunction*>(callable);
-        if (function->getFunctionStart() == startAddress) {
-            return function;
-        }
-    }
-
-    return nullptr;
 }
 
 NomadIndex Runtime::getFunctionCount() const {

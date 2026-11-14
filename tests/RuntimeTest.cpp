@@ -380,23 +380,23 @@ BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_in
 
     BOOST_TEST(unparsed->getSourceStartLine() == NOMAD_INVALID_INDEX);
     BOOST_TEST(unparsed->getSourceEndLine() == NOMAD_INVALID_INDEX);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == nullptr);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", NOMAD_INVALID_INDEX) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 1) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", NOMAD_INVALID_INDEX) == nullptr);
 
     auto* outer = runtime.getScriptFunction(outerId);
     auto* inner = runtime.getScriptFunction(innerId);
     outer->setSourceLineRange(1, 4);
     inner->setSourceLineRange(2, 3);
     inner->setParentId(outerId);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == outer);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == inner);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 4) == outer);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 5) == nullptr);
-    BOOST_TEST(runtime.getFunctionAtLine("other.nomad", 2) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 1) == outer);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 2) == inner);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 3) == inner);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 4) == outer);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 5) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("other.nomad", 2) == nullptr);
 
     inner->setSourceLineRange(1, 4);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 2) == inner);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_creates_class_types_with_explicit_modes_and_owned_documentation) {

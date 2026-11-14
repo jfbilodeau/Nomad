@@ -304,7 +304,7 @@ BOOST_AUTO_TEST_CASE(nested_script_calls_restore_parameter_local_and_receiver_fr
     Runtime runtime;
     BOOST_REQUIRE(runtime.registerNativeFunction(
         "checkParameter", [](VirtualMachine* machine) {
-            BOOST_TEST(machine->getIntegerEnclosingParameter(0) == machine->getIntegerParameter(0));
+            BOOST_TEST(machine->getEnclosingParameter(0).getIntegerValue() == machine->getIntegerParameter(0));
         }, {defParameter("expected", runtime.getIntegerType(), "")}, runtime.getVoidType(), ""
     ).isValid());
     const auto id = compileConstruction(runtime,
@@ -507,7 +507,7 @@ BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_re
             const auto callbackId = machine->getCallableIdParameter(0);
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
             machine->run(runtime.getScriptFunction(runtime.getFunctionId("helper")), {});
-            BOOST_TEST(machine->getIntegerEnclosingParameter(0) == 24);
+            BOOST_TEST(machine->getEnclosingParameter(0).getIntegerValue() == 24);
             closure = machine->createClosure(&runtime, callbackId);
         }, {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
     );

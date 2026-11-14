@@ -90,22 +90,22 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     BOOST_REQUIRE(compileSources(batch, *compiler).succeeded());
     const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
     const auto* outer = runtime.getScriptFunction(runtime.getFunctionId("outer"));
-    const auto* callback = runtime.getFunctionAtLine("editor:main", 4);
+    const auto* callback = runtime.getScriptCallableAtLine("editor:main", 4);
     BOOST_REQUIRE(callback != nullptr);
     BOOST_TEST(callback->getParentId() == outer->getId());
     BOOST_TEST(outer->getSourceStartLine() == 1U);
     BOOST_TEST(outer->getSourceEndLine() == 6U);
     BOOST_TEST(callback->getSourceStartLine() == 3U);
     BOOST_TEST(callback->getSourceEndLine() == 5U);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 1) == outer);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 2) == outer);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 3) == callback);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 5) == callback);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 6) == outer);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 7) == main);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:main", 8) == nullptr);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:missing", 1) == nullptr);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:other", 1) ==
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 1) == outer);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 2) == outer);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 3) == callback);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 5) == callback);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 6) == outer);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 7) == main);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 8) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:missing", 1) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:other", 1) ==
         runtime.getScriptFunction(runtime.getFunctionId("other")));
 }
 
@@ -159,8 +159,10 @@ BOOST_AUTO_TEST_CASE(runtime_looks_up_script_members_and_nested_callbacks_by_sou
     BOOST_TEST(runtime.getScriptCallableAtLine("editor:members", 0) == nullptr);
     BOOST_TEST(runtime.getScriptCallableAtLine("editor:members", NOMAD_INVALID_INDEX) == nullptr);
     BOOST_TEST(runtime.getScriptCallableAtLine("editor:missing", 8) == nullptr);
-    BOOST_TEST(runtime.getFunctionAtLine("editor:members", 8) == main);
-    BOOST_TEST(runtime.getFunctionByStartAddress(method->getFunctionStart()) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("editor:members", 8) == method);
+    const auto* methodStart = runtime.getScriptCallableByStartAddress(method->getFunctionStart());
+    BOOST_REQUIRE(methodStart != nullptr);
+    BOOST_TEST(runtime.getFunction(methodStart->getId()) == nullptr);
     std::vector<const ScriptCallableBase*> callables{nullptr};
     runtime.getScriptCallables(callables);
     BOOST_TEST(callables.size() == 6U);
@@ -207,7 +209,7 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_type_errors)
 
     auto compiler = runtime.createCompiler();
     BOOST_TEST(!compileSources(batch, *compiler).succeeded());
-    const auto* function = runtime.getFunctionAtLine("editor:main", 2);
+    const auto* function = runtime.getScriptCallableAtLine("editor:main", 2);
     BOOST_REQUIRE(function != nullptr);
     BOOST_TEST(function->getName() == "broken");
     BOOST_TEST(function->getSourceStartLine() == 1U);

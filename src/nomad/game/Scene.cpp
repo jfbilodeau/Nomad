@@ -628,7 +628,6 @@ NomadInteger Scene::getMaskAtEntity(const Entity* entity) const {
         return 0;
     }
 
-    // return getMaskAtEntity(entity, entity->getLocation());
     const auto layer = entity->getLayer();
 
     const auto bodyShape = entity->getBodyShape();

@@ -117,7 +117,7 @@ public:
     void fault(const NomadString& faultMessage) const;
 
     [[nodiscard]]
-    ScriptFunction* getCurrentFunction() const;
+    ScriptFunction* getCurrentScript() const;
     [[nodiscard]] const ScriptCallableBase* getCurrentCallable() const;
     // Borrows the object receiver saved in an active compiled script frame, not a temporary native receiver.
     [[nodiscard]] NomadObject* getScriptReceiver() const;
@@ -211,17 +211,8 @@ public:
     [[nodiscard]] const RuntimeValue& getEnclosingParameter(const NomadIndex parameterIndex) const {
         return m_stack[m_variableIndex - s_scriptFrameSlotCount - 1 - parameterIndex];
     }
-    [[nodiscard]] NomadInteger getIntegerEnclosingParameter(const NomadIndex parameterIndex) const { return getEnclosingParameter(parameterIndex).getIntegerValue(); }
-
-    void setIntegerVariableValue(const VariableId variableId, const NomadInteger value) {
-        const auto offset = getCurrentCallable()->getVariableOffset(variableId);
-        getLocalStorage(offset, 1)[0].setIntegerValue(value);
-    }
 
     void getFunctionVariableValue(const VariableId variableId, RuntimeValue& value) const { value = getFunctionVariableValue(variableId); }
-    [[nodiscard]] NomadInteger getFunctionIntegerVariableValue(const VariableId variableId) const { return getFunctionVariableValue(variableId).getIntegerValue(); }
-    [[nodiscard]] NomadStringObject* getFunctionStringVariableValue(const VariableId variableId) const { return getFunctionVariableValue(variableId).getStringObject(); }
-
     [[nodiscard]]
     const RuntimeValue& peekStack(const NomadIndex index) const { return m_stack[m_stackIndex - index]; }
 

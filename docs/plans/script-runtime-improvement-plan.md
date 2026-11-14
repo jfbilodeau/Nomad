@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D4 are approved. Step 1 is implemented and validated, including the follow-up changes: unchecked accessors, stack-check removal, and checked variable accessors. All 13 CTest entries passed. Step 2 awaits review.
+**Status:** Decisions D1–D5 are approved. Step 1 is implemented and validated, including the follow-up changes. Step 2a (Runtime and VirtualMachine) is implemented and validated. All 13 CTest entries passed. Step 2b (InterpreterContext) awaits review.
 
 ## Component contract
 
@@ -54,13 +54,19 @@ Each step ends with a full build and CTest run, then stops for review before the
 - Removed `formatDynamicString`. `Expression.cpp`, `OpCode.cpp`, and the format tests call `Interpreter::formatString`. `docs/embedding.md` no longer mentions the free function.
 - Validated: the VS Code CMake Tools build (windows-debug preset) succeeded, and all 13 CTest entries passed.
 
-### Step 2: test-only API removal
+### Step 2: API cleanup (split into 2a and 2b)
 
-Remove each API below and rewrite its test call sites against the production replacement. Behavior does not change, and CTest must pass without weakening expectations.
+Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVariableValue`), remove navigation and typed frame accessors, rename `getCurrentFunction` to `getCurrentScript`, and remove commented-out code.
 
-- `Runtime`: `getFunctionAtLine`, `getFunctionByStartAddress`, `getStringContextVariableValue`, `getStringByName`.
-- `VirtualMachine`: `getCurrentFunction`, `setIntegerVariableValue`, `getFunctionIntegerVariableValue`, `getFunctionStringVariableValue`, `getIntegerEnclosingParameter`.
-- `InterpreterContext`: `setVariableProperty`, `setReceiverProperty`, `getReceiverStorage`, `getVariableStorage(name)`, `getVariableValueById`, `setParameterResult`, `hasWarning`.
+**Step 2a (Runtime and VirtualMachine): done, all 13 CTest entries passing.**
+
+- Removed `Runtime::getFunctionAtLine` and `Runtime::getFunctionByStartAddress`. Tests use `getScriptCallableAtLine` and `getScriptCallableByStartAddress`. The line-8 check in `SourceCompilationTest` now asserts the innermost callable (the method). This is a deliberate change, because the old function-only filter has no production use.
+- Renamed `VirtualMachine::getCurrentFunction` to `getCurrentScript`.
+- Removed `getIntegerEnclosingParameter`, `setIntegerVariableValue`, `getFunctionIntegerVariableValue`, and `getFunctionStringVariableValue`. Tests use `getEnclosingParameter`, `setFunctionVariableValue`, and `getFunctionVariableValue`.
+- Kept `Runtime::getStringByName` and `Runtime::getStringContextVariableValue` as convenience helpers.
+- Removed commented-out code in `Scene.cpp`, `Scene.update.cpp`, `Decompiler.cpp`, `Entity.hpp`, `Logger.hpp`, and `Tokenizer.cpp`.
+
+**Step 2b (InterpreterContext): pending review.** Candidates: `setVariableProperty`, `setReceiverProperty`, `getReceiverStorage`, `getVariableStorage(name)`, `getVariableValueById`, `setParameterResult`, `hasWarning`. Apply the same convenience-versus-navigation rule before removing any of them.
 
 ### Step 3: compiler correctness
 

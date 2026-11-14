@@ -467,12 +467,7 @@ public:
     [[nodiscard]] const ScriptFunction* getScriptFunction(CallableId functionId) const;
     [[nodiscard]] ScriptCallableBase* getScriptCallable(CallableId callableId);
     [[nodiscard]] const ScriptCallableBase* getScriptCallable(CallableId callableId) const;
-    [[nodiscard]] ScriptFunction* getFunctionAtLine(
-        const NomadString& sourceName,
-        NomadIndex line
-    ) const;
     [[nodiscard]] std::optional<NomadString> getFunctionName(CallableId functionId) const;
-    [[nodiscard]] ScriptFunction* getFunctionByStartAddress(NomadIndex startAddress) const;
     [[nodiscard]] NomadIndex getFunctionCount() const;
     void getFunctions(std::vector<ScriptFunction*>& functions) const;
     [[nodiscard]] ScriptFunction* getFunctionAtInstructionIndex(NomadIndex instructionIndex) const;

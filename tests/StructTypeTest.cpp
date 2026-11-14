@@ -878,10 +878,10 @@ BOOST_AUTO_TEST_CASE(function_return_releases_nested_struct_locals_and_preserves
     const auto trailing = function->registerVariable("trailing", runtime.getIntegerType());
     const auto initialize = runtime.registerNativeFunction("initializeCleanupLocals",
         [&](VirtualMachine* machine) {
-            BOOST_TEST(machine->getFunctionIntegerVariableValue(leading) == 0);
-            BOOST_TEST(machine->getFunctionIntegerVariableValue(trailing) == 0);
-            machine->setIntegerVariableValue(leading, 17);
-            machine->setIntegerVariableValue(trailing, 29);
+            BOOST_TEST(machine->getFunctionVariableValue(leading).getIntegerValue() == 0);
+            BOOST_TEST(machine->getFunctionVariableValue(trailing).getIntegerValue() == 0);
+            machine->setFunctionVariableValue(leading, RuntimeValue{NomadInteger{17}});
+            machine->setFunctionVariableValue(trailing, RuntimeValue{NomadInteger{29}});
             const auto storage = machine->getLocalStorage(function->getVariableOffset(value), outer->getSize());
             const auto untouchedStorage = machine->getLocalStorage(
                 function->getVariableOffset(untouched), outer->getSize());
@@ -1200,8 +1200,8 @@ BOOST_AUTO_TEST_CASE(expressions_compile_into_local_storage_without_aggregate_re
             BOOST_TEST(destinationValues[1].getObjectValue() == sourceValues[1].getObjectValue());
             BOOST_TEST(destinationValues[2].getObjectValue() == sourceValues[2].getObjectValue());
             BOOST_TEST(sourceValues[1].getObjectValue()->getReferenceCount() == 2U);
-            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 47);
-            BOOST_TEST(NomadString(machine->getFunctionStringVariableValue(text)->getString()) == "literal");
+            BOOST_TEST(machine->getFunctionVariableValue(number).getIntegerValue() == 47);
+            BOOST_TEST(NomadString(machine->getFunctionVariableValue(text).getStringValue()) == "literal");
             destinationValues[0].setIntegerValue(23);
             BOOST_TEST(sourceValues[0].getIntegerValue() == 17);
         }, {}, runtime.getVoidType(), "");
@@ -1327,7 +1327,7 @@ BOOST_AUTO_TEST_CASE(struct_local_assignments_allocate_staging_before_entry_and_
                 function->getVariableOffset(destination), outer->getSize());
             BOOST_TEST(sourceValues[0].getIntegerValue() == 17);
             BOOST_TEST(destinationValues[0].getIntegerValue() == 17);
-            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 47);
+            BOOST_TEST(machine->getFunctionVariableValue(number).getIntegerValue() == 47);
             for (auto index = NomadIndex{1}; index < 3; ++index) {
                 BOOST_TEST(sourceValues[index].getObjectValue() == destinationValues[index].getObjectValue());
                 BOOST_TEST(sourceValues[index].getObjectValue()->getReferenceCount() == 2U);

@@ -195,7 +195,6 @@ const NomadString& Tokenizer::getSource() const {
 }
 
 bool Tokenizer::isEndOfFile() const {
-//    return m_line_index >= (int) m_lines.size();
     return m_endOfFile;
 }
 

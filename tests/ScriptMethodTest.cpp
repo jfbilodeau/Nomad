@@ -287,7 +287,7 @@ BOOST_AUTO_TEST_CASE(frame_interpretation_reads_and_writes_constructor_and_metho
         [&](VirtualMachine* machine, RuntimeValue& value) {
             const auto* callable = machine->getCurrentCallable();
             BOOST_REQUIRE(callable != nullptr);
-            BOOST_TEST(machine->getCurrentFunction() == nullptr);
+            BOOST_TEST(machine->getCurrentScript() == nullptr);
             if (runtime.getConstructor(callable->getId()) != nullptr) {
                 ++constructorsSeen;
             } else {

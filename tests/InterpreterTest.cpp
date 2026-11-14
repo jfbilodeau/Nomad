@@ -41,7 +41,7 @@ static_assert(std::is_same_v<decltype(std::declval<const Interpreter&>().getVirt
 namespace {
 
 void evaluateFrameExpressions(VirtualMachine* machine) {
-    auto* function = machine->getCurrentFunction();
+    auto* function = machine->getCurrentScript();
     BOOST_REQUIRE(function != nullptr);
     const Interpreter contextEvaluator(*machine);
     InterpreterContext context(contextEvaluator, *function);
@@ -653,7 +653,7 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
     compiler->addFunctionEntry(function);
     const auto initializeFrame = runtime.registerInstruction("test.initializeFrame", [](VirtualMachine* machine) {
         machine->setFunctionVariableValue(
-            machine->getCurrentFunction()->getVariableId("local"), RuntimeValue{NomadInteger{2}});
+            machine->getCurrentScript()->getVariableId("local"), RuntimeValue{NomadInteger{2}});
         machine->setIntegerResult(77);
         machine->setIntegerIntermediate(88);
     }, NomadDoc("Initialize the test frame"), {});

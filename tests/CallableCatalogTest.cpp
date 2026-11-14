@@ -129,14 +129,14 @@ BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wi
     BOOST_TEST(function->getVariableOffset(text) == 4U);
     const auto inspect = runtime.registerNativeFunction("inspectOffsetLocals",
         [&](VirtualMachine* machine) {
-            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 42);
-            BOOST_TEST(NomadString(machine->getFunctionStringVariableValue(text)->getString()) == "");
-            machine->setIntegerVariableValue(number, 43);
+            BOOST_TEST(machine->getFunctionVariableValue(number).getIntegerValue() == 42);
+            BOOST_TEST(NomadString(machine->getFunctionVariableValue(text).getStringValue()) == "");
+            machine->setFunctionVariableValue(number, RuntimeValue{NomadInteger{43}});
             const Interpreter contextEvaluator(*machine);
             InterpreterContext context(contextEvaluator, *function);
             BOOST_TEST(context.getVariableValueById(number)->getIntegerValue() == 43);
             context.setVariable("number", runtime.getIntegerType(), RuntimeValue(NomadInteger{44}));
-            BOOST_TEST(machine->getFunctionIntegerVariableValue(number) == 44);
+            BOOST_TEST(machine->getFunctionVariableValue(number).getIntegerValue() == 44);
         }, {}, runtime.getVoidType(), "");
     BOOST_REQUIRE(inspect.isValid());
     function->setFunctionStart(runtime.getInstructions().size());
@@ -824,8 +824,8 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     BOOST_TEST(script->getParameterType(script->getParameterId("value")) == runtime.getIntegerType());
     BOOST_TEST(runtime.getFunctionCount() == 1U);
     BOOST_TEST(script->getFunctionLength() == 10U);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == script);
-    BOOST_TEST(runtime.getFunctionByStartAddress(10) == script);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 3) == script);
+    BOOST_TEST(runtime.getScriptCallableByStartAddress(10) == script);
     BOOST_TEST(runtime.getFunctionAtInstructionIndex(19) == script);
     BOOST_TEST(runtime.getFunctionAtInstructionIndex(20) == nullptr);
 
