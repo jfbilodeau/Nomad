@@ -68,7 +68,7 @@ bool compile(Runtime& runtime, const NomadString& source) {
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
     const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
-    if (!compiled && context.getFirstError() != nullptr) {
+    if (!compiled && context.hasError()) {
         BOOST_TEST_MESSAGE(formatDiagnostic(*context.getFirstError()));
     }
     return compiled;

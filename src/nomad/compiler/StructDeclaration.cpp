@@ -45,7 +45,7 @@ bool readCallableBody(
         }
         sourceLines.push_back(takeSourceLine(tokens));
     }
-    context->reportError("Unexpected end of file in struct callable: expected 'end'", tokens);
+    context->addError("Unexpected end of file in struct callable: expected 'end'", tokens);
     return false;
 }
 
@@ -54,7 +54,7 @@ bool readMemberName(CompilerContext* context, Tokenizer* tokens, NomadString& na
         return false;
     }
     if (name.find('.') != NomadString::npos || context->getRuntime()->getKeywordId(name).isValid()) {
-        context->reportError("Struct member names must be unqualified, non-reserved identifiers", tokens);
+        context->addError("Struct member names must be unqualified, non-reserved identifiers", tokens);
         return false;
     }
     return true;
@@ -85,7 +85,7 @@ std::unique_ptr<StructMemberDeclaration> parseMember(
             return nullptr;
         }
         if (kind == StructMemberKind::Method && name == "init") {
-            context->reportError("Use 'init' without 'fun' to declare a constructor", tokens);
+            context->addError("Use 'init' without 'fun' to declare a constructor", tokens);
             return nullptr;
         }
     }
@@ -97,14 +97,14 @@ std::unique_ptr<StructMemberDeclaration> parseMember(
             return nullptr;
         }
         if (tokens->endOfLine()) {
-            context->reportError("Struct field '" + name + "' requires an initializer", tokens);
+            context->addError("Struct field '" + name + "' requires an initializer", tokens);
             return nullptr;
         }
         auto depth = parser::countBlockOpenings(context->getCompiler(), tokens);
         sourceLines.push_back(takeSourceLine(tokens));
         while (depth > 0) {
             if (!tokens->nextLine()) {
-                context->reportError("Unexpected end of file in struct field initializer: expected 'end'", tokens);
+                context->addError("Unexpected end of file in struct field initializer: expected 'end'", tokens);
                 return nullptr;
             }
             if (tokens->is(TokenType::Identifier) && tokens->is("end")) {
@@ -147,7 +147,7 @@ bool parseStructDefinition(
         return false;
     }
     if (context->getRuntime()->getKeywordId(name).isValid()) {
-        context->reportError("Struct name '" + name + "' is a reserved keyword", tokens);
+        context->addError("Struct name '" + name + "' is a reserved keyword", tokens);
         return false;
     }
     if (!parser::expectEndOfLine(context, function, tokens)) {
@@ -172,7 +172,7 @@ bool parseStructDefinition(
                     if (existing->getKind() == StructMemberKind::Field || member->getKind() == StructMemberKind::Field ||
                         std::ranges::equal(existing->getParameters(), member->getParameters(),
                             [](const auto& first, const auto& second) { return first.type == second.type; })) {
-                        context->reportError(
+                        context->addError(
                             "Duplicate struct member '" + member->getName() + "'",
                             tokens->getSourceName(), member->getLine(), member->getColumn()
                         );
@@ -183,7 +183,7 @@ bool parseStructDefinition(
             members.push_back(std::move(member));
         }
     }
-    context->reportError("Unexpected end of file in struct '" + name + "': expected 'end'", tokens);
+    context->addError("Unexpected end of file in struct '" + name + "': expected 'end'", tokens);
     return false;
 }
 
@@ -199,7 +199,7 @@ bool preDeclareStruct(
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown ||
         context->getRuntime()->getTypeManager().registerStruct(name).isInvalid()) {
-        context->reportError("Cannot declare struct '" + name + "': identifier is already declared or invalid", tokens);
+        context->addError("Cannot declare struct '" + name + "': identifier is already declared or invalid", tokens);
         return false;
     }
     return true;
@@ -219,7 +219,7 @@ bool registerMemberSignatures(
     const auto* registeredType = runtime->getTypeByName(name);
     const auto* type = registeredType != nullptr ? registeredType->asStructType() : nullptr;
     if (type == nullptr) {
-        context->reportError("Struct '" + name + "' has no registered struct type", tokens);
+        context->addError("Struct '" + name + "' has no registered struct type", tokens);
         return false;
     }
     const auto& initializerName = type->getInitializerName();
@@ -229,7 +229,7 @@ bool registerMemberSignatures(
     for (const auto& member : members) {
         for (const auto& parameter : member->getParameters()) {
             if (parameter.name == "this") {
-                context->reportError("'this' names the struct receiver and cannot be a parameter",
+                context->addError("'this' names the struct receiver and cannot be a parameter",
                     tokens->getSourceName(), member->getLine(), member->getColumn());
                 return false;
             }
@@ -251,7 +251,7 @@ bool registerMemberSignatures(
             );
         }
         if (id.isInvalid()) {
-            context->reportError("Cannot register struct member '" + member->getName() + "'",
+            context->addError("Cannot register struct member '" + member->getName() + "'",
                 tokens->getSourceName(), member->getLine(), member->getColumn());
             return false;
         }
@@ -272,7 +272,7 @@ bool registerMemberSignatures(
             type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
-            context->reportError("Cannot register struct initializer", tokens);
+            context->addError("Cannot register struct initializer", tokens);
             return false;
         }
         auto* callable = runtime->getScriptCallable(id);
@@ -285,7 +285,7 @@ bool registerMemberSignatures(
             type->getId(), {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
-            context->reportError("Cannot register default struct constructor", tokens);
+            context->addError("Cannot register default struct constructor", tokens);
             return false;
         }
         runtime->getScriptCallable(id)->setHub(context->getHub());
@@ -334,7 +334,7 @@ bool parseMemberBodies(
         const auto id = findMemberCallable(type, *member);
         auto* callable = context->getRuntime()->getScriptCallable(id);
         if (callable == nullptr) {
-            context->reportError("Struct member '" + member->getName() + "' has no registered signature",
+            context->addError("Struct member '" + member->getName() + "' has no registered signature",
                 source->getSourceName(), member->getLine(), member->getColumn());
             return false;
         }
@@ -442,7 +442,7 @@ std::unique_ptr<Statement> parseStructStatement(CompilerContext* context, Script
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
     if (context->currentBodyEndsAtEnd() || !context->isFunctionRoot(function)) {
-        context->reportError("Structs may only be declared at script level or inside a hub", tokens);
+        context->addError("Structs may only be declared at script level or inside a hub", tokens);
         return nullptr;
     }
     NomadString name;
@@ -451,13 +451,13 @@ std::unique_ptr<Statement> parseStructStatement(CompilerContext* context, Script
         return nullptr;
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
-        context->reportError("Cannot declare struct '" + name + "': identifier is already declared", tokens);
+        context->addError("Cannot declare struct '" + name + "': identifier is already declared", tokens);
         return nullptr;
     }
     const auto* registeredType = context->getRuntime()->getTypeByName(name);
     const auto* type = registeredType != nullptr ? registeredType->asStructType() : nullptr;
     if (type == nullptr) {
-        context->reportError("Struct '" + name + "' has no registered struct type", tokens);
+        context->addError("Struct '" + name + "' has no registered struct type", tokens);
         return nullptr;
     }
     if (!parseMemberBodies(context, type, tokens, members)) {

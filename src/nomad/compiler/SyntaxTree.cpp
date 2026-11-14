@@ -61,11 +61,11 @@ void AstNode::raiseException(const NomadString& message) const {
 }
 
 void AstNode::reportError(CompilerContext* context, const ScriptCallableBase* function, const NomadString& message) const {
-    context->reportError(message, getSourceName(function), m_span.startLine, m_span.startColumn);
+    context->addError(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
 void AstNode::reportWarning(CompilerContext* context, const ScriptCallableBase* function, const NomadString& message) const {
-    context->reportWarning(message, getSourceName(function), m_span.startLine, m_span.startColumn);
+    context->addWarning(message, getSourceName(function), m_span.startLine, m_span.startColumn);
 }
 
 NomadIndex AstNode::getLine() const {
@@ -121,14 +121,14 @@ void Statement::checkReachability(CompilerContext* /*context*/, const ScriptCall
 InterpreterValue Statement::evaluate(InterpreterContext& context) const {
     const auto guard = context.beginEvaluation();
     if (context.hasError()) {
-        raiseException(*context.getError());
+        raiseException(context.getFirstError()->message);
     }
     if (context.getLoopControl() != LoopControl::None) {
         return InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
     }
     auto value = onEvaluate(context);
     if (context.hasError()) {
-        raiseException(*context.getError());
+        raiseException(context.getFirstError()->message);
     }
     return value;
 }
@@ -219,7 +219,7 @@ void HubInitializerStatement::onResolve(CompilerContext* context, ScriptCallable
     try {
         AssignmentStatement::onResolve(&initializerContext, m_sourceFunction);
     } catch (const AstException& exception) {
-        initializerContext.reportError(exception.what(), getSourceName(),
+        initializerContext.addError(exception.what(), getSourceName(),
             exception.getLine(), exception.getColumn());
     }
     context->addDiagnostics(initializerContext.getDiagnostics());
@@ -680,7 +680,7 @@ void StatementList::compile(Compiler* compiler, ScriptCallableBase* function) co
 InterpreterValue StatementList::evaluate(InterpreterContext& context) const {
     const auto guard = context.beginEvaluation();
     if (context.hasError()) {
-        throw AstException(*context.getError(), 0, 0);
+        throw AstException(context.getFirstError()->message, 0, 0);
     }
 
     auto result = InterpreterValue(context.getRuntime()->getVoidType(), RuntimeValue{});
@@ -727,7 +727,7 @@ void StatementList::checkReachability(CompilerContext* context, const ScriptCall
 
     for (const auto& statement: m_statements) {
         if (returned && !statement->isDeclaration()) {
-            context->reportError(
+            context->addError(
                 "Unreachable code: every path before this statement ends with a `return`",
                 function != nullptr ? function->getPath() : NomadString{},
                 statement->getLine(),

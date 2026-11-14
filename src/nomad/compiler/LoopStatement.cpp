@@ -192,7 +192,7 @@ std::unique_ptr<Statement> createControl(
 ) {
     auto* loop = context->getEnclosingLoop(function);
     if (loop == nullptr) {
-        context->reportError("Loop control requires an enclosing loop in the same function", tokens);
+        context->addError("Loop control requires an enclosing loop in the same function", tokens);
         return nullptr;
     }
     return std::make_unique<LoopControlStatement>(tokens->getLineIndex(), tokens->getColumnIndex(), loop, isBreak);
@@ -225,7 +225,7 @@ std::unique_ptr<Statement> parseLoop(
     if (postTest) {
         const auto trailingUntil = tokens->is("until");
         if (!trailingUntil && !tokens->is("while")) {
-            context->reportError("Expected 'while' or 'until' after 'end' of a 'do' loop", tokens);
+            context->addError("Expected 'while' or 'until' after 'end' of a 'do' loop", tokens);
             return nullptr;
         }
         loop->setUntil(trailingUntil);
@@ -315,19 +315,19 @@ std::unique_ptr<Statement> parseForStatement(
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
     if (!tokens->is(TokenType::Identifier)) {
-        context->reportError("Expected a loop variable after 'for'", tokens);
+        context->addError("Expected a loop variable after 'for'", tokens);
         return nullptr;
     }
     const auto name = tokens->next().textValue;
     if (name.find('.') != NomadString::npos) {
-        context->reportError("For loop variable must be an unqualified local name", tokens);
+        context->addError("For loop variable must be an unqualified local name", tokens);
         return nullptr;
     }
     auto* compiler = context->getCompiler();
     const auto identifierType = compiler->getIdentifierType(name, function);
     if (identifierType != IdentifierType::Unknown && identifierType != IdentifierType::FunctionVariable &&
         identifierType != IdentifierType::Parameter) {
-        context->reportError("For loop variable must be a local or parameter", tokens);
+        context->addError("For loop variable must be a local or parameter", tokens);
         return nullptr;
     }
     if (!tokens->expect("in")) {

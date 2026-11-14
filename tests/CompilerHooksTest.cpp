@@ -225,7 +225,7 @@ BOOST_AUTO_TEST_CASE(completed_hooks_are_skipped_when_initializer_installation_f
 
     BOOST_TEST(!compiler->compileScripts(&context));
     BOOST_TEST(!completed);
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message ==
         "Script initialization requires a compiled, parameterless void function before startup");
 }
@@ -253,7 +253,7 @@ BOOST_AUTO_TEST_CASE(hook_errors_stop_remaining_hooks_and_phases)
         compiler->registerPhaseHook([&](CompilerContext* hookContext, const CompilationPhase phase) {
             firstCalls.push_back(phase);
             if (phase == phases[failureIndex]) {
-                hookContext->reportError("Hook failed");
+                hookContext->addError("Hook failed");
             }
         });
         compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {

@@ -306,7 +306,7 @@ BOOST_AUTO_TEST_CASE(frame_interpretation_reads_and_writes_constructor_and_metho
             BOOST_REQUIRE(context.getInterpreter().execute("local = local + 1", context));
             BOOST_REQUIRE(context.getInterpreter().execute("amount = amount + 2", context));
             const auto assigned = context.getInterpreter().execute("this.value = this.value + 3", context);
-            BOOST_REQUIRE_MESSAGE(assigned, (context.getError() ? *context.getError() : "Field assignment failed"));
+            BOOST_REQUIRE_MESSAGE(assigned, (context.getFirstError().has_value() ? context.getFirstError()->message : "Field assignment failed"));
             BOOST_TEST(callable->getVariableCount() == variablesBefore);
             BOOST_TEST(callable->getParameterCount() == parametersBefore);
             BOOST_TEST(machine->getCurrentCallable() == callable);
@@ -442,7 +442,7 @@ BOOST_AUTO_TEST_CASE(interpreter_methods_evaluate_the_receiver_before_right_to_l
         InterpreterContext context(interpreter);
         const auto evaluated = interpreter.execute(
             "(pickMethodReceiver).combine (leftMethodArgument) (rightMethodArgument)", context);
-        BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : ""));
+        BOOST_REQUIRE_MESSAGE(evaluated, (context.getFirstError().has_value() ? context.getFirstError()->message : ""));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 23);
         const std::array<NomadInteger, 3> expected{1, 3, 2};
         BOOST_CHECK_EQUAL_COLLECTIONS(evaluations.begin(), evaluations.end(), expected.begin(), expected.end());
@@ -464,7 +464,7 @@ BOOST_AUTO_TEST_CASE(interpreter_and_host_object_methods_copy_struct_arguments_a
         BOOST_TEST(frame.getParameterStorage(0).size() == runtime.getTypeByName("ObjectMethodValue")->getSize());
         BOOST_TEST(frame.getParameterStorage(1).data() == nullptr);
         BOOST_REQUIRE_MESSAGE(interpreter.execute("local.leaf.number = 211", frame),
-            (frame.getError() ? *frame.getError() : ""));
+            (frame.getFirstError().has_value() ? frame.getFirstError()->message : ""));
         RuntimeValue receiverValue;
         receiverValue.setObjectValue(object);
         const InterpreterValue receiver(callable->getClassType(), receiverValue);
@@ -542,7 +542,7 @@ BOOST_AUTO_TEST_CASE(interpreter_and_host_object_methods_copy_struct_arguments_a
                     "owner = new ObjectMethodOwner\nargument = new ObjectMethodValue\n"
                     "result = owner.exchange argument (new ObjectMethodEmpty) 5\n"
                     "owner.value.leaf.number = 99\nresult.leaf.number", context),
-                    (context.getError() ? *context.getError() : ""));
+                    (context.getFirstError().has_value() ? context.getFirstError()->message : ""));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 12);
                 BOOST_TEST(interpreter.getProperty(
                     InterpreterValue(type, context.getVariableStorage("argument")), "leaf.number")

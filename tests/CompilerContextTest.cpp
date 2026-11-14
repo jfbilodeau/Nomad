@@ -61,9 +61,9 @@ BOOST_AUTO_TEST_CASE(compiler_context_records_errors_and_warnings_in_order)
     const auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    context.reportWarning("Unused variable 'bonus'", "test.nomad", 2, 5);
-    context.reportError("Unknown identifier: missing", "other.nomad", 3, 1);
-    context.reportError("Missing location");
+    context.addWarning("Unused variable 'bonus'", "test.nomad", 2, 5);
+    context.addError("Unknown identifier: missing", "other.nomad", 3, 1);
+    context.addError("Missing location");
 
     BOOST_TEST(context.hasError());
     BOOST_TEST(context.hasWarning());
@@ -103,8 +103,8 @@ BOOST_AUTO_TEST_CASE(unknown_identifier_resolution_reports_structured_metadata_w
     BOOST_REQUIRE(expression != nullptr);
     BOOST_TEST(!expression->resolve(&context, nullptr));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1U);
-    const auto* error = context.getFirstError();
-    BOOST_REQUIRE(error != nullptr);
+    const auto error = context.getFirstError();
+    BOOST_REQUIRE(error.has_value());
     BOOST_CHECK(error->code == CompilerDiagnosticCode::UnknownIdentifier);
     BOOST_TEST(error->subject == "missing");
     BOOST_TEST(error->message == "Unknown identifier: missing");
@@ -118,7 +118,7 @@ BOOST_AUTO_TEST_CASE(unknown_identifier_resolution_reports_structured_metadata_w
     diagnostic.subject = "changed";
     BOOST_TEST(copied.getErrorCount() == 1U);
     BOOST_TEST(copied.getWarningCount() == 0U);
-    BOOST_REQUIRE(copied.getFirstError() != nullptr);
+    BOOST_REQUIRE(copied.getFirstError().has_value());
     BOOST_CHECK(copied.getFirstError()->code == CompilerDiagnosticCode::UnknownIdentifier);
     BOOST_TEST(copied.getFirstError()->subject == "missing");
     BOOST_TEST(copied.getFirstError()->message == "An independently worded error");
@@ -130,7 +130,7 @@ BOOST_AUTO_TEST_CASE(compiler_context_warnings_do_not_count_as_errors)
     const auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    context.reportWarning("Just a warning");
+    context.addWarning("Just a warning");
 
     BOOST_TEST(context.hasWarning());
     BOOST_TEST(!context.hasError());
@@ -145,7 +145,7 @@ BOOST_AUTO_TEST_CASE(compiler_context_copies_string_view_diagnostics)
     NomadString messageBacking = "xxview messageyy";
     NomadString sourceBacking = "xxsource.nomadyy";
 
-    context.reportError(
+    context.addError(
         NomadStringView(messageBacking.data() + 2, 12),
         NomadStringView(sourceBacking.data() + 2, 12),
         4,
@@ -166,8 +166,8 @@ BOOST_AUTO_TEST_CASE(compiler_context_clears_diagnostics)
     const auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    context.reportWarning("Warning");
-    context.reportError("Error");
+    context.addWarning("Warning");
+    context.addError("Error");
     context.clearDiagnostics();
 
     BOOST_TEST(!context.hasError());

@@ -69,8 +69,8 @@ CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     const auto functionId = runtime.getFunctionId("test");
 
     const auto compiled = compiler->compileFunctions(&context);
-    const auto* error = context.getFirstError();
-    const auto message = error == nullptr ? NomadString("Unknown compilation error") : error->message;
+    const auto error = context.getFirstError();
+    const auto message = error.has_value() ? error->message : NomadString("Unknown compilation error");
     BOOST_REQUIRE_MESSAGE(compiled, message);
     return functionId;
 }
@@ -355,8 +355,8 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
     BOOST_REQUIRE(interpreter.getInterpreter().execute("object = new TestObject", interpreter));
     BOOST_REQUIRE(interpreter.getInterpreter().execute("object.value = \"abc\".length", interpreter));
     const auto methodExecuted = interpreter.getInterpreter().execute("object.increment 3", interpreter);
-    const auto* error = interpreter.getError();
-    const auto message = error == nullptr ? NomadString("Unknown interpreter error") : *error;
+    const auto error = interpreter.getFirstError();
+    const auto message = error.has_value() ? error->message : NomadString("Unknown interpreter error");
     BOOST_REQUIRE_MESSAGE(methodExecuted, message);
     BOOST_REQUIRE(interpreter.getInterpreter().execute("object.value", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
@@ -426,16 +426,16 @@ BOOST_AUTO_TEST_CASE(string_indexer_faults_and_interpreter_recovers) {
     const auto before = NomadObject::getLiveObjectCount();
     for (const auto* source : {"\"\"[0]", "\"abc\"[-1]", "\"abc\"[3]"}) {
         BOOST_TEST(!context.getInterpreter().execute(source, context));
-        BOOST_REQUIRE(context.getError() != nullptr);
-        BOOST_TEST(context.getError()->find("out of bounds for size") != NomadString::npos);
+        BOOST_REQUIRE(context.hasError());
+        BOOST_TEST(context.getFirstError()->message.find("out of bounds for size") != NomadString::npos);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     }
     runtime.registerNativeFunction(
         "invalidText", [](VirtualMachine* vm) { vm->setStringResult("\xFF"); }, {}, runtime.getStringType(), ""
     );
     BOOST_TEST(!context.getInterpreter().execute("(invalidText)[0]", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("UTF-8") != NomadString::npos);
+    BOOST_REQUIRE(context.hasError());
+    BOOST_TEST(context.getFirstError()->message.find("UTF-8") != NomadString::npos);
     BOOST_REQUIRE(context.getInterpreter().execute("\"hello\"[1].length", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 1);
 }
@@ -508,8 +508,8 @@ BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     BOOST_REQUIRE(context.getInterpreter().execute("value.value", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 11);
     BOOST_TEST(!context.getInterpreter().execute("value[0]", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("write-only") != NomadString::npos);
+    BOOST_REQUIRE(context.hasError());
+    BOOST_TEST(context.getFirstError()->message.find("write-only") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_fault) {
@@ -564,8 +564,8 @@ BOOST_AUTO_TEST_CASE(interpreter_indexer_failures_release_operands_and_partial_r
         const auto stringsBefore = RuntimeValue::getLiveStringCount();
         const auto objectsBefore = NomadObject::getLiveObjectCount();
         BOOST_TEST(!interpreter.execute(source, context));
-        BOOST_REQUIRE(context.getError() != nullptr);
-        BOOST_TEST(context.getError()->find("Expected interpreter indexer failure") != NomadString::npos);
+        BOOST_REQUIRE(context.hasError());
+        BOOST_TEST(context.getFirstError()->message.find("Expected interpreter indexer failure") != NomadString::npos);
         BOOST_TEST(context.getResult() == nullptr);
         BOOST_TEST(indexerCalls == 1);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
@@ -707,15 +707,15 @@ BOOST_AUTO_TEST_CASE(two_dimensional_access_permissions_are_checked_in_both_exec
         BOOST_REQUIRE(context.getInterpreter().execute(readOnly ? "object[1 2]" : "object[1 2] = 7", context));
         const auto* rejected = readOnly ? "object[0 0] = 1" : "object[0 0]";
         BOOST_TEST(!context.getInterpreter().execute(rejected, context));
-        BOOST_REQUIRE(context.getError() != nullptr);
-        BOOST_TEST(context.getError()->find(readOnly ? "read-only" : "write-only") != NomadString::npos);
+        BOOST_REQUIRE(context.hasError());
+        BOOST_TEST(context.getFirstError()->message.find(readOnly ? "read-only" : "write-only") != NomadString::npos);
         auto compiler = runtime.createCompiler();
         CompilerContext compilation(compiler.get());
         compiler->registerSources(&compilation, {{{"rejected", {"rejected.nomad",
             NomadString("object = new TestObject\n") + rejected
         }}}, {}});
         BOOST_TEST(!compiler->compileFunctions(&compilation));
-        BOOST_REQUIRE(compilation.getFirstError() != nullptr);
+        BOOST_REQUIRE(compilation.hasError());
         BOOST_TEST(compilation.getFirstError()->message.find(readOnly ? "read-only" : "write-only") != NomadString::npos);
     }
 }
@@ -761,8 +761,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
         }) {
             calls.clear();
             BOOST_TEST(!context.getInterpreter().execute(source, context));
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("First index failed") != NomadString::npos);
+            BOOST_REQUIRE(context.hasError());
+            BOOST_TEST(context.getFirstError()->message.find("First index failed") != NomadString::npos);
             BOOST_TEST(calls == (NomadStringView(source).ends_with("assigned") ? "assignedsecondfirst" : "secondfirst"));
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
         }
@@ -802,8 +802,8 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
             InterpreterContext context(contextEvaluator);
             const auto* expression = NomadString(source).starts_with("return ") ? source + 7 : source;
             BOOST_TEST(!context.getInterpreter().execute(expression, context));
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("failed") != NomadString::npos);
+            BOOST_REQUIRE(context.hasError());
+            BOOST_TEST(context.getFirstError()->message.find("failed") != NomadString::npos);
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
             BOOST_REQUIRE(context.getInterpreter().execute("1 + 2", context));
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);

@@ -560,7 +560,7 @@ const Property* Compiler::resolveClassField(
         reportInternalError("Class field resolution requires an object receiver");
     }
     const auto report = [&](const NomadString& message) {
-        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
+        context->addError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
     };
     IdentifierDefinition receiverDefinition;
     if (!resolveIdentifier("this", this, function, receiverDefinition)) {
@@ -587,7 +587,7 @@ const Property* Compiler::resolveObjectField(
     const NomadIndex column
 ) {
     const auto report = [&](const NomadString& message) {
-        context->reportError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
+        context->addError(message, function != nullptr ? function->getPath() : NomadString{}, line, column);
     };
     if (name.empty() || name.find('.') != NomadString::npos) {
         report("Expected an unqualified class field name: '" + name + "'");
@@ -644,7 +644,7 @@ const Property* Compiler::resolveStructField(
         reportInternalError("Struct field resolution requires a struct receiver");
     }
     const auto report = [&](const NomadString& message) {
-        context->reportError(message, function->getPath(), line, column);
+        context->addError(message, function->getPath(), line, column);
     };
     IdentifierDefinition receiverDefinition;
     if (!resolveIdentifier("this", this, function, receiverDefinition)) {
@@ -701,7 +701,7 @@ void Compiler::reportFieldDiagnostics(CompilerContext* context) const {
             continue;
         }
         const auto* property = m_runtime->getProperty(field.id);
-        context->reportWarning(
+        context->addWarning(
             "Externally introduced field '" + property->getOwnerType()->getTypeName() + "." +
                 property->getName() + "' is assigned but never read",
             field.sourceName, field.line, field.column
@@ -1638,11 +1638,11 @@ void Compiler::preParseFunction(CompilerContext* context, ScriptCompilation& scr
             tokens.getTokenAt(1) == "=") {
             const auto name = context->qualifyDeclaration(statement);
             if (statement.find('.') != NomadString::npos) {
-                context->reportError("Hub variable declarations require an unqualified member name", &tokens);
+                context->addError("Hub variable declarations require an unqualified member name", &tokens);
             } else if (!m_hubVariableDeclarations.insert(name).second) {
-                context->reportError("Hub variable '" + name + "' has more than one initializer", &tokens);
+                context->addError("Hub variable '" + name + "' has more than one initializer", &tokens);
             } else if (m_runtime->registerHubVariable(name).isInvalid()) {
-                context->reportError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
+                context->addError("Hub member '" + name + "' is already declared or conflicts with an identifier", &tokens);
             }
         }
         if (statement == "enum") {
@@ -1698,7 +1698,7 @@ void Compiler::checkReturnPaths(CompilerContext* context, const FunctionCompilat
         return;
     }
 
-    context->reportError(
+    context->addError(
         "Missing `return` at the end of function '" + source.function->getName() + "'. It returns `" +
             returnType->getTypeName() + "`, so every path must end with a `return`",
         source.function->getPath(),
@@ -2043,7 +2043,7 @@ void Compiler::addFunctionReturn(const ScriptCallableBase* function) {
 
 void Compiler::registerScript(CompilerContext* context, const ScriptSource& script) {
     if (m_scripts.size() >= toNomadIndex(NOMAD_ID_MAX)) {
-        context->reportError("Maximum number of scripts reached", script.source.sourceName,
+        context->addError("Maximum number of scripts reached", script.source.sourceName,
             NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return;
     }
@@ -2070,7 +2070,7 @@ CallableId Compiler::createFunction(
     const auto existingFunctionId = m_runtime->getFunctionId(functionName);
     if (existingFunctionId != CallableId{}) {
         const auto* existingFunction = m_runtime->getScriptCallable(existingFunctionId);
-        context->reportError(
+        context->addError(
             "Function name '" + functionName + "' is already used by '" + existingFunction->getPath() + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return CallableId::INVALID;
@@ -2078,7 +2078,7 @@ CallableId Compiler::createFunction(
 
     const auto functionId = m_runtime->registerScriptFunction(functionName, source.sourceName, source.text);
     if (functionId == CallableId{}) {
-        context->reportError("Could not register function '" + functionName + "'",
+        context->addError("Could not register function '" + functionName + "'",
             source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return CallableId::INVALID;
     }
@@ -2270,7 +2270,7 @@ void Compiler::prepareScriptInitialization(CompilerContext* context) {
         } catch (const NomadBug&) {
             throw;
         } catch (const NomadException& exception) {
-            context->reportError(exception.what(), initializer->getSourceName(),
+            context->addError(exception.what(), initializer->getSourceName(),
                 initializer->getLine(), initializer->getColumn());
         }
     }
@@ -2320,9 +2320,9 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         } catch (const NomadBug&) {
             throw;
         } catch (const AstException& exception) {
-            context->reportError(exception.what(), sourceName, exception.getLine(), exception.getColumn());
+            context->addError(exception.what(), sourceName, exception.getLine(), exception.getColumn());
         } catch (const NomadException& exception) {
-            context->reportError(exception.what(), sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+            context->addError(exception.what(), sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         }
     };
 
@@ -2475,7 +2475,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         } catch (const NomadBug&) {
             throw;
         } catch (const NomadException& exception) {
-            context->reportError(exception.what(), source.function->getPath(),
+            context->addError(exception.what(), source.function->getPath(),
                 source.ast->getLine(), source.ast->getColumn());
         }
     }
@@ -2624,7 +2624,7 @@ void Compiler::postCompile(CompilerContext* compilerContext) {
             const auto variableName = context->getVariableName(variableId);
 
             if (!context->isWritten(variableId)) {
-                compilerContext->reportError("Variable '" + variableName + "' has not been initialized");
+                compilerContext->addError("Variable '" + variableName + "' has not been initialized");
             }
 
             if (!context->isRead(variableId)) {

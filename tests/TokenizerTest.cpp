@@ -170,8 +170,8 @@ BOOST_AUTO_TEST_CASE(tokenizer_rejects_digits_after_identifier_dots_and_recovers
         Tokenizer tokens(&context, "identifier.nomad", NomadString("    ") + name + " = 1\nnext = 2");
 
         BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
-        const auto* error = context.getFirstError();
-        BOOST_REQUIRE(error != nullptr);
+        const auto error = context.getFirstError();
+        BOOST_REQUIRE(error.has_value());
         BOOST_TEST(error->message.find("Unrecognized token") != NomadString::npos);
         BOOST_TEST(error->sourceName == "identifier.nomad");
         BOOST_TEST(error->line == 1);
@@ -353,8 +353,8 @@ BOOST_AUTO_TEST_CASE(tokenizer_reports_invalid_line_and_continues_with_following
     Tokenizer tokens(&context, "test.nomad", "first = 1\nsecond = @ 2\nthird = 3");
 
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
-    const auto* error = context.getFirstError();
-    BOOST_REQUIRE(error != nullptr);
+    const auto error = context.getFirstError();
+    BOOST_REQUIRE(error.has_value());
     BOOST_TEST(error->message.find("Unrecognized token `@ 2`") != NomadString::npos);
     BOOST_TEST(error->line == 2);
     BOOST_TEST(error->column == 10);
@@ -378,7 +378,8 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_tokenizer_errors)
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
-    const auto* error = context.getFirstError();
+    const auto error = context.getFirstError();
+    BOOST_TEST(error.has_value());
     BOOST_TEST(error->message.find("Unrecognized token `\"unterminated`") != NomadString::npos);
     BOOST_TEST(error->sourceName == "broken.nomad");
     BOOST_TEST(error->line == 2);
@@ -392,7 +393,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_tokenizer_errors)
     InterpreterContext context(contextEvaluator);
 
     BOOST_TEST(!context.getInterpreter().execute("score = \"unterminated", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("Unrecognized token `\"unterminated`") != NomadString::npos);
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message.find("Unrecognized token `\"unterminated`") != NomadString::npos);
     BOOST_TEST(context.getVariableValue("score") == nullptr);
 }

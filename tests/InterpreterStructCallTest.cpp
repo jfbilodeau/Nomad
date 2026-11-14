@@ -8,7 +8,6 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/NativeCallable.hpp>
-#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
@@ -221,14 +220,14 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
             const Interpreter contextEvaluator(*machine);
             InterpreterContext context(contextEvaluator);
             const auto construct = context.getInterpreter().execute("source = new CallOuter (new CallLeaf 17 \"source\")", context);
-            BOOST_REQUIRE_MESSAGE(construct, (context.getError() ? *context.getError() : ""));
+            BOOST_REQUIRE_MESSAGE(construct, (context.hasError() ? context.getFirstError()->message : ""));
             const auto source = context.getVariableStorage("source");
             BOOST_REQUIRE_EQUAL(source.size(), 4U);
             BOOST_TEST(source[0].getIntegerValue() == 17);
             BOOST_TEST(source[1].getStringValue() == "source");
             BOOST_TEST(source[3].getStringValue() == "outer");
             const auto copied = context.getInterpreter().execute("copy = copyAggregate source (new CallEmpty) 41", context);
-            BOOST_REQUIRE_MESSAGE(copied, (context.getError() ? *context.getError() : ""));
+            BOOST_REQUIRE_MESSAGE(copied, (context.hasError() ? context.getFirstError()->message : ""));
             const auto copy = context.getVariableStorage("copy");
             BOOST_TEST(copy.data() != source.data());
             BOOST_TEST(copy[0].getIntegerValue() == 41);
@@ -323,7 +322,7 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
         InterpreterContext nested(nestedEvaluator);
         nested.setVariable("value", valueType, source);
         const auto evaluated = nested.getInterpreter().execute("nativeCallScore value", nested);
-        BOOST_REQUIRE_MESSAGE(evaluated, (nested.getError() ? *nested.getError() : ""));
+        BOOST_REQUIRE_MESSAGE(evaluated, (nested.hasError() ? nested.getFirstError()->message : ""));
         BOOST_TEST(nested.getResult()->getValue().getIntegerValue() == source[0].getIntegerValue());
         BOOST_TEST(active->getIntegerParameter(2) == tail);
         valueType->copyValue(source.data(), destination);
@@ -447,7 +446,7 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
     }) {
         order.clear();
         const auto evaluated = context.getInterpreter().execute(source, context);
-        BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : ""));
+        BOOST_REQUIRE_MESSAGE(evaluated, (context.hasError() ? context.getFirstError()->message : ""));
         BOOST_REQUIRE_EQUAL(order.size(), 3U);
         BOOST_TEST(order[0] == 2);
         BOOST_TEST(order[1] == 1);
@@ -502,7 +501,7 @@ BOOST_AUTO_TEST_CASE(aggregate_calls_preserve_active_method_frames_during_native
         BOOST_REQUIRE_EQUAL(source.size(), 4U);
         BOOST_TEST(source[0].getIntegerValue() == 17);
         const auto copied = context.getInterpreter().execute("local = copyAggregate value empty 71", context);
-        BOOST_REQUIRE_MESSAGE(copied, (context.getError() ? *context.getError() : ""));
+        BOOST_REQUIRE_MESSAGE(copied, (context.hasError() ? context.getFirstError()->message : ""));
         BOOST_TEST(context.getVariableStorage("local")[0].getIntegerValue() == 71);
         BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 17);
         BOOST_REQUIRE(context.getInterpreter().execute("readAggregateText local", context));
@@ -1124,7 +1123,7 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
                 context.setVariable("argument", type, argument.getStorage());
                 context.setVariable("empty", emptyType, std::span<const RuntimeValue>{});
                 BOOST_REQUIRE_MESSAGE(interpreter.execute("result = owner.exchange argument empty 3",
-                    context), (context.getError() ? *context.getError() : ""));
+                    context), (context.hasError() ? context.getFirstError()->message : ""));
                 BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 20);
                 BOOST_TEST(context.getVariableStorage("argument")[0].getIntegerValue() == 17);
                 {
@@ -1133,7 +1132,7 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
                 }
                 const auto ownersWithTemporary = NomadObject::getLiveObjectCount();
                 BOOST_REQUIRE_MESSAGE(interpreter.execute("owner.exchange argument (clearObjectMethodOwner) 3", context),
-                    (context.getError() ? *context.getError() : ""));
+                    (context.hasError() ? context.getFirstError()->message : ""));
                 BOOST_TEST(context.getVariableType("owner") == nullptr);
                 BOOST_TEST(context.getResult()->getStorage()[0].getIntegerValue() == 20);
                 context.clearResult();

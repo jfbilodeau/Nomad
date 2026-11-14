@@ -182,7 +182,7 @@ BOOST_AUTO_TEST_CASE(scoped_and_formatted_evaluation_retire_storage_without_chan
     RuntimeValue text{NomadString{"formatted"}};
     context.setVariable("text", runtime.getStringType(), text);
     text.freeObjectValue();
-    const auto formatted = interpreter.formatString("{replaceFormattedVariable}", context, "retirement", 1, 1);
+    const auto formatted = interpreter.formatString(context, "{replaceFormattedVariable}", "retirement", 1, 1);
     BOOST_TEST(formatted.text == "5");
 #ifdef NOMAD_DEBUG
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore + 1);
@@ -416,7 +416,7 @@ BOOST_AUTO_TEST_CASE(context_growth_and_same_type_updates_preserve_addresses_wit
     context.setVariable("value", owner, source);
     const auto* address = context.getVariableStorage("value").data();
     const auto executed = interpreter.execute("copy = value", context);
-    BOOST_REQUIRE_MESSAGE(executed, (context.getError() != nullptr ? *context.getError() : "No error reported"));
+    BOOST_REQUIRE_MESSAGE(executed, (context.getFirstError().has_value() ? context.getFirstError()->message : "No error reported"));
     const InterpreterValue snapshot(*context.getResult());
     for (auto index = 0; index < 128; ++index) {
         context.setVariable("extra" + std::to_string(index), runtime.getIntegerType(),

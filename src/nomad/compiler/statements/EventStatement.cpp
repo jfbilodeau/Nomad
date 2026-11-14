@@ -18,20 +18,20 @@ bool preParseEventStatement(
         return true;
     }
     if (tokens->endOfLine()) {
-        context->reportError("Event name expected", tokens);
+        context->addError("Event name expected", tokens);
 
         return false;
     }
 
     const auto eventName = context->qualifyDeclaration(tokens->currentToken().textValue);
     if (context->getRuntime()->isHub(eventName) || context->getRuntime()->isHubVariable(eventName)) {
-        context->reportError("Event name '" + eventName + "' is reserved by a hub declaration", tokens);
+        context->addError("Event name '" + eventName + "' is reserved by a hub declaration", tokens);
         return false;
     }
 
     // Make sure event is not already declared
     if (context->getRuntime()->getEventId(eventName).isValid()) {
-        context->reportError("Event '" + eventName + "' is already declared", tokens);
+        context->addError("Event '" + eventName + "' is already declared", tokens);
 
         return false;
     }
@@ -50,7 +50,7 @@ bool preParseEventStatement(
         }
 
         if (tokens->endOfLine()) {
-            context->reportError("Parameter type expected", tokens);
+            context->addError("Parameter type expected", tokens);
 
             return false;
         }
@@ -68,7 +68,7 @@ bool preParseEventStatement(
     const auto eventId = context->getRuntime()->registerEvent(eventName, parameters);
 
     if (eventId.isInvalid()) {
-        context->reportError("Failed to register event '" + eventName + "'", tokens);
+        context->addError("Failed to register event '" + eventName + "'", tokens);
 
         return false;
     }

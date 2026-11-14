@@ -120,8 +120,8 @@ public:
     [[nodiscard]] NomadBoolean execute(const SourceText& source, InterpreterContext& context) const;
     // Placeholder syntax/type errors produce diagnostics; execution exceptions propagate.
     [[nodiscard]] DynamicFormatResult formatString(
-        NomadStringView format,
         InterpreterContext& context,
+        NomadStringView format,
         NomadStringView sourceName,
         NomadIndex line,
         NomadIndex column

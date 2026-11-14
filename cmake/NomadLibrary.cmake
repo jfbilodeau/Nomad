@@ -9,8 +9,8 @@ add_library(nomad-language SHARED
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compilation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Compiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerContext.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/compiler/CompilerDiagnostic.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/DeferredType.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/compiler/Diagnostic.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/Expression.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FormatStringCompiler.cpp
     ${NOMAD_SOURCE_DIR}/nomad/compiler/FunctionParameterTypeTarget.cpp

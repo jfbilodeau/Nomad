@@ -673,7 +673,7 @@ DynamicFormatResult formatDynamicString(
     const NomadIndex column
 ) {
 
-    return context.getInterpreter().formatString(format, context, sourceName, line, column);
+    return context.getInterpreter().formatString(context, format, sourceName, line, column);
 }
 
 DynamicFormatResult Interpreter::formatString(
@@ -712,8 +712,8 @@ DynamicFormatResult Interpreter::formatString(
         )) {
             result.text += value->getType()->toString(value->getStorage().data());
         } else {
-            const auto* error = context.getFirstError();
-            if (error == nullptr) {
+            const auto error = context.getFirstError();
+            if (!error.has_value()) {
                 throw NomadBug("Format expression failed without an error diagnostic");
             }
 

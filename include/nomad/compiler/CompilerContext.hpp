@@ -6,6 +6,7 @@
 
 #include <nomad/compiler/CompilerDiagnostic.hpp>
 
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -47,13 +48,13 @@ public:
     void addDiagnostic(const CompilerDiagnostic& diagnostic);
     void addDiagnostics(std::span<const CompilerDiagnostic> diagnostics);
 
-    void reportError(NomadStringView message);
-    void reportError(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
+    void addError(NomadStringView message);
+    void addError(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
     // Reports at the tokenizer's source, line and column.
-    void reportError(NomadStringView message, const Tokenizer* tokens);
-    void reportWarning(NomadStringView message);
-    void reportWarning(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
-    void reportWarning(NomadStringView message, const Tokenizer* tokens);
+    void addError(NomadStringView message, const Tokenizer* tokens);
+    void addWarning(NomadStringView message);
+    void addWarning(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
+    void addWarning(NomadStringView message, const Tokenizer* tokens);
 
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] NomadBoolean hasWarning() const;
@@ -61,7 +62,7 @@ public:
     [[nodiscard]] NomadIndex getWarningCount() const;
     [[nodiscard]] std::span<const CompilerDiagnostic> getDiagnostics() const;
     // Returns nullptr when no error has been reported.
-    [[nodiscard]] const CompilerDiagnostic* getFirstError() const;
+    [[nodiscard]] std::optional<CompilerDiagnostic> getFirstError() const;
     void clearDiagnostics();
 
     struct Block {

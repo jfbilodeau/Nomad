@@ -31,7 +31,7 @@ bool compile(Runtime& runtime, const NomadString& source) {
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
     const auto compiled = compiler->compileFunctions(&context);
-    if (!compiled && context.getFirstError() != nullptr) {
+    if (!compiled && context.getFirstError().has_value()) {
         BOOST_TEST_MESSAGE(formatDiagnostic(*context.getFirstError()));
     }
     return compiled;

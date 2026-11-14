@@ -29,7 +29,7 @@ std::unique_ptr<Expression> parseExpression(CompilerContext& context, ScriptFunc
     auto expression = parser::parseExpression(&context, function, &tokens);
 
     if (expression && !tokens.endOfLine()) {
-        context.reportError("Test expression was not fully parsed", &tokens);
+        context.addError("Test expression was not fully parsed", &tokens);
     }
 
     return expression;
@@ -173,7 +173,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
 
     BOOST_REQUIRE(expression != nullptr);
     BOOST_TEST(!expression->resolve(&context, nullptr));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("write-only") != NomadString::npos);
 }
 
@@ -189,7 +189,7 @@ BOOST_AUTO_TEST_CASE(rejects_writing_read_only_property) {
 
     BOOST_REQUIRE(statement != nullptr);
     BOOST_TEST(!statement->resolve(&context, &function));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("read-only") != NomadString::npos);
 }
 
@@ -247,7 +247,7 @@ BOOST_AUTO_TEST_CASE(rejects_assignment_to_method) {
 
     BOOST_REQUIRE(statement != nullptr);
     BOOST_TEST(!statement->resolve(&context, &function));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("Cannot assign to method") != NomadString::npos);
 }
 
@@ -330,7 +330,7 @@ BOOST_AUTO_TEST_CASE(rejects_invalid_indexer_syntax_and_types) {
             CompilerContext context(compiler.get());
             compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
             BOOST_TEST(!compiler->compileFunctions(&context));
-            BOOST_REQUIRE(context.getFirstError() != nullptr);
+            BOOST_REQUIRE(context.getFirstError().has_value());
             if (NomadString(source).find("= \"x\"") != NomadString::npos) {
                 BOOST_TEST(context.getFirstError()->message.find("read-only") != NomadString::npos);
             }

@@ -86,8 +86,8 @@ CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     const auto functionId = runtime.getFunctionId("test");
 
     const auto compiled = compiler->compileFunctions(&context);
-    const auto* error = context.getFirstError();
-    const auto message = error == nullptr ? NomadString("Unknown compilation error") : error->message;
+    const auto error = context.getFirstError();
+    const auto message = !error.has_value() ? NomadString("Unknown compilation error") : error->message;
     BOOST_REQUIRE_MESSAGE(compiled, message);
     return functionId;
 }
@@ -310,20 +310,20 @@ BOOST_AUTO_TEST_CASE(string_members_reject_malformed_utf8) {
     BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 2);
 
     BOOST_TEST(!interpreter.getInterpreter().execute("text.length", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 
     BOOST_TEST(!interpreter.getInterpreter().execute("text.toUpper", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 
     BOOST_TEST(!interpreter.getInterpreter().execute("text.trim", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 
     BOOST_TEST(!interpreter.getInterpreter().execute("\"valid\".contains text", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

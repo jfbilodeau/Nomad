@@ -4,7 +4,6 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
-#include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
@@ -78,7 +77,7 @@ BOOST_AUTO_TEST_CASE(source_counter_calls_mutate_the_original_before_the_next_op
     {
         InterpreterContext context(interpreter);
         BOOST_REQUIRE_MESSAGE(interpreter.execute("c = new Counter\ntotal = c.next + c.next", context),
-            (context.getError() != nullptr ? *context.getError() : ""));
+            (context.hasError() ? context.getFirstError()->message : ""));
         BOOST_TEST(context.getVariableStorage("c")[0].getIntegerValue() == 2);
         BOOST_TEST(context.getVariableValue("total")->getIntegerValue() == 3);
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
@@ -117,7 +116,7 @@ BOOST_AUTO_TEST_CASE(source_methods_borrow_nested_and_object_owned_fields_and_di
             "outer = new CounterOuter\nfirst = outer.counter.next\nsecond = outer.counter.next\n"
             "holder = new CounterHolder\nheld = holder.counter.counter.next\n"
             "temporary = (new Counter).next\nnestedTemporary = (new CounterOuter).counter.next", context),
-            (context.getError() != nullptr ? *context.getError() : ""));
+            (context.hasError() ? context.getFirstError()->message : ""));
         BOOST_TEST(context.getVariableStorage("outer")[0].getIntegerValue() == 7);
         BOOST_TEST(context.getVariableStorage("outer")[1].getIntegerValue() == 2);
         BOOST_TEST(context.getVariableStorage("outer")[2].getStringValue() == "outer");
@@ -150,7 +149,7 @@ BOOST_AUTO_TEST_CASE(source_method_parameters_and_returned_structs_are_independe
             "returned.number = 41\nempty = new HostMethodEmpty\n"
             "same = empty.emptyReturn\nscalar = empty.scalar\n"
             "made = empty.make 9\nempty.clear", context),
-            (context.getError() != nullptr ? *context.getError() : ""));
+            (context.hasError() ? context.getFirstError()->message : ""));
         BOOST_TEST(context.getVariableStorage("value")[0].getIntegerValue() == 28);
         BOOST_TEST(context.getVariableStorage("value")[1].getStringValue() == "updated");
         BOOST_TEST(context.getVariableStorage("returned")[0].getIntegerValue() == 41);
@@ -190,7 +189,7 @@ BOOST_AUTO_TEST_CASE(source_receiver_evaluation_precedes_right_to_left_arguments
     InterpreterContext context(interpreter);
     BOOST_REQUIRE_MESSAGE(interpreter.execute(
         "result = (makeSourceCounter).add (firstSourceArgument) (secondSourceArgument)", context),
-        (context.getError() != nullptr ? *context.getError() : ""));
+        (context.hasError() ? context.getFirstError()->message : ""));
     const std::vector<NomadString> expected{"receiver", "second", "first"};
     BOOST_TEST(events == expected, boost::test_tools::per_element());
     BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 12);
@@ -215,14 +214,14 @@ BOOST_AUTO_TEST_CASE(source_receiver_evaluation_precedes_right_to_left_arguments
     BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 101);
     replacementMode = 1;
     BOOST_TEST(!interpreter.execute("result = c.bump (replaceSourceCounter)", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("has not been assigned") != NomadString::npos);
+    BOOST_REQUIRE(context.hasError());
+    BOOST_TEST(context.getFirstError()->message.find("has not been assigned") != NomadString::npos);
     BOOST_TEST(context.getResult() == nullptr);
     BOOST_REQUIRE(interpreter.execute("c = new Counter", context));
     replacementMode = 2;
     BOOST_TEST(!interpreter.execute("result = c.bump (replaceSourceCounter)", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("changed type") != NomadString::npos);
+    BOOST_REQUIRE(context.hasError());
+    BOOST_TEST(context.getFirstError()->message.find("changed type") != NomadString::npos);
     BOOST_TEST(context.getVariableValue("c")->getIntegerValue() == 42);
     BOOST_TEST(context.getResult() == nullptr);
 }
@@ -244,7 +243,7 @@ BOOST_AUTO_TEST_CASE(source_object_field_receivers_keep_the_evaluated_owner_acro
     }, {}, runtime.getIntegerType(), "");
     BOOST_REQUIRE(replace.isValid());
     BOOST_REQUIRE_MESSAGE(interpreter.execute("result = holder.counter.counter.bump (replaceSourceHolder)", context),
-        (context.getError() != nullptr ? *context.getError() : ""));
+        (context.hasError() ? context.getFirstError()->message : ""));
     BOOST_TEST(context.getVariableValue("holder")->getIntegerValue() == 42);
     BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 1);
     const auto storage = original.getValue().asObject<ScriptObject>()->getFieldStorage(0);
@@ -289,13 +288,13 @@ BOOST_AUTO_TEST_CASE(source_methods_expose_live_mutations_during_native_reentry_
     machine->setIntegerResult(41);
     machine->setIntegerIntermediate(43);
     BOOST_REQUIRE_MESSAGE(interpreter.execute("c = new Counter\nresult = c.observe", context),
-        (context.getError() != nullptr ? *context.getError() : ""));
+        (context.hasError() ? context.getFirstError()->message : ""));
     BOOST_TEST(observations == 1);
     BOOST_TEST(context.getVariableValue("nested")->getIntegerValue() == 2);
     BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 2);
     BOOST_TEST(!interpreter.execute("result = c.fail", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("Source counter failure") != NomadString::npos);
+    BOOST_REQUIRE(context.hasError());
+    BOOST_TEST(context.getFirstError()->message.find("Source counter failure") != NomadString::npos);
     BOOST_TEST(context.getVariableStorage("c")[0].getIntegerValue() == 3);
     BOOST_TEST(context.getVariableValue("result")->getIntegerValue() == 2);
     BOOST_TEST(context.getResult() == nullptr);

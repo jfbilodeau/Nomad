@@ -484,18 +484,12 @@ NomadBoolean InterpreterContext::hasWarning() const {
     });
 }
 
-const CompilerDiagnostic* InterpreterContext::getFirstError() const {
+std::optional<CompilerDiagnostic> InterpreterContext::getFirstError() const {
     const auto error = std::ranges::find_if(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
         return diagnostic.severity == CompilerDiagnosticSeverity::Error;
     });
 
-    return error != m_diagnostics.end() ? &*error : nullptr;
-}
-
-const NomadString* InterpreterContext::getError() const {
-    const auto* error = getFirstError();
-
-    return error != nullptr ? &error->message : nullptr;
+    return error != m_diagnostics.end() ? std::optional<CompilerDiagnostic>(*error) : std::nullopt;
 }
 
 void InterpreterContext::setParameterResult(const NomadId parameterId) {

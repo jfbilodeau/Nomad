@@ -706,8 +706,8 @@ BOOST_AUTO_TEST_CASE(script_constructor_fault_terminates_compiled_host_and_inter
                     const Interpreter contextEvaluator(*machine);
                     InterpreterContext context(contextEvaluator);
                     BOOST_TEST(!context.getInterpreter().execute("new Owner \"failed\" true", context));
-                    BOOST_REQUIRE(context.getError() != nullptr);
-                    BOOST_TEST(*context.getError() == "Constructor failed");
+                    BOOST_REQUIRE(context.getFirstError().has_value());
+                    BOOST_TEST(context.getFirstError()->message == "Constructor failed");
                     BOOST_TEST(context.getResult() == nullptr);
                 }
             }
@@ -1040,7 +1040,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_validate_bindings_and_concrete_constr
             const auto name = "rejected" + std::to_string(caseIndex++);
             compiler->registerSources(&context, {{{name, {name + ".nomad", "return " + NomadString(source)}}}, {}});
             BOOST_TEST(!compiler->compileFunctions(&context));
-            BOOST_REQUIRE(context.getFirstError() != nullptr);
+            BOOST_REQUIRE(context.getFirstError().has_value());
             auto machine = runtime.createVirtualMachine();
             const Interpreter evaluationEvaluator(*machine);
             InterpreterContext evaluation(evaluationEvaluator);
@@ -1133,7 +1133,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructors_require_a_matching_specialized_constr
         CompilerContext context(compiler.get());
         compiler->registerSources(&context, {{{"main", {"main.nomad", "return new Box 42"}}}, {}});
         BOOST_TEST(!compiler->compileFunctions(&context));
-        BOOST_REQUIRE(context.getFirstError() != nullptr);
+        BOOST_REQUIRE(context.getFirstError().has_value());
         auto machine = runtime.createVirtualMachine();
         const Interpreter evaluationEvaluator(*machine);
         InterpreterContext evaluation(evaluationEvaluator);
@@ -1199,7 +1199,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_
         CompilerContext context(compiler.get());
         Tokenizer tokens(&context, "test.nomad", "new Pair \"key\" 1");
         BOOST_TEST(parser::parseExpression(&context, nullptr, &tokens) == nullptr);
-        BOOST_REQUIRE(context.getFirstError() != nullptr);
+        BOOST_REQUIRE(context.getFirstError().has_value());
         BOOST_TEST(context.getFirstError()->message.find("no inference signature") != NomadString::npos);
     }
     BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate(
@@ -1213,7 +1213,7 @@ BOOST_AUTO_TEST_CASE(inferred_constructor_parsing_reports_missing_arguments_and_
         CompilerContext context(compiler.get());
         Tokenizer tokens(&context, "test.nomad", source);
         BOOST_TEST(parser::parseExpression(&context, nullptr, &tokens) == nullptr);
-        BOOST_REQUIRE(context.getFirstError() != nullptr);
+        BOOST_REQUIRE(context.getFirstError().has_value());
         BOOST_TEST(context.getFirstError()->message.find("Expected arguments for") != NomadString::npos);
     }
 }
@@ -1641,7 +1641,7 @@ BOOST_AUTO_TEST_CASE(constructor_faults_and_null_results_do_not_unwind_bytecode_
             const Interpreter contextEvaluator(*machine);
             InterpreterContext context(contextEvaluator);
             BOOST_TEST(!context.getInterpreter().execute("new Example (\"hello\".toUpper)", context));
-            BOOST_REQUIRE(context.getError() != nullptr);
+            BOOST_REQUIRE(context.getFirstError().has_value());
         }
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     }
@@ -2051,7 +2051,7 @@ BOOST_AUTO_TEST_CASE(registration_rejects_collisions_invalid_types_and_missing_f
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"invalid", {"invalid.nomad", "return new Example true"}}}, {}});
     BOOST_TEST(!compiler->compileFunctions(&context));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->sourceName == "invalid.nomad");
     BOOST_TEST(context.getFirstError()->message.find("No overload of 'Example'") != NomadString::npos);
 }

@@ -387,7 +387,7 @@ bool Tokenizer::expectEndOfLine() {
 }
 
 void Tokenizer::reportError(const NomadString& message) const {
-    m_context->reportError(message, this);
+    m_context->addError(message, this);
 }
 
 void Tokenizer::tokenizeLines() {
@@ -436,7 +436,7 @@ void Tokenizer::tokenizeLines() {
 
         if (!success || first != line.cend()) {
             const auto column = static_cast<NomadIndex>(first - line.cbegin()) + 1;
-            m_context->reportError(
+            m_context->addError(
                 "Unrecognized token `" + NomadString(first, line.cend()) + "` in line: `" + line + "`",
                 m_sourceName,
                 m_firstLine + lineIndex,

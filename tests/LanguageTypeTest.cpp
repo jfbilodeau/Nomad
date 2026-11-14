@@ -531,7 +531,7 @@ BOOST_AUTO_TEST_CASE(interpreter_locals_can_change_type)
 
     BOOST_REQUIRE_MESSAGE(
         interpreter.getInterpreter().execute("value = \"text\"", interpreter),
-        (interpreter.getError() ? *interpreter.getError() : NomadString{})
+        (interpreter.getFirstError() ? interpreter.getFirstError()->message : NomadString{})
     );
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getStringType());
     BOOST_TEST(NomadString(interpreter.getVariableValue("value")->getStringValue()) == "text");

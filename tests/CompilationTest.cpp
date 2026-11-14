@@ -121,7 +121,7 @@ BOOST_AUTO_TEST_CASE(configured_compilation_preserves_targets_hooks_diagnostics_
             BOOST_TEST(context->getCompiler() == compiler.get());
             if (phase == CompilationPhase::Configure) {
                 configured = true;
-                context->reportWarning("Hook warning", "editor:main", 1, 1);
+                context->addWarning("Hook warning", "editor:main", 1, 1);
             }
         });
         const auto instructionCount = runtime.getInstructions().size();

@@ -40,11 +40,11 @@ const Type* Argument::resolveOverloadType(CompilerContext* /*context*/, ScriptCa
 
 InterpreterValue Argument::evaluate(InterpreterContext& context) const {
     if (context.hasError()) {
-        raiseException(*context.getError());
+        raiseException(context.getFirstError()->message);
     }
     auto value = onEvaluate(context);
     if (context.hasError()) {
-        raiseException(*context.getError());
+        raiseException(context.getFirstError()->message);
     }
     return value;
 }

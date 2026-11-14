@@ -466,7 +466,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
                     const auto line = source.substr(start, end - start);
                     const auto executed = context.getInterpreter().execute(line, context);
                     BOOST_REQUIRE_MESSAGE(executed,
-                        line + ": " + (context.getError() != nullptr ? *context.getError() : "No error reported"));
+                        line + ": " + (context.getFirstError().has_value() ? context.getFirstError()->message : "No error reported"));
                     start = end + 1;
                 }
                 BOOST_REQUIRE(context.getInterpreter().execute("first.next.text", context));
@@ -479,7 +479,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
                 BOOST_TEST(type->getProperty("missing") == nullptr);
                 BOOST_TEST(!context.getInterpreter().execute("second.text = 2", context));
                 BOOST_TEST(!context.getInterpreter().execute("second.next.text", context));
-                BOOST_REQUIRE(context.getError() != nullptr);
+                BOOST_REQUIRE(context.getFirstError().has_value());
                 BOOST_REQUIRE(context.getInterpreter().execute("alias.text", context));
                 BOOST_TEST(NomadString(context.getResult()->getValue().getStringValue()) == "replaced");
             } else {

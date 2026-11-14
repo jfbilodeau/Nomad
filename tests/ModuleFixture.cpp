@@ -159,7 +159,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
         }
         record(state->context, "preParse");
         if (state->context->configuration->getBoolean("fixture.fail-hook").value_or(false)) {
-            compiler->reportError("Requested hook failure");
+            compiler->addError("Requested hook failure");
         }
     };
     callbacks->emit = [state](nomad::CompilerContext*) { record(state->context, "emit"); };

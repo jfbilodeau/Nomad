@@ -31,7 +31,7 @@ const Type* parseTypeName(
     NomadString name = {}
 ) {
     if (depth >= 64) {
-        context->reportError("Type nesting exceeds the maximum depth of 64", tokens);
+        context->addError("Type nesting exceeds the maximum depth of 64", tokens);
         return nullptr;
     }
     if (name.empty() && !tokens->nextIdentifier(name)) {
@@ -42,13 +42,13 @@ const Type* parseTypeName(
     if (tokens->is("<")) {
         tokens->next();
         if (!argumentCount) {
-            context->reportError("Unknown parameterized type '" + name + "'", tokens);
+            context->addError("Unknown parameterized type '" + name + "'", tokens);
             return nullptr;
         }
         std::vector<const Type*> arguments;
         while (!tokens->is(">")) {
             if (tokens->endOfLine()) {
-                context->reportError("Expected '>' to close type arguments for '" + name + "'", tokens);
+                context->addError("Expected '>' to close type arguments for '" + name + "'", tokens);
                 return nullptr;
             }
             const auto* argument = parseTypeName(context, tokens, depth + 1);
@@ -56,14 +56,14 @@ const Type* parseTypeName(
                 return nullptr;
             }
             if (argument->isVoid() || argument->isInternal() || argument->isStruct()) {
-                context->reportError("Invalid type argument '" + argument->getTypeName() + "' for '" + name + "'", tokens);
+                context->addError("Invalid type argument '" + argument->getTypeName() + "' for '" + name + "'", tokens);
                 return nullptr;
             }
             arguments.push_back(argument);
         }
         tokens->next();
         if (arguments.size() != *argumentCount) {
-            context->reportError(
+            context->addError(
                 "Parameterized type '" + name + "' expects " + std::to_string(*argumentCount) +
                 " type arguments, got " + std::to_string(arguments.size()), tokens
             );
@@ -71,19 +71,19 @@ const Type* parseTypeName(
         }
         const auto* type = runtime->getTypeManager().getParameterizedType(name, arguments);
         if (type == nullptr) {
-            context->reportError("Cannot resolve parameterized type '" + name + "'", tokens);
+            context->addError("Cannot resolve parameterized type '" + name + "'", tokens);
         }
         return type;
     }
     if (argumentCount) {
-        context->reportError("Type arguments required for parameterized type '" + name + "'", tokens);
+        context->addError("Type arguments required for parameterized type '" + name + "'", tokens);
         return nullptr;
     }
     const auto* type = runtime->getTypeByName(name);
     if (type == nullptr) {
-        context->reportError("Unknown type '" + name + "' for parameter", tokens);
+        context->addError("Unknown type '" + name + "' for parameter", tokens);
     } else if (type->isInternal()) {
-        context->reportError("Internal type '" + name + "' cannot be used for parameter", tokens);
+        context->addError("Internal type '" + name + "' cannot be used for parameter", tokens);
         return nullptr;
     }
     return type;
@@ -106,15 +106,15 @@ bool parseParameters(
             return false;
         }
         if (context->getRuntime()->getKeywordId(name).isValid()) {
-            context->reportError("Parameter name '" + name + "' is a reserved keyword", tokens);
+            context->addError("Parameter name '" + name + "' is a reserved keyword", tokens);
             return false;
         }
         if (std::ranges::any_of(parameters, [&name](const auto& parameter) { return parameter.name == name; })) {
-            context->reportError("Parameter '" + name + "' is already defined", tokens);
+            context->addError("Parameter '" + name + "' is already defined", tokens);
             return false;
         }
         if (context->getRuntime()->isHub(name)) {
-            context->reportError("Parameter name '" + name + "' is reserved by a hub", tokens);
+            context->addError("Parameter name '" + name + "' is reserved by a hub", tokens);
             return false;
         }
         const auto* type = parseType(context, tokens);
@@ -249,7 +249,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
     if (functionId.isValid()) {
         const auto* targetFunction = context->getRuntime()->getFunction(functionId);
         if (targetFunction->getParameterCount() != 0) {
-            context->reportError("Function receiver '" + name + "' requires arguments");
+            context->addError("Function receiver '" + name + "' requires arguments");
             return nullptr;
         }
 
@@ -462,7 +462,7 @@ bool parseBlock(
 
     while (true) {
         if (tokens->isEndOfFile()) {
-            context->reportError("Unexpected end of file", tokens);
+            context->addError("Unexpected end of file", tokens);
 
             return false;
         }
@@ -501,7 +501,7 @@ std::unique_ptr<Statement> parseStatement(
         const auto interpreter = context->getMode() == CompilerMode::Interpreter;
         if ((interpreter && availability == StatementAvailability::Compiler) ||
             (!interpreter && availability == StatementAvailability::Interpreter)) {
-            context->reportError("Statement '" + statementName + "' is not supported by the " +
+            context->addError("Statement '" + statementName + "' is not supported by the " +
                 (interpreter ? "interpreter" : "compiler"), tokens);
             return nullptr;
         }
@@ -538,7 +538,7 @@ std::unique_ptr<Statement> parseStatement(
         return statement;
     }
 
-    context->reportError("Unknown statement, native function or function name: '" + statementName + "'", tokens);
+    context->addError("Unknown statement, native function or function name: '" + statementName + "'", tokens);
 
     return nullptr;
 }
@@ -553,14 +553,14 @@ CallableId parseCallbackParameter(
 
     if (isFun || tokens->is("then")) {
         if (!isFun && !context->isFunctionRoot(function)) {
-            context->reportError(
+            context->addError(
                 "`then` is only allowed at the root of a script or function body. "
                 "Use an explicit `fun ... end` callback inside control-flow blocks.", tokens
             );
             return CallableId::INVALID;
         }
         if (context->getMode() != CompilerMode::Script) {
-            context->reportError(
+            context->addError(
                 NomadString("Inline `") + (isFun ? "fun" : "then") + "` callbacks are not supported by the interpreter"
             , tokens);
 
@@ -613,13 +613,13 @@ CallableId parseCallbackParameter(
     const auto funId = context->getRuntime()->getFunctionId(funName);
 
     if (funId.isInvalid()) {
-        context->reportError("Unknown callback function name '" + funName + "'", tokens);
+        context->addError("Unknown callback function name '" + funName + "'", tokens);
 
         return CallableId::INVALID;
     }
 
     if (context->getRuntime()->getScriptCallable(funId)->getParameterCount() != callbackType->getParameterCount()) {
-        context->reportError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
+        context->addError("Callback function '" + funName + "' has incorrect number of parameters", tokens);
 
         return CallableId::INVALID;
     }
@@ -629,7 +629,7 @@ CallableId parseCallbackParameter(
         const auto expectedType = callbackType->getParameterType(parameterId);
         const auto actualType = context->getRuntime()->getScriptCallable(funId)->getParameterType(parameterId);
         if (expectedType != actualType) {
-            context->reportError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
+            context->addError("Callback function '" + funName + "' parameter type mismatch at index " + toString(i), tokens);
 
             return CallableId::INVALID;
         }
@@ -653,7 +653,7 @@ std::unique_ptr<Statement> parseFunctionCall(
     const auto functionId = context->getRuntime()->getCallableId(functionName);
 
     if (functionId.isInvalid()) {
-        context->reportError("Unknown function name: '" + functionName + "'", tokens);
+        context->addError("Unknown function name: '" + functionName + "'", tokens);
 
         return nullptr;
     }
@@ -793,7 +793,7 @@ std::unique_ptr<Expression> parseParenthesesExpression(CompilerContext* context,
 
 std::unique_ptr<Expression> parseUnaryOperatorExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     if (tokens->endOfLine()) {
-        context->reportError("Unexpected end of line", tokens);
+        context->addError("Unexpected end of line", tokens);
 
         return nullptr;
     }
@@ -858,7 +858,7 @@ std::unique_ptr<Expression> parseNewExpression(
         return nullptr;
     }
     if (tokens->endOfLine()) {
-        context->reportError("Expected constructor name after 'new'", tokens);
+        context->addError("Expected constructor name after 'new'", tokens);
         return nullptr;
     }
     auto* runtime = context->getRuntime();
@@ -875,7 +875,7 @@ std::unique_ptr<Expression> parseNewExpression(
                 return nullptr;
             }
             if (argument->isStruct()) {
-                context->reportError("Struct type argument '" + argument->getTypeName() +
+                context->addError("Struct type argument '" + argument->getTypeName() +
                     "' is not supported for constructor '" + constructorName + "'", tokens);
                 return nullptr;
             }
@@ -885,12 +885,12 @@ std::unique_ptr<Expression> parseNewExpression(
             return nullptr;
         }
         if (typeArguments.size() != *count) {
-            context->reportError("Incorrect number of constructor type arguments for '" + constructorName + "'", tokens);
+            context->addError("Incorrect number of constructor type arguments for '" + constructorName + "'", tokens);
             return nullptr;
         }
         constructorName = runtime->getTypeManager().getParameterizedConstructorName(constructorName, typeArguments);
         if (constructorName.empty()) {
-            context->reportError("Cannot resolve parameterized constructor", tokens);
+            context->addError("Cannot resolve parameterized constructor", tokens);
             return nullptr;
         }
     } else if (runtime->getTypeManager().getParameterizedTypeArgumentCount(constructorName)) {
@@ -898,7 +898,7 @@ std::unique_ptr<Expression> parseNewExpression(
         if (!tokens->is("<")) {
             const auto signature = runtime->getTypeManager().getConstructorTemplate(constructorName);
             if (!signature) {
-                context->reportError("Constructor '" + constructorName +
+                context->addError("Constructor '" + constructorName +
                     "' requires explicit type arguments: no inference signature is registered", tokens);
                 return nullptr;
             }
@@ -939,7 +939,7 @@ std::unique_ptr<Expression> parseNewExpression(
         }
     }
     if (shape == nullptr) {
-        context->reportError("No registered constructor named '" + constructorName + "'", tokens);
+        context->addError("No registered constructor named '" + constructorName + "'", tokens);
         return nullptr;
     }
 
@@ -982,7 +982,7 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
             const auto column = tokens->getColumnIndex();
             tokens->next();
             if (tokens->is(TokenType::Operator) && tokens->is("]")) {
-                context->reportError("Indexer requires at least one index", tokens);
+                context->addError("Indexer requires at least one index", tokens);
                 return nullptr;
             }
             std::vector<std::unique_ptr<Expression>> indexes;
@@ -994,7 +994,7 @@ std::unique_ptr<Expression> parsePostfixExpression(CompilerContext* context, Scr
                 indexes.push_back(std::move(index));
             }
             if (!tokens->is(TokenType::Operator) || !tokens->is("]")) {
-                context->reportError("Expected ']' after index expressions", tokens);
+                context->addError("Expected ']' after index expressions", tokens);
                 return nullptr;
             }
             tokens->next();
@@ -1046,7 +1046,7 @@ bool expectEndOfLine(
         return true;
     }
     if (!tokens->endOfLine()) {
-        context->reportError("Expected end of line", tokens);
+        context->addError("Expected end of line", tokens);
 
         return false;
     }
@@ -1099,7 +1099,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     if (context->getCompiler()->getReceiverType(function) != nullptr && tokens->is(TokenType::Identifier)) {
         const auto& target = tokens->currentToken().textValue;
         if (target == "this") {
-            context->reportError("Cannot reassign the class receiver 'this'", tokens);
+            context->addError("Cannot reassign the class receiver 'this'", tokens);
             return nullptr;
         }
         if (context->getMode() != CompilerMode::Interpreter &&
@@ -1140,7 +1140,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     auto variableName = tokens->currentToken().textValue;
     auto* runtime = context->getRuntime();
     if (runtime->isHub(variableName)) {
-        context->reportError("Cannot assign a value to hub '" + variableName + "'", tokens);
+        context->addError("Cannot assign a value to hub '" + variableName + "'", tokens);
         return nullptr;
     }
     auto hasValueReceiver = false;
@@ -1170,7 +1170,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
         runtime->getDynamicVariableId(variableName).isInvalid() &&
         runtime->getTypeByName(variableName) == nullptr &&
         !hasValueReceiver) {
-        context->reportError("Hub members must be declared inside a hub block: '" + variableName + "'", tokens);
+        context->addError("Hub members must be declared inside a hub block: '" + variableName + "'", tokens);
         return nullptr;
     }
 
@@ -1238,7 +1238,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
 
 std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens, const Expression* parent) {
     if (tokens->endOfLine()) {
-        context->reportError("Unexpected end of line", tokens);
+        context->addError("Unexpected end of line", tokens);
 
         return nullptr;
     }
@@ -1341,7 +1341,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
                 nextType == TokenType::String ||
                 nextType == TokenType::FormatString ||
                 tokens->is("(")) {
-                context->reportError("Unknown function '" + token.textValue + "'", tokens);
+                context->addError("Unknown function '" + token.textValue + "'", tokens);
                 return nullptr;
             }
         }
@@ -1355,7 +1355,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
         );
     }
 
-    context->reportError("Unexpected token '" + token.textValue + "'", tokens);
+    context->addError("Unexpected token '" + token.textValue + "'", tokens);
 
     return nullptr;
 }
@@ -1378,7 +1378,7 @@ std::unique_ptr<Expression> parseFunctionCallExpression(
     const auto* targetFunction = context->getRuntime()->getFunction(functionId);
 
     if (targetFunction == nullptr) {
-        context->reportError("Unknown function '" + functionName + "'", tokens);
+        context->addError("Unknown function '" + functionName + "'", tokens);
         return nullptr;
     }
 
@@ -1400,7 +1400,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptCallableBase* function, 
     const auto eventId = context->getRuntime()->getEventId(eventName);
 
     if (eventId.isInvalid()) {
-        context->reportError("Unknown event name '" + eventName + "'", tokens);
+        context->addError("Unknown event name '" + eventName + "'", tokens);
 
         return false;
     }
@@ -1504,7 +1504,7 @@ bool parseCallableArguments(
 
         if (!isSourceParameter && (tokens->endOfLine() || (parameter.type == nullptr && !isArgumentStart(tokens)))) {
             const auto typeName = parameter.type != nullptr ? ":" + parameter.type->getTypeName() : "";
-            context->reportError("Expected arguments for `" + parameter.name + typeName + "`", tokens);
+            context->addError("Expected arguments for `" + parameter.name + typeName + "`", tokens);
 
             return false;
         }
@@ -1553,7 +1553,7 @@ bool parseCallableArguments(
             const auto eventId = context->getRuntime()->getEventId(eventName);
 
             if (eventId.isInvalid()) {
-                context->reportError("Unknown event name '" + eventName + "'", tokens);
+                context->addError("Unknown event name '" + eventName + "'", tokens);
 
                 return false;
             }
@@ -1604,7 +1604,7 @@ bool parseCallableArguments(
 
         } else if (const auto callbackType = argumentType != nullptr ? argumentType->asCallback() : nullptr; callbackType != nullptr) {
             if (tokens->is("then") && i + 1 < parameters.size()) {
-                context->reportError("`then` callback must be the last argument", tokens);
+                context->addError("`then` callback must be the last argument", tokens);
 
                 return false;
             }

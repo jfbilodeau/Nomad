@@ -7,7 +7,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
-#include <nomad/compiler/SyntaxTree.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -77,7 +76,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     };
     for (const auto& [source, expected] : cases) {
         const auto succeeded = context.getInterpreter().execute(source, context);
-        const auto diagnostic = context.getError() ? *context.getError() : source;
+        const auto diagnostic = context.getFirstError() ? context.getFirstError()->message : source;
         BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
         BOOST_REQUIRE(context.getResult() != nullptr);
         BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getStorage().data()) == expected);
@@ -99,8 +98,8 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
         }
     }
     BOOST_TEST(!context.getInterpreter().execute("test.fail", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "frame failure");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "frame failure");
     BOOST_TEST(context.getResult() == nullptr);
     BOOST_REQUIRE(context.getInterpreter().execute("local = 7", context));
     BOOST_TEST(context.getVariableValue("local")->getIntegerValue() == 7);
@@ -481,7 +480,7 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_conditional_loops)
         "    total = total + 1\n"
         "    continue\n"
         "end until true", context);
-    const auto diagnostic = context.getError() ? *context.getError() : "Loop execution failed";
+    const auto diagnostic = context.getFirstError() ? context.getFirstError()->message : "Loop execution failed";
     BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
     BOOST_REQUIRE(context.getInterpreter().execute("total", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
@@ -499,8 +498,8 @@ BOOST_AUTO_TEST_CASE(interpreter_detects_type_changes_across_loop_iterations)
         "while value > 0\n"
         "    value = \"changed\"\n"
         "end", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("changed type") != NomadString::npos);
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message.find("changed type") != NomadString::npos);
     BOOST_REQUIRE(context.getInterpreter().execute("value = 2", context));
     BOOST_REQUIRE(context.getInterpreter().execute("value + 1", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 3);
@@ -584,8 +583,8 @@ BOOST_AUTO_TEST_CASE(interpreter_reports_source_execution_failures_as_diagnostic
             BOOST_CHECK(diagnostic.severity == CompilerDiagnosticSeverity::Error);
             BOOST_TEST(diagnostic.sourceName == "console:failure");
             BOOST_TEST(diagnostic.message == message);
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(*context.getError() == message);
+            BOOST_REQUIRE(context.getFirstError().has_value());
+            BOOST_TEST(context.getFirstError()->message == message);
             BOOST_TEST(context.getResult() == nullptr);
             BOOST_TEST(context.getVariableValue("value")->getIntegerValue() == 17);
             BOOST_TEST(machine->getIntegerResult() == 41);
@@ -746,28 +745,27 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
     InterpreterContext context(contextEvaluator);
 
     BOOST_TEST(!context.hasError());
-    BOOST_TEST(context.getError() == nullptr);
-    BOOST_TEST(context.getFirstError() == nullptr);
+    BOOST_TEST(context.getFirstError().has_value() == false);
 
     context.setError("Unknown variable 'score'");
     BOOST_TEST(context.hasError());
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unknown variable 'score'");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unknown variable 'score'");
 
     context.setError("A later nested error");
-    BOOST_TEST(*context.getError() == "Unknown variable 'score'");
+    BOOST_TEST(context.getFirstError()->message == "Unknown variable 'score'");
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
     BOOST_TEST(context.getDiagnostics()[1].message == "A later nested error");
 
     context.clearError();
     BOOST_TEST(!context.hasError());
     BOOST_TEST(!context.hasWarning());
-    BOOST_TEST(context.getError() == nullptr);
+    BOOST_TEST(context.getFirstError().has_value() == false);
 
     context.setError("A later input error");
     BOOST_TEST(context.hasError());
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "A later input error");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "A later input error");
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_reports_input_errors_without_clearing_existing_state)
@@ -842,15 +840,15 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
     BOOST_TEST(!context.hasError());
     BOOST_TEST(context.hasWarning());
-    BOOST_TEST(context.getError() == nullptr);
+    BOOST_TEST(context.getFirstError().has_value() == false);
     context.addDiagnostic({CompilerDiagnosticSeverity::Error, "first error", "test.nomad", 2, 3});
     context.addDiagnostic({CompilerDiagnosticSeverity::Error, "second error", "test.nomad", 3, 4});
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 3);
     BOOST_TEST(context.getDiagnostics()[0].message == "warning");
     BOOST_TEST(context.getDiagnostics()[1].message == "first error");
     BOOST_TEST(context.getDiagnostics()[2].message == "second error");
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "first error");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "first error");
     BOOST_TEST(context.hasError());
     BOOST_TEST(context.hasWarning());
     context.clearError();
@@ -880,7 +878,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_copies_compiler_diagnostics_in_order_wi
     {
         auto compiler = runtime.createCompiler();
         CompilerContext compilation(compiler.get());
-        compilation.reportWarning("compiler warning", "original.nomad", 3, 4);
+        compilation.addWarning("compiler warning", "original.nomad", 3, 4);
         compilation.addDiagnostic({
             CompilerDiagnosticSeverity::Error, "compiler error", "original.nomad", 5, 6,
             CompilerDiagnosticCode::UnknownIdentifier, "missing"
@@ -907,16 +905,16 @@ BOOST_AUTO_TEST_CASE(interpreter_context_copies_compiler_diagnostics_in_order_wi
     BOOST_TEST(diagnostics[2].column == 6U);
     BOOST_CHECK(diagnostics[2].code == CompilerDiagnosticCode::UnknownIdentifier);
     BOOST_TEST(diagnostics[2].subject == "missing");
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
-    BOOST_TEST(context.getFirstError() == &diagnostics[2]);
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "compiler error");
     BOOST_CHECK(diagnostics[1].code == CompilerDiagnosticCode::General);
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "compiler error");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "compiler error");
     context.copyCompilerDiagnostic({}, "unused.nomad");
     BOOST_TEST(context.getDiagnostics().size() == 3U);
     context.clearError();
     BOOST_TEST(context.getDiagnostics().empty());
-    BOOST_TEST(context.getFirstError() == nullptr);
+    BOOST_TEST(context.getFirstError().has_value() == false);
 }
 
 BOOST_AUTO_TEST_CASE(interpreter_context_executes_single_line_assignments_and_expressions)
@@ -991,7 +989,7 @@ BOOST_AUTO_TEST_CASE(interactive_input_preserves_expression_statement_and_multil
             const auto before = calls;
             BOOST_REQUIRE_MESSAGE(
                 interpreter.execute(SourceText{"console:matrix", input.source}, context),
-                (context.getError() ? *context.getError() : input.source)
+                (context.getFirstError() ? context.getFirstError()->message : input.source)
             );
             BOOST_REQUIRE(context.getResult() != nullptr);
             if (input.source == "copy = input.make") {
@@ -1046,7 +1044,7 @@ BOOST_AUTO_TEST_CASE(interpreter_evaluates_format_literal_arithmetic)
     for (const auto& [source, expected] : cases) {
         BOOST_TEST_CONTEXT(source) {
             const auto succeeded = context.getInterpreter().execute(source, context);
-            BOOST_REQUIRE_MESSAGE(succeeded, (context.getError() ? *context.getError() : source));
+            BOOST_REQUIRE_MESSAGE(succeeded, (context.getFirstError() ? context.getFirstError()->message : source));
             BOOST_REQUIRE(context.getResult() != nullptr);
             BOOST_TEST(context.getResult()->getType() == runtime.getStringType());
             BOOST_TEST(context.getResult()->getValue().getStringValue() == expected);
@@ -1072,20 +1070,20 @@ BOOST_AUTO_TEST_CASE(interpreter_reports_unknown_function_calls)
     InterpreterContext context(contextEvaluator);
 
     BOOST_TEST(!context.getInterpreter().execute("toInteger 1.2", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unknown function 'toInteger'");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unknown function 'toInteger'");
 
     BOOST_TEST(!context.getInterpreter().execute("toInteger \"12\"", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unknown function 'toInteger'");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unknown function 'toInteger'");
 
     BOOST_TEST(!context.getInterpreter().execute("result = toInteger 1.2", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unknown function 'toInteger'");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unknown function 'toInteger'");
 
     BOOST_TEST(!context.getInterpreter().execute("missing + 1", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unknown identifier: missing");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unknown identifier: missing");
 
     BOOST_TEST(context.getInterpreter().execute("toInt \"12\"", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
@@ -1335,8 +1333,8 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_line_errors_and_clears_them_on_
 
     BOOST_TEST(!context.getInterpreter().execute("if", context));
     BOOST_TEST(context.hasError());
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(!context.getError()->empty());
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(!context.getFirstError()->message.empty());
     BOOST_TEST(context.getResult() == nullptr);
 
     BOOST_TEST(context.getInterpreter().execute("40 + 2", context));
@@ -1493,25 +1491,25 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_resolve_errors_before_evaluatio
     InterpreterContext context(contextEvaluator);
 
     BOOST_TEST(!context.getInterpreter().execute("missing + 1", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unknown identifier: missing");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unknown identifier: missing");
 
     BOOST_TEST(!context.getInterpreter().execute("1 + true", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->starts_with("Invalid binary operator '+'"));
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message.starts_with("Invalid binary operator '+'"));
 
     BOOST_TEST(!context.getInterpreter().execute("pi = 3.0", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Cannot assign value to 'pi' in the interpreter");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Cannot assign value to 'pi' in the interpreter");
 
     BOOST_TEST(!context.getInterpreter().execute("remember true", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->starts_with("Argument type mismatch."));
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message.starts_with("Argument type mismatch."));
     BOOST_TEST(calledValue == 0);
 
     BOOST_TEST(!context.getInterpreter().execute("value = remember 1", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(context.getError()->find("does not return a value") != NomadString::npos);
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message.find("does not return a value") != NomadString::npos);
     BOOST_TEST(calledValue == 0);
     BOOST_TEST(context.getVariableValue("value") == nullptr);
 }

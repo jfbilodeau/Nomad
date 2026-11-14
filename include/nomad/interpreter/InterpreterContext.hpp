@@ -125,9 +125,7 @@ public:
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] NomadBoolean hasWarning() const;
     // First complete error diagnostic, or nullptr; invalidated by diagnostic collection changes.
-    [[nodiscard]] const CompilerDiagnostic* getFirstError() const;
-    // First error message, or nullptr. Invalidated by changes to the diagnostics collection.
-    [[nodiscard]] const NomadString* getError() const;
+    [[nodiscard]] std::optional<CompilerDiagnostic> getFirstError() const;
 
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
     void setVariable(const NomadString& name, const Type* type, std::span<const RuntimeValue> storage);

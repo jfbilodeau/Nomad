@@ -239,7 +239,7 @@ BOOST_AUTO_TEST_CASE(interpreter_and_formatting_resolve_global_handles_in_multip
     BOOST_REQUIRE(context.getInterpreter().execute("first.name = \"first\"", context));
     BOOST_REQUIRE(context.getInterpreter().execute("second.name = \"second\"", context));
     BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute("second.name = $\"{second.name}!\"", context),
-        (context.getError() != nullptr ? *context.getError() : "Interpreter assignment failed"));
+        (context.getFirstError().has_value() ? context.getFirstError()->message : "Interpreter assignment failed"));
     BOOST_REQUIRE(context.getInterpreter().execute("second.name", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "second!");
 

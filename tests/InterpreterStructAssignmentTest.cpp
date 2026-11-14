@@ -91,11 +91,11 @@ BOOST_AUTO_TEST_CASE(named_roots_copy_nested_fields_and_preserve_shared_referenc
             InterpreterContext context(contextEvaluator);
             const auto execute = [&](const NomadString& source) {
                 const auto success = context.getInterpreter().execute(source, context);
-                BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : source));
+                BOOST_REQUIRE_MESSAGE(success, (context.getFirstError() ? context.getFirstError()->message : source));
             };
             const auto integerResult = [&](const NomadString& source, NomadInteger expected) {
                 const auto success = context.getInterpreter().execute(source, context);
-                BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : source));
+                BOOST_REQUIRE_MESSAGE(success, (context.getFirstError() ? context.getFirstError()->message : source));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == expected);
             };
             execute("root = new AssignmentRoot\nroot.leaf.number = 29\nsource = new AssignmentLeaf");
@@ -152,7 +152,7 @@ BOOST_AUTO_TEST_CASE(frame_updates_preserve_rhs_sibling_changes_and_original_cal
         InterpreterContext nested(nestedEvaluator, *callable);
         const auto* source = callable->getClassType() == nullptr ? "local.sibling = 71" : "this.sibling = 71";
         const auto success = nested.getInterpreter().execute(source, nested);
-        BOOST_REQUIRE_MESSAGE(success, (nested.getError() ? *nested.getError() : source));
+        BOOST_REQUIRE_MESSAGE(success, (nested.getFirstError() ? nested.getFirstError()->message : source));
         machine->setIntegerResult(43);
     }, {}, runtime.getIntegerType(), "");
     const auto inspectId = runtime.registerNativeFunction("inspectAssignmentFrame", [&](VirtualMachine* machine) {
@@ -182,7 +182,7 @@ BOOST_AUTO_TEST_CASE(frame_updates_preserve_rhs_sibling_changes_and_original_cal
             "value.leaf.number = 31\nlocal.leaf.number = changeAssignmentSibling" :
             "this.leaf.number = changeAssignmentSibling";
         const auto success = context.getInterpreter().execute(source, context);
-        BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : source));
+        BOOST_REQUIRE_MESSAGE(success, (context.getFirstError() ? context.getFirstError()->message : source));
         BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 43);
         const auto* sibling = callable->getClassType() == nullptr ? "local.sibling" : "this.sibling";
         BOOST_REQUIRE(context.getInterpreter().execute(sibling, context));
@@ -249,7 +249,7 @@ BOOST_AUTO_TEST_CASE(empty_receiver_writes_preserve_effects_without_storage_poin
         context.setReceiverProperty(property->getId(), emptyValue);
         context.setReceiverProperty("empty", emptyValue);
         const auto success = context.getInterpreter().execute("this.empty = makeEmptyAssignment", context);
-        BOOST_REQUIRE_MESSAGE(success, (context.getError() ? *context.getError() : ""));
+        BOOST_REQUIRE_MESSAGE(success, (context.getFirstError() ? context.getFirstError()->message : ""));
         BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
         BOOST_TEST(context.getResult()->getType()->getTypeName() == "EmptyAssignment");
     }, {}, runtime.getVoidType(), "");
@@ -315,8 +315,8 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
                 field->copyCount = 0;
                 field->failCopyAt = failAt;
                 BOOST_TEST(!context.getInterpreter().execute("root.pair = source", context));
-                BOOST_REQUIRE(context.getError() != nullptr);
-                BOOST_TEST(context.getError()->find("Assignment copy failed") != NomadString::npos);
+                BOOST_REQUIRE(context.getFirstError().has_value());
+                BOOST_TEST(context.getFirstError()->message.find("Assignment copy failed") != NomadString::npos);
                 BOOST_TEST(context.getResult() == nullptr);
                 BOOST_TEST(context.getVariableStorage("root")[0].getStringValue() == "old first");
                 BOOST_TEST(context.getVariableStorage("root")[1].getStringValue() == "old second");
@@ -410,9 +410,9 @@ BOOST_AUTO_TEST_CASE(stored_field_writes_do_not_copy_unrelated_fields) {
             interpreter.setProperty(*root, storage, "leaf.number", number);
             interpreter.setProperty(*leaf, storage.first(leaf->getSize()), numberId, number);
             BOOST_REQUIRE_MESSAGE(interpreter.execute("root.leaf.number = 41", context),
-                (context.getError() ? *context.getError() : ""));
+                (context.getFirstError() ? context.getFirstError()->message : ""));
             BOOST_REQUIRE_MESSAGE(interpreter.execute("holder.value.leaf.number = 53", context),
-                (context.getError() ? *context.getError() : ""));
+                (context.getFirstError() ? context.getFirstError()->message : ""));
             BOOST_TEST(reference->copyCount == 0U);
             BOOST_TEST(storage[0].getIntegerValue() == 41);
             BOOST_TEST(storage[2].getIntegerValue() == 29);
@@ -468,7 +468,7 @@ BOOST_AUTO_TEST_CASE(assignments_rebind_struct_roots_and_retain_object_and_tempo
         order.push_back("right");
         if (!duringRight.empty()) {
             BOOST_REQUIRE_MESSAGE(activeContext->getInterpreter().execute(duringRight, *activeContext),
-                (activeContext->getError() ? *activeContext->getError() : ""));
+                (activeContext->getFirstError() ? activeContext->getFirstError()->message : ""));
         }
         if (clearRoot) {
             activeContext->clearVariableValue("root");
@@ -495,7 +495,7 @@ BOOST_AUTO_TEST_CASE(assignments_rebind_struct_roots_and_retain_object_and_tempo
             activeContext = &context;
             const auto execute = [&](const NomadString& source) {
                 BOOST_REQUIRE_MESSAGE(interpreter.execute(source, context),
-                    (context.getError() ? *context.getError() : source));
+                    (context.getFirstError() ? context.getFirstError()->message : source));
             };
             execute("root = new AssignmentRoot\nholder = new AssignmentHolder\nsaved = holder");
             duringRight = "root = new AssignmentRoot\nroot.sibling = 71";
@@ -506,16 +506,16 @@ BOOST_AUTO_TEST_CASE(assignments_rebind_struct_roots_and_retain_object_and_tempo
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 71);
             duringRight = "root = 5";
             BOOST_TEST(!interpreter.execute("root.leaf.number = assignmentRight", context));
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("changed type") != NomadString::npos);
+            BOOST_REQUIRE(context.getFirstError().has_value());
+            BOOST_TEST(context.getFirstError()->message.find("changed type") != NomadString::npos);
             BOOST_TEST(context.getResult() == nullptr);
             BOOST_TEST(context.getVariableValue("root")->getIntegerValue() == 5);
             duringRight = "";
             clearRoot = true;
             execute("root = new AssignmentRoot");
             BOOST_TEST(!interpreter.execute("root.leaf.number = assignmentRight", context));
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("not been assigned") != NomadString::npos);
+            BOOST_REQUIRE(context.getFirstError().has_value());
+            BOOST_TEST(context.getFirstError()->message.find("not been assigned") != NomadString::npos);
             BOOST_TEST(context.getVariableType("root") == nullptr);
             clearRoot = false;
             duringRight = "holder = new AssignmentHolder";
@@ -533,8 +533,8 @@ BOOST_AUTO_TEST_CASE(assignments_rebind_struct_roots_and_retain_object_and_tempo
             BOOST_TEST(order[1] == "right");
             failRight = true;
             BOOST_TEST(!interpreter.execute("(makeAssignmentTemporary).leaf.number = assignmentRight", context));
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("Assignment RHS failed") != NomadString::npos);
+            BOOST_REQUIRE(context.getFirstError().has_value());
+            BOOST_TEST(context.getFirstError()->message.find("Assignment RHS failed") != NomadString::npos);
             BOOST_TEST(context.getResult() == nullptr);
             failRight = false;
         }

@@ -102,8 +102,8 @@ struct LogConfigurationFixture {
         const auto text = "fun " + name + " savedSink:" + savedSinkType + "\n" + source + "\nend\n";
         compiler->registerSources(&context, {{{name + "Source", {name + ".nomad", text}}}, {}});
         const auto success = compiler->compileFunctions(&context);
-        const auto* error = context.getFirstError();
-        const auto message = error == nullptr ? NomadString("Unknown compilation error") : error->message;
+        const auto error = context.getFirstError();
+        const auto message = error.has_value() ? error->message : NomadString("Unknown compilation error");
         BOOST_REQUIRE_MESSAGE(success, message);
         return runtime.getFunctionId(name);
     }
@@ -582,8 +582,8 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_file_operations_on_console_sinks_and_sink_
         ) + operation + "\nend\n";
         fileCompiler->registerSources(&fileContext, {{{name + "FileSource", {name + "-file.nomad", fileSource}}}, {}});
         const auto succeeded = fileCompiler->compileFunctions(&fileContext);
-        const auto* error = fileContext.getFirstError();
-        BOOST_TEST_CONTEXT((error == nullptr ? "File operations compiled successfully" : error->message)) {
+        const auto error = fileContext.getFirstError();
+        BOOST_TEST_CONTEXT((error.has_value() ? error->message : "File operations compiled successfully")) {
             BOOST_TEST(succeeded);
             BOOST_TEST(!fileContext.hasError());
         }
@@ -604,8 +604,8 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_file_operations_on_console_sinks_and_sink_
             compiler->registerSources(&context, {{{name + "Source", {name + ".nomad", source}}}, {}});
             const auto shouldSucceed = parameterType == actualType;
             const auto succeeded = compiler->compileFunctions(&context);
-            const auto* error = context.getFirstError();
-            BOOST_TEST_CONTEXT((error == nullptr ? "Sink argument compiled successfully" : error->message)) {
+            const auto error = context.getFirstError();
+            BOOST_TEST_CONTEXT((error.has_value() ? error->message : "Sink argument compiled successfully")) {
                 BOOST_TEST(succeeded == shouldSucceed);
                 BOOST_TEST(context.hasError() == !shouldSucceed);
             }

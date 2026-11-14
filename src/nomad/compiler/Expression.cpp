@@ -149,7 +149,7 @@ InterpreterValue Expression::evaluateAssignment(InterpreterContext&, const Expre
 InterpreterValue Expression::evaluate(InterpreterContext& context) const {
     const auto guard = context.beginEvaluation();
     if (context.hasError()) {
-        raiseException(*context.getError());
+        raiseException(context.getFirstError()->message);
     }
     if (isParsed()) {
         return InterpreterValue(m_type, m_value);
@@ -159,7 +159,7 @@ InterpreterValue Expression::evaluate(InterpreterContext& context) const {
     }
     auto value = onEvaluate(context);
     if (context.hasError()) {
-        raiseException(*context.getError());
+        raiseException(context.getFirstError()->message);
     }
     if (!value.getType()->sameType(m_type)) {
         raiseException("Interpreter expression produced a value with an unexpected type");
@@ -1580,7 +1580,7 @@ bool FormatStringLiteral::parsePlaceholders(
 
     const auto parsed = parseFormatTemplate(sourceContent);
     for (const auto& diagnostic : parsed.diagnostics) {
-        context->reportError(diagnostic.message, function->getPath(), getLine(), getColumn() + 2 + diagnostic.offset);
+        context->addError(diagnostic.message, function->getPath(), getLine(), getColumn() + 2 + diagnostic.offset);
     }
     if (!parsed.diagnostics.empty()) {
         return false;
@@ -1657,7 +1657,7 @@ bool FormatStringLiteral::parsePlaceholders(
             return false;
         }
         if (!tokens.nextLine()) {
-            context->reportError("Empty expression in format string", function->getPath(), getLine(), column);
+            context->addError("Empty expression in format string", function->getPath(), getLine(), column);
             return false;
         }
         auto expression = parser::parseExpression(context, expressionFunction, &tokens);
@@ -1700,7 +1700,7 @@ void FormatStringLiteral::onResolve(CompilerContext* context, ScriptCallableBase
         const auto* expressionFunction = context->getRuntime()->getScriptCallable(placeholder.functionId);
         const auto* returnType = expressionFunction->getReturnType();
         if (returnType != nullptr && returnType->isVoid()) {
-            context->reportError("Format string expression must return a value", function->getPath(),
+            context->addError("Format string expression must return a value", function->getPath(),
                 getLine(), placeholder.column);
         }
     }

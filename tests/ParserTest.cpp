@@ -203,7 +203,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_parse_errors_with_location)
 
     BOOST_TEST(!compiled);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
-    const auto* error = context.getFirstError();
+    const auto error = context.getFirstError();
     BOOST_TEST(error->message == "Expected ')'");
     BOOST_TEST(error->sourceName == "broken.nomad");
     BOOST_TEST(error->line == 2);
@@ -217,13 +217,13 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_parse_errors)
     InterpreterContext context(contextEvaluator);
 
     BOOST_TEST(!context.getInterpreter().execute("score = (1 + 2", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Expected ')'");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Expected ')'");
     BOOST_TEST(context.getVariableValue("score") == nullptr);
 
     BOOST_TEST(!context.getInterpreter().execute("1 +", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unexpected end of line");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unexpected end of line");
 
     BOOST_TEST(context.getInterpreter().execute("score = 3", context));
     BOOST_TEST(!context.hasError());
@@ -250,8 +250,8 @@ BOOST_AUTO_TEST_CASE(compiler_context_reports_at_tokenizer_position)
     BOOST_REQUIRE(tokens.nextLine());
     BOOST_REQUIRE(tokens.nextLine());
     (void)tokens.next();
-    context.reportWarning("Warning at tokenizer", &tokens);
-    context.reportError("Error at tokenizer", &tokens);
+    context.addWarning("Warning at tokenizer", &tokens);
+    context.addError("Error at tokenizer", &tokens);
 
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
     for (const auto& diagnostic : context.getDiagnostics()) {

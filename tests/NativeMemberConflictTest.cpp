@@ -26,7 +26,7 @@ BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
     }}}, {}});
 
     BOOST_TEST(!compiler->compileFunctions(&context));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("name.length") != NomadString::npos);
     BOOST_TEST(context.getFirstError()->message.find("conflicts with an existing identifier") != NomadString::npos);
 }
@@ -38,12 +38,12 @@ BOOST_AUTO_TEST_CASE(interpreter_rejects_creating_unknown_qualified_identifier) 
     InterpreterContext interpreter(interpreterEvaluator);
 
     BOOST_TEST(!interpreter.getInterpreter().execute("name.length = 10", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_CHECK_MESSAGE(interpreter.getError()->find("name.length") != NomadString::npos, *interpreter.getError());
-    BOOST_CHECK_MESSAGE(interpreter.getError()->find("Cannot assign") != NomadString::npos, *interpreter.getError());
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_CHECK_MESSAGE(interpreter.getFirstError()->message.find("name.length") != NomadString::npos, interpreter.getFirstError()->message);
+    BOOST_CHECK_MESSAGE(interpreter.getFirstError()->message.find("Cannot assign") != NomadString::npos, interpreter.getFirstError()->message);
     BOOST_TEST(interpreter.getVariableValue("name.length") == nullptr);
     const auto succeeded = interpreter.getInterpreter().execute("name = \"J-F\"", interpreter);
-    const auto diagnostic = interpreter.getError() ? *interpreter.getError() : NomadString{};
+    const auto diagnostic = interpreter.getFirstError() ? interpreter.getFirstError()->message : NomadString{};
     BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
 }
 

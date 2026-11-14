@@ -500,7 +500,7 @@ BOOST_AUTO_TEST_CASE(frame_context_receivers_survive_native_receiver_overrides_a
                 BOOST_CHECK_THROW(static_cast<void>(context.getCallable()), NomadBug);
                 BOOST_CHECK_THROW(static_cast<void>(std::as_const(context).getCallable()), NomadBug);
                 BOOST_TEST(!interpreter.execute("0", context));
-                BOOST_REQUIRE(context.getError() != nullptr);
+                BOOST_REQUIRE(context.hasError());
                 BOOST_TEST(context.getDiagnostics()[0].sourceName == metadata->getPath());
                 BOOST_TEST(context.getResult() == nullptr);
                 active->restoreExecutionState(current);
@@ -659,7 +659,7 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
                 InterpreterContext context(interpreter);
                 const auto execute = [&](const NomadString& source) {
                     BOOST_REQUIRE_MESSAGE(interpreter.execute(source, context),
-                        (context.getError() ? *context.getError() : source));
+                        (context.getFirstError().has_value() ? context.getFirstError()->message : source));
                 };
                 execute("owner = makeAccessorMethodOwner\nsource = makeAccessorMethodValue\nowner.value = source\ncopy = owner.value");
                 const auto wrapper = interpreter.createObjectReceiver(*owner, context.getVariableValue("owner")->getObjectValue());
@@ -684,11 +684,11 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
                 BOOST_TEST(retained->getStorage()[0].getIntegerValue() == 7);
                 BOOST_TEST(!interpreter.execute("owner.readOnly = source", context));
-                BOOST_REQUIRE(context.getError() != nullptr);
-                BOOST_TEST(context.getError()->find("read-only") != NomadString::npos);
+                BOOST_REQUIRE(context.hasError());
+                BOOST_TEST(context.getFirstError()->message.find("read-only") != NomadString::npos);
                 BOOST_TEST(!interpreter.execute("owner.writeOnly", context));
-                BOOST_REQUIRE(context.getError() != nullptr);
-                BOOST_TEST(context.getError()->find("write-only") != NomadString::npos);
+                BOOST_REQUIRE(context.hasError());
+                BOOST_TEST(context.getFirstError()->message.find("write-only") != NomadString::npos);
                 BOOST_CHECK_THROW(wrapper->setProperty(readOnlyId, *retained), std::invalid_argument);
                 BOOST_CHECK_THROW(static_cast<void>(wrapper->getProperty(writeOnlyId)), std::invalid_argument);
                 BOOST_CHECK_THROW(wrapper->setProperty(propertyId, number), std::invalid_argument);
@@ -810,8 +810,8 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
             context.setVariable("replacement", type, replacement.getStorage());
             failSetter = true;
             BOOST_TEST(!interpreter.execute("owner.value = replacement", context));
-            BOOST_REQUIRE(context.getError() != nullptr);
-            BOOST_TEST(context.getError()->find("Accessor setter failed") != NomadString::npos);
+            BOOST_REQUIRE(context.hasError());
+            BOOST_TEST(context.getFirstError()->message.find("Accessor setter failed") != NomadString::npos);
             BOOST_TEST(context.getResult() == nullptr);
             const auto changed = receiver->getProperty(backingId);
             BOOST_TEST(changed.getStorage()[0].getStringValue() == "new first");

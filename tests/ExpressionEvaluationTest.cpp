@@ -10,7 +10,6 @@
 #include <nomad/interpreter/Interpreter.hpp>
 
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <optional>
@@ -82,8 +81,8 @@ BOOST_AUTO_TEST_CASE(expression_values_do_not_use_the_published_context_result)
     BOOST_TEST(!context.hasError());
     BOOST_TEST(runtime.getInstructions().size() == instructionsBefore);
     BOOST_TEST(!interpreter.execute("ast.fail", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Expected AST failure");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Expected AST failure");
     BOOST_TEST(context.getResult() == nullptr);
 }
 
@@ -205,7 +204,7 @@ BOOST_AUTO_TEST_CASE(expression_resolution_rejects_invalid_operator_types)
     );
 
     BOOST_TEST(!expression.resolve(&compilerContext, nullptr));
-    BOOST_REQUIRE(compilerContext.getFirstError() != nullptr);
+    BOOST_REQUIRE(compilerContext.getFirstError().has_value());
     BOOST_TEST(compilerContext.getFirstError()->message.starts_with("Invalid binary operator '+'"));
 
     BOOST_CHECK_THROW(expression.evaluate(context), AstException);

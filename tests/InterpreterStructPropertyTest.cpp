@@ -11,7 +11,6 @@
 
 #include <array>
 #include <span>
-#include <utility>
 #include <vector>
 
 using namespace nomad;
@@ -104,7 +103,7 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
             for (const auto* source : {"root.leaf.number", "holder.value.leaf.number", "(makeReadOuter).leaf.number",
                 "(makeReadHolder).value.leaf.number", "readLeafNumber root.leaf"}) {
                 const auto evaluated = context.getInterpreter().execute(source, context);
-                BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
+                BOOST_REQUIRE_MESSAGE(evaluated, (context.getFirstError() ? context.getFirstError()->message : source));
                 BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 17);
             }
             BOOST_REQUIRE(context.getInterpreter().execute("root.leaf.owner.number", context));
@@ -130,7 +129,7 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
             for (const auto* source : {"root.empty", "root.leaf.empty", "holder.empty", "(new ReadEmptyRoot).empty",
                 "(makeReadOuter).empty"}) {
                 const auto evaluated = context.getInterpreter().execute(source, context);
-                BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
+                BOOST_REQUIRE_MESSAGE(evaluated, (context.getFirstError() ? context.getFirstError()->message : source));
                 BOOST_TEST(context.getResult()->getType() == runtime.getTypeByName("ReadEmpty"));
                 BOOST_TEST(context.getResult()->getStorage().empty());
                 BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
@@ -208,11 +207,11 @@ BOOST_AUTO_TEST_CASE(reads_support_live_parameters_locals_and_borrowed_struct_re
             ? std::array<const char*, 3>{"this.leaf.number", "this.leaf.owner.number", "this.leaf.text"}
             : std::array<const char*, 3>{"value.leaf.number", "local.leaf.owner.number", "value.leaf.text"}) {
             const auto evaluated = context.getInterpreter().execute(source, context);
-            BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
+            BOOST_REQUIRE_MESSAGE(evaluated, (context.getFirstError() ? context.getFirstError()->message : source));
         }
         BOOST_TEST(context.getResult()->getValue().getStringValue() == "frame property");
         const auto copied = context.getInterpreter().execute(isReceiver ? "copy = this.leaf" : "copy = local.leaf", context);
-        BOOST_REQUIRE_MESSAGE(copied, (context.getError() ? *context.getError() : ""));
+        BOOST_REQUIRE_MESSAGE(copied, (context.getFirstError() ? context.getFirstError()->message : ""));
         BOOST_TEST(context.getVariableStorage("copy")[0].getIntegerValue() == 17);
         BOOST_REQUIRE(context.getInterpreter().execute(isReceiver ? "this.empty" : "value.empty", context));
         BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
@@ -271,7 +270,7 @@ BOOST_AUTO_TEST_CASE(empty_struct_receiver_reads_omit_storage_pointers_but_prese
         BOOST_TEST(context.getReceiverStorage().data() == nullptr);
         for (const auto* source : {"this", "this.empty"}) {
             const auto evaluated = context.getInterpreter().execute(source, context);
-            BOOST_REQUIRE_MESSAGE(evaluated, (context.getError() ? *context.getError() : source));
+            BOOST_REQUIRE_MESSAGE(evaluated, (context.getFirstError() ? context.getFirstError()->message : source));
             BOOST_TEST(context.getResult()->getStorage().empty());
             BOOST_TEST(context.getResult()->getStorage().data() == nullptr);
             BOOST_TEST(context.getResult()->getType()->isStruct());

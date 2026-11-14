@@ -406,8 +406,8 @@ BOOST_AUTO_TEST_CASE(native_function_expression_faults_propagate_but_execute_rep
     BOOST_TEST(!context.getInterpreter().execute("fail", context));
 
     BOOST_TEST(context.hasError());
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "NativeFunction failed");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "NativeFunction failed");
     BOOST_TEST(context.getResult() == nullptr);
 }
 
@@ -448,13 +448,13 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
     BOOST_TEST(!context.hasError());
 
     BOOST_TEST(!context.getInterpreter().execute("acceptCallback fun", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Inline `fun` callbacks are not supported by the interpreter");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Inline `fun` callbacks are not supported by the interpreter");
     BOOST_TEST((receivedCallbackId == callbackFunctionId));
 
     BOOST_TEST(!context.getInterpreter().execute("acceptCallback then", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Inline `then` callbacks are not supported by the interpreter");
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Inline `then` callbacks are not supported by the interpreter");
     BOOST_TEST((receivedCallbackId == callbackFunctionId));
 }
 

@@ -45,7 +45,7 @@ bool readCallableBody(
         }
         sourceLines.push_back(takeSourceLine(tokens));
     }
-    context->reportError("Unexpected end of file in class callable: expected 'end'", tokens);
+    context->addError("Unexpected end of file in class callable: expected 'end'", tokens);
     return false;
 }
 
@@ -54,7 +54,7 @@ bool readMemberName(CompilerContext* context, Tokenizer* tokens, NomadString& na
         return false;
     }
     if (name.find('.') != NomadString::npos || context->getRuntime()->getKeywordId(name).isValid()) {
-        context->reportError("Class member names must be unqualified, non-reserved identifiers", tokens);
+        context->addError("Class member names must be unqualified, non-reserved identifiers", tokens);
         return false;
     }
     return true;
@@ -85,7 +85,7 @@ std::unique_ptr<ClassMemberDeclaration> parseMember(
             return nullptr;
         }
         if (kind == ClassMemberKind::Method && name == "init") {
-            context->reportError("Use 'init' without 'fun' to declare a constructor", tokens);
+            context->addError("Use 'init' without 'fun' to declare a constructor", tokens);
             return nullptr;
         }
     }
@@ -97,14 +97,14 @@ std::unique_ptr<ClassMemberDeclaration> parseMember(
             return nullptr;
         }
         if (tokens->endOfLine()) {
-            context->reportError("Class field '" + name + "' requires an initializer", tokens);
+            context->addError("Class field '" + name + "' requires an initializer", tokens);
             return nullptr;
         }
         auto depth = parser::countBlockOpenings(context->getCompiler(), tokens);
         sourceLines.push_back(takeSourceLine(tokens));
         while (depth > 0) {
             if (!tokens->nextLine()) {
-                context->reportError("Unexpected end of file in class field initializer: expected 'end'", tokens);
+                context->addError("Unexpected end of file in class field initializer: expected 'end'", tokens);
                 return nullptr;
             }
             if (tokens->is(TokenType::Identifier) && tokens->is("end")) {
@@ -147,7 +147,7 @@ bool parseClassDefinition(
         return false;
     }
     if (context->getRuntime()->getKeywordId(name).isValid()) {
-        context->reportError("Class name '" + name + "' is a reserved keyword", tokens);
+        context->addError("Class name '" + name + "' is a reserved keyword", tokens);
         return false;
     }
     if (!parser::expectEndOfLine(context, function, tokens)) {
@@ -172,7 +172,7 @@ bool parseClassDefinition(
                     if (existing->getKind() == ClassMemberKind::Field || member->getKind() == ClassMemberKind::Field ||
                         std::ranges::equal(existing->getParameters(), member->getParameters(),
                             [](const auto& first, const auto& second) { return first.type == second.type; })) {
-                        context->reportError(
+                        context->addError(
                             "Duplicate class member '" + member->getName() + "'",
                             tokens->getSourceName(), member->getLine(), member->getColumn()
                         );
@@ -183,7 +183,7 @@ bool parseClassDefinition(
             members.push_back(std::move(member));
         }
     }
-    context->reportError("Unexpected end of file in class '" + name + "': expected 'end'", tokens);
+    context->addError("Unexpected end of file in class '" + name + "': expected 'end'", tokens);
     return false;
 }
 
@@ -200,7 +200,7 @@ bool preDeclareClass(
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown ||
         context->getRuntime()->getTypeManager().registerClass(name, mode).isInvalid()) {
-        context->reportError("Cannot declare class '" + name + "': identifier is already declared or invalid", tokens);
+        context->addError("Cannot declare class '" + name + "': identifier is already declared or invalid", tokens);
         return false;
     }
     return true;
@@ -220,7 +220,7 @@ bool registerMemberSignatures(
     const auto* registeredType = runtime->getTypeByName(name);
     const auto* type = registeredType != nullptr ? registeredType->asClassType() : nullptr;
     if (type == nullptr) {
-        context->reportError("Class '" + name + "' has no registered class type", tokens);
+        context->addError("Class '" + name + "' has no registered class type", tokens);
         return false;
     }
     const auto& initializerName = type->getInitializerName();
@@ -230,7 +230,7 @@ bool registerMemberSignatures(
     for (const auto& member : members) {
         for (const auto& parameter : member->getParameters()) {
             if (parameter.name == "this") {
-                context->reportError("'this' names the class receiver and cannot be a parameter",
+                context->addError("'this' names the class receiver and cannot be a parameter",
                     tokens->getSourceName(), member->getLine(), member->getColumn());
                 return false;
             }
@@ -252,7 +252,7 @@ bool registerMemberSignatures(
             );
         }
         if (id.isInvalid()) {
-            context->reportError("Cannot register class member '" + member->getName() + "'",
+            context->addError("Cannot register class member '" + member->getName() + "'",
                 tokens->getSourceName(), member->getLine(), member->getColumn());
             return false;
         }
@@ -273,7 +273,7 @@ bool registerMemberSignatures(
             type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
-            context->reportError("Cannot register class initializer", tokens);
+            context->addError("Cannot register class initializer", tokens);
             return false;
         }
         auto* callable = runtime->getScriptCallable(id);
@@ -286,7 +286,7 @@ bool registerMemberSignatures(
             type->getId(), {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
-            context->reportError("Cannot register default class constructor", tokens);
+            context->addError("Cannot register default class constructor", tokens);
             return false;
         }
         runtime->getScriptCallable(id)->setHub(context->getHub());
@@ -335,7 +335,7 @@ bool parseMemberBodies(
         const auto id = findMemberCallable(type, *member);
         auto* callable = context->getRuntime()->getScriptCallable(id);
         if (callable == nullptr) {
-            context->reportError("Class member '" + member->getName() + "' has no registered signature",
+            context->addError("Class member '" + member->getName() + "' has no registered signature",
                 source->getSourceName(), member->getLine(), member->getColumn());
             return false;
         }
@@ -455,7 +455,7 @@ std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptC
     const auto line = tokens->getLineIndex();
     const auto column = tokens->getColumnIndex();
     if (context->currentBodyEndsAtEnd() || !context->isFunctionRoot(function)) {
-        context->reportError("Classes may only be declared at script level or inside a hub", tokens);
+        context->addError("Classes may only be declared at script level or inside a hub", tokens);
         return nullptr;
     }
     NomadString name;
@@ -464,13 +464,13 @@ std::unique_ptr<Statement> parseClassStatement(CompilerContext* context, ScriptC
         return nullptr;
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
-        context->reportError("Cannot declare class '" + name + "': identifier is already declared", tokens);
+        context->addError("Cannot declare class '" + name + "': identifier is already declared", tokens);
         return nullptr;
     }
     const auto* registeredType = context->getRuntime()->getTypeByName(name);
     const auto* type = registeredType != nullptr ? registeredType->asClassType() : nullptr;
     if (type == nullptr) {
-        context->reportError("Class '" + name + "' has no registered class type", tokens);
+        context->addError("Class '" + name + "' has no registered class type", tokens);
         return nullptr;
     }
     if (!parseMemberBodies(context, type, tokens, members)) {

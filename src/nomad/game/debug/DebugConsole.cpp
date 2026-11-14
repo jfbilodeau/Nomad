@@ -1666,8 +1666,9 @@ void DebugConsole::executeNativeFunction() {
 
     ExecutionContextGuard contextGuard(m_game, getSelectedScene(), getSelectedEntity());
     if (!m_interpreter.execute(nativeFunction, m_interpreterContext)) {
-        const auto* error = m_interpreterContext.getError();
-        m_consoleEntries.push_back({true, error != nullptr ? *error : "NativeFunction failed"});
+        const auto error = m_interpreterContext.getFirstError();
+        const auto& errorMessage = error.has_value() ? error->message : "Unknown error";
+        m_consoleEntries.push_back({true, errorMessage});
     } else if (const auto* result = m_interpreterContext.getResult(); result != nullptr) {
         if (!result->getType()->isVoid()) {
             m_consoleEntries.push_back({

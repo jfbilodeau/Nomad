@@ -1375,7 +1375,7 @@ BOOST_AUTO_TEST_CASE(initializer_diagnostics_keep_the_original_source)
         {"b", {"b.nomad", "hub second\nvalue = missingValue\nend"}}
     }, {}});
     BOOST_TEST(!compiler->compileScripts(&context));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->sourceName == "b.nomad");
     BOOST_TEST(context.getFirstError()->line == 2U);
 }

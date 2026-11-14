@@ -8,7 +8,6 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/InstructionDump.hpp>
-#include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/ValueType.hpp>
@@ -219,7 +218,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_dynamic_converters_receive_complete_storage_no
             InterpreterContext context(interpreter);
             context.setVariable("wide", wide, values);
             context.setVariable("empty", empty, std::span<const RuntimeValue>{});
-            const auto dynamic = interpreter.formatString("{wide}|{empty}", context, "dynamic.nomad", 1, 1);
+            const auto dynamic = interpreter.formatString(context, "{wide}|{empty}", "dynamic.nomad", 1, 1);
             BOOST_TEST(dynamic.text == "11:42|empty");
             BOOST_TEST(dynamic.diagnostics.empty());
             BOOST_CHECK_EXCEPTION(
@@ -385,7 +384,7 @@ BOOST_AUTO_TEST_CASE(conversion_failures_release_owned_dynamic_getter_values_in_
         BOOST_CHECK_THROW(static_cast<void>(compiled.format(machine.get())), NomadException);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_CHECK_THROW(
-            static_cast<void>(interpreter.formatString("{throwingFormatValue}", context, "conversion.nomad", 1, 1)),
+            static_cast<void>(interpreter.formatString(context, "{throwingFormatValue}", "conversion.nomad", 1, 1)),
             NomadException
         );
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
@@ -420,14 +419,14 @@ BOOST_AUTO_TEST_CASE(partial_dynamic_getter_failures_release_owned_outputs_in_al
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
         BOOST_CHECK_THROW(
-            static_cast<void>(interpreter.formatString("{partialGetterValue}", context, "getter.nomad", 1, 1)),
+            static_cast<void>(interpreter.formatString(context, "{partialGetterValue}", "getter.nomad", 1, 1)),
             NomadException
         );
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
         BOOST_TEST(!interpreter.execute("partialGetterValue", context));
-        BOOST_REQUIRE(context.getError() != nullptr);
-        BOOST_TEST(context.getError()->find("Expected partial getter failure") != NomadString::npos);
+        BOOST_REQUIRE(context.getFirstError().has_value());
+        BOOST_TEST(context.getFirstError()->message.find("Expected partial getter failure") != NomadString::npos);
         BOOST_TEST(context.getResult() == nullptr);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -463,14 +462,14 @@ BOOST_AUTO_TEST_CASE(dynamic_format_evaluation_clears_partial_results_and_preser
         if (fail) {
             BOOST_CHECK_THROW(
                 static_cast<void>(interpreter.formatString(
-                    "{partialEvaluationValue}", context, "evaluation.nomad", 1, 1
+                    context, "{partialEvaluationValue}", "evaluation.nomad", 1, 1
                 )),
                 NomadException
             );
             BOOST_TEST(context.getResult() == nullptr);
         } else {
             const auto result = interpreter.formatString(
-                "{partialEvaluationValue}", context, "evaluation.nomad", 1, 1
+                context, "{partialEvaluationValue}", "evaluation.nomad", 1, 1
             );
             BOOST_TEST(result.text == "evaluation output");
             BOOST_TEST(context.getResult() == nullptr);
@@ -592,8 +591,8 @@ BOOST_AUTO_TEST_CASE(interpreter_struct_formatting_handles_empty_values_and_reta
     machine->setIntegerIntermediate(43);
     const auto instructionsBefore = runtime.getInstructions().size();
     const auto result = interpreter.formatString(
-        "{value} {empty} {value.number + 1} {value.missing} {value.text}",
         context,
+        "{value} {empty} {value.number + 1} {value.missing} {value.text}",
         "struct-format.nomad",
         3,
         5
@@ -739,7 +738,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_structured_errors_preserve_markers_recovery_
     const Interpreter interpreter(*machine);
     InterpreterContext context(interpreter);
     const NomadString format{"{}|{ \t }|{missing_one}|{missing2}|{\"quoted\"}|{"};
-    const auto result = interpreter.formatString(format, context, "categories.nomad", 4, 7);
+    const auto result = interpreter.formatString(context, format, "categories.nomad", 4, 7);
     BOOST_TEST(result.text ==
         "{empty expression}|{empty expression}|{invalid identifier: 'missing_one'}|"
         "{invalid identifier: 'missing2'}|quoted|{missing `}`}");
@@ -786,7 +785,7 @@ BOOST_AUTO_TEST_CASE(interpreter_format_entry_point_preserves_strict_placeholder
     BOOST_REQUIRE(interpreter.execute("score = 10", context));
     const auto instructionsBefore = runtime.getInstructions().size();
     const NomadString format{"value {score + 1} invalid {score = 99} tail {score}"};
-    const auto result = interpreter.formatString(format, context, "bridge.nomad", 4, 7);
+    const auto result = interpreter.formatString(context, format, "bridge.nomad", 4, 7);
     const auto compatibility = formatDynamicString(format, context, "bridge.nomad", 4, 7);
     BOOST_TEST(result.text == compatibility.text);
     BOOST_TEST(result.text.starts_with("value 11 invalid {"));
@@ -864,8 +863,8 @@ BOOST_AUTO_TEST_CASE(dynamic_format_source_lines_do_not_change_expression_shape_
     context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
     for (const auto line : {NomadIndex{1}, NomadIndex{1000000000}, NomadIndex{0}, NOMAD_INVALID_INDEX}) {
         const auto nested = interpreter.formatString(
-            "nested {$\"inner {score + 1}\"}",
             context,
+            "nested {$\"inner {score + 1}\"}",
             "origin.nomad",
             line,
             5
@@ -874,7 +873,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_source_lines_do_not_change_expression_shape_
         BOOST_TEST(nested.diagnostics.empty());
         for (const auto* expression : {"1 @", "1 +", "score + true", "1\n2", "\nscore"}) {
             const auto format = NomadString{"before {"} + expression + "} after {score}";
-            const auto result = interpreter.formatString(format, context, "origin.nomad", line, 5);
+            const auto result = interpreter.formatString(context, format, "origin.nomad", line, 5);
             BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1U);
             const auto& diagnostic = result.diagnostics.front();
             BOOST_TEST(diagnostic.sourceName == "origin.nomad");
@@ -917,7 +916,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_retains_one_ordered_error_per_invalid_expres
     NomadString format;
     for (const auto& expression : expressions) {
         const auto placeholder = "{" + expression + "}";
-        const auto result = interpreter.formatString(placeholder, context, "ordered.nomad", 7, 9);
+        const auto result = interpreter.formatString(context, placeholder, "ordered.nomad", 7, 9);
         BOOST_REQUIRE_EQUAL(result.diagnostics.size(), 1U);
         messages.push_back(result.diagnostics.front().message);
         format += placeholder + "|";
@@ -930,7 +929,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_retains_one_ordered_error_per_invalid_expres
     BOOST_TEST(calls == 0);
     const auto successfulOffset = format.size();
     format += "{test.inspectFormat}";
-    const auto result = interpreter.formatString(format, context, "ordered.nomad", 7, 9);
+    const auto result = interpreter.formatString(context, format, "ordered.nomad", 7, 9);
     BOOST_REQUIRE_EQUAL(result.diagnostics.size(), expressions.size());
     NomadString expected;
     auto offset = NomadIndex{0};

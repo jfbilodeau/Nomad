@@ -444,7 +444,7 @@ BOOST_AUTO_TEST_CASE(compilation_does_not_ignore_preexisting_context_errors)
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"broken", {"broken.nomad", "return missing"}}}, {}});
-    context.reportError("Existing error");
+    context.addError("Existing error");
 
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE(context.getDiagnostics().size() == 1U);

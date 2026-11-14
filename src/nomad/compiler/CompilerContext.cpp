@@ -104,6 +104,7 @@ const InterpreterContext* CompilerContext::getInterpreterContext() const {
 
 void CompilerContext::addDiagnostic(const CompilerDiagnostic& diagnostic) {
     m_diagnostics.push_back(diagnostic);
+
     if (diagnostic.severity == CompilerDiagnosticSeverity::Error) {
         ++m_errorCount;
     } else {
@@ -118,11 +119,17 @@ void CompilerContext::addDiagnostics(std::span<const CompilerDiagnostic> diagnos
     }
 }
 
-void CompilerContext::reportError(const NomadStringView message) {
-    report(CompilerDiagnosticSeverity::Error, message, {}, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+void CompilerContext::addError(const NomadStringView message) {
+    report(
+        CompilerDiagnosticSeverity::Error,
+         message, 
+         {}, 
+         NOMAD_INVALID_INDEX, 
+         NOMAD_INVALID_INDEX
+    );
 }
 
-void CompilerContext::reportError(
+void CompilerContext::addError(
     const NomadStringView message,
     const NomadStringView sourceName,
     const NomadIndex line,
@@ -131,25 +138,49 @@ void CompilerContext::reportError(
     report(CompilerDiagnosticSeverity::Error, message, sourceName, line, column);
 }
 
-void CompilerContext::reportError(const NomadStringView message, const Tokenizer* tokens) {
-    report(CompilerDiagnosticSeverity::Error, message, tokens->getSourceName(), tokens->getLineIndex(), tokens->getColumnIndex());
+void CompilerContext::addError(const NomadStringView message, const Tokenizer* tokens) {
+    report(
+        CompilerDiagnosticSeverity::Error,
+        message,
+        tokens->getSourceName(),
+        tokens->getLineIndex(),
+        tokens->getColumnIndex()
+    );
 }
 
-void CompilerContext::reportWarning(const NomadStringView message) {
-    report(CompilerDiagnosticSeverity::Warning, message, {}, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+void CompilerContext::addWarning(const NomadStringView message) {
+    report(
+        CompilerDiagnosticSeverity::Warning,
+        message,
+        {},
+        NOMAD_INVALID_INDEX,
+        NOMAD_INVALID_INDEX
+    );
 }
 
-void CompilerContext::reportWarning(
+void CompilerContext::addWarning(
     const NomadStringView message,
     const NomadStringView sourceName,
     const NomadIndex line,
     const NomadIndex column
 ) {
-    report(CompilerDiagnosticSeverity::Warning, message, sourceName, line, column);
+    report(
+        CompilerDiagnosticSeverity::Warning,
+        message,
+        sourceName,
+        line,
+        column
+    );
 }
 
-void CompilerContext::reportWarning(const NomadStringView message, const Tokenizer* tokens) {
-    report(CompilerDiagnosticSeverity::Warning, message, tokens->getSourceName(), tokens->getLineIndex(), tokens->getColumnIndex());
+void CompilerContext::addWarning(const NomadStringView message, const Tokenizer* tokens) {
+    report(
+        CompilerDiagnosticSeverity::Warning,
+        message,
+        tokens->getSourceName(),
+        tokens->getLineIndex(),
+        tokens->getColumnIndex()
+    );
 }
 
 NomadBoolean CompilerContext::hasError() const {
@@ -172,14 +203,14 @@ std::span<const CompilerDiagnostic> CompilerContext::getDiagnostics() const {
     return m_diagnostics;
 }
 
-const CompilerDiagnostic* CompilerContext::getFirstError() const {
+std::optional<CompilerDiagnostic> CompilerContext::getFirstError() const {
     for (const auto& diagnostic : m_diagnostics) {
         if (diagnostic.severity == CompilerDiagnosticSeverity::Error) {
-            return &diagnostic;
+            return diagnostic;
         }
     }
 
-    return nullptr;
+    return std::nullopt;
 }
 
 void CompilerContext::clearDiagnostics() {
