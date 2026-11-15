@@ -252,8 +252,8 @@ public:
     void setFunctionEnd(const NomadIndex functionEndIndex) { m_functionEndIndex = functionEndIndex; }
     [[nodiscard]] NomadIndex getFunctionEnd() const { return m_functionEndIndex; }
     [[nodiscard]] NomadIndex getFunctionLength() const { return m_functionEndIndex - m_functionStartIndex; }
-    void setMaximumOperandDepth(const NomadIndex depth) { m_maximumOperandDepth = depth; }
-    [[nodiscard]] NomadIndex getMaximumOperandDepth() const { return m_maximumOperandDepth; }
+    void setReservedStackSlots(const NomadIndex slots) { m_reservedStackSlots = slots; }
+    [[nodiscard]] NomadIndex getReservedStackSlots() const { return m_reservedStackSlots; }
 
 protected:
     ScriptCallableBase(
@@ -307,7 +307,7 @@ private:
     NomadIndex m_sourceEndLine = NOMAD_INVALID_INDEX;
     NomadIndex m_functionStartIndex = NOMAD_INVALID_INDEX;
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
-    NomadIndex m_maximumOperandDepth = 0;
+    NomadIndex m_reservedStackSlots = 0;
     VariableMap m_variables;
     NamedReturnVariables m_returnVariables;
     std::vector<Capture> m_captures;

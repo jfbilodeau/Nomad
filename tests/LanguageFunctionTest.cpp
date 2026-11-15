@@ -26,7 +26,7 @@ BOOST_AUTO_TEST_CASE(function_with_parameters_returns_value)
     BOOST_TEST(outcome.integerValue == 30);
 }
 
-BOOST_AUTO_TEST_CASE(maximum_operand_depth_counts_locals_and_pending_call_arguments)
+BOOST_AUTO_TEST_CASE(reserved_stack_slots_count_locals_and_pending_call_arguments)
 {
     LanguageTestFixture fixture;
     fixture.addFunction("main",
@@ -43,10 +43,10 @@ BOOST_AUTO_TEST_CASE(maximum_operand_depth_counts_locals_and_pending_call_argume
     auto& runtime = fixture.getRuntime();
     const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
     // The call pushes its receiver before the arguments.
-    BOOST_TEST(main->getMaximumOperandDepth() == 6);
+    BOOST_TEST(main->getReservedStackSlots() == 6);
 }
 
-BOOST_AUTO_TEST_CASE(script_frames_fault_before_running_when_operand_depth_exceeds_the_stack)
+BOOST_AUTO_TEST_CASE(script_frames_fault_before_running_when_reserved_slots_exceed_the_stack)
 {
     std::string source;
     for (auto index = 0; index < 16; ++index) {

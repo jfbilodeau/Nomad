@@ -232,7 +232,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_return_chain_declared_in_reverse_o
     BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("f0"))->getReturnType() == runtime.getIntegerType());
 }
 
-BOOST_AUTO_TEST_CASE(operand_depth_rejects_control_flow_that_joins_with_different_depths)
+BOOST_AUTO_TEST_CASE(verifier_rejects_control_flow_that_joins_with_different_stack_depths)
 {
     Runtime runtime;
     const auto functionId = runtime.registerScriptFunction("unbalanced", "unbalanced.nomad", "");
@@ -250,7 +250,7 @@ BOOST_AUTO_TEST_CASE(operand_depth_rejects_control_flow_that_joins_with_differen
     compiler->addOpCode(OpCodes::op_return);
     function->setFunctionEnd(runtime.getInstructions().size());
 
-    BOOST_CHECK_THROW(Compiler::computeMaximumOperandDepth(runtime, *function), NomadBug);
+    BOOST_CHECK_THROW(Compiler::computeReservedStackSlots(runtime, *function), NomadBug);
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_reports_recursive_function_without_typed_return)

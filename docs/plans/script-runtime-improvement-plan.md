@@ -76,7 +76,7 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 
 1. Write failing tests first: a struct-typed class field read and write (K1), and a `-0.0` literal (K3).
 2. K1: route struct-typed class fields through storage addressing, so they no longer reach the single-slot field accessors (D1).
-3. K2: a verifier runs before linking, computes the exact peak operand-stack depth of each callable from declared opcode stack effects, checks that control-flow joins agree and that returns leave no operands, and stores the peak on the callable. Script call opcodes carry the callee's peak as a second operand, patched during linking, so the frame-entry check reads the depth from the instruction stream without a callable lookup. Per-push checks stay removed; host-side reservations keep their checks.
+3. K2: a verifier runs before linking, computes the exact number of reserved stack slots for each callable from declared opcode stack effects, checks that control-flow joins agree and that returns leave no operands, and stores the count on the callable. Script call opcodes carry the callee's reserved slot count as a second operand, patched during linking, so the frame-entry check reads it from the instruction stream without a callable lookup. Per-push checks stay removed; host-side reservations keep their checks.
 4. K3: use `std::signbit` to detect negative-zero literals.
 5. K4: bound the `inferTypes` fixed-point loop, and report a diagnostic when the bound is reached.
 
@@ -246,7 +246,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | ID | Priority | Kind | Finding | Evidence | Status | Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | K1 | P1 | correctness | Struct-typed class fields compile to native property get and set ops, but `ScriptObject::getField` and `setField` reject struct-typed fields | `Compiler.cpp`: addPropertyAccess, resolveObjectField; `ScriptObject.cpp`: validateSingleSlotFieldAccess | Script paths pass the K1 repro; direct struct-field fallback now reports an internal error | 3 |
-| K2 | P1 | correctness | No maximum operand-stack depth is computed; the VM relies on debug-only checks | Compiler.cpp: verifyOperandDepths, computeMaximumOperandDepth | Fixed: verifier computes the peak per callable; script call opcodes carry it as an operand and frame entry checks it | 3 |
+| K2 | P1 | correctness | No reserved stack slot count is computed; the VM relies on debug-only checks | Compiler.cpp: verifyReservedStackSlots, computeReservedStackSlots | Fixed: verifier computes the reserved slots per callable; script call opcodes carry the count as an operand and frame entry checks it | 3 |
 | K3 | P2 | correctness | `addLoadFloatValue` compares `value == 0`, so `-0.0` compiles to `+0.0` | `Compiler.cpp`: addLoadFloatValue | from review | 3 |
 | K4 | P3 | robustness | `Compiler::inferTypes` iterates to a fixed point with no iteration cap | `Compiler.cpp`: inferTypes | Fixed: pass count bounded, diagnostic on overflow | 3 |
 | K5 | P3 | redundancy | Call emitters repeat the script and native split and operand setup (addFunctionCallInstruction through addNativeMethodCall) | `Compiler.cpp`: call-emission block | from review | 7 |

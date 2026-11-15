@@ -154,7 +154,7 @@ public:
     NomadIndex addOpCode(InstructionFn opCode) override;
     void addFunctionReturn(const ScriptCallableBase* function);
     void addFunctionEntry(const ScriptCallableBase* function);
-    [[nodiscard]] static NomadIndex computeMaximumOperandDepth(const Runtime& runtime, const ScriptCallableBase& callable);
+    [[nodiscard]] static NomadIndex computeReservedStackSlots(const Runtime& runtime, const ScriptCallableBase& callable);
     void addLoadReceiver(ScriptCallableBase* function, ExpressionTarget target);
     void addStoreParameter(NomadIndex offset, const Type* type);
     void addLoadProperty(PropertyId id);
@@ -335,7 +335,7 @@ public:
     );
     void linkFunctions();
     void postCompile(CompilerContext* context);
-    void verifyOperandDepths();
+    void verifyReservedStackSlots();
 
     // Generate function names for internal functions
     NomadString generateFunctionName(const NomadString& generatedName, const NomadString& hostFunctionName, NomadIndex line);

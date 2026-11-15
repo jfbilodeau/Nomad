@@ -122,8 +122,8 @@ public:
     // Borrows the object receiver saved in an active compiled script frame, not a temporary native receiver.
     [[nodiscard]] NomadObject* getScriptReceiver() const;
 
-    void callScriptFunction(NomadIndex address, NomadIndex operandDepth);
-    void callScriptMethod(NomadIndex address, NomadIndex operandDepth);
+    void callScriptFunction(NomadIndex address, NomadIndex reservedStackSlots);
+    void callScriptMethod(NomadIndex address, NomadIndex reservedStackSlots);
     void allocateScriptObject(TypeId typeId);
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId memberId);
@@ -302,7 +302,7 @@ private:
     void freeHostArguments(NomadIndex firstIndex, const std::vector<const Type*>& argumentTypes);
     void initializeStructStorage(RuntimeValue* destination, const Type* type);
     void executeCreationBody(const ScriptCallableBase* callable, const RuntimeValue& receiver);
-    void pushScriptFrame(NomadIndex operandDepth);
+    void pushScriptFrame(NomadIndex reservedStackSlots);
 
     static constexpr NomadIndex s_scriptFrameSlotCount = 4;
 

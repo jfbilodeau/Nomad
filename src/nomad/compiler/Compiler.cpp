@@ -2548,7 +2548,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     });
 
     reportExceptions({}, [&] {
-        verifyOperandDepths();
+        verifyReservedStackSlots();
     });
 
     if (!beginPhase(CompilationPhase::Link)) {
@@ -2632,7 +2632,7 @@ void Compiler::linkFunctions() {
         }
 
         setIndex(link.callIndex, function->getFunctionStart());
-        setIndex(link.callIndex + 1, function->getMaximumOperandDepth());
+        setIndex(link.callIndex + 1, function->getReservedStackSlots());
     }
 }
 
@@ -2675,7 +2675,7 @@ StackDepth getReturnedSlotCount(const InstructionFn fn, const NomadIndex countOp
 
 } // namespace
 
-NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const ScriptCallableBase& callable) {
+NomadIndex Compiler::computeReservedStackSlots(const Runtime& runtime, const ScriptCallableBase& callable) {
     const auto& instructions = runtime.getInstructions();
     const auto start = callable.getFunctionStart();
     const auto end = callable.getFunctionEnd();
@@ -2685,7 +2685,7 @@ NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const Sc
 
     const auto reach = [&](const NomadIndex index, const StackDepth depth) {
         if (index < start || index >= end) {
-            throw NomadBug("Operand depth verification found a branch outside the function");
+            throw NomadBug("Stack verification found a branch outside the function");
         }
 
         auto& recordedDepth = depths[index - start];
@@ -2693,7 +2693,7 @@ NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const Sc
             recordedDepth = depth;
             pending.push_back(index);
         } else if (recordedDepth != depth) {
-            throw NomadBug("Operand depth differs where control flow joins");
+            throw NomadBug("Stack depth differs where control flow joins");
         }
     };
 
@@ -2707,7 +2707,7 @@ NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const Sc
         const auto id = runtime.getInstructionId(fn);
 
         if (id.isInvalid()) {
-            throw NomadBug("Operand depth verification found an unknown instruction");
+            throw NomadBug("Stack verification found an unknown instruction");
         }
 
         const auto operandCount = static_cast<NomadIndex>(runtime.getInstructionOperands(id).size());
@@ -2721,7 +2721,7 @@ NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const Sc
         } else if (effect.kind == StackEffectKind::IndexerArity) {
             const auto* indexer = runtime.getNativeIndexerInfo(IndexerId{instructions[index + 1].value.getIdValue()});
             if (indexer == nullptr) {
-                throw NomadBug("Operand depth verification found an unknown native indexer");
+                throw NomadBug("Stack verification found an unknown native indexer");
             }
             delta -= static_cast<StackDepth>(indexer->indexTypes.size());
         } else if (effect.kind == StackEffectKind::StructInitializer) {
@@ -2762,9 +2762,9 @@ NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const Sc
     return static_cast<NomadIndex>(maximumDepth);
 }
 
-void Compiler::verifyOperandDepths() {
+void Compiler::verifyReservedStackSlots() {
     for (const auto& source: m_functions) {
-        source.function->setMaximumOperandDepth(computeMaximumOperandDepth(*m_runtime, *source.function));
+        source.function->setReservedStackSlots(computeReservedStackSlots(*m_runtime, *source.function));
     }
 }
 

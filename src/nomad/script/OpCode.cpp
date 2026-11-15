@@ -241,16 +241,16 @@ void op_code_load_default_r(VirtualMachine* interpreter) {
 
 void op_call_script_function(VirtualMachine* interpreter) {
     const auto address = interpreter->nextIndex();
-    const auto operandDepth = interpreter->nextIndex();
+    const auto reservedStackSlots = interpreter->nextIndex();
 
-    interpreter->callScriptFunction(address, operandDepth);
+    interpreter->callScriptFunction(address, reservedStackSlots);
 }
 
 void op_call_script_method(VirtualMachine* interpreter) {
     const auto address = interpreter->nextIndex();
-    const auto operandDepth = interpreter->nextIndex();
+    const auto reservedStackSlots = interpreter->nextIndex();
 
-    interpreter->callScriptMethod(address, operandDepth);
+    interpreter->callScriptMethod(address, reservedStackSlots);
 }
 
 void op_create_script_object(VirtualMachine* interpreter) {
