@@ -294,8 +294,8 @@ InterpreterContext::InterpreterContext(
         throw NomadBug("Frame interpretation requires an active compiled script callable");
     }
     m_frameCallable = &function;
-    m_parameterIndex = virtualMachine.m_parameterIndex;
-    m_variableIndex = virtualMachine.m_variableIndex;
+    m_parameterIndex = virtualMachine.getParameterIndex();
+    m_variableIndex = virtualMachine.getVariableIndex();
     m_frameVariableCount = function.getVariableCount();
     if (virtualMachine.getRuntime()->getConstructor(function.getId()) != nullptr) {
         m_function = std::make_unique<ScriptConstructor>(
@@ -349,8 +349,8 @@ bool InterpreterContext::isFrameVariable(const VariableId variableId) const {
 void InterpreterContext::validateFrame() const {
     if (isFrameBacked() &&
         (getVirtualMachine()->getCurrentCallable() != m_frameCallable ||
-         getVirtualMachine()->m_parameterIndex != m_parameterIndex ||
-         getVirtualMachine()->m_variableIndex != m_variableIndex)) {
+         getVirtualMachine()->getParameterIndex() != m_parameterIndex ||
+         getVirtualMachine()->getVariableIndex() != m_variableIndex)) {
         throw NomadBug("Interpreter context is not bound to the active script frame");
     }
 }

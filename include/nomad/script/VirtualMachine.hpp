@@ -119,6 +119,8 @@ public:
     [[nodiscard]]
     ScriptFunction* getCurrentScript() const;
     [[nodiscard]] const ScriptCallableBase* getCurrentCallable() const;
+    [[nodiscard]] NomadIndex getParameterIndex() const { return m_parameterIndex; }
+    [[nodiscard]] NomadIndex getVariableIndex() const { return m_variableIndex; }
     // Borrows the object receiver saved in an active compiled script frame, not a temporary native receiver.
     [[nodiscard]] NomadObject* getScriptReceiver() const;
 
@@ -282,8 +284,6 @@ public:
     [[nodiscard]] size_t getInstructionIndex() const { return m_instructionIndex; }
 
 private:
-    friend class InterpreterContext;
-
     const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
 
     struct NativeCallFrame {

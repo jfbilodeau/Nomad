@@ -130,7 +130,7 @@ Measure each change before and after on the same workload.
 
 - **Q1 (resolved):** The debug-only kind check was removed. The accessors are `getUncheckedNative*`, inline in `Runtime.hpp`.
 - **Q2 (step 8):** Cache compiled format-template segments (I5), or keep the Interpreter simpler and accept re-parsing? Measure first.
-- **Q3 (step 4):** `VirtualMachine.hpp` declares `friend class InterpreterContext;`, which conflicts with the no-`friend` rule. Replace it with a narrow public API.
+- **Q3 (step 4):** Resolved. `InterpreterContext` reads the frame indexes through the read-only `getParameterIndex()` and `getVariableIndex()` accessors, and the `friend` declaration is removed.
 
 ## Debug-only checks
 
@@ -232,8 +232,8 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V7 | P2 | redundancy | Six execution entry points with near-identical result copy and free logic, and inconsistent error policy (log and return, invalid_argument, VirtualMachineException) | `VirtualMachine.cpp`: executeFunction overloads, runClosure, run(ScriptFunction), run(Closure) | verified | 4 |
 | V8 | P2 | redundancy | Save and restore of m_result and m_intermediate duplicated; BOOST_SCOPE_EXIT used instead of RAII guards | `VirtualMachine.cpp`: executeCreationBody, createNativeStruct, createNativeObject; `Interpreter.cpp`: RegisterRestoration | verified | 4 |
 | V9 | P2 | redundancy | Capture-source switch duplicated between captureCurrentFrame and createClosure, including struct receiver layout logic | `VirtualMachine.cpp`: captureCurrentFrame, createClosure | verified | 4 |
-| V10 | P2 | correctness | createClosure's catch block reads storage after `std::move(storage)` into the Closure | `VirtualMachine.cpp`: createClosure try/catch | verified | 4 |
-| V11 | P2 | correctness | getStoredPropertyAddress bounds-checks lastOffset but indexes firstOffset; callers always pass equal values | `VirtualMachine.cpp`: getStoredPropertyAddress; `VirtualMachine.hpp` declaration; verify all callers | partly-verified | 4 |
+| V10 | P2 | correctness | Reported as a catch block reading moved-from storage. Not reproduced: the Closure constructor takes the vector only as its last statement, so the catch frees storage only when ownership has not transferred | `VirtualMachine.cpp`: createClosure try/catch; `Closure.cpp`: constructor | not reproduced | 4 |
+| V11 | P2 | correctness | getStoredPropertyAddress bounds-checked only lastOffset and indexed firstOffset | `VirtualMachine.cpp`: getStoredPropertyAddress | Fixed: checks firstOffset <= lastOffset < storage size; regression in StructTypeTest | 4 |
 | V12 | P2 | correctness | Missing null checks: asScriptMethod and asScriptConstructor results, getReturnType dereference in createNativeObject, getNativeFunction in callNativeFunction | `VirtualMachine.cpp`: initializeStructStorage, createScriptObject, createScriptStruct, createNativeObject, callNativeFunction | verified | 1 (native, done), 4 (script) |
 | V13 | P3 | const-correctness | getCurrentFunction() const returns a non-const ScriptFunction*; the `(void)getThis()` validation idiom is repeated; bindThisFromStack duplicates the getThis null check | `VirtualMachine.hpp`:120; `VirtualMachine.cpp`: getThis, bindThisFromStack, copyThisToResult | verified | 2 (getCurrentFunction), 4 |
 | V14 | P3 | naming | `stack_size` parameter; `integer_value` and `float_value` locals; memberId used for both CallableId and PropertyId; get*Function*VariableValue and set*VariableValue are asymmetric | `VirtualMachine.hpp`: constructor and accessors; `VirtualMachine.cpp`: nextInteger, nextFloat, callNativeMethod | verified | 7 |

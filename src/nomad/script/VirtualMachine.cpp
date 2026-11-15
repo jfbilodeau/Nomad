@@ -702,7 +702,7 @@ RuntimeValue* VirtualMachine::getStoredPropertyAddress(
     if (object == nullptr) {
         fault("Stored property receiver has no matching field storage");
     }
-    if (lastOffset >= object->getStorageSize()) {
+    if (firstOffset > lastOffset || lastOffset >= object->getStorageSize()) {
         fault("Script object field index is out of bounds");
     }
     return &object->getStorageValue(firstOffset);

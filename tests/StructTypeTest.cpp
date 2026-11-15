@@ -795,6 +795,9 @@ BOOST_AUTO_TEST_CASE(stored_property_address_opcode_rejects_missing_ranges_and_n
     VirtualMachine machine(&runtime);
     BOOST_TEST(machine.getStoredPropertyAddress(oldOwner, 0, 0) == &oldObject.getStorageValue(0));
     BOOST_TEST(machine.getStoredPropertyAddress(newOwner, 1, 2) == &newObject.getStorageValue(1));
+    const auto fieldCount = newObject.getStorageSize();
+    BOOST_CHECK_THROW(machine.getStoredPropertyAddress(newOwner, fieldCount, fieldCount - 1), VirtualMachineException);
+    BOOST_CHECK_THROW(machine.getStoredPropertyAddress(newOwner, 2, 1), VirtualMachineException);
 }
 
 BOOST_AUTO_TEST_CASE(local_cleanup_emits_only_owned_fields_at_full_width_nested_offsets) {
