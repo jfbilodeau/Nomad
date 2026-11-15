@@ -276,7 +276,10 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
 InterpreterContext::InterpreterContext(const Interpreter& interpreter):
     m_interpreter(interpreter),
     m_function(std::make_unique<ScriptFunction>(
-        CallableId{}, CONSOLE_SOURCE_NAME, CONSOLE_SOURCE_NAME, ""
+        CallableId::INVALID,
+        CONSOLE_SOURCE_NAME,
+        CONSOLE_SOURCE_NAME, 
+        ""
     )
 ) {
 }
@@ -297,24 +300,42 @@ InterpreterContext::InterpreterContext(
     m_parameterIndex = virtualMachine.getParameterIndex();
     m_variableIndex = virtualMachine.getVariableIndex();
     m_frameVariableCount = function.getVariableCount();
+
     if (virtualMachine.getRuntime()->getConstructor(function.getId()) != nullptr) {
         m_function = std::make_unique<ScriptConstructor>(
-            CallableId{}, function.getClassType(), std::vector<Parameter>{}, function.getPath(), ""
+            CallableId{}, 
+            function.getClassType(), 
+            std::vector<Parameter>{}, 
+            function.getPath(), 
+            ""
         );
     } else if (function.getClassType() != nullptr) {
         m_function = std::make_unique<ScriptMethod>(
-            CallableId{}, function.getName(), function.getClassType(), std::vector<Parameter>{},
-            function.getReturnType(), function.getPath(), ""
+            CallableId{}, 
+            function.getName(), 
+            function.getClassType(),
+            std::vector<Parameter>{},
+            function.getReturnType(),
+            function.getPath(), 
+            ""
         );
     } else {
-        m_function = std::make_unique<ScriptFunction>(function.getId(), function.getName(), function.getPath(), "");
+        m_function = std::make_unique<ScriptFunction>(
+            function.getId(),
+            function.getName(),
+            function.getPath(), 
+            ""
+        );
     }
+
     m_function->setHub(function.getHub());
     m_function->setParentId(function.getParentId());
+
     for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
         const auto id = VariableId{toNomadId(index)};
         m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
     }
+
     for (NomadIndex index = 0; index < function.getParameterCount(); ++index) {
         const auto id = toNomadId(index);
         m_function->addParameter(
@@ -323,7 +344,9 @@ InterpreterContext::InterpreterContext(
             function.getParameters()[index].doc
         );
     }
+
     m_variables.resize(m_frameVariableCount);
+
     if (const auto* type = function.getClassType()) {
         if (const auto* owner = type->asStructType()) {
             RuntimeValue* storage = nullptr;

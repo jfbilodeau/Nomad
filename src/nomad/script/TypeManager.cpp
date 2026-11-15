@@ -420,7 +420,14 @@ CallableId TypeManager::registerScriptClassMethod(
     const auto type = getType(ownerId);
     const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
     auto* owner = getMutableClassType(classType);
-    return registerScriptMethod(owner, std::move(name), std::move(parameters), std::move(path), std::move(source));
+
+    return registerScriptMethod(
+        owner, 
+        std::move(name), 
+        std::move(parameters), 
+        std::move(path), 
+        std::move(source)
+    );
 }
 
 CallableId TypeManager::registerScriptStructMethod(
@@ -431,8 +438,14 @@ CallableId TypeManager::registerScriptStructMethod(
     NomadString source
 ) {
     auto* owner = getMutableCompositeType(ownerId);
-    return registerScriptMethod(owner != nullptr && owner->isStruct() ? owner : nullptr,
-        std::move(name), std::move(parameters), std::move(path), std::move(source));
+
+    return registerScriptMethod(
+        owner != nullptr && owner->isStruct() ? owner : nullptr,
+        std::move(name), 
+        std::move(parameters), 
+        std::move(path), 
+        std::move(source)
+    );
 }
 
 CallableId TypeManager::registerScriptMethod(
@@ -443,12 +456,20 @@ CallableId TypeManager::registerScriptMethod(
     NomadString source
 ) {
     const auto canValidateParameters = owner != nullptr && !name.empty();
-    const auto hasInvalidParameters = canValidateParameters && std::ranges::any_of(parameters, [this](const auto& parameter) {
-        const auto isReceiverName = parameter.name == "this";
-        const auto hasValidType = !isReceiverName && ownsType(parameter.type) &&
-            !parameter.type->isVoid() && !parameter.type->isInternal();
-        return !hasValidType;
-    });
+    const auto hasInvalidParameters = 
+        canValidateParameters &&
+         std::ranges::any_of(parameters, 
+        [this](const auto& parameter) {
+            const auto isReceiverName = parameter.name == "this";
+            const auto 
+                hasValidType = !isReceiverName &&
+                ownsType(parameter.type) &&
+                !parameter.type->isVoid() &&
+                !parameter.type->isInternal();
+
+            return !hasValidType;
+        }
+    );
     if (owner == nullptr || name.empty() || hasInvalidParameters) {
         log::error("Cannot register script method: invalid owner, name, or parameter type");
         return CallableId::INVALID;
@@ -459,11 +480,13 @@ CallableId TypeManager::registerScriptMethod(
             method->getParameters(), parameters,
             [](const auto& first, const auto& second) { return first.type == second.type; }
         );
+
         if (hasSameSignature) {
             log::error("Cannot register script method: duplicate signature");
             return CallableId::INVALID;
         }
     }
+
     auto method = std::make_unique<ScriptMethod>(
         m_runtime.getNextCallableId(), 
         std::move(name), 
@@ -473,7 +496,11 @@ CallableId TypeManager::registerScriptMethod(
         std::move(path), 
         std::move(source)
     );
-    return m_runtime.registerMethod(owner, std::move(method));
+
+    return m_runtime.registerMethod(
+        owner, 
+        std::move(method)
+    );
 }
 
 CallableId TypeManager::registerScriptClassConstructor(
@@ -485,7 +512,12 @@ CallableId TypeManager::registerScriptClassConstructor(
     const auto type = getType(ownerId);
     const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
     auto* owner = getMutableClassType(classType);
-    return registerScriptConstructor(owner, std::move(parameters), std::move(path), std::move(source));
+    return registerScriptConstructor(
+        owner, 
+        std::move(parameters), 
+        std::move(path), 
+        std::move(source)
+    );
 }
 
 CallableId TypeManager::registerScriptStructConstructor(
@@ -496,6 +528,7 @@ CallableId TypeManager::registerScriptStructConstructor(
 ) {
     const auto type = getType(ownerId);
     auto* owner = type.has_value() && (*type)->isStruct() ? getMutableCompositeType(ownerId) : nullptr;
+    
     return registerScriptConstructor(owner, std::move(parameters), std::move(path), std::move(source));
 }
 

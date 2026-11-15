@@ -346,7 +346,7 @@ ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
 void Runtime::setScriptInitializer(const CallableId functionId) {
     const auto* function = getScriptFunction(functionId);
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
-        m_scriptInitialization.functionId != CallableId{} || function == nullptr ||
+        m_scriptInitialization.functionId != CallableId::INVALID || function == nullptr ||
         function->getParameterCount() != 0 || function->getReturnType() != getVoidType() ||
         function->getFunctionStart() == NOMAD_INVALID_INDEX) {
         throw NomadException("Script initialization requires a compiled, parameterless void function before startup");
@@ -365,7 +365,7 @@ void Runtime::initializeScripts() {
     if (initialization.state == ScriptInitializationState::Running) {
         throw VirtualMachineException("Script initialization cannot be re-entered");
     }
-    if (initialization.functionId == CallableId{}) {
+    if (initialization.functionId == CallableId::INVALID) {
         for (const auto& hub : m_hubs) {
             if (hub->m_variables->getVariableCount() != 0) {
                 throw VirtualMachineException("Script initialization requires successful executable compilation");
@@ -650,7 +650,7 @@ CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
 
     m_functions.push_back(std::move(function));
     const auto id = catalogCallable(m_functions.back().get());
-    if (id == CallableId{}) {
+    if (id == CallableId::INVALID) {
         m_functions.pop_back();
     }
 
@@ -1724,19 +1724,19 @@ const StackEffect& Runtime::getInstructionStackEffect(const OpCodeId id) const {
 
 CallableId Runtime::getNativeFunctionId(const NomadString& name) const {
     const auto* function = getNativeFunction(getCallableId(name));
-    return function == nullptr ? CallableId{} : function->getId();
+    return function == nullptr ? CallableId::INVALID : function->getId();
 }
 
 const NativeFunction* Runtime::getNativeFunction(const NomadString& name) const {
     const auto id = getNativeFunctionId(name);
 
-    return id == CallableId{} ? nullptr : getNativeFunction(id);
+    return id == CallableId::INVALID ? nullptr : getNativeFunction(id);
 }
 
 std::vector<const NativeFunction*> Runtime::getNativeFunctions() const {
     std::vector<const NativeFunction*> nativeFunctions;
 
-    for (auto id = getFirstNativeFunctionId(); id != CallableId{}; id = getNextNativeFunctionId(id)) {
+    for (auto id = getFirstNativeFunctionId(); id != CallableId::INVALID; id = getNextNativeFunctionId(id)) {
         nativeFunctions.push_back(getNativeFunction(id));
     }
 
@@ -2327,7 +2327,7 @@ CallableId Runtime::registerScriptFunction(
         log::error("Cannot register function '" + name + "': name is reserved by a hub declaration");
         return CallableId::INVALID;
     }
-    if (getCallableId(name) != CallableId{}) {
+    if (getCallableId(name) != CallableId::INVALID) {
         log::error("Function with name '" + name + "' conflicts with an already registered callable.");
 
         return CallableId::INVALID;
@@ -2372,7 +2372,7 @@ const ScriptFunction* Runtime::getScriptFunction(const CallableId functionId) co
 
 CallableId Runtime::getFunctionId(const NomadString& name) const {
     const auto* function = getScriptFunction(getCallableId(name));
-    return function == nullptr ? CallableId{} : function->getId();
+    return function == nullptr ? CallableId::INVALID : function->getId();
 }
 
 std::optional<NomadString> Runtime::getFunctionName(CallableId functionId) const {

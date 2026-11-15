@@ -137,30 +137,38 @@ CallStorageLayout Callable::getCallStorageLayout(const NomadIndex argumentSlotCo
         }
         return layout.stackSlotCount++;
     };
+
     if (m_type == CallableType::Method || m_type == CallableType::Constructor) {
         if (m_classType == nullptr) {
             throw NomadException("Cannot calculate call storage layout: receiver type of '" + m_name + "' is unresolved");
         }
+
         const auto receiverSize = m_classType->getSize();
         if (m_classType->isStruct() && receiverSize != 0) {
             layout.receiverOffset = appendPointer();
         }
     }
+
     if (m_returnType->isStruct() && returnSize != 0) {
         layout.returnOffset = appendPointer();
     }
+
     return layout;
 }
 
 NomadIndex Callable::getParameterStorageSize() const {
     auto size = NomadIndex{0};
+
     for (const auto& parameter : m_parameters) {
         const auto parameterSize = parameter.getStackValueCount();
+
         if (parameterSize > std::numeric_limits<NomadIndex>::max() - size) {
             throw NomadException("Parameter storage size exceeds the maximum slot count at '" + parameter.name + "'");
         }
+
         size += parameterSize;
     }
+
     return size;
 }
 
@@ -192,7 +200,16 @@ Function::Function(
     const Type* returnType,
     NomadString doc
 ):
-    Callable(id, CallableType::Function, source, std::move(name), std::move(parameters), returnType, nullptr, std::move(doc))
+    Callable(
+        id, 
+        CallableType::Function, 
+        source, 
+        std::move(name), 
+        std::move(parameters), 
+        returnType, 
+        nullptr, 
+        std::move(doc)
+    )
 {
 }
 
@@ -217,7 +234,16 @@ Method::Method(
     const Type* returnType,
     NomadString doc
 ):
-    Callable(id, CallableType::Method, source, std::move(name), std::move(parameters), returnType, classType, std::move(doc))
+    Callable(
+        id, 
+        CallableType::Method, 
+        source, 
+        std::move(name), 
+        std::move(parameters),
+        returnType,
+        classType,
+        std::move(doc)
+    )
 {
 }
 
@@ -238,7 +264,16 @@ Constructor::Constructor(
     const Type* createdType,
     NomadString doc
 ):
-    Callable(id, CallableType::Constructor, source, std::move(name), std::move(parameters), createdType, classType, std::move(doc))
+    Callable(
+        id, 
+        CallableType::Constructor, 
+        source, 
+        std::move(name), 
+        std::move(parameters), 
+        createdType, 
+        classType, 
+        std::move(doc)
+    )
 {
 }
 
