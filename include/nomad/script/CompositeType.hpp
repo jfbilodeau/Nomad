@@ -12,6 +12,8 @@
 
 namespace nomad {
 
+class TypeManager;
+
 enum class ClassMode {
     Opened = 1,
     Closed,
@@ -34,17 +36,20 @@ public:
     [[nodiscard]] const CompositeType* asCompositeType() const override;
     [[nodiscard]] bool isOpen() const;
     [[nodiscard]] CallableId registerConstructor(
-        Runtime& runtime,
+        const TypeManager& manager,
+        CallableId id,
         std::unique_ptr<Constructor> constructor
     );
     [[nodiscard]] std::vector<const Constructor*> getConstructors() const;
     [[nodiscard]] CallableId registerMethod(
-        Runtime& runtime,
+        const TypeManager& manager,
+        CallableId id,
         std::unique_ptr<Method> method
     );
     [[nodiscard]] std::vector<const Method*> getMethods() const;
     [[nodiscard]] PropertyId registerProperty(
-        Runtime& runtime,
+        const TypeManager& manager,
+        PropertyId id,
         std::unique_ptr<Property> property
     );
     [[nodiscard]] const Property* getProperty(const NomadString& name) const;

@@ -9,7 +9,6 @@ namespace nomad {
 class NativeProperty;
 class ClassType;
 class CompositeType;
-class Runtime;
 class Type;
 
 DeclareId(PropertyId);
@@ -35,7 +34,7 @@ public:
     [[nodiscard]] bool hasExplicitInitializer() const;
     void setHasExplicitInitializer(bool hasExplicitInitializer);
     [[nodiscard]] virtual const NativeProperty* asNativeProperty() const;
-    [[nodiscard]] PropertyId registerWithRuntime(Runtime& runtime);
+    void setId(PropertyId id);
 
 protected:
     void setValueType(const Type* valueType);

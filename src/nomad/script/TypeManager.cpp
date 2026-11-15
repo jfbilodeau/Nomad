@@ -281,7 +281,7 @@ PropertyId TypeManager::registerNativeClassProperty(
         return PropertyId::INVALID;
     }
     auto* owner = getMutableClassType(classType);
-    const auto propertyId = owner->registerProperty(m_runtime, std::move(property));
+    const auto propertyId = registerProperty(owner, std::move(property));
     if (propertyId.isInvalid()) {
         return PropertyId::INVALID;
     }
@@ -326,7 +326,49 @@ PropertyId TypeManager::registerScriptProperty(
         log::error("Cannot register property '" + name + "': the type already has a member with that name");
         return PropertyId::INVALID;
     }
-    return owner->registerProperty(m_runtime, std::make_unique<Property>(owner, name, valueType));
+    return registerProperty(owner, std::make_unique<Property>(owner, name, valueType));
+}
+
+PropertyId TypeManager::registerProperty(
+    CompositeType* owner,
+    std::unique_ptr<Property> property
+) {
+    if (!canMutateTypes()) {
+        return PropertyId::INVALID;
+    }
+
+    if (!ownsType(owner) || property == nullptr || property->getId().isValid() ||
+        m_properties.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        log::error("Cannot register property: invalid owner, identity, or property capacity");
+
+        return PropertyId::INVALID;
+    }
+
+    if (m_properties.size() == m_properties.capacity()) {
+        m_properties.reserve(std::max(std::size_t{1}, m_properties.size() * 2));
+    }
+
+    auto* registered = property.get();
+    const auto id = PropertyId{toNomadId(m_properties.size())};
+    if (owner->registerProperty(*this, id, std::move(property)).isInvalid()) {
+        return PropertyId::INVALID;
+    }
+
+    m_properties.push_back(registered);
+
+    return id;
+}
+
+const Property* TypeManager::getProperty(const PropertyId id) const {
+    return isIdInRange(id.id, m_properties.size()) ? m_properties[toNomadIndex(id.id)] : nullptr;
+}
+
+Property* TypeManager::getMutableProperty(const PropertyId id) {
+    return isIdInRange(id.id, m_properties.size()) ? m_properties[toNomadIndex(id.id)] : nullptr;
+}
+
+std::vector<const Property*> TypeManager::getProperties() const {
+    return {m_properties.begin(), m_properties.end()};
 }
 
 CallableId TypeManager::registerScriptClassMethod(
@@ -386,7 +428,7 @@ CallableId TypeManager::registerScriptMethod(
     auto method = std::make_unique<ScriptMethod>(
         std::move(name), owner, std::move(parameters), nullptr, std::move(path), std::move(source)
     );
-    return owner->registerMethod(m_runtime, std::move(method));
+    return m_runtime.registerMethod(owner, std::move(method));
 }
 
 CallableId TypeManager::registerScriptClassConstructor(
@@ -441,7 +483,7 @@ CallableId TypeManager::registerScriptConstructor(
     auto constructor = std::make_unique<ScriptConstructor>(
         owner, std::move(parameters), std::move(path), std::move(source)
     );
-    return owner->registerConstructor(m_runtime, std::move(constructor));
+    return m_runtime.registerConstructor(owner, std::move(constructor));
 }
 
 CallableId TypeManager::registerNativeClassMethod(
@@ -504,7 +546,7 @@ CallableId TypeManager::registerNativeMethod(
         log::error("Cannot register native method '" + definition.name + "': " + error);
         return CallableId::INVALID;
     }
-    const auto id = owner->registerMethod(m_runtime, std::make_unique<NativeMethod>(
+    const auto id = m_runtime.registerMethod(owner, std::make_unique<NativeMethod>(
         definition.name, owner, std::move(definition.function), std::move(parameters),
         *returnType, std::move(definition.documentation)
     ));
@@ -607,7 +649,7 @@ CallableId TypeManager::registerNativeConstructor(
             return CallableId::INVALID;
         }
     }
-    return owner->registerConstructor(m_runtime, std::make_unique<NativeConstructor>(
+    return m_runtime.registerConstructor(owner, std::make_unique<NativeConstructor>(
         name, owner, createdType, std::move(definition.function), std::move(parameters),
         std::move(definition.documentation)
     ));

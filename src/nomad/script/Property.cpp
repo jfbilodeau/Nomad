@@ -2,9 +2,7 @@
 
 #include <nomad/script/Property.hpp>
 
-#include <nomad/log/Logger.hpp>
-
-#include <nomad/script/Runtime.hpp>
+#include <nomad/script/CompositeType.hpp>
 
 #include <utility>
 
@@ -64,13 +62,8 @@ const NativeProperty* Property::asNativeProperty() const {
     return nullptr;
 }
 
-PropertyId Property::registerWithRuntime(Runtime& runtime) {
-    if (m_id.isValid()) {
-        log::error("Cannot register property: property is already registered");
-        return PropertyId::INVALID;
-    }
-    m_id = runtime.catalogProperty(this);
-    return m_id;
+void Property::setId(const PropertyId id) {
+    m_id = id;
 }
 
 } // namespace nomad

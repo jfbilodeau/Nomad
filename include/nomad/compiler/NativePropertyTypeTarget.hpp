@@ -8,6 +8,8 @@
 
 namespace nomad {
 
+class Runtime;
+
 class NativePropertyTypeTarget final : public DeferredTypeTarget {
 public:
     NativePropertyTypeTarget(Runtime& runtime, PropertyId id, TypeReference type);

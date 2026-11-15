@@ -2228,7 +2228,7 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_borrow_locals_parameters_and_e
     auto nativeCalls = 0;
     auto readCalls = 0;
     auto argumentCalls = 0;
-    const auto mutateId = owner->registerMethod(runtime, std::make_unique<NativeMethod>(
+    const auto mutateId = runtime.registerMethod(owner, std::make_unique<NativeMethod>(
         "borrowedMutate", type, [&](VirtualMachine* active) {
             ++nativeCalls;
             auto* receiver = &active->getStorageParameter(3, 0);
@@ -2246,14 +2246,14 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_borrow_locals_parameters_and_e
             type->copyValue(receiver, destination);
             destination[0].setIntegerValue(destination[0].getIntegerValue() + 1000);
         }, parameters, type, ""));
-    const auto readId = owner->registerMethod(runtime, std::make_unique<NativeMethod>(
+    const auto readId = runtime.registerMethod(owner, std::make_unique<NativeMethod>(
         "borrowedRead", type, [&](VirtualMachine* active) {
             ++readCalls;
             auto* receiver = &active->getStorageParameter(0, 0);
             BOOST_TEST(NomadString(receiver[1].getStringValue()) == "original");
             active->setIntegerResult(receiver[0].getIntegerValue());
         }, std::vector<Parameter>{}, runtime.getIntegerType(), ""));
-    const auto scriptId = owner->registerMethod(runtime, std::make_unique<ScriptMethod>(
+    const auto scriptId = runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
         "borrowedForward", type, parameters, type, "borrowed.nomad", ""));
     BOOST_REQUIRE(mutateId.isValid());
     BOOST_REQUIRE(readId.isValid());
@@ -2402,23 +2402,23 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_omit_empty_storage_and_preserv
     auto* textOwner = runtime.getTypeManager().getMutableCompositeType(textId);
     auto emptyCalls = 0;
     auto voidCalls = 0;
-    const auto emptyMethodId = emptyOwner->registerMethod(runtime, std::make_unique<NativeMethod>(
+    const auto emptyMethodId = runtime.registerMethod(emptyOwner, std::make_unique<NativeMethod>(
         "borrowedEmptyResult", empty, [&](VirtualMachine*) { ++emptyCalls; },
         std::vector<Parameter>{}, empty, ""));
-    const auto createId = emptyOwner->registerMethod(runtime, std::make_unique<NativeMethod>(
+    const auto createId = runtime.registerMethod(emptyOwner, std::make_unique<NativeMethod>(
         "borrowedCreateText", empty, [](VirtualMachine* active) {
             auto& destination = active->getStorageParameter(0, 0);
             destination.freeObjectValue();
             destination.setStringValue("borrowed text");
         }, std::vector<Parameter>{}, text, ""));
-    const auto voidId = textOwner->registerMethod(runtime, std::make_unique<NativeMethod>(
+    const auto voidId = runtime.registerMethod(textOwner, std::make_unique<NativeMethod>(
         "borrowedVoid", text, [&](VirtualMachine* active) {
             ++voidCalls;
             BOOST_TEST(NomadString(active->getStorageParameter(0, 0).getStringValue()) == "borrowed text");
         }, std::vector<Parameter>{}, runtime.getVoidType(), ""));
-    const auto textMethodId = textOwner->registerMethod(runtime, std::make_unique<ScriptMethod>(
+    const auto textMethodId = runtime.registerMethod(textOwner, std::make_unique<ScriptMethod>(
         "borrowedTextResult", text, std::vector<Parameter>{}, runtime.getStringType(), "empty.nomad", ""));
-    const auto forwardId = emptyOwner->registerMethod(runtime, std::make_unique<ScriptMethod>(
+    const auto forwardId = runtime.registerMethod(emptyOwner, std::make_unique<ScriptMethod>(
         "borrowedEmptyForward", empty, std::vector<Parameter>{}, empty, "empty.nomad", ""));
     BOOST_REQUIRE(emptyMethodId.isValid());
     BOOST_REQUIRE(createId.isValid());

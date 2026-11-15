@@ -648,7 +648,7 @@ CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
     }
 
     m_functions.push_back(std::move(function));
-    const auto id = m_functions.back()->registerWithRuntime(*this);
+    const auto id = catalogCallable(m_functions.back().get());
     if (id == CallableId{}) {
         m_functions.pop_back();
     }
@@ -664,6 +664,68 @@ CallableId Runtime::catalogCallable(Callable* callable) {
 
     const auto id = CallableId{toNomadId(m_callables.size())};
     m_callables.push_back(callable);
+    callable->setId(id);
+
+    return id;
+}
+
+CallableId Runtime::registerMethod(
+    CompositeType* owner,
+    std::unique_ptr<Method> method
+) {
+    if (!m_typeManager.canMutateTypes()) {
+        return CallableId::INVALID;
+    }
+
+    if (!ownsType(owner) || method == nullptr || method->getId().isValid() ||
+        m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        log::error("Cannot register method: invalid owner, identity, or callable capacity");
+
+        return CallableId::INVALID;
+    }
+
+    if (m_callables.size() == m_callables.capacity()) {
+        m_callables.reserve(std::max(std::size_t{1}, m_callables.size() * 2));
+    }
+
+    auto* registered = method.get();
+    const auto id = CallableId{toNomadId(m_callables.size())};
+    if (owner->registerMethod(m_typeManager, id, std::move(method)).isInvalid()) {
+        return CallableId::INVALID;
+    }
+
+    m_callables.push_back(registered);
+
+    return id;
+}
+
+CallableId Runtime::registerConstructor(
+    CompositeType* owner,
+    std::unique_ptr<Constructor> constructor
+) {
+    if (!m_typeManager.canMutateTypes()) {
+        return CallableId::INVALID;
+    }
+
+    if (!ownsType(owner) || constructor == nullptr || constructor->getId().isValid() ||
+        m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        log::error("Cannot register constructor: invalid owner, identity, or callable capacity");
+
+        return CallableId::INVALID;
+    }
+
+    if (m_callables.size() == m_callables.capacity()) {
+        m_callables.reserve(std::max(std::size_t{1}, m_callables.size() * 2));
+    }
+
+    auto* registered = constructor.get();
+    const auto id = CallableId{toNomadId(m_callables.size())};
+    if (owner->registerConstructor(m_typeManager, id, std::move(constructor)).isInvalid()) {
+        return CallableId::INVALID;
+    }
+
+    m_callables.push_back(registered);
+
     return id;
 }
 
@@ -1261,23 +1323,11 @@ void Runtime::setPropertyHasExplicitInitializer(
     if (property == nullptr || property->asNativeProperty() != nullptr) {
         throw NomadBug("Explicit initializer metadata requires a stored property");
     }
-    m_properties[toNomadIndex(id.id)]->setHasExplicitInitializer(hasExplicitInitializer);
-}
-
-PropertyId Runtime::catalogProperty(Property* property) {
-    if (property == nullptr || property->getId().isValid() || !ownsType(property->getOwnerType()) ||
-        property->getOwnerType()->getProperty(property->getName()) != property ||
-        m_properties.size() >= toNomadIndex(NOMAD_ID_MAX)) {
-        log::error("Cannot catalog property: invalid owner, identity, or property capacity");
-        return PropertyId::INVALID;
-    }
-    const auto id = PropertyId{toNomadId(m_properties.size())};
-    m_properties.push_back(property);
-    return id;
+    m_typeManager.getMutableProperty(id)->setHasExplicitInitializer(hasExplicitInitializer);
 }
 
 const Property* Runtime::getProperty(const PropertyId id) const {
-    return isIdInRange(id.id, m_properties.size()) ? m_properties[toNomadIndex(id.id)] : nullptr;
+    return m_typeManager.getProperty(id);
 }
 
 const NativeProperty* Runtime::getNativeProperty(const PropertyId id) const {
@@ -1289,11 +1339,11 @@ NativeProperty* Runtime::getMutableNativeProperty(const PropertyId id) {
     if (getNativeProperty(id) == nullptr) {
         return nullptr;
     }
-    return static_cast<NativeProperty*>(m_properties[toNomadIndex(id.id)]);
+    return static_cast<NativeProperty*>(m_typeManager.getMutableProperty(id));
 }
 
 void Runtime::validateNativePropertyTypes() {
-    for (auto* property : m_properties) {
+    for (const auto* property : m_typeManager.getProperties()) {
         const auto* native = property->asNativeProperty();
         if (native != nullptr && !native->isTypeResolved()) {
             getMutableNativeProperty(property->getId())->completeTypeResolution();

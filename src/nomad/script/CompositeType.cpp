@@ -55,24 +55,22 @@ bool CompositeType::isOpen() const {
 }
 
 CallableId CompositeType::registerConstructor(
-    Runtime& runtime,
+    const TypeManager& manager,
+    const CallableId id,
     std::unique_ptr<Constructor> constructor
 ) {
-    if (!runtime.getTypeManager().canMutateTypes()) {
+    if (!manager.canMutateTypes()) {
         return CallableId::INVALID;
     }
-    if (constructor == nullptr || constructor->getClassType() != this ||
-        constructor->getId() != CallableId{} || runtime.getType(getId()) != this) {
+    if (id.isInvalid() || constructor == nullptr || constructor->getClassType() != this ||
+        constructor->getId() != CallableId{} || !manager.ownsType(this)) {
         log::error("Cannot register constructor: invalid owner or previously registered callable");
         return CallableId::INVALID;
     }
 
     m_constructors.push_back(std::move(constructor));
-    const auto id = m_constructors.back()->registerWithRuntime(runtime);
-    if (id == CallableId{}) {
-        m_constructors.pop_back();
-        log::error("Cannot register constructor: callable registration failed");
-    }
+    m_constructors.back()->setId(id);
+
     return id;
 }
 
@@ -86,25 +84,23 @@ std::vector<const Constructor*> CompositeType::getConstructors() const {
 }
 
 CallableId CompositeType::registerMethod(
-    Runtime& runtime,
+    const TypeManager& manager,
+    const CallableId id,
     std::unique_ptr<Method> method
 ) {
-    if (!runtime.getTypeManager().canMutateTypes()) {
+    if (!manager.canMutateTypes()) {
         return CallableId::INVALID;
     }
-    if (method == nullptr || method->getClassType() != this ||
-        method->getId() != CallableId{} || runtime.getType(getId()) != this ||
+    if (id.isInvalid() || method == nullptr || method->getClassType() != this ||
+        method->getId() != CallableId{} || !manager.ownsType(this) ||
         getProperty(method->getName()) != nullptr) {
         log::error("Cannot register method: invalid owner or previously registered callable");
         return CallableId::INVALID;
     }
 
     m_methods.push_back(std::move(method));
-    const auto id = m_methods.back()->registerWithRuntime(runtime);
-    if (id == CallableId{}) {
-        m_methods.pop_back();
-        log::error("Cannot register method: callable registration failed");
-    }
+    m_methods.back()->setId(id);
+
     return id;
 }
 
@@ -118,20 +114,21 @@ std::vector<const Method*> CompositeType::getMethods() const {
 }
 
 PropertyId CompositeType::registerProperty(
-    Runtime& runtime,
+    const TypeManager& manager,
+    const PropertyId id,
     std::unique_ptr<Property> property
 ) {
-    if (!runtime.getTypeManager().canMutateTypes()) {
+    if (!manager.canMutateTypes()) {
         return PropertyId::INVALID;
     }
     const auto* valueType = property == nullptr ? nullptr : property->getValueType();
     const auto* native = property == nullptr ? nullptr : property->asNativeProperty();
     const auto deferred = native != nullptr && !native->isTypeResolved() &&
-        valueType != nullptr && valueType->getRuntime() == &runtime;
-    if (property == nullptr || property->getOwnerType() != this || property->getId().isValid() ||
-        runtime.getType(getId()) != this ||
+        valueType != nullptr && valueType->getRuntime() == getRuntime();
+    if (id.isInvalid() || property == nullptr || property->getOwnerType() != this || property->getId().isValid() ||
+        !manager.ownsType(this) ||
         valueType == nullptr || (!deferred && (valueType->isVoid() || valueType->isInternal() ||
-            runtime.getType(valueType->getId()) != valueType)) ||
+            !manager.ownsType(valueType))) ||
         getProperty(property->getName()) != nullptr ||
         std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); })) {
         log::error("Cannot register property: invalid owner, value type, or duplicate definition");
@@ -143,11 +140,8 @@ PropertyId CompositeType::registerProperty(
         return PropertyId::INVALID;
     }
     m_properties.push_back(std::move(property));
-    const auto id = m_properties.back()->registerWithRuntime(runtime);
-    if (id.isInvalid()) {
-        m_properties.pop_back();
-        log::error("Cannot register property: property registration failed");
-    }
+    m_properties.back()->setId(id);
+
     return id;
 }
 

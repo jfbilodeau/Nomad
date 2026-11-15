@@ -181,6 +181,13 @@ public:
         const NomadString& name,
         const Type* valueType
     );
+    [[nodiscard]] PropertyId registerProperty(
+        CompositeType* owner,
+        std::unique_ptr<Property> property
+    );
+    [[nodiscard]] const Property* getProperty(PropertyId id) const;
+    [[nodiscard]] Property* getMutableProperty(PropertyId id);
+    [[nodiscard]] std::vector<const Property*> getProperties() const;
 
     // Low-level catalog operations do not publish namespace members.
     [[nodiscard]] TypeId reserveTypeId();
@@ -248,6 +255,7 @@ private:
     bool m_sealed = false;
     NomadIndex m_instantiationDepth = 0;
     std::vector<std::unique_ptr<Type>> m_types;
+    std::vector<Property*> m_properties;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
     std::vector<TypeSpecialization> m_typeSpecializations;
     std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;

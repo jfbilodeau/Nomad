@@ -59,6 +59,48 @@ private:
 
 BOOST_AUTO_TEST_SUITE(type_manager)
 
+BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations_and_respects_the_seal) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = manager.registerClass("PropertyOwner", ClassMode::Closed);
+    const auto otherId = manager.registerClass("OtherPropertyOwner", ClassMode::Closed);
+    auto* owner = manager.getMutableCompositeType(ownerId);
+    auto* other = manager.getMutableCompositeType(otherId);
+    BOOST_REQUIRE(owner != nullptr && other != nullptr);
+    const auto initialCount = manager.getProperties().size();
+    const auto callableCount = runtime.getFunctionTableSize();
+    BOOST_TEST(manager.registerProperty(other, std::make_unique<Property>(
+        owner, "wrongOwner", runtime.getIntegerType()
+    )).isInvalid());
+    BOOST_TEST(manager.registerProperty(owner, std::make_unique<Property>(
+        owner, "invalidType", runtime.getVoidType()
+    )).isInvalid());
+    BOOST_TEST(manager.getProperties().size() == initialCount);
+    const auto firstId = manager.registerProperty(owner, std::make_unique<Property>(
+        owner, "first", runtime.getIntegerType()
+    ));
+    BOOST_REQUIRE(firstId.isValid());
+    BOOST_TEST(toNomadIndex(firstId.id) == initialCount);
+    BOOST_TEST(manager.getProperty(firstId) == owner->getProperty("first"));
+    BOOST_TEST(manager.getProperty(firstId) == runtime.getProperty(firstId));
+    BOOST_TEST(manager.registerProperty(owner, std::make_unique<Property>(
+        owner, "first", runtime.getIntegerType()
+    )).isInvalid());
+    const auto secondId = manager.registerProperty(other, std::make_unique<Property>(
+        other, "second", runtime.getIntegerType()
+    ));
+    BOOST_REQUIRE(secondId.isValid());
+    BOOST_TEST(toNomadIndex(secondId.id) == initialCount + 1);
+    BOOST_TEST(runtime.getFunctionTableSize() == callableCount);
+    manager.seal();
+    BOOST_TEST(manager.registerProperty(owner, std::make_unique<Property>(
+        owner, "sealed", runtime.getIntegerType()
+    )).isInvalid());
+    BOOST_TEST(manager.getProperties().size() == initialCount + 2);
+    BOOST_TEST(owner->getProperty("sealed") == nullptr);
+    BOOST_TEST(manager.getProperty(PropertyId{toNomadId(initialCount + 2)}) == nullptr);
+}
+
 BOOST_AUTO_TEST_CASE(runtime_composes_the_catalog_and_preserves_lookup_identity) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();

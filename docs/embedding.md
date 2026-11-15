@@ -507,7 +507,16 @@ struct-method calls return explicit updated receiver/result values.
 Register class and struct types with
 `TypeManager::registerClass` and `registerStruct`. Enum, opaque-ID, and callback
 creation also belong to TypeManager. Callable
-IDs still belong to Runtime. `TypeManager::reserveTypeId()` and `catalogType()`
+IDs belong to Runtime; property IDs belong to TypeManager.
+`TypeManager::getProperty(id)` and `Runtime::getProperty(id)` return the same
+borrowed property descriptor, or `nullptr` for an invalid or unregistered ID.
+For custom member descriptors, use `Runtime::registerMethod(owner, method)` or
+`registerConstructor(owner, constructor)` and
+`TypeManager::registerProperty(owner, property)`. These transfer descriptor
+ownership to the declaring type and return an invalid ID on rejection without
+publishing a catalog entry.
+
+`TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or
 check namespace collisions. `catalogType()` requires a non-null descriptor
 owned by the same runtime and an unused reserved ID, otherwise it throws

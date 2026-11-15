@@ -109,6 +109,57 @@ CallableId registerNativeFunction(
 
 BOOST_AUTO_TEST_SUITE(callable_catalog)
 
+BOOST_AUTO_TEST_CASE(runtime_registers_member_ids_without_publishing_rejected_members) {
+    Runtime runtime;
+    Runtime foreign;
+    auto& manager = runtime.getTypeManager();
+    const auto ownerId = manager.registerClass("MemberOwner", ClassMode::Closed);
+    const auto otherId = manager.registerClass("OtherOwner", ClassMode::Closed);
+    auto* owner = manager.getMutableCompositeType(ownerId);
+    auto* other = manager.getMutableCompositeType(otherId);
+    BOOST_REQUIRE(owner != nullptr && other != nullptr);
+    BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "field", runtime.getIntegerType()).isValid());
+    const auto initialCount = runtime.getFunctionTableSize();
+    BOOST_TEST(runtime.registerMethod(owner, nullptr).isInvalid());
+    BOOST_TEST(runtime.registerMethod(other, std::make_unique<ScriptMethod>(
+        "wrongOwner", owner, std::vector<Parameter>{}, nullptr, "", ""
+    )).isInvalid());
+    BOOST_TEST(foreign.registerMethod(owner, std::make_unique<ScriptMethod>(
+        "foreign", owner, std::vector<Parameter>{}, nullptr, "", ""
+    )).isInvalid());
+    BOOST_TEST(runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
+        "field", owner, std::vector<Parameter>{}, nullptr, "", ""
+    )).isInvalid());
+    BOOST_TEST(runtime.getFunctionTableSize() == initialCount);
+    BOOST_TEST(owner->getMethods().empty());
+    const auto methodId = runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
+        "run", owner, std::vector<Parameter>{}, nullptr, "", ""
+    ));
+    BOOST_REQUIRE(methodId.isValid());
+    BOOST_TEST(toNomadIndex(methodId.id) == initialCount);
+    BOOST_TEST(owner->getMethods().front() == runtime.getMethod(methodId));
+    BOOST_TEST(runtime.registerConstructor(owner, nullptr).isInvalid());
+    BOOST_TEST(runtime.registerConstructor(other, std::make_unique<ScriptConstructor>(
+        owner, std::vector<Parameter>{}, "", ""
+    )).isInvalid());
+    const auto constructorId = runtime.registerConstructor(owner, std::make_unique<ScriptConstructor>(
+        owner, std::vector<Parameter>{}, "", ""
+    ));
+    BOOST_REQUIRE(constructorId.isValid());
+    BOOST_TEST(toNomadIndex(constructorId.id) == initialCount + 1);
+    BOOST_TEST(owner->getConstructors().front() == runtime.getConstructor(constructorId));
+    manager.seal();
+    BOOST_TEST(runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
+        "sealed", owner, std::vector<Parameter>{}, nullptr, "", ""
+    )).isInvalid());
+    BOOST_TEST(runtime.registerConstructor(owner, std::make_unique<ScriptConstructor>(
+        owner, std::vector<Parameter>{}, "", ""
+    )).isInvalid());
+    BOOST_TEST(runtime.getFunctionTableSize() == initialCount + 2);
+    BOOST_TEST(owner->getMethods().size() == 1U);
+    BOOST_TEST(owner->getConstructors().size() == 1U);
+}
+
 BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wide_storage) {
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
@@ -547,10 +598,10 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
     ).isValid());
     BOOST_REQUIRE(type != nullptr);
     const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
-    const auto methodId = type->registerMethod(runtime, std::make_unique<ScriptMethod>(
+    const auto methodId = runtime.registerMethod(type, std::make_unique<ScriptMethod>(
         "echo", type, parameters, nullptr, "point.nomad", "return value"
     ));
-    const auto constructorId = type->registerConstructor(runtime, std::make_unique<ScriptConstructor>(
+    const auto constructorId = runtime.registerConstructor(type, std::make_unique<ScriptConstructor>(
         type, parameters, "point.nomad", "this.value = value"
     ));
     BOOST_REQUIRE(methodId.isValid());

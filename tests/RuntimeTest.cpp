@@ -178,7 +178,7 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_descriptors_with_forged_registered_ids) {
     ClassType impostor(&runtime, id, "ActualOwner", ClassMode::Closed);
     ClassType foreign(&other, id, "ActualOwner", ClassMode::Closed);
     for (auto* candidate : {&impostor, &foreign}) {
-        BOOST_TEST(candidate->registerProperty(runtime,
+        BOOST_TEST(runtime.getTypeManager().registerProperty(candidate,
             std::make_unique<Property>(candidate, "value", runtime.getIntegerType())).isInvalid());
         BOOST_TEST(candidate->getProperties().empty());
     }

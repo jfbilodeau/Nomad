@@ -95,7 +95,7 @@ public:
     // for native factories (e.g. `Array` creating `Array1<int>`). Null for functions.
     [[nodiscard]] const Type* getClassType() const;
     [[nodiscard]] const NomadString& getDoc() const;
-    [[nodiscard]] CallableId registerWithRuntime(Runtime& runtime);
+    void setId(CallableId id);
     [[nodiscard]] virtual ScriptCallableBase* asScriptCallable();
     [[nodiscard]] virtual const ScriptCallableBase* asScriptCallable() const;
 
@@ -110,7 +110,6 @@ protected:
         NomadString doc
     );
 
-    void setId(CallableId id);
     void setReturnType(const Type* returnType);
     [[nodiscard]] std::vector<Parameter>& getEditableParameters();
 

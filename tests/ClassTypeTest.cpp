@@ -457,7 +457,7 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
     BOOST_TEST(instructions[firstInstruction + 1].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_free_r)));
 
-    const auto stored = composite->registerProperty(runtime,
+    const auto stored = runtime.getTypeManager().registerProperty(composite,
         std::make_unique<Property>(composite, "stored", runtime.getStringType()));
     BOOST_REQUIRE(stored.isValid());
     auto callbackCalls = 0;
@@ -882,9 +882,9 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_REQUIRE(nativeId.isValid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "native", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 2u);
-    Property standalone(type, "standalone", runtime.getIntegerType());
-    BOOST_TEST(standalone.registerWithRuntime(runtime).isInvalid());
-    BOOST_TEST(standalone.getId().isInvalid());
+    BOOST_TEST(runtime.getTypeManager().registerProperty(
+        nullptr, std::make_unique<Property>(type, "standalone", runtime.getIntegerType())
+    ).isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {

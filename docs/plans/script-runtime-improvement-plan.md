@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 and 2 (2a and 2b) are implemented and validated. All 13 CTest entries passed. Step 3 (compiler correctness) is complete: K1 through K4 are addressed. Step 4 (VM trust boundary) is next.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 3 are implemented. Step 4 is partial. The declaration seal is implemented; the registration ownership split is in progress. The current baseline has failures in `nomad_test_bindings`, `nomad_test_language`, and `nomad_test_remaining`.
 
 ## Component contract
 
@@ -10,6 +10,8 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 - **VirtualMachine** is built for performance and trusts Compiler output. It keeps only the checks the host boundary needs.
 - **Interpreter** is built for simplicity and convenience. Evaluating strings is its primary function. It validates host input at the boundary.
 - **InterpreterContext** is the host-facing evaluation context. It exposes production APIs only.
+- **TypeManager** owns declarations of types, properties, hubs, and events, and allocates their IDs.
+- **Runtime** owns execution registrations, including callables, constants, and variables, and allocates their IDs. The target dependency direction is Runtime to TypeManager, not the reverse.
 
 Standing rules:
 
@@ -82,12 +84,23 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 
 ### Step 4: VM trust boundary
 
-- Remove checks the Compiler already guarantees (V12 script paths, V13 `getThis` idioms). Mark `fault` as `[[noreturn]]` (V17).
+- Remove checks the Compiler already guarantees (V12 script paths, V13 `getThis` idioms). `fault` is now `[[noreturn]]` (V17), and `getCurrentScript` returns `const ScriptFunction*`.
 - Replace `dynamic_cast<ScriptObject*>` on property access with the compiler-guaranteed type (V5).
-- Fix correctness bugs first: V10 (closure creation reads moved storage) and V11 (bounds check uses the wrong index).
+- V11 is fixed with a stored-property bounds regression. V10 was not reproduced.
 - Deduplicate capture logic (V9), save and restore guards (V8), and the six execution entry points (V7). Keep the host-facing validation.
 - Simplify `runNativeIndexer` (V15).
 - Resolve Q3 (`friend` declaration).
+
+### Declaration seal and registration ownership
+
+- Successful Emit compilation seals declarations; Analysis compilation does not. There is no unseal API. Native members on sealed types are rejected; parameterized and callback instantiation remain available.
+- Seal rejections return invalid IDs or null pointers. Declaration callers report diagnostics; TypeManager does not log seal rejections.
+- Current review step: Runtime allocates member callable IDs before declaring them on CompositeType. TypeManager owns the property ID catalog. CompositeType records supplied IDs without `registerWithRuntime` calls, and rejected members do not consume catalog entries. Descriptor ownership remains with the declaring type.
+- Verified with `RunCtest_CMakeTools`: compilation passed, both new registration regression cases passed, and 10 of 13 CTest entries passed. The same three entries fail before and after this step, with no new failing cases.
+- The high-level member registration entry points still live on TypeManager and still orchestrate Runtime operations. Moving execution registration orchestration to Runtime is a subsequent review step; the full one-way dependency split is not complete.
+- After review, move the remaining declaration and execution responsibilities, including hub and event declarations, in separately approved steps. Do not revive the superseded name-check-only refactoring.
+- Remaining seal integration work includes registration-before-compile setup, Game API setup, fresh runtimes for language-server analysis batches, and enforcing successful compilation before interpreter or VM execution.
+- V5's agreed `static_cast` change and the ScriptObject field-table change remain deferred.
 
 ### Step 5: Interpreter correctness and simplification
 

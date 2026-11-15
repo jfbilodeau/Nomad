@@ -221,7 +221,6 @@ public:
     [[nodiscard]] const std::vector<const NativeIndexerInfo*>& getNativeIndexers() const;
 
     void setPropertyHasExplicitInitializer(PropertyId id, bool hasExplicitInitializer);
-    [[nodiscard]] PropertyId catalogProperty(Property* property);
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const NativeProperty* getNativeProperty(PropertyId id) const;
     [[nodiscard]] NativeProperty* getMutableNativeProperty(PropertyId id);
@@ -344,6 +343,14 @@ public:
     [[nodiscard]] NomadIndex getCallableOverloadCount(const NomadString& name) const;
     [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
     [[nodiscard]] CallableId catalogCallable(Callable* callable);
+    [[nodiscard]] CallableId registerMethod(
+        CompositeType* owner,
+        std::unique_ptr<Method> method
+    );
+    [[nodiscard]] CallableId registerConstructor(
+        CompositeType* owner,
+        std::unique_ptr<Constructor> constructor
+    );
 
     // Function table
     // Every function, method and constructor shares this ID space. Native member IDs are separate.
@@ -570,7 +577,6 @@ private:
     std::vector<ContextVariable> m_contextVariables;
     std::vector<FormatStringRegistration> m_formatStrings;
     std::vector<MemberReference> m_nativeMembers;
-    std::vector<Property*> m_properties;
     std::vector<std::unique_ptr<Hub>> m_hubs;
     ScriptInitialization m_scriptInitialization;
     std::vector<const NativeIndexerInfo*> m_nativeIndexers;
