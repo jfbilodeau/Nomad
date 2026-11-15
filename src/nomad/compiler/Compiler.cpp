@@ -2572,6 +2572,7 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     if (!beginPhase(CompilationPhase::Completed)) {
         return false;
     }
+    m_runtime->getTypeManager().seal();
     log::info("Functions compiled");
 
     return true;

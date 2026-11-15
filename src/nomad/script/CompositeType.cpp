@@ -58,6 +58,9 @@ CallableId CompositeType::registerConstructor(
     Runtime& runtime,
     std::unique_ptr<Constructor> constructor
 ) {
+    if (!runtime.getTypeManager().canMutateTypes()) {
+        return CallableId::INVALID;
+    }
     if (constructor == nullptr || constructor->getClassType() != this ||
         constructor->getId() != CallableId{} || runtime.getType(getId()) != this) {
         log::error("Cannot register constructor: invalid owner or previously registered callable");
@@ -86,6 +89,9 @@ CallableId CompositeType::registerMethod(
     Runtime& runtime,
     std::unique_ptr<Method> method
 ) {
+    if (!runtime.getTypeManager().canMutateTypes()) {
+        return CallableId::INVALID;
+    }
     if (method == nullptr || method->getClassType() != this ||
         method->getId() != CallableId{} || runtime.getType(getId()) != this ||
         getProperty(method->getName()) != nullptr) {
@@ -115,6 +121,9 @@ PropertyId CompositeType::registerProperty(
     Runtime& runtime,
     std::unique_ptr<Property> property
 ) {
+    if (!runtime.getTypeManager().canMutateTypes()) {
+        return PropertyId::INVALID;
+    }
     const auto* valueType = property == nullptr ? nullptr : property->getValueType();
     const auto* native = property == nullptr ? nullptr : property->asNativeProperty();
     const auto deferred = native != nullptr && !native->isTypeResolved() &&

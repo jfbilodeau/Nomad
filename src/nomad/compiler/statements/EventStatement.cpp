@@ -68,7 +68,7 @@ bool preParseEventStatement(
     const auto eventId = context->getRuntime()->registerEvent(eventName, parameters);
 
     if (eventId.isInvalid()) {
-        context->addError("Failed to register event '" + eventName + "'", tokens);
+        context->addError("Failed to register event '" + eventName + "': invalid name or the runtime is sealed", tokens);
 
         return false;
     }
