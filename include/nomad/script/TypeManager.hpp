@@ -33,17 +33,6 @@ public:
     void seal();
     [[nodiscard]] bool isSealed() const;
     [[nodiscard]] bool canMutateTypes() const;
-    // Test-only: reopens registration until the scope ends.
-    class UnsealScope {
-    public:
-        explicit UnsealScope(TypeManager& manager);
-        UnsealScope(const UnsealScope&) = delete;
-        UnsealScope& operator=(const UnsealScope&) = delete;
-        ~UnsealScope();
-
-    private:
-        TypeManager& m_manager;
-    };
     [[nodiscard]] TypeId registerClass(
         NomadString name,
         ClassMode mode,
@@ -257,7 +246,6 @@ private:
 
     Runtime& m_runtime;
     bool m_sealed = false;
-    NomadIndex m_unsealDepth = 0;
     NomadIndex m_instantiationDepth = 0;
     std::vector<std::unique_ptr<Type>> m_types;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;

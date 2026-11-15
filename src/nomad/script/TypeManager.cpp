@@ -34,17 +34,7 @@ bool TypeManager::isSealed() const {
 }
 
 bool TypeManager::canMutateTypes() const {
-    return !m_sealed || m_unsealDepth != 0 || m_instantiationDepth != 0;
-}
-
-TypeManager::UnsealScope::UnsealScope(TypeManager& manager):
-    m_manager(manager)
-{
-    ++m_manager.m_unsealDepth;
-}
-
-TypeManager::UnsealScope::~UnsealScope() {
-    --m_manager.m_unsealDepth;
+    return !m_sealed || m_instantiationDepth != 0;
 }
 
 Runtime& TypeManager::getRuntime() const {
