@@ -51,7 +51,7 @@ public:
     [[nodiscard]] ExecutionState captureExecutionState() const noexcept;
     void restoreExecutionState(const ExecutionState& state) noexcept;
     // Arguments are already on the stack; their owner releases them after restoring execution state.
-    void enterScriptFrame(NomadIndex address, const RuntimeValue& receiver = RuntimeValue{});
+    void enterScriptFrame(const ScriptCallableBase& callable, const RuntimeValue& receiver = RuntimeValue{});
     void enterNativeFrame(const RuntimeValue& receiver = RuntimeValue{});
     void executeScript();
 
@@ -303,6 +303,10 @@ private:
     void initializeStructStorage(RuntimeValue* destination, const Type* type);
     void executeCreationBody(const ScriptCallableBase* callable, const RuntimeValue& receiver);
     void pushScriptFrame();
+    void checkOperandDepth(NomadIndex operandDepth) const;
+    [[nodiscard]] NomadIndex getEntryOperandDepth(NomadIndex entry) const;
+    void callScriptFunction(NomadIndex address, NomadIndex operandDepth);
+    void callScriptMethod(NomadIndex address, NomadIndex operandDepth);
 
     static constexpr NomadIndex s_scriptFrameSlotCount = 4;
 

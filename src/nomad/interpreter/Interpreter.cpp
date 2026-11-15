@@ -403,7 +403,7 @@ void Interpreter::runScriptCallable(
 ) const {
     const ExecutionStateGuard state(m_virtualMachine);
 
-    m_virtualMachine.enterScriptFrame(callable.getFunctionStart(), receiver);
+    m_virtualMachine.enterScriptFrame(callable, receiver);
     m_virtualMachine.executeScript();
 }
 

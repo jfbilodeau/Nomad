@@ -71,12 +71,29 @@ enum class Operand {
 
 DeclareId(OpCodeId);
 
+enum class StackEffectKind {
+    Fixed = 1,
+    OperandCount,
+    StructInitializer,
+    IndexerArity
+};
+
+// `delta` is the net change in operand-stack slots. `transient` slots are held only while the instruction runs.
+// For OperandCount, `delta` (+1 or -1) is multiplied by the first operand. For IndexerArity, the first operand names the
+// indexer and its key count is subtracted from `delta`.
+struct StackEffect {
+    StackEffectKind kind = StackEffectKind::Fixed;
+    NomadInteger delta = 0;
+    NomadInteger transient = 0;
+};
+
 struct OpCodeDefinition {
     OpCodeId id;
     NomadString name;
     InstructionFn fn;
     std::vector<Operand> operands;
     NomadDocField;
+    StackEffect stackEffect;
 };
 
 namespace OpCodes {

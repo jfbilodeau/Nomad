@@ -268,12 +268,13 @@ public:
     [[nodiscard]] bool foldBinary(BinaryOperator op, const Type* lhsType, const RuntimeValue& lhs, const Type* rhsType, const RuntimeValue& rhs, RuntimeValue& result) const;
 
     // OpCodes
-    OpCodeId registerInstruction(const NomadString& name, InstructionFn fn, NomadDocArg, std::vector<Operand> operands);
+    OpCodeId registerInstruction(const NomadString& name, InstructionFn fn, NomadDocArg, std::vector<Operand> operands, StackEffect stackEffect = {});
     [[nodiscard]] OpCodeId getInstructionId(const NomadString& name) const;
     [[nodiscard]] OpCodeId getInstructionId(InstructionFn fn) const;
     [[nodiscard]] InstructionFn getInstructionFn(OpCodeId id) const;
     [[nodiscard]] const NomadString& getInstructionName(OpCodeId id) const;
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(OpCodeId id) const;
+    [[nodiscard]] const StackEffect& getInstructionStackEffect(OpCodeId id) const;
 
     // NativeFunctions
     CallableId registerNativeFunction(
@@ -476,6 +477,8 @@ public:
         NomadIndex line
     ) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableByStartAddress(NomadIndex startAddress) const;
+    void registerScriptEntry(const ScriptCallableBase& callable);
+    [[nodiscard]] const ScriptCallableBase* getScriptCallableByEntry(NomadIndex entry) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableAtInstructionIndex(NomadIndex instructionIndex) const;
     void getScriptCallables(std::vector<const ScriptCallableBase*>& callables) const;
 
@@ -558,6 +561,7 @@ private:
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<std::unique_ptr<Function>> m_functions;
     std::vector<Callable*> m_callables;
+    std::vector<const ScriptCallableBase*> m_scriptCallablesByEntry;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;

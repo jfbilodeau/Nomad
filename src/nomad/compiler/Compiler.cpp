@@ -2561,6 +2561,10 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         postCompile(context);
     });
 
+    reportExceptions({}, [&] {
+        verifyOperandDepths();
+    });
+
     if (m_scriptInitializerId.isValid()) {
         reportExceptions({}, [&] {
             installScriptInitialValues();
@@ -2629,6 +2633,139 @@ void Compiler::linkFunctions() {
         }
 
         setIndex(link.callIndex, function->getFunctionStart());
+    }
+}
+
+namespace {
+
+using StackDepth = NomadInteger;
+
+// Mirrors VirtualMachine::initializeStructStorage, which holds the destination address while a non-empty struct's
+// initializer runs.
+StackDepth getStructInitializerTransient(const Runtime& runtime, const CallableId constructorId) {
+    const auto* structType = runtime.getConstructor(constructorId)->getConstructedType()->asStructType();
+
+    if (structType == nullptr) {
+        throw NomadBug("Struct creation requires a struct constructor");
+    }
+
+    return structType->getSize() != 0 && structType->getInitializer() != nullptr ? 1 : 0;
+}
+
+bool isReturn(const InstructionFn fn) {
+    return fn == op_return || fn == op_return_1 || fn == op_return_2 || fn == op_return_3 || fn == op_return_n;
+}
+
+StackDepth getReturnedSlotCount(const InstructionFn fn, const NomadIndex countOperand) {
+    if (fn == op_return_n) {
+        return countOperand;
+    }
+    if (fn == op_return_3) {
+        return 3;
+    }
+    if (fn == op_return_2) {
+        return 2;
+    }
+    if (fn == op_return_1) {
+        return 1;
+    }
+
+    return 0;
+}
+
+} // namespace
+
+NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const ScriptCallableBase& callable) {
+    const auto& instructions = runtime.getInstructions();
+    const auto start = callable.getFunctionStart();
+    const auto end = callable.getFunctionEnd();
+    std::vector<StackDepth> depths(end - start, -1);
+    std::vector<NomadIndex> pending;
+    auto maximumDepth = StackDepth{0};
+
+    const auto reach = [&](const NomadIndex index, const StackDepth depth) {
+        if (index < start || index >= end) {
+            throw NomadBug("Operand depth verification found a branch outside the function");
+        }
+
+        auto& recordedDepth = depths[index - start];
+        if (recordedDepth < 0) {
+            recordedDepth = depth;
+            pending.push_back(index);
+        } else if (recordedDepth != depth) {
+            throw NomadBug("Operand depth differs where control flow joins");
+        }
+    };
+
+    reach(start, 0);
+
+    while (!pending.empty()) {
+        const auto index = pending.back();
+        pending.pop_back();
+        const auto depth = depths[index - start];
+        const auto fn = instructions[index].fn;
+        const auto id = runtime.getInstructionId(fn);
+
+        if (id.isInvalid()) {
+            throw NomadBug("Operand depth verification found an unknown instruction");
+        }
+
+        const auto operandCount = static_cast<NomadIndex>(runtime.getInstructionOperands(id).size());
+        const auto next = index + 1 + operandCount;
+        const auto& effect = runtime.getInstructionStackEffect(id);
+
+        auto delta = StackDepth{effect.delta};
+        auto transient = StackDepth{effect.transient};
+        if (effect.kind == StackEffectKind::OperandCount) {
+            delta *= static_cast<StackDepth>(instructions[index + 1].value.getIndexValue());
+        } else if (effect.kind == StackEffectKind::IndexerArity) {
+            const auto* indexer = runtime.getNativeIndexerInfo(IndexerId{instructions[index + 1].value.getIdValue()});
+            if (indexer == nullptr) {
+                throw NomadBug("Operand depth verification found an unknown native indexer");
+            }
+            delta -= static_cast<StackDepth>(indexer->indexTypes.size());
+        } else if (effect.kind == StackEffectKind::StructInitializer) {
+            delta = 0;
+            transient = getStructInitializerTransient(runtime, CallableId{instructions[index + 1].value.getIdValue()});
+        }
+
+        const auto after = depth + delta;
+        if (after < 0) {
+            throw NomadBug("Operand stack underflows");
+        }
+        maximumDepth = std::max({maximumDepth, depth + transient, after});
+
+        if (fn == op_stop) {
+            continue;
+        }
+
+        if (isReturn(fn)) {
+            const auto countOperand = fn == op_return_n ? instructions[index + 1].value.getIndexValue() : NomadIndex{0};
+            if (depth != getReturnedSlotCount(fn, countOperand)) {
+                throw NomadBug("Return leaves operand values on the stack");
+            }
+            continue;
+        }
+
+        if (fn == op_jump) {
+            reach(instructions[index + 1].value.getIndexValue(), after);
+            continue;
+        }
+
+        if (fn == op_jump_if || fn == op_jump_if_false) {
+            reach(instructions[index + 1].value.getIndexValue(), after);
+        }
+
+        reach(next, after);
+    }
+
+    return static_cast<NomadIndex>(maximumDepth);
+}
+
+void Compiler::verifyOperandDepths() {
+    for (const auto& source: m_functions) {
+        source.function->setMaximumOperandDepth(computeMaximumOperandDepth(*m_runtime, *source.function));
+        m_runtime->registerScriptEntry(*source.function);
     }
 }
 

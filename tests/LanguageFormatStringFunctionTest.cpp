@@ -209,7 +209,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_dynamic_converters_receive_complete_storage_no
             machine->pushInteger(77);
             machine->pushStorage(values);
             machine->pushInteger(3);
-            machine->enterScriptFrame(function->getFunctionStart());
+            machine->enterScriptFrame(*function);
             machine->executeScript();
             BOOST_TEST(machine->getResult().getStringValue() == "11:42|31:64|empty|empty|3|77");
             runtime.getStringType()->freeValue(&machine->getResult());
