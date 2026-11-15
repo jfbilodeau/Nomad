@@ -1483,6 +1483,7 @@ BOOST_AUTO_TEST_CASE(scalar_parameter_bytecode_uses_offsets_after_wide_parameter
     }
     compiler->addOpCode(OpCodes::op_call_script_function);
     compiler->addIndex(inner->getFunctionStart());
+    compiler->addIndex(0);
     runtime.getStringType()->emitFreeStackValue(*compiler, 3);
     compiler->addOpCode(OpCodes::op_pop_n);
     compiler->addIndex(5);
@@ -1756,6 +1757,7 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     arguments.compile(compiler.get(), caller);
     compiler->addOpCode(OpCodes::op_call_script_function);
     compiler->addIndex(callee->getFunctionStart());
+    compiler->addIndex(0);
     compiler->addFreeArguments(&arguments);
     runtime.getIntegerType()->emitStoreFunctionVariable(*compiler, caller->getVariableOffset(returnedNumber));
     compiler->addOpCode(OpCodes::op_call_native_function);
@@ -2000,7 +2002,7 @@ BOOST_AUTO_TEST_CASE(borrowed_destination_copies_preserve_nested_values_and_rele
             machine.pushObjectValue(parameters[index]);
         }
     }
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     machine.reserveLocals(13);
     const auto locals = machine.getLocalStorage(0, 13);
     locals[0].setIntegerValue(107);
@@ -2455,7 +2457,7 @@ BOOST_AUTO_TEST_CASE(compiler_struct_method_calls_omit_empty_storage_and_preserv
     compiler->addFunctionEntry(caller);
     const auto emptyStart = runtime.getInstructions().size();
     compiler->addStructMethodCall(forwardId, caller, &noArguments, emptyReceiver, emptyDestination);
-    BOOST_TEST(runtime.getInstructions().size() == emptyStart + 2);
+    BOOST_TEST(runtime.getInstructions().size() == emptyStart + 3);
     BOOST_TEST(runtime.getInstructionId(runtime.getInstructions()[emptyStart].fn).id ==
         runtime.getInstructionId(OpCodes::op_call_script_method).id);
     const auto createStart = runtime.getInstructions().size();

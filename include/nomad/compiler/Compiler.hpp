@@ -316,7 +316,7 @@ public:
         CompilationTarget target = CompilationTarget::Executable
     );
     [[nodiscard]] bool compileFunctions(CompilerContext* context);
-    void addFunctionLink(CallableId functionId, NomadIndex callIndex);
+    void addScriptCallTarget(CallableId functionId);
     // Function calls used in expressions, recorded while resolving. Explains return types that cannot be inferred.
     void addFunctionCallDependency(CallableId callerFunctionId, CallableId calleeFunctionId);
     // True if calleeFunctionId leads back to callerFunctionId or to itself through recorded function calls.

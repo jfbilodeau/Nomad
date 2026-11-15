@@ -238,11 +238,11 @@ void VirtualMachine::restoreExecutionState(const ExecutionState& state) noexcept
     m_this = state.receiver;
 }
 
-void VirtualMachine::enterScriptFrame(const NomadIndex address, const RuntimeValue& receiver) {
+void VirtualMachine::enterScriptFrame(const ScriptCallableBase& callable, const RuntimeValue& receiver) {
     m_running = true;
     m_instructionIndex = 0;
     m_this = receiver;
-    callScriptMethod(address);
+    callScriptMethod(callable.getFunctionStart(), callable.getMaximumOperandDepth());
 }
 
 void VirtualMachine::enterNativeFrame(const RuntimeValue& receiver) {
@@ -291,7 +291,7 @@ void VirtualMachine::run(
         pushHostArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
     }
 
-    callScriptFunction(function->getFunctionStart());
+    callScriptFunction(function->getFunctionStart(), function->getMaximumOperandDepth());
     executeScript();
 }
 
@@ -370,7 +370,7 @@ void VirtualMachine::executeFunction(const ScriptFunction& function) {
         restoreExecutionState(state);
     };
 
-    callScriptFunction(function.getFunctionStart());
+    callScriptFunction(function.getFunctionStart(), function.getMaximumOperandDepth());
     executeScript();
 }
 
@@ -430,7 +430,7 @@ void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, con
     m_result = RuntimeValue{};
     m_intermediate = RuntimeValue{};
     m_this = receiver;
-    callScriptMethod(callable->getFunctionStart());
+    callScriptMethod(callable->getFunctionStart(), callable->getMaximumOperandDepth());
     executeScript();
 }
 
@@ -513,14 +513,14 @@ const ScriptCallableBase* VirtualMachine::getCurrentCallable() const {
     return m_runtime->getScriptCallableAtInstructionIndex(m_instructionIndex);
 }
 
-void VirtualMachine::callScriptFunction(const NomadIndex address) {
-    pushScriptFrame();
+void VirtualMachine::callScriptFunction(const NomadIndex address, const NomadIndex operandDepth) {
+    pushScriptFrame(operandDepth);
     m_this = RuntimeValue{};
     jump(address);
 }
 
-void VirtualMachine::callScriptMethod(const NomadIndex address) {
-    pushScriptFrame();
+void VirtualMachine::callScriptMethod(const NomadIndex address, const NomadIndex operandDepth) {
+    pushScriptFrame(operandDepth);
     jump(address);
 }
 
@@ -529,9 +529,10 @@ void VirtualMachine::allocateScriptObject(const TypeId typeId) {
     m_this.setObjectValue(new ScriptObject(classType));
 }
 
-void VirtualMachine::pushScriptFrame() {
+void VirtualMachine::pushScriptFrame(const NomadIndex operandDepth) {
+    // The frame header and the callee's operand depth must fit above the current top.
     if (m_stackIndex >= m_stack.size() ||
-        m_stack.size() - m_stackIndex - 1 < s_scriptFrameSlotCount) {
+        s_scriptFrameSlotCount + operandDepth >= m_stack.size() - m_stackIndex) {
         fault("Stack overflow");
     }
 

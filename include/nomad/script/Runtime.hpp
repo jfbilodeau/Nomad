@@ -477,8 +477,6 @@ public:
         NomadIndex line
     ) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableByStartAddress(NomadIndex startAddress) const;
-    void registerScriptEntry(const ScriptCallableBase& callable);
-    [[nodiscard]] const ScriptCallableBase* getScriptCallableByEntry(NomadIndex entry) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableAtInstructionIndex(NomadIndex instructionIndex) const;
     void getScriptCallables(std::vector<const ScriptCallableBase*>& callables) const;
 
@@ -561,7 +559,6 @@ private:
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<std::unique_ptr<Function>> m_functions;
     std::vector<Callable*> m_callables;
-    std::vector<const ScriptCallableBase*> m_scriptCallablesByEntry;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;

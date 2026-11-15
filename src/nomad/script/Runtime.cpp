@@ -2382,31 +2382,6 @@ const ScriptCallableBase* Runtime::getScriptCallableByStartAddress(const NomadIn
     return callable != nullptr && callable->getFunctionStart() == startAddress ? callable : nullptr;
 }
 
-void Runtime::registerScriptEntry(const ScriptCallableBase& callable) {
-    const auto entry = callable.getFunctionStart();
-
-    if (entry >= m_scriptCallablesByEntry.size()) {
-        m_scriptCallablesByEntry.resize(entry + 1, nullptr);
-    }
-
-    m_scriptCallablesByEntry[entry] = &callable;
-}
-
-const ScriptCallableBase* Runtime::getScriptCallableByEntry(const NomadIndex entry) const {
-    if (entry < m_scriptCallablesByEntry.size() && m_scriptCallablesByEntry[entry] != nullptr) {
-        return m_scriptCallablesByEntry[entry];
-    }
-
-    for (const auto* callable : m_callables) {
-        const auto* script = callable->asScriptCallable();
-        if (script != nullptr && script->getFunctionStart() == entry) {
-            return script;
-        }
-    }
-
-    return nullptr;
-}
-
 const ScriptCallableBase* Runtime::getScriptCallableAtInstructionIndex(const NomadIndex instructionIndex) const {
     for (const auto* callable : m_callables) {
         const auto* script = callable->asScriptCallable();

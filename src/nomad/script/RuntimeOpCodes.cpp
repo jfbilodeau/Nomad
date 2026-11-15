@@ -56,10 +56,10 @@ void Runtime::registerDefaultInstructions() {
     registerInstruction(
         OpCodes::op_call_script_function, op_call_script_function,
         "Call the script function at the given address without a receiver",
-        {Operand::Function}
+        {Operand::Function, Operand::Index}
     );
     registerInstruction(OpCodes::op_call_native_function, op_call_native_function, "Call the given native function id", {Operand::NativeFunction});
-    registerInstruction(OpCodes::op_call_script_method, op_call_script_method, "Call a script method with the bound receiver", {Operand::Function});
+    registerInstruction(OpCodes::op_call_script_method, op_call_script_method, "Call a script method with the bound receiver", {Operand::Function, Operand::Index});
     registerInstruction(OpCodes::op_create_script_object, op_create_script_object, "Create a script object using prepared stack arguments", {Operand::Callable});
     registerInstruction(OpCodes::op_create_script_struct, op_create_script_struct,
         "Initialize a struct destination using a script constructor; absent destination uses the invalid index",

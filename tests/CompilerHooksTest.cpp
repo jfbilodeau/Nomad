@@ -51,8 +51,8 @@ BOOST_AUTO_TEST_CASE(executable_hooks_follow_phase_and_registration_order)
         CompilationPhase::PrepareFormatStrings,
         CompilationPhase::Resolve,
         CompilationPhase::Emit,
-        CompilationPhase::Link,
         CompilationPhase::Verify,
+        CompilationPhase::Link,
         CompilationPhase::Completed
     };
     std::vector<std::pair<CompilationPhase, int>> expected;
@@ -105,8 +105,8 @@ BOOST_AUTO_TEST_CASE(hooks_registered_during_invocation_start_next_phase_without
         CompilationPhase::PrepareFormatStrings,
         CompilationPhase::Resolve,
         CompilationPhase::Emit,
-        CompilationPhase::Link,
         CompilationPhase::Verify,
+        CompilationPhase::Link,
         CompilationPhase::Completed
     };
     std::vector<std::pair<CompilationPhase, int>> expectedCalls;
@@ -239,8 +239,8 @@ BOOST_AUTO_TEST_CASE(hook_errors_stop_remaining_hooks_and_phases)
         CompilationPhase::PrepareFormatStrings,
         CompilationPhase::Resolve,
         CompilationPhase::Emit,
-        CompilationPhase::Link,
         CompilationPhase::Verify,
+        CompilationPhase::Link,
         CompilationPhase::Completed
     };
     for (auto failureIndex = std::size_t{0}; failureIndex < phases.size(); ++failureIndex) {

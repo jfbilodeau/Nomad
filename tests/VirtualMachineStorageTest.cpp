@@ -134,7 +134,7 @@ BOOST_AUTO_TEST_CASE(contiguous_parameter_blocks_and_local_views_keep_physical_o
     machine.pushInteger(1);
     machine.pushInteger(2);
     machine.pushInteger(3);
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     machine.reserveLocals(4);
     const auto& constMachine = machine;
     const auto point = machine.getParameterStorage(0, 3);
@@ -150,7 +150,7 @@ BOOST_AUTO_TEST_CASE(contiguous_parameter_blocks_and_local_views_keep_physical_o
     BOOST_TEST(constMachine.getLocalStorage(1, 3)[0].getIntegerValue() == 23);
     const auto* original = locals.data();
     machine.pushInteger(42);
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     machine.reserveLocals(2);
     BOOST_TEST(machine.getParameterStorage(0, 1)[0].getIntegerValue() == 42);
     BOOST_TEST(machine.getLocalStorage(0, 2).data() != original);
@@ -168,7 +168,7 @@ BOOST_AUTO_TEST_CASE(native_calls_and_reentry_preserve_enclosing_script_storage)
     machine.pushInteger(1);
     machine.pushInteger(2);
     machine.pushInteger(3);
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     machine.reserveLocals(1);
     machine.getLocalStorage(0, 1)[0].setIntegerValue(19);
     const auto* enclosing = machine.getEnclosingParameterStorage(0, 3).data();
@@ -178,7 +178,7 @@ BOOST_AUTO_TEST_CASE(native_calls_and_reentry_preserve_enclosing_script_storage)
             BOOST_TEST(std::as_const(*active).getEnclosingParameterStorage(0, 3).data() == enclosing);
             active->getEnclosingParameterStorage(0, 3)[0].setIntegerValue(7);
             active->pushInteger(8);
-            active->callScriptFunction(0);
+            active->callScriptFunction(0, 0);
             active->reserveLocals(1);
             BOOST_TEST(active->getEnclosingParameterStorage(0, 1)[0].getIntegerValue() == 8);
             active->returnFunction(1);
@@ -909,7 +909,7 @@ BOOST_AUTO_TEST_CASE(empty_views_do_not_require_storage_or_address_arithmetic) {
     BOOST_TEST(constMachine.getParameterStorage(maximum, 0).empty());
     BOOST_TEST(constMachine.getEnclosingParameterStorage(maximum, 0).empty());
     machine.pushInteger(1);
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     for (const auto offset : {NomadIndex{0}, NomadIndex{1}, maximum}) {
         BOOST_TEST(machine.getLocalStorage(offset, 0).empty());
         BOOST_TEST(machine.getParameterStorage(offset, 0).empty());
@@ -1061,7 +1061,7 @@ BOOST_AUTO_TEST_CASE(address_opcodes_use_full_width_offsets_and_folded_parameter
     machine.pushInteger(2);
     machine.pushInteger(3);
     machine.pushN(wideOffset);
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     machine.reserveLocals(wideOffset + 3);
     executeInstruction(runtime, machine, localAddress);
     BOOST_TEST(machine.peekStack(0).getStorageAddress() == machine.getLocalStorage(wideOffset, 1).data());
@@ -1095,7 +1095,7 @@ BOOST_AUTO_TEST_CASE(indirect_opcodes_preserve_scalar_and_reference_ownership) {
     storage[2].setStringValue("replaced");
     VirtualMachine machine(&runtime, 32);
     machine.pushStorageAddress(storage.data());
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     const auto emit = [&](const NomadString& name, const NomadIndex field) {
         const auto address = compiler->addOpCode(name);
         compiler->addIndex(0);
@@ -1154,7 +1154,7 @@ BOOST_AUTO_TEST_CASE(hidden_pointers_survive_nested_calls_and_host_reentry_failu
     machine.pushStorageAddress(destination.data());
     machine.pushStorageAddress(receiver.data());
     machine.pushInteger(7);
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     BOOST_TEST(machine.getIntegerParameter(0) == 7);
     BOOST_TEST(machine.getParameter(1).getStorageAddress() == receiver.data());
     BOOST_TEST(machine.getParameter(2).getStorageAddress() == destination.data());
@@ -1181,7 +1181,7 @@ BOOST_AUTO_TEST_CASE(hidden_pointers_survive_nested_calls_and_host_reentry_failu
     BOOST_TEST(std::as_const(machine).getStorageParameter(1, 0).getIntegerValue() == 23);
     BOOST_TEST(std::as_const(machine).getStorageParameter(2, 1).getIntegerValue() == 31);
     machine.pushInteger(11);
-    machine.callScriptMethod(0);
+    machine.callScriptMethod(0, 0);
     BOOST_TEST(machine.getIntegerParameter(0) == 11);
     machine.returnFunction(0);
     machine.pop1();
@@ -1263,6 +1263,7 @@ BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_own
     compiler->addInteger(7);
     compiler->addOpCode(OpCodes::op_call_script_function);
     compiler->addIndex(callee->getFunctionStart());
+    compiler->addIndex(0);
     compiler->addOpCode(OpCodes::op_pop_3);
     compiler->addLoadFunctionVariable(caller->getVariableOffset(destinationId), runtime.getIntegerType(),
         ExpressionTarget::Result);
@@ -1280,16 +1281,16 @@ BOOST_AUTO_TEST_CASE(calls_need_only_existing_frames_and_requested_pointer_slots
     Runtime runtime;
     VirtualMachine machine(&runtime, 8);
     machine.pushStorageAddress(machine.getParameterAddress(0));
-    machine.callScriptFunction(0);
-    BOOST_CHECK_THROW(machine.callScriptFunction(0), VirtualMachineException);
+    machine.callScriptFunction(0, 0);
+    BOOST_CHECK_THROW(machine.callScriptFunction(0, 0), VirtualMachineException);
     machine.returnFunction(0);
     machine.pop1();
     BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
-    machine.callScriptFunction(0);
+    machine.callScriptFunction(0, 0);
     machine.returnFunction(0);
     BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
     VirtualMachine emptyCall(&runtime, 5);
-    emptyCall.callScriptFunction(0);
+    emptyCall.callScriptFunction(0, 0);
     BOOST_CHECK_THROW(emptyCall.reserveLocals(1), VirtualMachineException);
     emptyCall.returnFunction(0);
     BOOST_TEST(emptyCall.peekStack(0).getIntegerValue() == 0);
@@ -1573,9 +1574,9 @@ BOOST_AUTO_TEST_CASE(script_and_native_call_bookkeeping_does_not_allocate) {
         };
 
         for (auto index = 0; index < 100; ++index) {
-            machine.callScriptFunction(0);
+            machine.callScriptFunction(0, 0);
             machine.pushStorageAddress(storage.data());
-            machine.callScriptFunction(0);
+            machine.callScriptFunction(0, 0);
             machine.pushStorageAddress(storage.data() + 1);
             machine.callNativeFunction(callback);
             machine.pop1();

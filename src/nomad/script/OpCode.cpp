@@ -240,11 +240,17 @@ void op_code_load_default_r(VirtualMachine* interpreter) {
 }
 
 void op_call_script_function(VirtualMachine* interpreter) {
-    interpreter->callScriptFunction(interpreter->nextIndex());
+    const auto address = interpreter->nextIndex();
+    const auto operandDepth = interpreter->nextIndex();
+
+    interpreter->callScriptFunction(address, operandDepth);
 }
 
 void op_call_script_method(VirtualMachine* interpreter) {
-    interpreter->callScriptMethod(interpreter->nextIndex());
+    const auto address = interpreter->nextIndex();
+    const auto operandDepth = interpreter->nextIndex();
+
+    interpreter->callScriptMethod(address, operandDepth);
 }
 
 void op_create_script_object(VirtualMachine* interpreter) {

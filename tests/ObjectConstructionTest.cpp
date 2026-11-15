@@ -112,8 +112,9 @@ BOOST_AUTO_TEST_CASE(call_opcodes_have_specialized_operands) {
         const auto id = runtime.getInstructionId(name);
         BOOST_REQUIRE(id.isValid());
         const auto operands = runtime.getInstructionOperands(id);
-        BOOST_REQUIRE(operands.size() == 1u);
+        BOOST_REQUIRE(operands.size() == 2u);
         BOOST_CHECK(operands[0] == Operand::Function);
+        BOOST_CHECK(operands[1] == Operand::Index);
     }
     const auto constructorId = runtime.getInstructionId(OpCodes::op_create_script_object);
     BOOST_REQUIRE(constructorId.isValid());

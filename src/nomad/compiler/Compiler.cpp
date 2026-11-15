@@ -1032,8 +1032,7 @@ NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, Sc
     addOpCode(OpCodes::op_push_this);
     arguments->compile(this, function);
     addOpCode(OpCodes::op_call_script_function);
-    addFunctionLink(targetFunctionId, m_instructions.size());
-    addIndex(0);
+    addScriptCallTarget(targetFunctionId);
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_pop_this);
 
@@ -1043,8 +1042,7 @@ NomadIndex Compiler::addScriptFunctionCall(const CallableId targetFunctionId, Sc
 void Compiler::addFunctionCallInstruction(const Function* function) {
     if (function->asScriptFunction() != nullptr) {
         addOpCode(OpCodes::op_call_script_function);
-        addFunctionLink(function->getId(), m_instructions.size());
-        addIndex(0);
+        addScriptCallTarget(function->getId());
     } else {
         addOpCode(OpCodes::op_call_native_function);
         addId(function->getId().id);
@@ -1054,8 +1052,7 @@ void Compiler::addFunctionCallInstruction(const Function* function) {
 void Compiler::addMethodCallInstruction(const Method* method) {
     if (method->asScriptMethod() != nullptr) {
         addOpCode(OpCodes::op_call_script_method);
-        addFunctionLink(method->getId(), m_instructions.size());
-        addIndex(0);
+        addScriptCallTarget(method->getId());
     } else {
         addOpCode(OpCodes::op_call_native_method);
         addId(method->getId().id);
@@ -1535,8 +1532,7 @@ NomadIndex Compiler::addScriptMethodCall(
     addOpCode(OpCodes::op_bind_this_from_stack);
     addIndex(arguments->getArgumentCount());
     addOpCode(OpCodes::op_call_script_method);
-    addFunctionLink(memberId, m_instructions.size());
-    addIndex(0);
+    addScriptCallTarget(memberId);
 
     addFreeArguments(arguments);
     addOpCode(OpCodes::op_pop_this);
@@ -1971,8 +1967,7 @@ void Compiler::compileConstructor(const FunctionCompilation& source) {
     }
     addOpCode(OpCodes::op_push_this);
     addOpCode(OpCodes::op_call_script_method);
-    addFunctionLink((*initializer)->getId(), m_instructions.size());
-    addIndex(0);
+    addScriptCallTarget((*initializer)->getId());
     addOpCode(OpCodes::op_pop_this);
     source.ast->compile(this, constructor);
     addFunctionReturn(constructor);
@@ -2543,15 +2538,6 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
         return false;
     }
 
-    if (!beginPhase(CompilationPhase::Link)) {
-        return false;
-    }
-    log::info("Linking functions");
-
-    reportExceptions({}, [&] {
-        linkFunctions();
-    });
-
     if (!beginPhase(CompilationPhase::Verify)) {
         return false;
     }
@@ -2563,6 +2549,15 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
 
     reportExceptions({}, [&] {
         verifyOperandDepths();
+    });
+
+    if (!beginPhase(CompilationPhase::Link)) {
+        return false;
+    }
+    log::info("Linking functions");
+
+    reportExceptions({}, [&] {
+        linkFunctions();
     });
 
     if (m_scriptInitializerId.isValid()) {
@@ -2581,8 +2576,12 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
 
     return true;
 }
-void Compiler::addFunctionLink(CallableId functionId, NomadIndex callIndex) {
+void Compiler::addScriptCallTarget(const CallableId functionId) {
+    const auto callIndex = static_cast<NomadIndex>(m_instructions.size());
+
     m_functionLinks.emplace_back(FunctionLink{functionId, callIndex});
+    addIndex(0);
+    addIndex(0);
 }
 
 void Compiler::addFunctionCallDependency(const CallableId callerFunctionId, const CallableId calleeFunctionId) {
@@ -2633,6 +2632,7 @@ void Compiler::linkFunctions() {
         }
 
         setIndex(link.callIndex, function->getFunctionStart());
+        setIndex(link.callIndex + 1, function->getMaximumOperandDepth());
     }
 }
 
@@ -2765,7 +2765,6 @@ NomadIndex Compiler::computeMaximumOperandDepth(const Runtime& runtime, const Sc
 void Compiler::verifyOperandDepths() {
     for (const auto& source: m_functions) {
         source.function->setMaximumOperandDepth(computeMaximumOperandDepth(*m_runtime, *source.function));
-        m_runtime->registerScriptEntry(*source.function);
     }
 }
 
