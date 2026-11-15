@@ -505,7 +505,7 @@ void VirtualMachine::fault(const NomadString& faultMessage) const {
     throw VirtualMachineException(faultMessage);
 }
 
-ScriptFunction* VirtualMachine::getCurrentScript() const {
+const ScriptFunction* VirtualMachine::getCurrentScript() const {
     return m_runtime->getFunctionAtInstructionIndex(m_instructionIndex);
 }
 

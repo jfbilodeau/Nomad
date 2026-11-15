@@ -114,10 +114,10 @@ public:
     void createNativeStruct(RuntimeValue* destination, CallableId constructorId);
     void createScriptStruct(RuntimeValue* destination, CallableId constructorId);
     void stop(const RuntimeValue& result);
-    void fault(const NomadString& faultMessage) const;
+    [[noreturn]] void fault(const NomadString& faultMessage) const;
 
     [[nodiscard]]
-    ScriptFunction* getCurrentScript() const;
+    const ScriptFunction* getCurrentScript() const;
     [[nodiscard]] const ScriptCallableBase* getCurrentCallable() const;
     [[nodiscard]] NomadIndex getParameterIndex() const { return m_parameterIndex; }
     [[nodiscard]] NomadIndex getVariableIndex() const { return m_variableIndex; }
