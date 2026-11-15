@@ -1714,7 +1714,13 @@ void Compiler::inferTypes(CompilerContext* context) {
     // resolve pass reports errors once, when every type that can be inferred is known.
     auto inferredTypes = collectInferredTypes();
 
-    while (true) {
+    // Each pass that changes a type settles at least one more dependency layer, so converging takes at most one pass per
+    // inferred type plus one confirming pass.
+    for (auto pass = std::size_t{1};; ++pass) {
+        if (pass > inferredTypes.size() + 1) {
+            reportError("Type inference did not converge");
+        }
+
         CompilerContext inferenceContext(this, context->getMode());
 
         for (const auto& source: m_functions) {
@@ -2458,6 +2464,10 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     reportExceptions({}, [&] {
         inferTypes(context);
     });
+
+    if (hasNewErrors()) {
+        return false;
+    }
 
     m_readFields.clear();
     for (const auto& source: m_functions) {

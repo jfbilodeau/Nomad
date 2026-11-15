@@ -211,6 +211,27 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_recursive_return_type_from_later_r
     BOOST_TEST(context.getErrorCount() == 0);
 }
 
+BOOST_AUTO_TEST_CASE(compile_functions_infers_return_chain_declared_in_reverse_order)
+{
+    constexpr auto chainLength = 64;
+    std::vector<ScriptSource> sources;
+    for (auto index = 0; index < chainLength; ++index) {
+        const auto name = "f" + std::to_string(index);
+        const auto body = index + 1 < chainLength ? "return f" + std::to_string(index + 1) : std::string("return 42");
+
+        sources.push_back({name, {name + ".nomad", body}});
+    }
+
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {sources, {}});
+
+    BOOST_TEST(compiler->compileFunctions(&context));
+    BOOST_TEST(context.getErrorCount() == 0);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("f0"))->getReturnType() == runtime.getIntegerType());
+}
+
 BOOST_AUTO_TEST_CASE(compile_functions_reports_recursive_function_without_typed_return)
 {
     Runtime runtime;

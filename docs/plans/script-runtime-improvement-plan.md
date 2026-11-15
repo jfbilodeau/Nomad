@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 and 2 (2a and 2b) are implemented and validated. All 13 CTest entries passed. Step 3 (compiler correctness) is next.
+**Status:** Decisions D1–D5 are approved. Steps 1 and 2 (2a and 2b) are implemented and validated. All 13 CTest entries passed. Step 3 (compiler correctness) is in progress: K1, K3, and K4 are addressed; K2 is next.
 
 ## Component contract
 
@@ -248,6 +248,6 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | K1 | P1 | correctness | Struct-typed class fields compile to native property get and set ops, but `ScriptObject::getField` and `setField` reject struct-typed fields | `Compiler.cpp`: addPropertyAccess, resolveObjectField; `ScriptObject.cpp`: validateSingleSlotFieldAccess | Script paths pass the K1 repro; direct struct-field fallback now reports an internal error | 3 |
 | K2 | P1 | correctness | No maximum operand-stack depth is computed; the VM relies on debug-only checks | `Compiler.cpp`: emission paths; `VirtualMachine.cpp`: TEST_STACK_* macros | from review | 3 |
 | K3 | P2 | correctness | `addLoadFloatValue` compares `value == 0`, so `-0.0` compiles to `+0.0` | `Compiler.cpp`: addLoadFloatValue | from review | 3 |
-| K4 | P3 | robustness | `Compiler::inferTypes` iterates to a fixed point with no iteration cap | `Compiler.cpp`: inferTypes | from review | 3 |
+| K4 | P3 | robustness | `Compiler::inferTypes` iterates to a fixed point with no iteration cap | `Compiler.cpp`: inferTypes | Fixed: pass count bounded, diagnostic on overflow | 3 |
 | K5 | P3 | redundancy | Call emitters repeat the script and native split and operand setup (addFunctionCallInstruction through addNativeMethodCall) | `Compiler.cpp`: call-emission block | from review | 7 |
 | K6 | P3 | redundancy | getIdentifierType and getIdentifierDefinition duplicate identifier resolution | `Compiler.cpp`: getIdentifierType, getIdentifierDefinition | from review | 7 |
