@@ -95,12 +95,12 @@ public:
     // for native factories (e.g. `Array` creating `Array1<int>`). Null for functions.
     [[nodiscard]] const Type* getClassType() const;
     [[nodiscard]] const NomadString& getDoc() const;
-    void setId(CallableId id);
     [[nodiscard]] virtual ScriptCallableBase* asScriptCallable();
     [[nodiscard]] virtual const ScriptCallableBase* asScriptCallable() const;
 
 protected:
     Callable(
+        CallableId id,
         CallableType type,
         CallableSource source,
         NomadString name,
@@ -114,7 +114,7 @@ protected:
     [[nodiscard]] std::vector<Parameter>& getEditableParameters();
 
 private:
-    CallableId m_id = CallableId{};
+    const CallableId m_id;
     NomadString m_name;
     CallableType m_type;
     CallableSource m_source;
@@ -133,6 +133,7 @@ public:
 
 protected:
     Function(
+        CallableId id,
         const CallableSource source,
         NomadString name,
         std::vector<Parameter> parameters,
@@ -149,6 +150,7 @@ public:
 
 protected:
     Method(
+        CallableId id,
         const CallableSource source,
         NomadString name,
         const Type* classType,
@@ -168,6 +170,7 @@ public:
 
 protected:
     Constructor(
+        CallableId id,
         const CallableSource source,
         NomadString name,
         const Type* classType,

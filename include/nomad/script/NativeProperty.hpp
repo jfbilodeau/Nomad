@@ -10,6 +10,7 @@ namespace nomad {
 class NativeProperty final : public Property {
 public:
     NativeProperty(
+        PropertyId id,
         const ClassType* classType,
         NomadString name,
         const Type* valueType,

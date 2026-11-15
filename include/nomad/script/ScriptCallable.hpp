@@ -40,10 +40,9 @@ protected:
         NomadString source,
         Arguments&&... arguments
     ):
-        Base(CallableSource::Script, std::forward<Arguments>(arguments)...),
+        Base(id, CallableSource::Script, std::forward<Arguments>(arguments)...),
         ScriptCallableBase(std::move(path), std::move(source))
     {
-        this->setId(id);
     }
 
     [[nodiscard]] std::vector<Parameter>& getEditableParameters() override {
@@ -78,6 +77,7 @@ public:
 class ScriptMethod final : public ScriptCallable<Method> {
 public:
     ScriptMethod(
+        CallableId id,
         NomadString name,
         const Type* classType,
         std::vector<Parameter> parameters,
@@ -92,6 +92,7 @@ public:
 class ScriptConstructor final : public ScriptCallable<Constructor> {
 public:
     ScriptConstructor(
+        CallableId id,
         const Type* classType,
         std::vector<Parameter> parameters,
         NomadString path,

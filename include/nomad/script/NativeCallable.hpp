@@ -17,6 +17,7 @@ using NativeFunctionFn = std::function<void(VirtualMachine*)>;
 class NativeFunction : public Function {
 public:
     NativeFunction(
+        CallableId id,
         NomadString name,
         NativeFunctionFn fn,
         std::vector<Parameter> parameters,
@@ -43,6 +44,7 @@ private:
 class NativeMethod : public Method {
 public:
     NativeMethod(
+        CallableId id,
         NomadString name,
         const Type* classType,
         NativeFunctionFn fn,
@@ -61,6 +63,7 @@ private:
 class NativeConstructor : public Constructor {
 public:
     NativeConstructor(
+        CallableId id,
         NomadString name,
         const Type* classType,
         const Type* createdType,

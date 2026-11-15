@@ -9,11 +9,13 @@
 namespace nomad {
 
 Property::Property(
+    PropertyId id,
     const CompositeType* ownerType,
     NomadString name,
     const Type* valueType,
     NomadString doc
 ):
+    m_id(id),
     m_ownerType(ownerType),
     m_name(std::move(name)),
     m_valueType(valueType),
@@ -60,10 +62,6 @@ void Property::setHasExplicitInitializer(const bool hasExplicitInitializer) {
 
 const NativeProperty* Property::asNativeProperty() const {
     return nullptr;
-}
-
-void Property::setId(const PropertyId id) {
-    m_id = id;
 }
 
 } // namespace nomad

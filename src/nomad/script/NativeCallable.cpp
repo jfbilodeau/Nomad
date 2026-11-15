@@ -12,6 +12,7 @@
 namespace nomad {
 
 NativeFunction::NativeFunction(
+    const CallableId id,
     NomadString name,
     NativeFunctionFn fn,
     std::vector<Parameter> parameters,
@@ -19,12 +20,22 @@ NativeFunction::NativeFunction(
     NomadString doc,
     const bool deferSignatureValidation
 ):
-    Function(CallableSource::Native, std::move(name), std::move(parameters), returnType, std::move(doc)),
+    Function(
+        id, 
+        CallableSource::Native,
+        std::move(name), 
+        std::move(parameters), 
+        returnType, 
+        std::move(doc)
+    ),
     m_fn(std::move(fn)),
-    m_signatureResolved(!deferSignatureValidation && dynamic_cast<const DeferredType*>(returnType) == nullptr &&
+    m_signatureResolved(
+        !deferSignatureValidation && 
+        dynamic_cast<const DeferredType*>(returnType) == nullptr &&
         std::ranges::none_of(getParameters(), [](const auto& parameter) {
-        return dynamic_cast<const DeferredType*>(parameter.type) != nullptr;
-    }))
+            return dynamic_cast<const DeferredType*>(parameter.type) != nullptr;
+        }
+    ))
 {
 }
 
@@ -50,30 +61,59 @@ bool NativeFunction::isRegisteredType(const Type* type) const {
     if (type == nullptr || type->getRuntime() == nullptr) {
         return false;
     }
+
     const auto* runtime = type->getRuntime();
-    return runtime->getType(type->getId()) == type && runtime->getNativeFunction(getId()) == this;
+
+    return 
+        runtime->getType(type->getId()) == type && 
+        runtime->getNativeFunction(getId()) == this;
 }
 
 void NativeFunction::resolveParameterType(const NomadIndex index, const Type* type) {
     if (m_signatureResolved || index >= getParameterCount()) {
         throw NomadException("Cannot resolve native function '" + getName() + "': invalid parameter target or state");
     }
+
     auto& parameter = getEditableParameters()[index];
     const auto* placeholder = dynamic_cast<const DeferredType*>(parameter.type);
-    if (!isRegisteredType(type) || type->isVoid() || placeholder == nullptr ||
-        placeholder->getTypeName() != type->getTypeName()) {
-        throw NomadException("Cannot resolve native function '" + getName() + "' parameter '" +
-            parameter.name + "': invalid type or target '" + parameter.getTypeName() + "'");
+    if (
+        !isRegisteredType(type) || 
+        type->isVoid() || 
+        placeholder == nullptr ||
+        placeholder->getTypeName() != type->getTypeName()
+    ) {
+        throw NomadException(
+            "Cannot resolve native function '" +
+            getName() +
+            "' parameter '" +
+            parameter.name +
+            "': invalid type or target '" +
+            parameter.getTypeName() +
+            "'"
+        );
     }
     parameter.type = type;
 }
 
 void NativeFunction::resolveReturnType(const Type* type) {
     const auto* placeholder = dynamic_cast<const DeferredType*>(getReturnType());
-    if (m_signatureResolved || !isRegisteredType(type) || (type->isInternal() && !type->isVoid()) ||
-        placeholder == nullptr || placeholder->getTypeName() != type->getTypeName()) {
-        throw NomadException("Cannot resolve native function '" + getName() +
-            "' return type: invalid type or target '" + getReturnTypeName() + "'");
+    if (
+        m_signatureResolved || 
+        !isRegisteredType(type) || 
+        (
+            type->isInternal() && 
+            !type->isVoid()
+        ) ||
+        placeholder == nullptr || 
+        placeholder->getTypeName() != type->getTypeName()
+    ) {
+        throw NomadException(
+            "Cannot resolve native function '" +
+            getName() +
+            "' return type: invalid type or target '" +
+            getReturnTypeName() +
+            "'"
+        );
     }
     setReturnType(type);
 }
@@ -90,6 +130,7 @@ void NativeFunction::completeSignatureResolution() {
 }
 
 NativeMethod::NativeMethod(
+    const CallableId id,
     NomadString name,
     const Type* classType,
     NativeFunctionFn fn,
@@ -97,12 +138,21 @@ NativeMethod::NativeMethod(
     const Type* returnType,
     NomadString doc
 ):
-    Method(CallableSource::Native, std::move(name), classType, std::move(parameters), returnType, std::move(doc)),
+    Method(
+        id, 
+        CallableSource::Native, 
+        std::move(name), 
+        classType, 
+        std::move(parameters), 
+        returnType, 
+        std::move(doc)
+    ),
     m_fn(std::move(fn))
 {
 }
 
 NativeConstructor::NativeConstructor(
+    const CallableId id,
     NomadString name,
     const Type* classType,
     const Type* createdType,
@@ -110,8 +160,14 @@ NativeConstructor::NativeConstructor(
     std::vector<Parameter> parameters,
     NomadString doc
 ):
-    Constructor(CallableSource::Native, std::move(name), classType, std::move(parameters),
-        classType->isStruct() ? classType->getRuntime()->getVoidType() : createdType, std::move(doc)),
+    Constructor(
+        id, 
+        CallableSource::Native,
+        std::move(name),
+        classType,
+        std::move(parameters),
+        classType->isStruct() ? classType->getRuntime()->getVoidType() : createdType, std::move(doc)
+    ),
     m_fn(std::move(fn)),
     m_createdType(createdType)
 {

@@ -56,20 +56,23 @@ bool CompositeType::isOpen() const {
 
 CallableId CompositeType::registerConstructor(
     const TypeManager& manager,
-    const CallableId id,
     std::unique_ptr<Constructor> constructor
 ) {
     if (!manager.canMutateTypes()) {
         return CallableId::INVALID;
     }
-    if (id.isInvalid() || constructor == nullptr || constructor->getClassType() != this ||
-        constructor->getId() != CallableId{} || !manager.ownsType(this)) {
-        log::error("Cannot register constructor: invalid owner or previously registered callable");
+    if (
+        constructor == nullptr ||
+        constructor->getClassType() != this ||
+        constructor->getId().isInvalid() ||
+        !manager.ownsType(this)
+    ) {
+        log::error("Cannot register constructor: invalid owner or unassigned callable identity");
         return CallableId::INVALID;
     }
 
+    const auto id = constructor->getId();
     m_constructors.push_back(std::move(constructor));
-    m_constructors.back()->setId(id);
 
     return id;
 }
@@ -85,21 +88,24 @@ std::vector<const Constructor*> CompositeType::getConstructors() const {
 
 CallableId CompositeType::registerMethod(
     const TypeManager& manager,
-    const CallableId id,
     std::unique_ptr<Method> method
 ) {
     if (!manager.canMutateTypes()) {
         return CallableId::INVALID;
     }
-    if (id.isInvalid() || method == nullptr || method->getClassType() != this ||
-        method->getId() != CallableId{} || !manager.ownsType(this) ||
-        getProperty(method->getName()) != nullptr) {
-        log::error("Cannot register method: invalid owner or previously registered callable");
+    if (
+        method == nullptr ||
+        method->getClassType() != this ||
+        method->getId().isInvalid() ||
+        !manager.ownsType(this) ||
+        getProperty(method->getName()) != nullptr
+    ) {
+        log::error("Cannot register method: invalid owner or unassigned callable identity");
         return CallableId::INVALID;
     }
 
+    const auto id = method->getId();
     m_methods.push_back(std::move(method));
-    m_methods.back()->setId(id);
 
     return id;
 }
@@ -115,7 +121,6 @@ std::vector<const Method*> CompositeType::getMethods() const {
 
 PropertyId CompositeType::registerProperty(
     const TypeManager& manager,
-    const PropertyId id,
     std::unique_ptr<Property> property
 ) {
     if (!manager.canMutateTypes()) {
@@ -125,12 +130,22 @@ PropertyId CompositeType::registerProperty(
     const auto* native = property == nullptr ? nullptr : property->asNativeProperty();
     const auto deferred = native != nullptr && !native->isTypeResolved() &&
         valueType != nullptr && valueType->getRuntime() == getRuntime();
-    if (id.isInvalid() || property == nullptr || property->getOwnerType() != this || property->getId().isValid() ||
+    if (
+        property == nullptr ||
+         property->getOwnerType() != this ||
+        property->getId().isInvalid() ||
         !manager.ownsType(this) ||
-        valueType == nullptr || (!deferred && (valueType->isVoid() || valueType->isInternal() ||
-            !manager.ownsType(valueType))) ||
+        valueType == nullptr ||
+        (
+            !deferred && (
+                valueType->isVoid() ||
+                valueType->isInternal() ||
+                !manager.ownsType(valueType)
+            )
+        ) ||
         getProperty(property->getName()) != nullptr ||
-        std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); })) {
+        std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); }
+    )) {
         log::error("Cannot register property: invalid owner, value type, or duplicate definition");
         return PropertyId::INVALID;
     }
@@ -139,8 +154,8 @@ PropertyId CompositeType::registerProperty(
             getTypeName() + "' is being finalized or already finalized");
         return PropertyId::INVALID;
     }
+    const auto id = property->getId();
     m_properties.push_back(std::move(property));
-    m_properties.back()->setId(id);
 
     return id;
 }

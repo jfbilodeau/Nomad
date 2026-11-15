@@ -592,6 +592,7 @@ CallableId Runtime::registerNativeFunction(
         }
     }
     auto function = std::make_unique<NativeFunction>(
+        getNextCallableId(),
         name, 
         std::move(fn), 
         parameters, 
@@ -656,15 +657,20 @@ CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
     return id;
 }
 
+CallableId Runtime::getNextCallableId() const {
+    if (m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        return CallableId::INVALID;
+    }
+    return CallableId{toNomadId(m_callables.size())};
+}
+
 CallableId Runtime::catalogCallable(Callable* callable) {
-    if (callable == nullptr || callable->getId() != CallableId{} ||
-        m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+    const auto id = getNextCallableId();
+    if (callable == nullptr || id.isInvalid() || callable->getId() != id) {
         return CallableId::INVALID;
     }
 
-    const auto id = CallableId{toNomadId(m_callables.size())};
     m_callables.push_back(callable);
-    callable->setId(id);
 
     return id;
 }
@@ -677,8 +683,8 @@ CallableId Runtime::registerMethod(
         return CallableId::INVALID;
     }
 
-    if (!ownsType(owner) || method == nullptr || method->getId().isValid() ||
-        m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+    if (!ownsType(owner) || method == nullptr || method->getId() != getNextCallableId() ||
+        method->getId().isInvalid()) {
         log::error("Cannot register method: invalid owner, identity, or callable capacity");
 
         return CallableId::INVALID;
@@ -689,8 +695,8 @@ CallableId Runtime::registerMethod(
     }
 
     auto* registered = method.get();
-    const auto id = CallableId{toNomadId(m_callables.size())};
-    if (owner->registerMethod(m_typeManager, id, std::move(method)).isInvalid()) {
+    const auto id = registered->getId();
+    if (owner->registerMethod(m_typeManager, std::move(method)).isInvalid()) {
         return CallableId::INVALID;
     }
 
@@ -707,8 +713,8 @@ CallableId Runtime::registerConstructor(
         return CallableId::INVALID;
     }
 
-    if (!ownsType(owner) || constructor == nullptr || constructor->getId().isValid() ||
-        m_callables.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+    if (!ownsType(owner) || constructor == nullptr || constructor->getId() != getNextCallableId() ||
+        constructor->getId().isInvalid()) {
         log::error("Cannot register constructor: invalid owner, identity, or callable capacity");
 
         return CallableId::INVALID;
@@ -719,8 +725,8 @@ CallableId Runtime::registerConstructor(
     }
 
     auto* registered = constructor.get();
-    const auto id = CallableId{toNomadId(m_callables.size())};
-    if (owner->registerConstructor(m_typeManager, id, std::move(constructor)).isInvalid()) {
+    const auto id = registered->getId();
+    if (owner->registerConstructor(m_typeManager, std::move(constructor)).isInvalid()) {
         return CallableId::INVALID;
     }
 
@@ -2328,7 +2334,7 @@ CallableId Runtime::registerScriptFunction(
     }
 
     const auto id = addCallableToTable(
-        std::make_unique<ScriptFunction>(CallableId{}, name, path, source)
+        std::make_unique<ScriptFunction>(getNextCallableId(), name, path, source)
     );
 
     registerHubMember(name, HubFunctions{{id}});

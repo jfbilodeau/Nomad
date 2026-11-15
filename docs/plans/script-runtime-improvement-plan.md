@@ -95,8 +95,10 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 
 - Successful Emit compilation seals declarations; Analysis compilation does not. There is no unseal API. Native members on sealed types are rejected; parameterized and callback instantiation remain available.
 - Seal rejections return invalid IDs or null pointers. Declaration callers report diagnostics; TypeManager does not log seal rejections.
-- Current review step: Runtime allocates member callable IDs before declaring them on CompositeType. TypeManager owns the property ID catalog. CompositeType records supplied IDs without `registerWithRuntime` calls, and rejected members do not consume catalog entries. Descriptor ownership remains with the declaring type.
-- Verified with `RunCtest_CMakeTools`: compilation passed, both new registration regression cases passed, and 10 of 13 CTest entries passed. The same three entries fail before and after this step, with no new failing cases.
+- Registration sub-step 1 (immutable IDs) is implemented. Callable and property IDs are constructor arguments and cannot be changed afterward. `Callable::setId` and `Property::setId` are removed. `Runtime::getNextCallableId()` and `TypeManager::getNextPropertyId()` supply the ID that the next registered member receives. Rejected members do not consume an ID.
+- The old `TypeManager` member entry points (for example `registerNativeClassMethod`) still call `Runtime`. That back-call is temporary and is removed in registration sub-steps 2 through 4.
+- Verified with `RunCtest_CMakeTools`: the build passes, the new regression tests pass, and the failing cases match the baseline exactly (`nomad_test_bindings` 4, `nomad_test_language` 8, `nomad_test_remaining` 14).
+- Member descriptors still hold their own ownership. Descriptor ownership remains with the declaring type.
 - The high-level member registration entry points still live on TypeManager and still orchestrate Runtime operations. Moving execution registration orchestration to Runtime is a subsequent review step; the full one-way dependency split is not complete.
 - After review, move the remaining declaration and execution responsibilities, including hub and event declarations, in separately approved steps. Do not revive the superseded name-check-only refactoring.
 - Remaining seal integration work includes registration-before-compile setup, Game API setup, fresh runtimes for language-server analysis batches, and enforcing successful compilation before interpreter or VM execution.

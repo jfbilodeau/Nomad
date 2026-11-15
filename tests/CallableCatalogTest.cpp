@@ -122,38 +122,38 @@ BOOST_AUTO_TEST_CASE(runtime_registers_member_ids_without_publishing_rejected_me
     const auto initialCount = runtime.getFunctionTableSize();
     BOOST_TEST(runtime.registerMethod(owner, nullptr).isInvalid());
     BOOST_TEST(runtime.registerMethod(other, std::make_unique<ScriptMethod>(
-        "wrongOwner", owner, std::vector<Parameter>{}, nullptr, "", ""
+        runtime.getNextCallableId(), "wrongOwner", owner, std::vector<Parameter>{}, nullptr, "", ""
     )).isInvalid());
     BOOST_TEST(foreign.registerMethod(owner, std::make_unique<ScriptMethod>(
-        "foreign", owner, std::vector<Parameter>{}, nullptr, "", ""
+        foreign.getNextCallableId(), "foreign", owner, std::vector<Parameter>{}, nullptr, "", ""
     )).isInvalid());
     BOOST_TEST(runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
-        "field", owner, std::vector<Parameter>{}, nullptr, "", ""
+        runtime.getNextCallableId(), "field", owner, std::vector<Parameter>{}, nullptr, "", ""
     )).isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == initialCount);
     BOOST_TEST(owner->getMethods().empty());
     const auto methodId = runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
-        "run", owner, std::vector<Parameter>{}, nullptr, "", ""
+        runtime.getNextCallableId(), "run", owner, std::vector<Parameter>{}, nullptr, "", ""
     ));
     BOOST_REQUIRE(methodId.isValid());
     BOOST_TEST(toNomadIndex(methodId.id) == initialCount);
     BOOST_TEST(owner->getMethods().front() == runtime.getMethod(methodId));
     BOOST_TEST(runtime.registerConstructor(owner, nullptr).isInvalid());
     BOOST_TEST(runtime.registerConstructor(other, std::make_unique<ScriptConstructor>(
-        owner, std::vector<Parameter>{}, "", ""
+            runtime.getNextCallableId(), owner, std::vector<Parameter>{}, "", ""
     )).isInvalid());
     const auto constructorId = runtime.registerConstructor(owner, std::make_unique<ScriptConstructor>(
-        owner, std::vector<Parameter>{}, "", ""
+            runtime.getNextCallableId(), owner, std::vector<Parameter>{}, "", ""
     ));
     BOOST_REQUIRE(constructorId.isValid());
     BOOST_TEST(toNomadIndex(constructorId.id) == initialCount + 1);
     BOOST_TEST(owner->getConstructors().front() == runtime.getConstructor(constructorId));
     manager.seal();
     BOOST_TEST(runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
-        "sealed", owner, std::vector<Parameter>{}, nullptr, "", ""
+        runtime.getNextCallableId(), "sealed", owner, std::vector<Parameter>{}, nullptr, "", ""
     )).isInvalid());
     BOOST_TEST(runtime.registerConstructor(owner, std::make_unique<ScriptConstructor>(
-        owner, std::vector<Parameter>{}, "", ""
+            runtime.getNextCallableId(), owner, std::vector<Parameter>{}, "", ""
     )).isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == initialCount + 2);
     BOOST_TEST(owner->getMethods().size() == 1U);
@@ -224,8 +224,8 @@ BOOST_AUTO_TEST_CASE(local_layout_metadata_is_shared_across_script_callable_cate
     const auto* owner = runtime.getTypeByName("LocalOwner")->asClassType();
     BOOST_REQUIRE(ownerId.isValid());
     ScriptFunction function(CallableId{}, "locals", "locals.nomad", "");
-    ScriptMethod method("locals", owner, {}, runtime.getVoidType(), "locals.nomad", "");
-    ScriptConstructor constructor(owner, {}, "locals.nomad", "");
+    ScriptMethod method(CallableId{}, "locals", owner, {}, runtime.getVoidType(), "locals.nomad", "");
+    ScriptConstructor constructor(CallableId{}, owner, {}, "locals.nomad", "");
     for (auto* callable : std::vector<ScriptCallableBase*>{&function, &method, &constructor}) {
         BOOST_TEST(callable->getVariableStorageSize() == 0U);
         const auto counter = callable->registerVariable("counter", runtime.getIntegerType());
@@ -332,8 +332,8 @@ BOOST_AUTO_TEST_CASE(parameter_layout_preserves_logical_positions_across_callabl
     };
     const auto nativeId = registerVoidNativeFunction(runtime, "layout", parameters);
     BOOST_REQUIRE(nativeId.isValid());
-    ScriptMethod method("layout", pointType, parameters, runtime.getVoidType(), "layout.nomad", "");
-    ScriptConstructor constructor(pointType, parameters, "layout.nomad", "");
+    ScriptMethod method(CallableId{}, "layout", pointType, parameters, runtime.getVoidType(), "layout.nomad", "");
+    ScriptConstructor constructor(CallableId{}, pointType, parameters, "layout.nomad", "");
     const auto callables = std::vector<const Callable*>{
         runtime.getNativeFunction(nativeId), &method, &constructor
     };
@@ -373,7 +373,7 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_param
         defParameter("empty", empty, ""),
         defParameter("number", runtime.getIntegerType(), "")
     };
-    ScriptMethod method("layout", point, parameters, point, "layout.nomad", "");
+    ScriptMethod method(CallableId{}, "layout", point, parameters, point, "layout.nomad", "");
     const auto layout = method.getCallStorageLayout();
     BOOST_TEST(layout.argumentSlotCount == 5U);
     BOOST_REQUIRE(layout.receiverOffset.has_value());
@@ -394,12 +394,12 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_param
     BOOST_TEST(!nativeLayout.receiverOffset.has_value());
     BOOST_TEST(*nativeLayout.returnOffset == 5U);
     BOOST_TEST(nativeLayout.stackSlotCount == 6U);
-    ScriptMethod emptyMethod("empty", empty, {}, empty, "layout.nomad", "");
+    ScriptMethod emptyMethod(CallableId{}, "empty", empty, {}, empty, "layout.nomad", "");
     const auto emptyLayout = emptyMethod.getCallStorageLayout();
     BOOST_TEST(!emptyLayout.receiverOffset.has_value());
     BOOST_TEST(!emptyLayout.returnOffset.has_value());
     BOOST_TEST(emptyLayout.stackSlotCount == 0U);
-    ScriptMethod scalarMethod("scalar", point, {}, runtime.getIntegerType(), "layout.nomad", "");
+    ScriptMethod scalarMethod(CallableId{}, "scalar", point, {}, runtime.getIntegerType(), "layout.nomad", "");
     BOOST_TEST(scalarMethod.getCallStorageLayout().stackSlotCount == 1U);
     BOOST_TEST(!scalarMethod.getCallStorageLayout().returnOffset.has_value());
     const auto maximum = std::numeric_limits<NomadIndex>::max();
@@ -424,7 +424,7 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_requires_resolved_sizes_and_return_types
     auto compiler = runtime.createCompiler();
     function.setReturnType(compiler->deferType({"MissingReturn"}));
     BOOST_CHECK_THROW((void)function.getCallStorageLayout(), NomadException);
-    ScriptMethod method("missingReceiver", compiler->deferType({"MissingReceiver"}), {},
+    ScriptMethod method(CallableId{}, "missingReceiver", compiler->deferType({"MissingReceiver"}), {},
         runtime.getVoidType(), "layout.nomad", "");
     BOOST_CHECK_THROW((void)method.getCallStorageLayout(), NomadException);
     function.setReturnType(runtime.getVoidType());
@@ -515,7 +515,7 @@ BOOST_AUTO_TEST_CASE(parameter_layout_checks_overflow_and_supports_zero_width_si
     const auto following = function.addParameter("following", runtime.getIntegerType(), "");
     BOOST_CHECK_THROW((void)function.getParameterOffset(following), NomadException);
 
-    ScriptMethod emptyMethod("empty", emptyType, {
+    ScriptMethod emptyMethod(CallableId{}, "empty", emptyType, {
         defParameter("first", emptyType, ""), defParameter("second", emptyType, "")
     }, runtime.getVoidType(), "layout.nomad", "");
     BOOST_TEST(emptyMethod.getParameterCount() == 2U);
@@ -599,10 +599,10 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
     BOOST_REQUIRE(type != nullptr);
     const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
     const auto methodId = runtime.registerMethod(type, std::make_unique<ScriptMethod>(
-        "echo", type, parameters, nullptr, "point.nomad", "return value"
+        runtime.getNextCallableId(), "echo", type, parameters, nullptr, "point.nomad", "return value"
     ));
     const auto constructorId = runtime.registerConstructor(type, std::make_unique<ScriptConstructor>(
-        type, parameters, "point.nomad", "this.value = value"
+        runtime.getNextCallableId(), type, parameters, "point.nomad", "this.value = value"
     ));
     BOOST_REQUIRE(methodId.isValid());
     BOOST_REQUIRE(constructorId.isValid());

@@ -299,11 +299,11 @@ InterpreterContext::InterpreterContext(
     m_frameVariableCount = function.getVariableCount();
     if (virtualMachine.getRuntime()->getConstructor(function.getId()) != nullptr) {
         m_function = std::make_unique<ScriptConstructor>(
-            function.getClassType(), std::vector<Parameter>{}, function.getPath(), ""
+            CallableId{}, function.getClassType(), std::vector<Parameter>{}, function.getPath(), ""
         );
     } else if (function.getClassType() != nullptr) {
         m_function = std::make_unique<ScriptMethod>(
-            function.getName(), function.getClassType(), std::vector<Parameter>{},
+            CallableId{}, function.getName(), function.getClassType(), std::vector<Parameter>{},
             function.getReturnType(), function.getPath(), ""
         );
     } else {

@@ -510,11 +510,13 @@ creation also belong to TypeManager. Callable
 IDs belong to Runtime; property IDs belong to TypeManager.
 `TypeManager::getProperty(id)` and `Runtime::getProperty(id)` return the same
 borrowed property descriptor, or `nullptr` for an invalid or unregistered ID.
-For custom member descriptors, use `Runtime::registerMethod(owner, method)` or
-`registerConstructor(owner, constructor)` and
-`TypeManager::registerProperty(owner, property)`. These transfer descriptor
-ownership to the declaring type and return an invalid ID on rejection without
-publishing a catalog entry.
+For custom member descriptors, construct them with the ID from
+`Runtime::getNextCallableId()` (methods and constructors) or
+`TypeManager::getNextPropertyId()` (properties), then pass them to
+`Runtime::registerMethod(owner, method)`, `registerConstructor(owner, constructor)`,
+or `TypeManager::registerProperty(owner, property)`. IDs are fixed at construction
+and cannot be changed. These calls transfer descriptor ownership to the declaring
+type and return an invalid ID on rejection without publishing a catalog entry.
 
 `TypeManager::reserveTypeId()` and `catalogType()`
 are low-level catalog operations: they do not register namespace members or

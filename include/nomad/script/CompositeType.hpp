@@ -37,19 +37,16 @@ public:
     [[nodiscard]] bool isOpen() const;
     [[nodiscard]] CallableId registerConstructor(
         const TypeManager& manager,
-        CallableId id,
         std::unique_ptr<Constructor> constructor
     );
     [[nodiscard]] std::vector<const Constructor*> getConstructors() const;
     [[nodiscard]] CallableId registerMethod(
         const TypeManager& manager,
-        CallableId id,
         std::unique_ptr<Method> method
     );
     [[nodiscard]] std::vector<const Method*> getMethods() const;
     [[nodiscard]] PropertyId registerProperty(
         const TypeManager& manager,
-        PropertyId id,
         std::unique_ptr<Property> property
     );
     [[nodiscard]] const Property* getProperty(const NomadString& name) const;

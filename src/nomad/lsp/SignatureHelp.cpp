@@ -181,7 +181,7 @@ json::value createSignatureHelp(
     const auto* receiver = findValueType("this");
     std::unique_ptr<ScriptCallableBase> scope;
     if (receiver != nullptr) {
-        scope = std::make_unique<ScriptMethod>("$signature", receiver, std::vector<Parameter>{},
+        scope = std::make_unique<ScriptMethod>(CallableId{}, "$signature", receiver, std::vector<Parameter>{},
             runtime.getVoidType(), sourceName, "");
     } else {
         scope = std::make_unique<ScriptFunction>(CallableId{}, "$signature", sourceName, "");

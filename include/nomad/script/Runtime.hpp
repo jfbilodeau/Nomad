@@ -342,7 +342,8 @@ public:
     void getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const;
     [[nodiscard]] NomadIndex getCallableOverloadCount(const NomadString& name) const;
     [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
-    [[nodiscard]] CallableId catalogCallable(Callable* callable);
+    // The ID the next published callable receives; invalid when the callable table is full.
+    [[nodiscard]] CallableId getNextCallableId() const;
     [[nodiscard]] CallableId registerMethod(
         CompositeType* owner,
         std::unique_ptr<Method> method
@@ -532,6 +533,7 @@ private:
 
     // Callable registration and resolution
     CallableId addCallableToTable(std::unique_ptr<Function> function);
+    CallableId catalogCallable(Callable* callable);
     [[nodiscard]] bool canOverloadCallable(
         const NomadString& name,
         const std::vector<Parameter>& parameters,

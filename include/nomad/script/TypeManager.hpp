@@ -185,6 +185,7 @@ public:
         CompositeType* owner,
         std::unique_ptr<Property> property
     );
+    [[nodiscard]] PropertyId getNextPropertyId() const;
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] Property* getMutableProperty(PropertyId id);
     [[nodiscard]] std::vector<const Property*> getProperties() const;

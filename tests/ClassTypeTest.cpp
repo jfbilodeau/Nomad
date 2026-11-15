@@ -458,7 +458,7 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_object_free_r)));
 
     const auto stored = runtime.getTypeManager().registerProperty(composite,
-        std::make_unique<Property>(composite, "stored", runtime.getStringType()));
+        std::make_unique<Property>(runtime.getTypeManager().getNextPropertyId(), composite, "stored", runtime.getStringType()));
     BOOST_REQUIRE(stored.isValid());
     auto callbackCalls = 0;
     const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
@@ -503,7 +503,7 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
     BOOST_CHECK_THROW((void)composite->getFieldOffset(native), NomadException);
     BOOST_TEST(callbackCalls == 0);
 
-    Property unowned(nullptr, "unowned", runtime.getIntegerType());
+    Property unowned(PropertyId{}, nullptr, "unowned", runtime.getIntegerType());
     BOOST_TEST(unowned.getOwnerType() == nullptr);
     BOOST_TEST(unowned.getClassType() == nullptr);
 }
@@ -883,7 +883,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "native", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(type->getPropertyCount() == 2u);
     BOOST_TEST(runtime.getTypeManager().registerProperty(
-        nullptr, std::make_unique<Property>(type, "standalone", runtime.getIntegerType())
+        nullptr, std::make_unique<Property>(runtime.getTypeManager().getNextPropertyId(), type, "standalone", runtime.getIntegerType())
     ).isInvalid());
 }
 

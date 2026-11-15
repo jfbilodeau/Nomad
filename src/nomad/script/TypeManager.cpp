@@ -242,31 +242,54 @@ PropertyId TypeManager::registerNativeClassProperty(
             log::error("Cannot register native property '" + definition.name + "': accessor methods require a resolved value type");
             return PropertyId::INVALID;
         }
-        if (definition.getterMethodId.isValid() &&
-            (getter == nullptr || getter->asNativeMethod() == nullptr || getter->getClassType() != classType ||
-             getter->getParameterCount() != 0 || getter->getReturnType() != valueType)) {
+        if (
+            definition.getterMethodId.isValid() &&
+            (getter == nullptr || getter->asNativeMethod() == nullptr || 
+            getter->getClassType() != classType ||
+             getter->getParameterCount() != 0 || 
+             getter->getReturnType() != valueType)
+        ) {
             log::error("Cannot register native property '" + definition.name + "': getter must be a native method on its owner with no arguments and a matching result");
             return PropertyId::INVALID;
         }
-        if (definition.setterMethodId.isValid() &&
-            (setter == nullptr || setter->asNativeMethod() == nullptr || setter->getClassType() != classType ||
-             setter->getParameterCount() != 1 || setter->getParameters()[0].type != valueType ||
-             setter->getReturnType() == nullptr || !setter->getReturnType()->isVoid())) {
+        if (
+            definition.setterMethodId.isValid() &&
+            (
+                setter == nullptr || 
+                setter->asNativeMethod() == nullptr || 
+                setter->getClassType() != classType ||
+                setter->getParameterCount() != 1 || 
+                setter->getParameters()[0].type != valueType ||
+                setter->getReturnType() == nullptr || 
+                !setter->getReturnType()->isVoid()
+            )
+        ) {
             log::error("Cannot register native property '" + definition.name + "': setter must be a native method on its owner with one matching argument and a void result");
             return PropertyId::INVALID;
         }
     }
     const auto hasAccessors = hasCallbacks || hasMethods;
     auto property = std::make_unique<NativeProperty>(
-        classType, definition.name, valueType,
-        std::move(definition.getter), std::move(definition.setter), std::move(definition.documentation),
-        definition.getterMethodId, definition.setterMethodId
+        getNextPropertyId(), 
+        classType, 
+        definition.name, 
+        valueType,
+        std::move(definition.getter), 
+        std::move(definition.setter), 
+        std::move(definition.documentation),
+        definition.getterMethodId, 
+        definition.setterMethodId
     );
     const auto belongsToRuntime = valueType != nullptr && valueType->getRuntime() == &m_runtime;
     const auto isDeferredType = !property->isTypeResolved() && belongsToRuntime;
     // Same-runtime placeholders may be registered before their value type resolves.
-    const auto hasValidValueType = isDeferredType ||
-        (ownsType(valueType) && !valueType->isVoid() && !valueType->isInternal());
+    const auto hasValidValueType = 
+        isDeferredType ||
+        (
+            ownsType(valueType) && 
+            !valueType->isVoid() && 
+            !valueType->isInternal()
+        );
     if (!hasValidValueType) {
         log::error("Cannot register native property '" + definition.name + "': invalid value type");
         return PropertyId::INVALID;
@@ -326,7 +349,12 @@ PropertyId TypeManager::registerScriptProperty(
         log::error("Cannot register property '" + name + "': the type already has a member with that name");
         return PropertyId::INVALID;
     }
-    return registerProperty(owner, std::make_unique<Property>(owner, name, valueType));
+    return registerProperty(owner, std::make_unique<Property>(
+        getNextPropertyId(), 
+        owner, 
+        name, 
+        valueType
+    ));
 }
 
 PropertyId TypeManager::registerProperty(
@@ -337,8 +365,13 @@ PropertyId TypeManager::registerProperty(
         return PropertyId::INVALID;
     }
 
-    if (!ownsType(owner) || property == nullptr || property->getId().isValid() ||
-        m_properties.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+    const auto id = getNextPropertyId();
+    if (
+        !ownsType(owner) || 
+        property == nullptr || 
+        id.isInvalid() || 
+        property->getId() != id
+    ) {
         log::error("Cannot register property: invalid owner, identity, or property capacity");
 
         return PropertyId::INVALID;
@@ -349,14 +382,20 @@ PropertyId TypeManager::registerProperty(
     }
 
     auto* registered = property.get();
-    const auto id = PropertyId{toNomadId(m_properties.size())};
-    if (owner->registerProperty(*this, id, std::move(property)).isInvalid()) {
+    if (owner->registerProperty(*this, std::move(property)).isInvalid()) {
         return PropertyId::INVALID;
     }
 
     m_properties.push_back(registered);
 
     return id;
+}
+
+PropertyId TypeManager::getNextPropertyId() const {
+    if (m_properties.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        return PropertyId::INVALID;
+    }
+    return PropertyId{toNomadId(m_properties.size())};
 }
 
 const Property* TypeManager::getProperty(const PropertyId id) const {
@@ -426,7 +465,13 @@ CallableId TypeManager::registerScriptMethod(
         }
     }
     auto method = std::make_unique<ScriptMethod>(
-        std::move(name), owner, std::move(parameters), nullptr, std::move(path), std::move(source)
+        m_runtime.getNextCallableId(), 
+        std::move(name), 
+        owner, 
+        std::move(parameters), 
+        nullptr, 
+        std::move(path), 
+        std::move(source)
     );
     return m_runtime.registerMethod(owner, std::move(method));
 }
@@ -481,7 +526,11 @@ CallableId TypeManager::registerScriptConstructor(
         }
     }
     auto constructor = std::make_unique<ScriptConstructor>(
-        owner, std::move(parameters), std::move(path), std::move(source)
+        m_runtime.getNextCallableId(), 
+        owner, 
+        std::move(parameters), 
+        std::move(path), 
+        std::move(source)
     );
     return m_runtime.registerConstructor(owner, std::move(constructor));
 }
@@ -547,8 +596,13 @@ CallableId TypeManager::registerNativeMethod(
         return CallableId::INVALID;
     }
     const auto id = m_runtime.registerMethod(owner, std::make_unique<NativeMethod>(
-        definition.name, owner, std::move(definition.function), std::move(parameters),
-        *returnType, std::move(definition.documentation)
+        m_runtime.getNextCallableId(), 
+        definition.name, 
+        owner, 
+        std::move(definition.function), 
+        std::move(parameters),
+        *returnType, 
+        std::move(definition.documentation)
     ));
     if (id.isInvalid()) {
         return CallableId::INVALID;
@@ -627,7 +681,12 @@ CallableId TypeManager::registerNativeConstructor(
         return CallableId::INVALID;
     }
     for (const auto& parameter : parameters) {
-        if (owner->isStruct() && (parameter.type->isInternal() || parameter.name == "this")) {
+        if (
+            owner->isStruct() &&
+             (
+                parameter.type->isInternal() || 
+                parameter.name == "this")
+            ) {
             log::error("Cannot register struct constructor: invalid parameter type or receiver parameter");
             return CallableId::INVALID;
         }
@@ -642,7 +701,9 @@ CallableId TypeManager::registerNativeConstructor(
         }
         const auto hasSameSignature = std::ranges::equal(
             existing->getParameters(), parameters,
-            [](const auto& left, const auto& right) { return left.type->sameType(right.type); }
+            [](const auto& left, const auto& right) {
+                 return left.type->sameType(right.type);
+            }
         );
         if (hasSameSignature) {
             log::error("Cannot register constructor '" + name + "': duplicate signature");
@@ -650,20 +711,31 @@ CallableId TypeManager::registerNativeConstructor(
         }
     }
     return m_runtime.registerConstructor(owner, std::make_unique<NativeConstructor>(
-        name, owner, createdType, std::move(definition.function), std::move(parameters),
+        m_runtime.getNextCallableId(), 
+        name, 
+        owner, 
+        createdType, 
+        std::move(definition.function), 
+        std::move(parameters),
         std::move(definition.documentation)
     ));
 }
 
 const ClassType* TypeManager::getIteratorType(const Type* valueType) {
-    const auto hasValidValueType = ownsType(valueType) && !valueType->isVoid() && !valueType->isInternal();
+    const auto hasValidValueType = 
+        ownsType(valueType) &&
+         !valueType->isVoid() &&
+          !valueType->isInternal();
+
     if (!hasValidValueType) {
         throw NomadException("Iterator value type must be a registered non-void type");
     }
+
     const auto* type = getParameterizedType("Iterator", {valueType});
     if (type == nullptr) {
         throw NomadException("Failed to specialize iterator type");
     }
+
     return static_cast<const ClassType*>(type);
 }
 
@@ -674,7 +746,12 @@ void TypeManager::registerNativeClassIterable(const TypeId ownerId, NativeIntera
         throw NomadException("Cannot register iterable: owner must identify a class type");
     }
     const auto valueType = getType(definition.valueTypeId);
-    const auto hasValidValueType = valueType.has_value() && !(*valueType)->isVoid() && !(*valueType)->isInternal();
+    const auto hasValidValueType = 
+        valueType.has_value() &&
+        !(
+            (*valueType)->isVoid() ||
+            (*valueType)->isInternal()
+        );
     if (!hasValidValueType) {
         throw NomadException("Cannot register iterable: value type must identify a public, non-void type");
     }

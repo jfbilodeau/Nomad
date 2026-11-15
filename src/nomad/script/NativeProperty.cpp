@@ -12,6 +12,7 @@
 namespace nomad {
 
 NativeProperty::NativeProperty(
+    PropertyId id,
     const ClassType* classType,
     NomadString name,
     const Type* valueType,
@@ -21,7 +22,7 @@ NativeProperty::NativeProperty(
     const CallableId getterMethodId,
     const CallableId setterMethodId
 ):
-    Property(classType, std::move(name), valueType, std::move(doc)),
+    Property(id, classType, std::move(name), valueType, std::move(doc)),
     m_getFn(std::move(getFn)),
     m_setFn(std::move(setFn)),
     m_getterMethodId(getterMethodId),
@@ -35,8 +36,17 @@ const NativeProperty* NativeProperty::asNativeProperty() const {
 
 NativePropertyInfo NativeProperty::getInfo() const {
     if (m_typeResolved) {
-        return {getId(), getClassType(), getName(), getValueType(), m_getFn, m_setFn, getDoc(),
-            m_getterMethodId, m_setterMethodId};
+        return {
+            getId(),
+            getClassType(), 
+            getName(), 
+            getValueType(), 
+            m_getFn, 
+            m_setFn,
+            getDoc(),
+            m_getterMethodId,
+            m_setterMethodId
+        };
     }
     NativePropertyGetFn getter;
     NativePropertySetFn setter;
@@ -71,14 +81,23 @@ bool NativeProperty::isTypeResolved() const {
 
 bool NativeProperty::isRegisteredType(const Type* type) const {
     const auto* runtime = getClassType()->getRuntime();
-    return type != nullptr && type->getRuntime() == runtime &&
-        runtime->getType(type->getId()) == type && runtime->getNativeProperty(getId()) == this;
+    return 
+        type != nullptr &&
+        type->getRuntime() == runtime &&
+        runtime->getType(type->getId()) == type &&
+        runtime->getNativeProperty(getId()) == this;
 }
 
 void NativeProperty::resolveValueType(const Type* type) {
     const auto* placeholder = dynamic_cast<const DeferredType*>(getValueType());
-    if (m_typeResolved || !isRegisteredType(type) || type->isVoid() || type->isInternal() ||
-        placeholder == nullptr || placeholder->getTypeName() != type->getTypeName()) {
+    if (
+        m_typeResolved || 
+        !isRegisteredType(type) || 
+        type->isVoid() || 
+        type->isInternal() ||
+        placeholder == nullptr || 
+        placeholder->getTypeName() != type->getTypeName()
+    ) {
         throw NomadException("Cannot resolve native property '" + getClassType()->getTypeName() + "." +
             getName() + "': invalid type or target '" + getValueType()->getTypeName() + "'");
     }
@@ -86,10 +105,15 @@ void NativeProperty::resolveValueType(const Type* type) {
 }
 
 void NativeProperty::completeTypeResolution() {
-    if (!isRegisteredType(getValueType()) || getValueType()->isVoid() || getValueType()->isInternal()) {
+    if (
+        !isRegisteredType(getValueType()) || 
+        getValueType()->isVoid() || 
+        getValueType()->isInternal()
+    ) {
         throw NomadException("Cannot complete native property '" + getClassType()->getTypeName() + "." +
             getName() + "': unresolved or invalid value type");
     }
+    
     m_typeResolved = true;
 }
 

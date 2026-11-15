@@ -16,6 +16,7 @@ DeclareId(PropertyId);
 class Property {
 public:
     Property(
+        PropertyId id,
         const CompositeType* ownerType,
         NomadString name,
         const Type* valueType,
@@ -34,13 +35,11 @@ public:
     [[nodiscard]] bool hasExplicitInitializer() const;
     void setHasExplicitInitializer(bool hasExplicitInitializer);
     [[nodiscard]] virtual const NativeProperty* asNativeProperty() const;
-    void setId(PropertyId id);
-
 protected:
     void setValueType(const Type* valueType);
 
 private:
-    PropertyId m_id;
+    const PropertyId m_id;
     const CompositeType* m_ownerType;
     NomadString m_name;
     const Type* m_valueType;
