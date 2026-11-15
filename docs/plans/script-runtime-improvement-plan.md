@@ -245,7 +245,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 
 | ID | Priority | Kind | Finding | Evidence | Status | Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| K1 | P1 | correctness | Struct-typed class fields compile to native property get and set ops, but `ScriptObject::getField` and `setField` reject struct-typed fields | `Compiler.cpp`: addPropertyAccess, resolveObjectField; `ScriptObject.cpp`: validateSingleSlotFieldAccess | repro pending | 3 |
+| K1 | P1 | correctness | Struct-typed class fields compile to native property get and set ops, but `ScriptObject::getField` and `setField` reject struct-typed fields | `Compiler.cpp`: addPropertyAccess, resolveObjectField; `ScriptObject.cpp`: validateSingleSlotFieldAccess | Script paths pass the K1 repro; direct struct-field fallback now reports an internal error | 3 |
 | K2 | P1 | correctness | No maximum operand-stack depth is computed; the VM relies on debug-only checks | `Compiler.cpp`: emission paths; `VirtualMachine.cpp`: TEST_STACK_* macros | from review | 3 |
 | K3 | P2 | correctness | `addLoadFloatValue` compares `value == 0`, so `-0.0` compiles to `+0.0` | `Compiler.cpp`: addLoadFloatValue | from review | 3 |
 | K4 | P3 | robustness | `Compiler::inferTypes` iterates to a fixed point with no iteration cap | `Compiler.cpp`: inferTypes | from review | 3 |

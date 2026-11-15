@@ -912,8 +912,9 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
     compiler->addStoreProperty(textId);
     const auto nativeLoad = runtime.getInstructions().size();
     compiler->addLoadProperty(accessorId);
-    const auto aggregateLoad = runtime.getInstructions().size();
-    compiler->addLoadProperty(prefixId);
+    const auto beforeAggregateLoad = runtime.getInstructions().size();
+    BOOST_CHECK_THROW(compiler->addLoadProperty(prefixId), NomadBug);
+    BOOST_TEST(runtime.getInstructions().size() == beforeAggregateLoad);
     function->setFunctionEnd(runtime.getInstructions().size());
     const auto& instructions = runtime.getInstructions();
     BOOST_TEST(instructions[numberLoad + 1].value.getIndexValue() == wide);
@@ -921,8 +922,6 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
     BOOST_TEST(instructions[textLoad + 1].value.getIndexValue() == wide + 1);
     BOOST_TEST(instructions[textStore + 1].value.getIndexValue() == wide + 1);
     BOOST_TEST(instructions[nativeLoad + 1].value.getIdValue() == accessorId.id);
-    BOOST_TEST(runtime.getInstructionId(instructions[aggregateLoad].fn).id ==
-        runtime.getInstructionId(OpCodes::op_native_property_get).id);
     std::ostringstream dump;
     dumpInstructions(runtime, *function, dump);
     BOOST_TEST(dump.str().find(std::to_string(wide + 1)) != NomadString::npos);

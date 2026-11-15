@@ -1877,13 +1877,23 @@ void Compiler::addPropertyAccess(const PropertyId id, const bool write) {
     if (property == nullptr) {
         reportInternalError("Invalid property for compiled access");
     }
+
     const auto* type = property->getValueType();
-    if (property->asNativeProperty() != nullptr || property->getClassType() == nullptr ||
-        type->isStruct() || type->getSize() != 1) {
+    
+    if (property->asNativeProperty() == nullptr && type->isStruct()) {
+        reportInternalError("Struct property access requires storage addressing");
+    }
+
+    if (
+        property->asNativeProperty() != nullptr ||
+         property->getClassType() == nullptr ||
+        type->getSize() != 1
+    ) {
         addOpCode(write ? OpCodes::op_native_property_set : OpCodes::op_native_property_get);
         addId(id.id);
         return;
     }
+
     if (type->getStorage() == TypeStorage::Object) {
         addOpCode(write ? OpCodes::op_object_stored_property_set : OpCodes::op_object_stored_property_load_r);
     } else {
