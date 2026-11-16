@@ -12,8 +12,6 @@
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
 
-#include <boost/scope_exit.hpp>
-
 #include <algorithm>
 #include <utility>
 
@@ -24,18 +22,6 @@ TypeManager::TypeManager(Runtime& runtime):
 {}
 
 TypeManager::~TypeManager() = default;
-
-void TypeManager::seal() {
-    m_sealed = true;
-}
-
-bool TypeManager::isSealed() const {
-    return m_sealed;
-}
-
-bool TypeManager::canMutateTypes() const {
-    return !m_sealed || m_instantiationDepth != 0;
-}
 
 Runtime& TypeManager::getRuntime() const {
     return m_runtime;
@@ -63,9 +49,6 @@ TypeId TypeManager::registerClass(
 }
 
 bool TypeManager::canRegisterClass(const NomadString& name, const ClassMode mode) const {
-    if (!canMutateTypes()) {
-        return false;
-    }
     if (name.empty()) {
         log::error("Cannot register a class with an empty name");
         return false;
@@ -105,9 +88,6 @@ TypeId TypeManager::publishClass(
 }
 
 TypeId TypeManager::registerStruct(NomadString name, NomadString documentation) {
-    if (!canMutateTypes()) {
-        return TypeId::INVALID;
-    }
     const auto hasAvailableName = !name.empty() && getTypeId(name).isInvalid();
     const auto canRegisterName = hasAvailableName && m_runtime.canRegisterTypeName(name);
     if (!canRegisterName) {
@@ -361,10 +341,6 @@ PropertyId TypeManager::registerProperty(
     CompositeType* owner,
     std::unique_ptr<Property> property
 ) {
-    if (!canMutateTypes()) {
-        return PropertyId::INVALID;
-    }
-
     const auto id = getNextPropertyId();
     if (
         !ownsType(owner) || 
@@ -1120,10 +1096,6 @@ const Type* TypeManager::getParameterizedType(
     const auto factory = registration->factory;
     const auto initializer = registration->initializer;
     const auto id = reserveTypeId();
-    ++m_instantiationDepth;
-    BOOST_SCOPE_EXIT_ALL(this) {
-        --m_instantiationDepth;
-    };
     auto type = factory(&m_runtime, id, arguments);
     const auto matchesIdentity = type != nullptr && type->getRuntime() == &m_runtime && type->getId() == id;
     const auto hasAvailableName = matchesIdentity && !type->getTypeName().empty() &&
@@ -1198,9 +1170,6 @@ std::optional<MemberSignature> TypeManager::getMemberTemplateSignature(const Nom
 }
 
 const OpaqueIdType* TypeManager::registerOpaqueIdType(const NomadString& name, const NomadString& doc) {
-    if (!canMutateTypes()) {
-        return nullptr;
-    }
     const auto isReservedByHub = m_runtime.isHub(name) || m_runtime.isHubVariable(name);
     if (isReservedByHub) {
         log::error("Cannot register type '" + name + "': name is reserved by a hub declaration");
@@ -1225,9 +1194,6 @@ TypeId TypeManager::createEnum(
     std::vector<EnumValueDefinition> values,
     NomadString documentation
 ) {
-    if (!canMutateTypes()) {
-        return TypeId::INVALID;
-    }
     if (!m_runtime.canRegisterTypeName(name)) {
         log::error("Cannot create enum '" + name + "': name is reserved by a hub declaration");
         return TypeId::INVALID;
@@ -1310,10 +1276,6 @@ const Type* TypeManager::getCallbackType(
             return type.get();
         }
     }
-    ++m_instantiationDepth;
-    BOOST_SCOPE_EXIT_ALL(this) {
-        --m_instantiationDepth;
-    };
     const auto id = reserveTypeId();
     auto type = std::make_unique<FunctionType>(&m_runtime, id, parameterTypes, returnType);
     const auto* result = type.get();

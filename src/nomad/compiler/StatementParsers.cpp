@@ -114,7 +114,7 @@ bool preParseHub(
         return false;
     }
     if (declare && context->getRuntime()->registerHub(name, mode).isInvalid()) {
-        context->addError("Cannot declare hub '" + name + "': invalid, conflicting, or the runtime is sealed", tokens);
+        context->addError("Cannot declare hub '" + name + "': invalid or conflicting name", tokens);
         return false;
     }
     context->setHub(std::move(name));
@@ -992,7 +992,7 @@ bool preParseEnumStatement(
     }
 
     if (runtime->getTypeManager().createEnum(enumName, values).isInvalid()) {
-        context->addError("Failed to register enum '" + enumName + "': invalid name or types are sealed", tokens);
+        context->addError("Failed to register enum '" + enumName + "'", tokens);
         return false;
     }
 

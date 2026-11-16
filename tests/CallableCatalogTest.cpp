@@ -148,13 +148,6 @@ BOOST_AUTO_TEST_CASE(runtime_registers_member_ids_without_publishing_rejected_me
     BOOST_REQUIRE(constructorId.isValid());
     BOOST_TEST(toNomadIndex(constructorId.id) == initialCount + 1);
     BOOST_TEST(owner->getConstructors().front() == runtime.getConstructor(constructorId));
-    manager.seal();
-    BOOST_TEST(runtime.registerMethod(owner, std::make_unique<ScriptMethod>(
-        runtime.getNextCallableId(), "sealed", owner, std::vector<Parameter>{}, nullptr, "", ""
-    )).isInvalid());
-    BOOST_TEST(runtime.registerConstructor(owner, std::make_unique<ScriptConstructor>(
-            runtime.getNextCallableId(), owner, std::vector<Parameter>{}, "", ""
-    )).isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == initialCount + 2);
     BOOST_TEST(owner->getMethods().size() == 1U);
     BOOST_TEST(owner->getConstructors().size() == 1U);

@@ -59,7 +59,7 @@ private:
 
 BOOST_AUTO_TEST_SUITE(type_manager)
 
-BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations_and_respects_the_seal) {
+BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     const auto ownerId = manager.registerClass("PropertyOwner", ClassMode::Closed);
@@ -92,12 +92,7 @@ BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations_and_r
     BOOST_REQUIRE(secondId.isValid());
     BOOST_TEST(toNomadIndex(secondId.id) == initialCount + 1);
     BOOST_TEST(runtime.getFunctionTableSize() == callableCount);
-    manager.seal();
-    BOOST_TEST(manager.registerProperty(owner, std::make_unique<Property>(
-        manager.getNextPropertyId(), owner, "sealed", runtime.getIntegerType()
-    )).isInvalid());
     BOOST_TEST(manager.getProperties().size() == initialCount + 2);
-    BOOST_TEST(owner->getProperty("sealed") == nullptr);
     BOOST_TEST(manager.getProperty(PropertyId{toNomadId(initialCount + 2)}) == nullptr);
 }
 

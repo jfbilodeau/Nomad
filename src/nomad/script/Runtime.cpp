@@ -490,9 +490,6 @@ void Runtime::rebuildHubMembers() {
 }
 
 HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
-    if (!m_typeManager.canMutateTypes()) {
-        return HubId::INVALID;
-    }
     if (name.empty() || (mode != HubMode::Opened && mode != HubMode::Closed)) {
         log::error("Cannot register a hub with an empty name or invalid mode");
         return HubId::INVALID;
@@ -679,10 +676,6 @@ CallableId Runtime::registerMethod(
     CompositeType* owner,
     std::unique_ptr<Method> method
 ) {
-    if (!m_typeManager.canMutateTypes()) {
-        return CallableId::INVALID;
-    }
-
     if (!ownsType(owner) || method == nullptr || method->getId() != getNextCallableId() ||
         method->getId().isInvalid()) {
         log::error("Cannot register method: invalid owner, identity, or callable capacity");
@@ -709,10 +702,6 @@ CallableId Runtime::registerConstructor(
     CompositeType* owner,
     std::unique_ptr<Constructor> constructor
 ) {
-    if (!m_typeManager.canMutateTypes()) {
-        return CallableId::INVALID;
-    }
-
     if (!ownsType(owner) || constructor == nullptr || constructor->getId() != getNextCallableId() ||
         constructor->getId().isInvalid()) {
         log::error("Cannot register constructor: invalid owner, identity, or callable capacity");
@@ -1863,9 +1852,6 @@ ConstantId Runtime::getNextConstantId(const ConstantId currentId) const {
 }
 
 EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
-    if (!m_typeManager.canMutateTypes()) {
-        return EventId::INVALID;
-    }
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register event '" + name + "': name is reserved by a hub");
         return EventId::INVALID;

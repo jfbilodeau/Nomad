@@ -58,9 +58,6 @@ CallableId CompositeType::registerConstructor(
     const TypeManager& manager,
     std::unique_ptr<Constructor> constructor
 ) {
-    if (!manager.canMutateTypes()) {
-        return CallableId::INVALID;
-    }
     if (
         constructor == nullptr ||
         constructor->getClassType() != this ||
@@ -90,9 +87,6 @@ CallableId CompositeType::registerMethod(
     const TypeManager& manager,
     std::unique_ptr<Method> method
 ) {
-    if (!manager.canMutateTypes()) {
-        return CallableId::INVALID;
-    }
     if (
         method == nullptr ||
         method->getClassType() != this ||
@@ -123,9 +117,6 @@ PropertyId CompositeType::registerProperty(
     const TypeManager& manager,
     std::unique_ptr<Property> property
 ) {
-    if (!manager.canMutateTypes()) {
-        return PropertyId::INVALID;
-    }
     const auto* valueType = property == nullptr ? nullptr : property->getValueType();
     const auto* native = property == nullptr ? nullptr : property->asNativeProperty();
     const auto deferred = native != nullptr && !native->isTypeResolved() &&

@@ -29,10 +29,6 @@ public:
     TypeManager& operator=(TypeManager&&) = delete;
 
     [[nodiscard]] Runtime& getRuntime() const;
-    // Sealed registries reject new types and members. Generated types (parameterized, callback) stay open.
-    void seal();
-    [[nodiscard]] bool isSealed() const;
-    [[nodiscard]] bool canMutateTypes() const;
     [[nodiscard]] TypeId registerClass(
         NomadString name,
         ClassMode mode,
@@ -253,8 +249,6 @@ private:
     );
 
     Runtime& m_runtime;
-    bool m_sealed = false;
-    NomadIndex m_instantiationDepth = 0;
     std::vector<std::unique_ptr<Type>> m_types;
     std::vector<Property*> m_properties;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;

@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 3 are implemented. Step 4 is partial. The declaration seal is implemented; the registration ownership split is in progress. The current baseline has failures in `nomad_test_bindings`, `nomad_test_language`, and `nomad_test_remaining`.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 3 are implemented. Step 4 is partial. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
 
 ## Component contract
 
@@ -91,17 +91,16 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 - Simplify `runNativeIndexer` (V15).
 - Resolve Q3 (`friend` declaration).
 
-### Declaration seal and registration ownership
+### Registration ownership
 
-- Successful Emit compilation seals declarations; Analysis compilation does not. There is no unseal API. Native members on sealed types are rejected; parameterized and callback instantiation remain available.
-- Seal rejections return invalid IDs or null pointers. Declaration callers report diagnostics; TypeManager does not log seal rejections.
+- The declaration seal (a `TypeManager` freeze after a successful Emit compile) was removed. It was not required and was the wrong solution to the problem it targeted. Declarations are no longer blocked after compilation.
 - Registration sub-step 1 (immutable IDs) is implemented. Callable and property IDs are constructor arguments and cannot be changed afterward. `Callable::setId` and `Property::setId` are removed. `Runtime::getNextCallableId()` and `TypeManager::getNextPropertyId()` supply the ID that the next registered member receives. Rejected members do not consume an ID.
 - The old `TypeManager` member entry points (for example `registerNativeClassMethod`) still call `Runtime`. That back-call is temporary and is removed in registration sub-steps 2 through 4.
-- Verified with `RunCtest_CMakeTools`: the build passes, the new regression tests pass, and the failing cases match the baseline exactly (`nomad_test_bindings` 4, `nomad_test_language` 8, `nomad_test_remaining` 14).
+- Verified with `RunCtest_CMakeTools` after the removal: the build passes and all 13 CTest entries pass. The 26 failures the seal caused (`nomad_test_bindings` 4, `nomad_test_language` 8, `nomad_test_remaining` 14) are gone. Only seal-specific assertions were removed from the tests.
 - Member descriptors still hold their own ownership. Descriptor ownership remains with the declaring type.
 - The high-level member registration entry points still live on TypeManager and still orchestrate Runtime operations. Moving execution registration orchestration to Runtime is a subsequent review step; the full one-way dependency split is not complete.
 - After review, move the remaining declaration and execution responsibilities, including hub and event declarations, in separately approved steps. Do not revive the superseded name-check-only refactoring.
-- Remaining seal integration work includes registration-before-compile setup, Game API setup, fresh runtimes for language-server analysis batches, and enforcing successful compilation before interpreter or VM execution.
+- Registration-before-compile setup, Game API setup, and fresh runtimes for language-server analysis batches existed only to satisfy the seal and are dropped. Whether the Interpreter or VM should require successful compilation is an open question (Q4).
 - V5's agreed `static_cast` change and the ScriptObject field-table change remain deferred.
 
 ### Step 5: Interpreter correctness and simplification
@@ -144,8 +143,9 @@ Measure each change before and after on the same workload.
 ## Open questions
 
 - **Q1 (resolved):** The debug-only kind check was removed. The accessors are `getUncheckedNative*`, inline in `Runtime.hpp`.
-- **Q2 (step 8):** Cache compiled format-template segments (I5), or keep the Interpreter simpler and accept re-parsing? Measure first.
+- **Q2 (step 8):** Cache compiled format-template segments (I5), or keep the Interpreter simpler and accept re-parsing? Measured (Debug build, 20,000 calls each): plain return about 5–7 µs; dynamic format with static text (no placeholders) about 33 µs; dynamic format with two `{value}` placeholders about 650 µs. The context copy accounts for about 28 µs of the static-text cost, so per-placeholder work dominates. Next measurement: break down `Interpreter::evaluateFormatExpression` (compiler creation, tokenizing, parsing, resolving, evaluation) per placeholder.
 - **Q3 (step 4):** Resolved. `InterpreterContext` reads the frame indexes through the read-only `getParameterIndex()` and `getVariableIndex()` accessors, and the `friend` declaration is removed.
+- **Q4 (open):** Should the Interpreter or VM reject a runtime whose script compilation did not succeed? The standing rule says script initialization is a host precondition and the VM does not validate readiness. Confirm that rule or change it explicitly.
 
 ## Debug-only checks
 
