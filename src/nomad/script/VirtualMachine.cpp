@@ -759,24 +759,36 @@ void VirtualMachine::runNativeIndexer(
     if (args.size() != info->indexTypes.size() + (write ? 1 : 0)) {
         fault("Incorrect argument count when calling native indexer");
     }
-    if (m_stackIndex >= m_stack.size() || m_stack.size() - m_stackIndex < 3 ||
-        args.size() > m_stack.size() - m_stackIndex - 3) {
+    constexpr auto receiverSlotCount = NomadIndex{2};
+    if (
+        m_stackIndex >= m_stack.size() ||
+        m_stack.size() - m_stackIndex - 1 < receiverSlotCount ||
+        args.size() > m_stack.size() - m_stackIndex - 1 - receiverSlotCount
+    ) {
         fault("Stack overflow");
     }
+
     const auto initialStackIndex = m_stackIndex;
     const auto savedThis = m_this;
     const auto parameterType = [&](const NomadIndex index) {
+
         return index < info->indexTypes.size() ? info->indexTypes[index] : info->valueType;
     };
+
+    m_result = RuntimeValue{};
+    pushThis();
+    pushObjectValue(receiver);
+    const auto receiverStackIndex = m_stackIndex;
+    auto copiedArgumentCount = NomadIndex{0};
     const auto releaseArguments = [&]() noexcept {
-        while (m_stackIndex > initialStackIndex + 2) {
-            const auto index = args.size() - (m_stackIndex - initialStackIndex - 2);
-            parameterType(index)->freeValue(&m_stack[m_stackIndex]);
+        while (copiedArgumentCount != 0) {
+            const auto argumentIndex = args.size() - copiedArgumentCount;
+            parameterType(argumentIndex)->freeValue(&m_stack[m_stackIndex]);
             --m_stackIndex;
+            --copiedArgumentCount;
         }
-        if (m_stackIndex > initialStackIndex + 1) {
-            info->classType->freeValue(&m_stack[initialStackIndex + 2]);
-        }
+
+        info->classType->freeValue(&m_stack[receiverStackIndex]);
         m_stackIndex = initialStackIndex;
         m_this = savedThis;
     };
@@ -784,14 +796,12 @@ void VirtualMachine::runNativeIndexer(
         releaseArguments();
     };
 
-    m_result = RuntimeValue{};
-    pushThis();
-    pushObjectValue(receiver);
     for (auto index = args.size(); index > 0; --index) {
         auto* destination = &m_stack[m_stackIndex + 1];
         *destination = RuntimeValue{};
         parameterType(index - 1)->copyValue(&args[index - 1], destination);
         ++m_stackIndex;
+        ++copiedArgumentCount;
     }
 
     callNativeIndexer(indexerId, receiver, write);

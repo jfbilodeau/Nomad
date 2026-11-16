@@ -88,7 +88,8 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 - Replace `dynamic_cast<ScriptObject*>` on property access with the compiler-guaranteed type (V5).
 - V11 is fixed with a stored-property bounds regression. V10 was not reproduced.
 - Deduplicate capture logic (V9), save and restore guards (V8), and the six execution entry points (V7). Keep the host-facing validation.
-- Simplify `runNativeIndexer` (V15).
+- V15 is implemented: `runNativeIndexer` preserves argument order, releases every successfully copied argument and its retained receiver on success or failure, and restores the enclosing stack and receiver without allocating cleanup storage. The early result reset stays because argument copying can fail before `callNativeIndexer` resets it.
+- V15 validation: all 13 CTest entries pass on `windows-debug`, including existing partial-copy, callback-failure, frame-restoration, and allocation-free indexer tests. Stopped for review after this sub-step.
 - Resolve Q3 (`friend` declaration).
 
 ### Registration ownership
@@ -252,7 +253,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V12 | P2 | correctness | Missing null checks: asScriptMethod and asScriptConstructor results, getReturnType dereference in createNativeObject, getNativeFunction in callNativeFunction | `VirtualMachine.cpp`: initializeStructStorage, createScriptObject, createScriptStruct, createNativeObject, callNativeFunction | verified | 1 (native, done), 4 (script) |
 | V13 | P3 | const-correctness | getCurrentFunction() const returns a non-const ScriptFunction*; the `(void)getThis()` validation idiom is repeated; bindThisFromStack duplicates the getThis null check | `VirtualMachine.hpp`:120; `VirtualMachine.cpp`: getThis, bindThisFromStack, copyThisToResult | Partly fixed: getCurrentScript returns const; idiom and bindThisFromStack remain | 2 (done), 4 (remaining) |
 | V14 | P3 | naming | `stack_size` parameter; `integer_value` and `float_value` locals; memberId used for both CallableId and PropertyId; get*Function*VariableValue and set*VariableValue are asymmetric | `VirtualMachine.hpp`: constructor and accessors; `VirtualMachine.cpp`: nextInteger, nextFloat, callNativeMethod | verified | 7 |
-| V15 | P2 | quality | runNativeIndexer uses magic offsets (+2, +3) and convoluted release index arithmetic; duplicates the m_result reset in callNativeIndexer | `VirtualMachine.cpp`: runNativeIndexer, callNativeIndexer | verified | 4 |
+| V15 | P2 | quality | runNativeIndexer uses magic offsets (+2, +3) and convoluted release index arithmetic; duplicates the m_result reset in callNativeIndexer | `VirtualMachine.cpp`: runNativeIndexer, callNativeIndexer | Implemented: named receiver slot count and position, explicit copied-argument count; early reset retained for copy failures | 4 |
 | V16 | P3 | perf | run(ScriptFunction) allocates a `vector<const Type*>` per host call; the closure-argument path has unclear callers | `VirtualMachine.cpp`: run(ScriptFunction), run(Closure) overloads; verify closure-argument callers | partly-verified | 8 |
 | V17 | P3 | quality | fault() is not `[[noreturn]]`; many fault-then-continue patterns | `VirtualMachine.hpp`: fault declaration | Fixed: `[[noreturn]]` | 4 |
 
