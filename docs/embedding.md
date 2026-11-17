@@ -1327,6 +1327,12 @@ values. When using `InterpreterCallFrame`, construct the guard after preparing
 the frame so execution state is restored before the frame releases its arguments.
 Keep a narrower scope when restoration must happen before consuming the result.
 
+`InterpreterCallFrame` preserves result/intermediate registers while owning
+call arguments and results. Its destructor releases those values before
+restoring the borrowed registers. Low-level callers outside a call frame must
+preserve any register contents they need across execution and release owned
+temporary values before restoring them.
+
 `enterScriptFrame(address, receiver)` requires a validated compiled entry address
 and arguments/hidden pointers already on the stack. It starts script execution
 and enters a frame. `executeScript()` executes bytecode until stopping.

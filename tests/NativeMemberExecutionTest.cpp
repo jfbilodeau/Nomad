@@ -574,6 +574,81 @@ BOOST_AUTO_TEST_CASE(interpreter_indexer_failures_release_operands_and_partial_r
     }
 }
 
+BOOST_AUTO_TEST_CASE(interpreter_indexers_restore_borrowed_registers_on_success_and_failure) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    auto fail = false;
+    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        .valueTypeId = runtime.getStringType()->getId(),
+        .indexTypes = {runtime.getIntegerType()->getId()},
+        .getter = [&](VirtualMachine* active) {
+            active->setIntegerIntermediate(73);
+            active->setStringResult("indexed value");
+            if (fail) {
+                throw NomadException("Expected indexer register restoration failure");
+            }
+        }
+    }).isValid());
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    RuntimeValue savedResult{NomadString{"enclosing result"}};
+    const RuntimeValueGuard resultOwner(*runtime.getStringType(), &savedResult);
+    RuntimeValue savedIntermediate{NomadString{"enclosing intermediate"}};
+    const RuntimeValueGuard intermediateOwner(*runtime.getStringType(), &savedIntermediate);
+    machine->setResult(savedResult);
+    machine->setIntermediate(savedIntermediate);
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (const auto formatting : {false, true}) {
+        for (const auto failure : {false, true}) {
+            fail = failure;
+            if (formatting) {
+                if (fail) {
+                    BOOST_CHECK_THROW(
+                        static_cast<void>(interpreter.formatString(
+                            context,
+                            "{(new TestObject)[0]}",
+                            "indexer.nomad",
+                            1,
+                            1
+                        )),
+                        NomadException
+                    );
+                } else {
+                    const auto formatted = interpreter.formatString(
+                        context,
+                        "{(new TestObject)[0]}",
+                        "indexer.nomad",
+                        1,
+                        1
+                    );
+                    BOOST_TEST(formatted.text == "indexed value");
+                }
+            } else {
+                const auto succeeded = interpreter.execute("(new TestObject)[0]", context);
+                BOOST_TEST(succeeded == !fail);
+                if (succeeded) {
+                    BOOST_REQUIRE(context.getResult() != nullptr);
+                    BOOST_TEST(context.getResult()->getValue().getStringValue() == "indexed value");
+                } else {
+                    BOOST_REQUIRE(context.hasError());
+                    BOOST_TEST(context.getFirstError()->message.find(
+                        "Expected indexer register restoration failure") != NomadString::npos);
+                }
+            }
+
+            context.clearResult();
+            BOOST_TEST(machine->getResult().getObjectValue() == savedResult.getObjectValue());
+            BOOST_TEST(machine->getIntermediate().getObjectValue() == savedIntermediate.getObjectValue());
+            BOOST_TEST(savedResult.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(savedIntermediate.getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+            BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters) {
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();

@@ -265,22 +265,6 @@ InterpreterValue setStoredProperty(
     return InterpreterValue(receiver.getType(), storage.getStorage());
 }
 
-class RegisterRestoration {
-public:
-    explicit RegisterRestoration(VirtualMachine& machine):
-        m_machine(machine), m_result(machine.getResult()), m_intermediate(machine.getIntermediate()) {}
-
-    ~RegisterRestoration() {
-        m_machine.setResult(m_result);
-        m_machine.setIntermediate(m_intermediate);
-    }
-
-private:
-    VirtualMachine& m_machine;
-    RuntimeValue m_result;
-    RuntimeValue m_intermediate;
-};
-
 } // namespace
 
 Interpreter::Interpreter(VirtualMachine& machine):
@@ -655,7 +639,13 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
         return std::nullopt;
     }
     auto* machine = evaluation.getVirtualMachine();
-    const RegisterRestoration registers(*machine);
+    const auto savedResult = machine->getResult();
+    const auto savedIntermediate = machine->getIntermediate();
+    BOOST_SCOPE_EXIT_ALL(&) {
+        machine->setResult(savedResult);
+        machine->setIntermediate(savedIntermediate);
+    };
+
     try {
 
         return expression->evaluate(evaluation);
@@ -731,7 +721,14 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
 NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& evaluation) const {
     const auto guard = evaluation.beginEvaluation();
     evaluation.resetEvaluation();
-    const RegisterRestoration registers(*evaluation.getVirtualMachine());
+    auto* machine = evaluation.getVirtualMachine();
+    const auto savedResult = machine->getResult();
+    const auto savedIntermediate = machine->getIntermediate();
+    BOOST_SCOPE_EXIT_ALL(&) {
+        machine->setResult(savedResult);
+        machine->setIntermediate(savedIntermediate);
+    };
+
     try {
         auto* callable = evaluation.getCallable();
         auto* runtime = evaluation.getRuntime();
