@@ -32,6 +32,16 @@ ScriptObject::~ScriptObject() {
     }
 }
 
+ScriptObject* ScriptObject::asScriptObject() noexcept {
+
+    return this;
+}
+
+const ScriptObject* ScriptObject::asScriptObject() const noexcept {
+
+    return this;
+}
+
 const ClassType* ScriptObject::getClassType() const {
     return m_classType;
 }

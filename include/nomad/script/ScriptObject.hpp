@@ -18,6 +18,9 @@ public:
     explicit ScriptObject(const ClassType* classType);
     ~ScriptObject() override;
 
+    [[nodiscard]] ScriptObject* asScriptObject() noexcept override;
+    [[nodiscard]] const ScriptObject* asScriptObject() const noexcept override;
+
     [[nodiscard]] const ClassType* getClassType() const;
     [[nodiscard]] NomadIndex getFieldCount() const;
     [[nodiscard]] NomadIndex getStorageSize() const { return m_values.size(); }

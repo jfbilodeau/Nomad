@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 3 are implemented. Step 4 is partial. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
 
 ## Component contract
 
@@ -82,10 +82,10 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 4. K3: use `std::signbit` to detect negative-zero literals.
 5. K4: bound the `inferTypes` fixed-point loop, and report a diagnostic when the bound is reached.
 
-### Step 4: VM trust boundary
+### Step 4: VM trust boundary (complete)
 
 - V12/V13 keep compiler-resolved callable metadata trusted while retaining checks for host-provided receiver values. `fault` is now `[[noreturn]]` (V17), and `getCurrentScript` returns `const ScriptFunction*`.
-- Replace `dynamic_cast<ScriptObject*>` on property access with the compiler-guaranteed type (V5).
+- V5 review found that the compiler selects the stored-property operation and offsets, but does not establish the actual C++ storage kind for every host/native receiver. The implemented query below replaces RTTI conversion while retaining receiver, owner-type, and actual-allocation checks.
 - V11 is fixed with a stored-property bounds regression. V10 was not reproduced.
 - Deduplicate capture logic (V9), save and restore guards (V8), and the six execution entry points (V7). Keep the host-facing validation.
 - V8 is resolved by review: `InterpreterCallFrame` already preserves result/intermediate registers for callable invocation. The separate register guard class is removed. Raw interpreter evaluation and VM creation retain local scope-exit restoration because they also run outside call frames; borrowed ownership and restoration order are unchanged. This small duplication is accepted instead of adding another guard abstraction.
@@ -98,10 +98,50 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 - V12 is resolved by review: script construction and struct initializer dispatch already trust the compiler-selected callable ID/kind and compiled body. No new null checks or lookup APIs are needed. The absent-initializer branch remains necessary for native structs, and native object constructors still reject null callback results.
 - V13 is implemented: receiver-copy operations no longer revalidate an already-bound object. Receiver lookup consumes the checked `getThis()` result without an ignored-return idiom. `getThis()`, native property invocation, and `bindThisFromStack` retain null checks: class type resolution cannot prove that a native callback supplied a non-null receiver.
 - V12/V13 validation: all 13 CTest entries pass on `windows-debug`. Coverage verifies checked missing-receiver lookup, borrowed receiver identity/reference counts, and rejection of a null native-function result before a compiled method body runs; existing receiver-copy, native-property, and constructor tests remain green.
-- V5's deferred stored-property cast review is the remaining step-4 item. Review the receiver/storage guarantees before changing those casts or the ScriptObject field table. The remaining registration ownership split stays separate.
+- V5 is implemented and measured as described below. Step 4 is complete; the remaining registration ownership split stays separate.
 - V15 is implemented: `runNativeIndexer` preserves argument order, releases every successfully copied argument and its retained receiver on success or failure, and restores the enclosing stack and receiver without allocating cleanup storage. The early result reset stays because argument copying can fail before `callNativeIndexer` resets it.
 - V15 validation: all 13 CTest entries pass on `windows-debug`, including existing partial-copy, callback-failure, frame-restoration, and allocation-free indexer tests. Stopped for review after this sub-step.
 - Resolve Q3 (`friend` declaration).
+
+#### V5: checked boundary and trusted storage
+
+**Status:** Implemented after approval to proceed with the prototype. All 13 CTest entries pass on `windows-debug`; retained after the before/after comparison below. No new opcodes or field-table changes.
+
+Review evidence:
+
+- `VirtualMachine::getProperty` and `setProperty` are checked host/interpreter entry points as well as dispatch targets. They must reject missing storage and objects of the wrong owner type.
+- Compiled physical-offset access reaches `getStoredPropertyAddress` through `getStoredProperty` or `op_stored_property_address_push`. Its input is still a `NomadObject*`; declared class metadata alone does not establish a `ScriptObject` representation.
+- Existing tests cover native objects without script storage and instances allocated before an open class gains fields (`ScriptObjectTest.cpp`: property dispatch and specialized field errors; `StructTypeTest.cpp`: stored-property address failures).
+- `ScriptObject::getStorageValue` is already the typed, unchecked physical-slot fast path. Do not introduce a second storage-access abstraction.
+
+Implemented scope:
+
+1. Kept checked VM entry points, error messages, owner-type checks, and actual-allocation bounds. No arbitrary `RuntimeValue` is downcast with `static_cast<ScriptObject*>`.
+2. Added mutable/const `NomadObject::asScriptObject()` queries: the base returns `nullptr`, and `ScriptObject` returns `this`. The three VM stored-property paths use the query in place of RTTI, checking the object pointer before invoking it.
+3. Reused the existing typed storage APIs after conversion and bounds validation. This removes RTTI conversion, not receiver validation, and adds no separate unchecked VM entry point.
+4. Preserved `ScriptObject`'s per-instance `StoredField` snapshot and value buffer. Destruction and host access still use the layout the instance actually owns, including instances predating later declarations. No seal, receiver cache, value discriminator, or registration restriction was added.
+5. Kept bytecode, call-frame layout, property IDs, native callbacks, and value ownership unchanged.
+
+ABI and verification:
+
+- Adding virtual queries changes the native C++ ABI. The existing module contract requires the same SDK/compiler/runtime settings, but `ModuleHostImpl::loadModules` checks only the registration export, not an ABI version. Rebuild C++ hosts, custom object subclasses, and all native modules; do not mix old module binaries with this runtime. No new ABI-versioning scheme was introduced.
+- CTest rebuilt the workspace and all 13 entries pass, including module/runtime/package integration. Existing missing/native/wrong-owner receiver, old-instance bounds, struct-storage, ownership, self-assignment, and allocation regressions were kept unchanged.
+- Measurement used MSVC 19.44 x64 Debug engine DLLs with an identical `/O2 /MDd` C++20 standalone consumer harness. Saved baseline and prototype DLLs were loaded beside their respective executables; the harness did not load native modules. Three paired comparisons alternated A/B, B/A, A/B. Each run warmed up with 10,000 operations and reported the median of seven 100,000-operation samples per workload. The table gives the median of each variant's three run medians.
+- All six paired runs returned the same checksum (`186300000`), reported zero CRT allocations in separate 100,000-operation batches, and passed stack, reference-count, and live-object/string ownership checks. These are Windows Debug microbenchmarks, not Release or gameplay measurements.
+
+| Workload | RTTI ns/op | Query ns/op | Reduction |
+| --- | ---: | ---: | ---: |
+| Opcode scalar read | 36.479 | 29.260 | 19.79% |
+| Opcode scalar write | 41.965 | 29.843 | 28.89% |
+| Opcode reference read | 61.778 | 48.186 | 22.00% |
+| Opcode reference write | 69.463 | 51.621 | 25.69% |
+| Opcode struct-field address | 75.778 | 62.954 | 16.92% |
+| Checked scalar read | 84.469 | 74.051 | 12.33% |
+| Checked scalar write | 134.864 | 128.531 | 4.70% |
+| Checked reference read | 122.440 | 117.452 | 4.07% |
+| Checked reference write | 189.949 | 178.839 | 5.85% |
+
+What follows: stop for review. Step 5 begins with a fresh review of I1 against the existing native-call stop/running-state contracts. Release and other-platform performance remain unmeasured; do not extrapolate these microbenchmark results.
 
 ### Registration ownership
 
@@ -113,7 +153,7 @@ Your decisions: keep convenience lookups (`getStringByName`, `getStringContextVa
 - The high-level member registration entry points still live on TypeManager and still orchestrate Runtime operations. Moving execution registration orchestration to Runtime is a subsequent review step; the full one-way dependency split is not complete.
 - After review, move the remaining declaration and execution responsibilities, including hub and event declarations, in separately approved steps. Do not revive the superseded name-check-only refactoring.
 - Registration-before-compile setup, Game API setup, and fresh runtimes for language-server analysis batches existed only to satisfy the seal and are dropped. Whether the Interpreter or VM should require successful compilation is an open question (Q4).
-- V5's agreed `static_cast` change and the ScriptObject field-table change remain deferred.
+- The earlier blanket V5 `static_cast` and ScriptObject field-table proposals were not implemented. The checked query preserves receiver validation and per-instance layouts; registration ownership changes do not authorize changing those contracts.
 
 ### Step 5: Interpreter correctness and simplification
 
@@ -254,7 +294,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V2 | P2 | quality | TEST_STACK_* macros are not hygienic; UNDERFLOW uses the overflow condition | `VirtualMachine.cpp`: macro block at the top of the file | verified | 3 |
 | V3 | P2 | dead-code | Unused VM accessors: freeObjectVariable, typed setXVariableValue, initStringVariable, getFunction*VariableValue, setVariableValue forwarder | `VirtualMachine.hpp` (about lines 223–258, 272); `VirtualMachine.cpp`: freeObjectVariable | verified | 1 (done) |
 | V4 | P1 | perf | getCurrentCallable() is a linear scan over all callables; reached from closure creation, freeObjectVariable, and dynamic formatting | `Runtime.cpp`: getScriptCallableAtInstructionIndex; `VirtualMachine.cpp`: getCurrentCallable, getFunctionVariableStorage; `OpCode.cpp`: op_dynamic_format_execute; `FormatString.cpp`:113 | verified | 8 |
-| V5 | P1 | perf | dynamic_cast<ScriptObject*> on every stored-property access | `VirtualMachine.cpp`: getProperty, setProperty, getStoredPropertyAddress | verified | 4 |
+| V5 | P1 | perf | RTTI conversion on stored-property access; removing it requires a safe receiver-storage boundary | `VirtualMachine.cpp`: getProperty, setProperty, getStoredPropertyAddress; `NomadObject.cpp`, `ScriptObject.cpp`: storage query and allocated field snapshot | Fixed: measured checked storage query replaces VM RTTI; existing guards/layouts retained, native ABI rebuild required | 4 (done) |
 | V6 | P1 | perf | Native property access copies NativePropertyInfo (with std::function members) by value on every access | `VirtualMachine.cpp`: getNativeProperty, setNativeProperty; `Runtime.cpp`: getNativePropertyInfo returns std::optional by value; `NativeProperty.cpp`:36 getInfo | verified | 8 |
 | V7 | P2 | redundancy | Six execution entry points with near-identical result copy and free logic, and inconsistent error policy (log and return, invalid_argument, VirtualMachineException) | `VirtualMachine.cpp`: executeFunction overloads, runFunction, runClosure, run(ScriptFunction), run(Closure) | Fixed: shared lookup/result finalization; specialized runner contracts retained, host result-copy failures release VM results | 4 |
 | V8 | P2 | redundancy | Save and restore of m_result and m_intermediate duplicated; BOOST_SCOPE_EXIT used instead of RAII guards | `VirtualMachine.cpp`: executeCreationBody, createNativeStruct, createNativeObject; `Interpreter.cpp`: evaluation entry points | Resolved by review: existing call-frame protection retained; local restoration outside call frames, no separate register guard | 4 |

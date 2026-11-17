@@ -1584,8 +1584,13 @@ the result remains owned by the caller. Self-assignment preserves ownership.
 Explicit initializers, inferred defaults, constructor writes, and ordinary
 property reads/assignments use the same compiler selection path.
 
-The VM still checks that the receiver is a non-null `ScriptObject` and that the
-offset fits its allocated storage. These facts are not established by the
+`NomadObject::asScriptObject()` returns a borrowed `ScriptObject` pointer, or
+`nullptr` for objects without script field storage. Mutable and const overloads
+preserve the object's identity and do not retain references.
+
+The VM checks that the receiver supplies script storage through this query and
+that the offset fits its allocated storage. Missing receivers and objects
+without script storage still fault. These facts are not established by the
 compiler for all host/native receivers or instances allocated before an open
 class gained fields. `getStorageSize()` reports actual allocated slots;
 `getStorageValue(offset)` is a trusted unchecked physical-slot API.

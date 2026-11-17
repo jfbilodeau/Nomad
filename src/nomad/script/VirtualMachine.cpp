@@ -658,7 +658,8 @@ void VirtualMachine::getProperty(
         getNativeProperty(memberId, receiver, result);
         return;
     }
-    auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
+    auto* instance = receiver.getObjectValue();
+    auto* object = instance != nullptr ? instance->asScriptObject() : nullptr;
     if (object == nullptr || object->getClassType() != property->getClassType()) {
         fault("Stored property receiver has no matching field storage");
     }
@@ -679,7 +680,8 @@ void VirtualMachine::setProperty(
         setNativeProperty(memberId, receiver, value);
         return;
     }
-    auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
+    auto* instance = receiver.getObjectValue();
+    auto* object = instance != nullptr ? instance->asScriptObject() : nullptr;
     if (object == nullptr || object->getClassType() != property->getClassType()) {
         fault("Stored property receiver has no matching field storage");
     }
@@ -695,7 +697,8 @@ RuntimeValue* VirtualMachine::getStoredPropertyAddress(
     const NomadIndex firstOffset,
     const NomadIndex lastOffset
 ) {
-    auto* object = dynamic_cast<ScriptObject*>(receiver.getObjectValue());
+    auto* instance = receiver.getObjectValue();
+    auto* object = instance != nullptr ? instance->asScriptObject() : nullptr;
     if (object == nullptr) {
         fault("Stored property receiver has no matching field storage");
     }
