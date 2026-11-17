@@ -566,15 +566,12 @@ void VirtualMachine::callNativeFunction(const CallableId nativeFunctionId) {
 NomadObject* VirtualMachine::createNativeObject(const CallableId constructorId) {
     const auto& constructor = m_runtime->getUncheckedNativeConstructor(constructorId);
     const auto frame = beginNativeCall();
-    BOOST_SCOPE_EXIT_ALL(&, this) {
-        endNativeCall(frame);
-    };
-
     const auto savedResult = m_result;
     const auto savedIntermediate = m_intermediate;
     BOOST_SCOPE_EXIT_ALL(&, this) {
         m_result = savedResult;
         m_intermediate = savedIntermediate;
+        endNativeCall(frame);
     };
 
     m_this = RuntimeValue{};
