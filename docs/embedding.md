@@ -1642,6 +1642,13 @@ functions and native function/constructor callbacks do not inherit a caller's
 receiver; `getThis()` raises an error in those calls. Closures and format
 expressions retain their explicitly captured `this`.
 
+Object-method receiver binding rejects null values, including null results from
+native functions. The low-level receiver-copy APIs `copyThisToResult()` and
+`copyThisToIntermediate()` require an already-bound object receiver and retain
+one reference in the destination register. They do not validate the receiver.
+Host-facing `getThis()`, receiver lookup, and native property access retain their
+missing-receiver checks.
+
 Native and script calls pass arguments by copy. Reassigning a parameter does not
 reassign the caller's variable; object values retain normal reference semantics.
 Host arguments remain borrowed, and invocation copies are released on ordinary

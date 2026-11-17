@@ -1,5 +1,7 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <LanguageTestFixture.hpp>
+
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
@@ -9,6 +11,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/Identifier.hpp>
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
@@ -207,6 +210,16 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
         VirtualMachineException
     );
     BOOST_CHECK_THROW(virtualMachine->getThisAs<TestObject>(), VirtualMachineException);
+    RuntimeValue receiver{NomadInteger{37}};
+    BOOST_CHECK_THROW(
+        static_cast<void>(virtualMachine->getVariableValue(
+            IdentifierType::Receiver,
+            NOMAD_INVALID_ID,
+            receiver
+        )),
+        VirtualMachineException
+    );
+    BOOST_TEST(receiver.getIntegerValue() == 37);
 }
 
 BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) {
@@ -222,6 +235,11 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
         .function = [instance](VirtualMachine* machine) {
             BOOST_TEST(machine->getThis() == instance);
             BOOST_TEST(machine->getThisAs<TestObject>() == instance);
+            const auto references = instance->getReferenceCount();
+            RuntimeValue receiver;
+            BOOST_REQUIRE(machine->getVariableValue(IdentifierType::Receiver, NOMAD_INVALID_ID, receiver));
+            BOOST_TEST(receiver.getObjectValue() == instance);
+            BOOST_TEST(instance->getReferenceCount() == references);
             machine->setIntegerResult(42);
         },
         .documentation = ""
@@ -326,6 +344,38 @@ BOOST_AUTO_TEST_CASE(compiled_method_receives_receiver_and_arguments) {
     virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getIntegerValue() == 7);
+}
+
+BOOST_AUTO_TEST_CASE(compiled_method_binding_rejects_null_receivers_from_native_functions) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
+        if (phase != CompilationPhase::Parse) {
+
+            return;
+        }
+
+        const auto* type = runtime.getTypeByName("NullMethodReceiver");
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_REQUIRE(runtime.registerNativeFunction(
+            "missingObject",
+            [](VirtualMachine* active) { active->getResult().setObjectValue(nullptr); },
+            {},
+            type,
+            ""
+        ).isValid());
+    });
+    fixture.addFunction("main",
+        "class NullMethodReceiver\nfun constant\nreturn 42\nend\nend\n"
+        "return (missingObject).constant"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    runtime.initializeScripts();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE(outcome.fault.has_value());
+    BOOST_TEST(*outcome.fault == "Object method has no instance");
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_properties_and_methods_mutate_parameter_instances) {

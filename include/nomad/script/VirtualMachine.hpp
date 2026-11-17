@@ -230,6 +230,7 @@ public:
     void pushThis();
     void popThis();
     void moveThisToResult();
+    // Compiler-verified object receiver; copying retains a reference.
     void copyThisToResult();
     void copyThisToIntermediate();
     void bindThisFromStack(NomadIndex offset);

@@ -959,12 +959,10 @@ void VirtualMachine::moveThisToResult() {
 }
 
 void VirtualMachine::copyThisToResult() {
-    (void)getThis();
     m_result.copyObjectValue(m_this);
 }
 
 void VirtualMachine::copyThisToIntermediate() {
-    (void)getThis();
     m_intermediate.copyObjectValue(m_this);
 }
 
@@ -1136,8 +1134,7 @@ void VirtualMachine::jump(NomadIndex index) {
 bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId variableId, RuntimeValue& value) {
     switch (identifierType) {
     case IdentifierType::Receiver:
-        (void)getThis();
-        value = m_this;
+        value.setObjectValue(getThis());
         return true;
     case IdentifierType::Constant:
         m_runtime->getConstantValue(ConstantId{variableId}, value);
