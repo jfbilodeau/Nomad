@@ -278,7 +278,13 @@ public:
     [[nodiscard]] size_t getInstructionIndex() const { return m_instructionIndex; }
 
 private:
+    [[nodiscard]] const ScriptFunction* runFunction(
+        CallableId functionId,
+        const std::vector<RuntimeValue>& arguments
+    );
     const ScriptFunction* runClosure(const Closure* closure, const std::vector<RuntimeValue>& args);
+    void discardFunctionResult(const ScriptFunction& function);
+    void copyFunctionResult(const ScriptFunction& function, RuntimeValue& returnValue);
 
     struct NativeCallFrame {
         NomadIndex parameterIndex;

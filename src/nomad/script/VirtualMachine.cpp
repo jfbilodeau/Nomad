@@ -38,6 +38,22 @@ void VirtualMachine::executeFunction(const CallableId functionId) {
     executeFunction(functionId, {});
 }
 
+const ScriptFunction* VirtualMachine::runFunction(
+    const CallableId functionId,
+    const std::vector<RuntimeValue>& arguments
+) {
+    const auto* function = m_runtime->getScriptFunction(functionId);
+    if (function == nullptr) {
+        log::error("Invalid function id");
+
+        return nullptr;
+    }
+
+    run(function, arguments);
+
+    return function;
+}
+
 const ScriptFunction* VirtualMachine::runClosure(
     const Closure* closure,
     const std::vector<RuntimeValue>& args
@@ -55,67 +71,49 @@ const ScriptFunction* VirtualMachine::runClosure(
 }
 
 void VirtualMachine::executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args) {
-    const auto function = runClosure(closure, args);
-
-    if (function == nullptr) {
-        return;
-    }
-
-    // The result is discarded.
-    if (const auto returnType = function->getReturnType()) {
-        returnType->freeValue(&getResult());
+    if (const auto* function = runClosure(closure, args)) {
+        discardFunctionResult(*function);
     }
 }
 
-void VirtualMachine::executeFunction(const Closure* closure, const std::vector<RuntimeValue>& args, RuntimeValue& returnValue) {
-    const auto function = runClosure(closure, args);
-
-    if (function == nullptr) {
-        return;
-    }
-
-    if (const auto returnType = function->getReturnType()) {
-        // The caller receives its own copy; the virtual machine's result is released.
-        returnType->copyValue(&getResult(), &returnValue);
-        returnType->freeValue(&getResult());
-    }  // Else keep existing value
-}
-
-void VirtualMachine::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args) {
-    const auto function = m_runtime->getScriptFunction(functionId);
-
-    if (function == nullptr) {
-        log::error("Invalid function id");
-        return;
-    }
-
-    run(function, args);
-
-    // The result is discarded.
-    if (const auto returnType = function->getReturnType()) {
-        returnType->freeValue(&getResult());
+void VirtualMachine::executeFunction(
+    const Closure* closure,
+    const std::vector<RuntimeValue>& args,
+    RuntimeValue& returnValue
+) {
+    if (const auto* function = runClosure(closure, args)) {
+        copyFunctionResult(*function, returnValue);
     }
 }
 
-void VirtualMachine::executeFunction(const CallableId functionId, const std::vector<RuntimeValue> &args, RuntimeValue& returnValue) {
-    const auto function = m_runtime->getScriptFunction(functionId);
-
-    if (function == nullptr) {
-        log::error("Invalid function id");
-        return;
+void VirtualMachine::executeFunction(const CallableId functionId, const std::vector<RuntimeValue>& args) {
+    if (const auto* function = runFunction(functionId, args)) {
+        discardFunctionResult(*function);
     }
-
-    run(function, args);
-
-    const auto returnType = function->getReturnType();
-
-    if (returnType) {
-        // The caller receives its own copy; the virtual machine's result is released.
-        returnType->copyValue(&getResult(), &returnValue);
-        returnType->freeValue(&getResult());
-    }  // Else keep existing value
 }
 
+void VirtualMachine::executeFunction(
+    const CallableId functionId,
+    const std::vector<RuntimeValue>& args,
+    RuntimeValue& returnValue
+) {
+    if (const auto* function = runFunction(functionId, args)) {
+        copyFunctionResult(*function, returnValue);
+    }
+}
+
+void VirtualMachine::discardFunctionResult(const ScriptFunction& function) {
+    if (const auto* returnType = function.getReturnType()) {
+        returnType->freeValue(&m_result);
+    }
+}
+
+void VirtualMachine::copyFunctionResult(const ScriptFunction& function, RuntimeValue& returnValue) {
+    if (const auto* returnType = function.getReturnType()) {
+        const RuntimeValueGuard resultOwner(*returnType, &m_result);
+        returnType->copyValue(&m_result, &returnValue);
+    }
+}
 
 void VirtualMachine::setFunctionVariableValue(const VariableId variableId, const RuntimeValue& value) {
     getFunctionVariableStorage(variableId)[0] = value;

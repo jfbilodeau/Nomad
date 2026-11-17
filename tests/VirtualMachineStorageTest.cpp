@@ -5,6 +5,7 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
@@ -124,6 +125,79 @@ BOOST_AUTO_TEST_CASE(factory_virtual_machines_keep_results_and_return_ownership_
     BOOST_TEST(secondResult.getObjectValue()->getReferenceCount() == 1U);
     runtime.getStringType()->freeValue(&secondResult);
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+}
+
+BOOST_AUTO_TEST_CASE(host_execution_releases_results_on_discard_and_copy_failure) {
+    auto copyCount = NomadIndex{0};
+    auto failCopyAt = NomadIndex{0};
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto typeId = runtime.getTypeManager().registerClass<nomad::test::FailingArgumentCopyType>(
+        "ExecutionResult",
+        ClassMode::Closed,
+        copyCount,
+        failCopyAt
+    );
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value();
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "makeExecutionResult",
+        [](VirtualMachine* active) { active->getResult().setObjectValue(new NomadObject); },
+        {},
+        type,
+        ""
+    ).isValid());
+    fixture.addFunction("returnExecutionResult", "return makeExecutionResult");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    runtime.initializeScripts();
+    const auto functionId = runtime.getFunctionId("returnExecutionResult");
+    const Closure closure(runtime.getScriptFunction(functionId));
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (const auto useClosure : {false, true}) {
+        VirtualMachine machine(&runtime, 128);
+        const RuntimeValueGuard resultOwner(*type, &machine.getResult());
+        copyCount = 0;
+        failCopyAt = 1;
+        if (useClosure) {
+            machine.executeFunction(&closure, {});
+        } else {
+            machine.executeFunction(functionId);
+        }
+
+        BOOST_TEST(copyCount == 0U);
+        BOOST_TEST(machine.getResult().getObjectValue() == nullptr);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+        for (const auto failure : {false, true}) {
+            RuntimeValue returned;
+            const RuntimeValueGuard returnedOwner(*type, &returned);
+            copyCount = 0;
+            failCopyAt = failure ? 1 : 0;
+            if (failure) {
+                if (useClosure) {
+                    BOOST_CHECK_THROW(machine.executeFunction(&closure, {}, returned), NomadException);
+                } else {
+                    BOOST_CHECK_THROW(machine.executeFunction(functionId, {}, returned), NomadException);
+                }
+
+                BOOST_TEST(returned.getObjectValue() == nullptr);
+                BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+            } else {
+                if (useClosure) {
+                    machine.executeFunction(&closure, {}, returned);
+                } else {
+                    machine.executeFunction(functionId, {}, returned);
+                }
+
+                BOOST_REQUIRE(returned.getObjectValue() != nullptr);
+                BOOST_TEST(returned.getObjectValue()->getReferenceCount() == 1U);
+            }
+
+            BOOST_TEST(copyCount == 1U);
+            BOOST_TEST(machine.getResult().getObjectValue() == nullptr);
+        }
+    }
+
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
 BOOST_AUTO_TEST_CASE(contiguous_parameter_blocks_and_local_views_keep_physical_order) {

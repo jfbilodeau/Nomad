@@ -1309,6 +1309,15 @@ Use the typed Interpreter invocation APIs for host function and method calls.
 The former VM `runScript`, `runNative`, `runNativeFunction`, `runNativeMethod`,
 and `runScriptMethod` wrappers have been removed.
 
+The raw `executeFunction` overloads discard results without copying when no
+`returnValue` is supplied. With `returnValue`, the caller receives an owned copy;
+the VM releases its completed result even if that copy throws. Copy failures
+propagate to the host. An invalid function ID or null closure logs an error and
+returns without executing or replacing the caller's result. Argument validation
+keeps the raw runner's exception policy: script argument errors use
+`VirtualMachineException`, while closure signature errors use
+`std::invalid_argument`.
+
 Low-level VM execution uses `captureExecutionState()` and
 `restoreExecutionState(state)` for instruction, stack, parameter, local,
 receiver, and running state. Snapshots borrow receiver/storage references;
