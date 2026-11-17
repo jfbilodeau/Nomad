@@ -5,9 +5,11 @@
 #include <nomad/compiler/Compiler.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Event.hpp>
+#include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/NativeFunction.hpp>
 #include <nomad/script/ScriptCallable.hpp>
@@ -675,7 +677,7 @@ BOOST_AUTO_TEST_CASE(closure_storage_adopts_complete_slots_and_preserves_logical
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
-BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_keep_empty_capture_positions) {
+BOOST_AUTO_TEST_CASE(frame_and_closure_captures_copy_complete_ranges_and_keep_empty_positions) {
     Runtime runtime;
     const auto sharedId = runtime.getTypeManager().registerClass("FrameCaptureShared", ClassMode::Closed);
     const auto* shared = runtime.getTypeByName("FrameCaptureShared")->asClassType();
@@ -715,6 +717,7 @@ BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_k
     );
     auto* descriptor = runtime.getScriptFunction(descriptorId);
     descriptor->setParentId(parentId);
+    descriptor->setReturnType(runtime.getVoidType());
     descriptor->createCapture(NomadId{3}, "tail", runtime.getIntegerType());
     descriptor->createCapture(emptyVariable, "localEmpty", empty);
     descriptor->createCapture(valueVariable, "localValue", type);
@@ -723,7 +726,6 @@ BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_k
     descriptor->createCapture(tailVariable, "localTail", runtime.getIntegerType());
     auto currentFrame = true;
     std::span<const RuntimeValue> localSource;
-    std::vector<InterpreterValue> snapshots;
     std::unique_ptr<Closure> closure;
     const auto probeId = runtime.registerNativeFunction(
         "test.captureStorageProbe",
@@ -738,7 +740,40 @@ BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_k
                     scratch.data()
                 );
                 active->getLocalStorage(parent->getVariableOffset(tailVariable), 1)[0].setIntegerValue(79);
-                snapshots = active->captureCurrentFrame(descriptor);
+                const InterpreterCallFrame frame(*active, *descriptor);
+                const ExecutionStateGuard state(*active);
+                active->enterNativeFrame();
+                const auto localCapture = active->getParameterStorage(
+                    descriptor->getParameterOffset(2),
+                    type->getSize()
+                );
+                const auto parameterCapture = active->getParameterStorage(
+                    descriptor->getParameterOffset(4),
+                    type->getSize()
+                );
+                BOOST_TEST(active->getParameter(descriptor->getParameterOffset(0)).getIntegerValue() == 23);
+                BOOST_TEST(active->getParameterStorage(descriptor->getParameterOffset(1), 0).data() == nullptr);
+                BOOST_TEST(localCapture[0].getIntegerValue() == 31);
+                BOOST_TEST(localCapture[1].getStringValue() == "local owned");
+                BOOST_TEST(localCapture[3].getIntegerValue() == 47);
+                BOOST_TEST(active->getParameterStorage(descriptor->getParameterOffset(3), 0).data() == nullptr);
+                BOOST_TEST(parameterCapture[0].getIntegerValue() == 17);
+                BOOST_TEST(parameterCapture[1].getStringValue() == "parameter owned");
+                BOOST_TEST(parameterCapture[3].getIntegerValue() == 43);
+                BOOST_TEST(active->getParameter(descriptor->getParameterOffset(5)).getIntegerValue() == 79);
+                BOOST_TEST(localCapture[2].getObjectValue() == parameterCapture[2].getObjectValue());
+                localCapture[0].setIntegerValue(83);
+                parameterCapture[0].setIntegerValue(89);
+                const auto originalLocal = active->getLocalStorage(
+                    parent->getVariableOffset(valueVariable),
+                    type->getSize()
+                );
+                const auto originalParameter = active->getEnclosingParameterStorage(
+                    parent->getParameterOffset(1),
+                    type->getSize()
+                );
+                BOOST_TEST(originalLocal[0].getIntegerValue() == 31);
+                BOOST_TEST(originalParameter[0].getIntegerValue() == 17);
                 currentFrame = false;
 
                 return;
@@ -818,7 +853,6 @@ BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_k
             BOOST_TEST(machine->getIntegerIntermediate() == 43);
             BOOST_REQUIRE(closure != nullptr);
             BOOST_TEST(closure->getCaptureCount() == 6U);
-            BOOST_REQUIRE(snapshots.size() == 6U);
             BOOST_TEST(closure->getCaptureValue(0).getIntegerValue() == 23);
             BOOST_TEST(closure->getCaptureType(1) == empty);
             BOOST_TEST(closure->getCaptureStorage(1).data() == nullptr);
@@ -831,16 +865,14 @@ BOOST_AUTO_TEST_CASE(frame_capture_snapshots_copy_complete_physical_ranges_and_k
             BOOST_TEST(closure->getCaptureStorage(4)[1].getStringValue() == "parameter owned");
             BOOST_TEST(closure->getCaptureStorage(4)[3].getIntegerValue() == 43);
             BOOST_TEST(closure->getCaptureValue(5).getIntegerValue() == 79);
-            BOOST_TEST(snapshots[2].getStorage()[0].getIntegerValue() == 31);
-            BOOST_TEST(snapshots[4].getStorage()[0].getIntegerValue() == 17);
-            BOOST_TEST(snapshots[2].getStorage().data() != closure->getCaptureStorage(2).data());
-            BOOST_TEST(snapshots[2].getStorage()[2].getObjectValue() == closure->getCaptureStorage(2)[2].getObjectValue());
-            BOOST_TEST(static_cast<ScriptObject*>(snapshots[2].getStorage()[2].getObjectValue())
+            BOOST_TEST(closure->getCaptureStorage(2).data() != local.getStorage().data());
+            BOOST_TEST(closure->getCaptureStorage(4).data() != parameter.getStorage().data());
+            BOOST_TEST(closure->getCaptureStorage(2)[2].getObjectValue() == parameter.getStorage()[2].getObjectValue());
+            BOOST_TEST(static_cast<ScriptObject*>(parameter.getStorage()[2].getObjectValue())
                 ->getFieldStorage(0)[0].getIntegerValue() == 123);
         }
 
         BOOST_TEST(closure->getCaptureStorage(2)[1].getStringValue() == "local owned");
-        snapshots.clear();
         BOOST_TEST(closure->getCaptureStorage(2)[1].getObjectValue()->getReferenceCount() == 1U);
         closure.reset();
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
@@ -864,7 +896,6 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     std::unique_ptr<Closure> closure;
-    std::vector<InterpreterValue> snapshots;
     CallableId descriptorId;
     auto currentFrame = true;
     const auto probeId = runtime.registerNativeFunction(
@@ -872,7 +903,23 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
         [&](VirtualMachine* active) {
             const auto* descriptor = runtime.getScriptFunction(descriptorId);
             if (currentFrame) {
-                snapshots = active->captureCurrentFrame(descriptor);
+                const InterpreterCallFrame frame(*active, *descriptor);
+                const ExecutionStateGuard state(*active);
+                active->enterNativeFrame();
+                const auto* receiverType = descriptor->getCaptureType(0);
+                const auto captured = active->getParameterStorage(
+                    descriptor->getParameterOffset(0),
+                    receiverType->getSize()
+                );
+                if (receiverType == type) {
+                    BOOST_TEST(captured[0].getIntegerValue() == 43);
+                    BOOST_TEST(captured[1].getStringValue() == "receiver owned");
+                } else if (receiverType == empty) {
+                    BOOST_TEST(captured.data() == nullptr);
+                } else {
+                    BOOST_TEST(captured[0].getObjectValue() == active->getScriptReceiver());
+                }
+
                 currentFrame = false;
 
                 return;
@@ -942,6 +989,7 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
         );
         auto* descriptor = runtime.getScriptFunction(id);
         descriptor->setParentId(methodId);
+        descriptor->setReturnType(runtime.getVoidType());
         descriptor->createReceiverCapture(receiverType);
         descriptors.push_back(id);
     }
@@ -967,10 +1015,8 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
             BOOST_TEST(closure->getCaptureType(0) == type);
             BOOST_TEST(closure->getCaptureStorage(0)[0].getIntegerValue() == 43);
             BOOST_TEST(closure->getCaptureStorage(0)[1].getStringValue() == "receiver owned");
-            BOOST_TEST(snapshots[0].getStorage()[0].getIntegerValue() == 43);
         }
 
-        snapshots.clear();
         closure.reset();
         descriptorId = descriptors[1];
         currentFrame = true;
@@ -980,9 +1026,6 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
         BOOST_TEST(closure->getCaptureCount() == 1U);
         BOOST_TEST(closure->getCaptureType(0) == empty);
         BOOST_TEST(closure->getCaptureStorage(0).data() == nullptr);
-        BOOST_TEST(snapshots[0].getType() == empty);
-        BOOST_TEST(snapshots[0].getStorage().data() == nullptr);
-        snapshots.clear();
         closure.reset();
         {
             RuntimeValue object;
@@ -993,10 +1036,8 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
             currentFrame = true;
             BOOST_TEST(interpreter.runObjectMethod(receiver, methods[2], {}).getType()->isVoid());
             BOOST_TEST(closure->getCaptureValue(0).getObjectValue() == receiver.getValue().getObjectValue());
-            BOOST_TEST(snapshots[0].getValue().getObjectValue() == receiver.getValue().getObjectValue());
         }
 
-        snapshots.clear();
         BOOST_TEST(closure->getCaptureValue(0).getObjectValue()->getReferenceCount() == 1U);
         closure.reset();
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);

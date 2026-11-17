@@ -1582,7 +1582,7 @@ BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_r
 
 }
 
-BOOST_AUTO_TEST_CASE(closure_capture_copy_failures_release_completed_and_partial_capture_slots) {
+BOOST_AUTO_TEST_CASE(frame_and_closure_capture_copy_failures_release_completed_and_partial_slots) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;
     const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>(
@@ -1608,6 +1608,7 @@ BOOST_AUTO_TEST_CASE(closure_capture_copy_failures_release_completed_and_partial
     );
     auto* descriptor = runtime.getScriptFunction(descriptorId);
     descriptor->setParentId(parentId);
+    descriptor->setReturnType(runtime.getVoidType());
     descriptor->createCapture(variable, "local", type);
     descriptor->createCapture(NomadId{0}, "value", type);
     std::span<const RuntimeValue> source;
@@ -1630,7 +1631,10 @@ BOOST_AUTO_TEST_CASE(closure_capture_copy_failures_release_completed_and_partial
                 field->copyCount = 0;
                 field->failCopyAt = failure;
                 if (currentFrame) {
-                    BOOST_CHECK_THROW(static_cast<void>(active->captureCurrentFrame(descriptor)), NomadException);
+                    BOOST_CHECK_THROW(
+                        static_cast<void>(InterpreterCallFrame(*active, *descriptor)),
+                        NomadException
+                    );
                 }
 
                 if (!currentFrame) {
@@ -1645,8 +1649,7 @@ BOOST_AUTO_TEST_CASE(closure_capture_copy_failures_release_completed_and_partial
             field->failCopyAt = 0;
             field->copyCount = 0;
             if (currentFrame) {
-                const auto snapshots = active->captureCurrentFrame(descriptor);
-                BOOST_TEST(snapshots.size() == 2U);
+                const InterpreterCallFrame frame(*active, *descriptor);
                 BOOST_TEST(field->copyCount == 4U);
                 currentFrame = false;
 

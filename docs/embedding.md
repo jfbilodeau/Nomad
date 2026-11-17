@@ -3051,10 +3051,8 @@ enclosing active script frame using the declared physical local/parameter
 offsets and borrowed receiver layout. The runtime must match the VM, the ID must
 identify a script function, and captures must belong to that active parent.
 Invalid requests fault explicitly rather than returning an empty closure.
-`captureCurrentFrame(function)` returns owned `InterpreterValue` snapshots from
-the current script frame, not an enclosing native-call parameter frame.
-Both paths copy full struct values, preserve zero-slot capture positions, and
-release completed/partial copies when copying throws.
+Closure capture copies full struct values, preserves zero-slot capture
+positions, and releases completed/partial copies when copying throws.
 
 ### Typed callback invocation
 

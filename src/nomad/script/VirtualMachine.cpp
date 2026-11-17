@@ -4,7 +4,6 @@
 
 #include <nomad/compiler/Identifier.hpp>
 
-#include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/script/ClassType.hpp>
@@ -805,86 +804,6 @@ void VirtualMachine::runNativeIndexer(
     }
 
     callNativeIndexer(indexerId, receiver, write);
-}
-
-std::vector<InterpreterValue> VirtualMachine::captureCurrentFrame(
-    const ScriptFunction* function
-) const {
-    if (function == nullptr || function->getParentId() == CallableId{}) {
-        fault("Invalid function for current-frame capture");
-    }
-
-    const auto* parent = m_runtime->getScriptCallable(function->getParentId());
-    if (
-        parent == nullptr ||
-        m_instructionIndex < parent->getFunctionStart() ||
-        m_instructionIndex >= parent->getFunctionEnd()
-    ) {
-        fault("Format expression does not belong to the current script frame");
-    }
-
-    std::vector<InterpreterValue> values;
-    values.reserve(function->getCaptureCount());
-    for (const auto& capture : function->getCaptures()) {
-        if (capture.type == nullptr || capture.type->isVoid()) {
-            fault("Invalid value type for current-frame capture");
-        }
-
-        const auto size = capture.type->getSize();
-        switch (capture.source) {
-            case CaptureSource::Parameter: {
-                if (!isIdInRange(capture.parameterId, parent->getParameterCount())) {
-                    fault("Invalid parameter for current-frame capture");
-                }
-
-                values.emplace_back(
-                    capture.type,
-                    getParameterStorage(parent->getParameterOffset(capture.parameterId), size)
-                );
-                break;
-            }
-
-            case CaptureSource::Variable: {
-                if (!isIdInRange(capture.variableId.id, parent->getVariableCount())) {
-                    fault("Invalid variable for current-frame capture");
-                }
-
-                values.emplace_back(
-                    capture.type,
-                    getFunctionVariableStorage(capture.variableId)
-                );
-                break;
-            }
-
-            case CaptureSource::Receiver: {
-                if (capture.type->isStruct()) {
-                    std::span<const RuntimeValue> storage;
-                    if (size != 0) {
-                        const auto layout = parent->getCallStorageLayout();
-                        if (!layout.receiverOffset.has_value()) {
-                            fault("Struct receiver capture has no borrowed receiver storage");
-                        }
-
-                        const auto pointer = getParameterStorage(*layout.receiverOffset, 1);
-                        storage = {pointer[0].getStorageAddress(), size};
-                    }
-
-                    values.emplace_back(capture.type, storage);
-                    break;
-                }
-
-                (void)getThis();
-                values.emplace_back(capture.type, m_this);
-                break;
-            }
-
-            default:
-                fault("Invalid source for current-frame capture");
-        }
-
-    }
-
-    return values;
 }
 
 std::unique_ptr<Closure> VirtualMachine::createClosure(
