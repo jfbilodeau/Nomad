@@ -246,18 +246,6 @@ void assignStoredProperty(
     );
 }
 
-InterpreterValue setStoredProperty(
-    const InterpreterValue& receiver,
-    const StoredPropertySelection& property,
-    const InterpreterValue& value
-) {
-    validateStoredPropertyAssignment(property, value);
-    InterpreterStorage storage(receiver.getType(), receiver.getStorage());
-    assignStoredProperty(storage.getMutableStorage(), property, value);
-
-    return InterpreterValue(receiver.getType(), storage.getStorage());
-}
-
 } // namespace
 
 Interpreter::Interpreter(VirtualMachine& machine):
@@ -519,22 +507,6 @@ InterpreterValue Interpreter::getProperty(
     const NomadStringView propertyPath
 ) const {
     return getStoredProperty(receiver, resolveStoredPropertyPath(receiver.getType(), propertyPath));
-}
-
-InterpreterValue Interpreter::setProperty(
-    const InterpreterValue& receiver,
-    const PropertyId propertyId,
-    const InterpreterValue& value
-) const {
-    return setStoredProperty(receiver, resolveStoredProperty(receiver.getType(), propertyId), value);
-}
-
-InterpreterValue Interpreter::setProperty(
-    const InterpreterValue& receiver,
-    const NomadStringView propertyPath,
-    const InterpreterValue& value
-) const {
-    return setStoredProperty(receiver, resolveStoredPropertyPath(receiver.getType(), propertyPath), value);
 }
 
 void Interpreter::setProperty(

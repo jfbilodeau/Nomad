@@ -83,21 +83,6 @@ BOOST_AUTO_TEST_CASE(reads_preserve_nested_copies_reference_ownership_and_tempor
             const auto root = context.getVariableStorage("root");
             const auto leafProperty = runtime.getTypeByName("ReadOuter")->asCompositeType()->getProperty("leaf");
             const auto leafOffset = leafProperty->getOwnerType()->getFieldOffset(leafProperty->getId());
-            {
-                const InterpreterValue snapshot(context.getVariableType("root"), root);
-                const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{37}});
-                const auto updated = contextEvaluator.setProperty(snapshot, "leaf.number", number);
-                const auto leaf = contextEvaluator.getProperty(updated, leafProperty->getId());
-                const auto replaced = contextEvaluator.setProperty(snapshot, leafProperty->getId(), leaf);
-                BOOST_TEST(contextEvaluator.getProperty(snapshot, "leaf.number").getValue().getIntegerValue() == 17);
-                BOOST_TEST(contextEvaluator.getProperty(updated, "leaf.number").getValue().getIntegerValue() == 37);
-                BOOST_TEST(contextEvaluator.getProperty(replaced, "leaf.number").getValue().getIntegerValue() == 37);
-                BOOST_TEST(contextEvaluator.getProperty(updated, "prefix").getValue().getIntegerValue() == 3);
-                BOOST_TEST(contextEvaluator.getProperty(updated, "leaf.text").getValue().getStringValue() == "owned property");
-                BOOST_TEST(contextEvaluator.getProperty(updated, "leaf.empty").getStorage().data() == nullptr);
-                BOOST_TEST(root[leafOffset].getIntegerValue() == 17);
-            }
-
             const auto ownerProperty = runtime.getTypeByName("ReadLeaf")->asCompositeType()->getProperty("owner");
             const auto ownerOffset = leafOffset + ownerProperty->getOwnerType()->getFieldOffset(ownerProperty->getId());
             for (const auto* source : {"root.leaf.number", "holder.value.leaf.number", "(makeReadOuter).leaf.number",

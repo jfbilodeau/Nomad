@@ -1,6 +1,7 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterStorage.hpp>
 #include <nomad/interpreter/InterpreterValue.hpp>
 
 #include <nomad/script/ClassType.hpp>
@@ -234,14 +235,8 @@ BOOST_AUTO_TEST_CASE(empty_receiver_writes_preserve_effects_without_storage_poin
         const auto* property = callable->getClassType()->asCompositeType()->getProperty("empty");
         const InterpreterValue emptyValue(property->getValueType(), std::span<const RuntimeValue>{});
         const InterpreterValue receiver(callable->getClassType(), context.getMutableReceiverStorage());
-        const auto updatedById = contextEvaluator.setProperty(receiver, property->getId(), emptyValue);
-        const auto updatedByName = contextEvaluator.setProperty(receiver, "empty", emptyValue);
-        BOOST_TEST(updatedById.getType() == receiver.getType());
-        BOOST_TEST(updatedByName.getType() == receiver.getType());
-        BOOST_TEST(updatedById.getStorage().data() == nullptr);
-        BOOST_TEST(updatedByName.getStorage().data() == nullptr);
-        BOOST_TEST(contextEvaluator.getProperty(updatedById, property->getId()).getType() == emptyValue.getType());
-        BOOST_TEST(contextEvaluator.getProperty(updatedByName, "empty").getStorage().data() == nullptr);
+        BOOST_TEST(contextEvaluator.getProperty(receiver, property->getId()).getType() == emptyValue.getType());
+        BOOST_TEST(contextEvaluator.getProperty(receiver, "empty").getStorage().data() == nullptr);
         context.getInterpreter().setProperty(*callable->getClassType()->asStructType(), {},
             property->getId(), emptyValue);
         context.getInterpreter().setProperty(*callable->getClassType()->asStructType(), {},
@@ -327,18 +322,24 @@ BOOST_AUTO_TEST_CASE(failed_copying_before_commit_preserves_the_destination) {
             field->failCopyAt = 0;
             const InterpreterValue snapshot(root, context.getVariableStorage("root"));
             const InterpreterValue replacement(pair, context.getVariableStorage("source"));
+            InterpreterStorage storage(root, snapshot.getStorage());
+            const auto receiverStorage = storage.getMutableStorage();
+            const auto& rootType = *root->asStructType();
             field->copyCount = 0;
-            const auto updated = contextEvaluator.setProperty(snapshot, "pair", replacement);
+            contextEvaluator.setProperty(rootType, receiverStorage, "pair", replacement);
             const auto hostCopyStages = field->copyCount;
             BOOST_REQUIRE(hostCopyStages > 0);
-            BOOST_TEST(updated.getStorage()[0].getStringValue() == "new first");
+            BOOST_TEST(storage.getStorage()[0].getStringValue() == "new first");
+            storage.assign(snapshot.getStorage());
             for (NomadIndex failAt = 1; failAt <= hostCopyStages; ++failAt) {
                 field->copyCount = 0;
                 field->failCopyAt = failAt;
                 BOOST_CHECK_THROW(
-                    static_cast<void>(contextEvaluator.setProperty(snapshot, "pair", replacement)),
+                    contextEvaluator.setProperty(rootType, receiverStorage, "pair", replacement),
                     NomadException
                 );
+                BOOST_TEST(storage.getStorage()[0].getStringValue() == "old first");
+                BOOST_TEST(storage.getStorage()[1].getStringValue() == "old second");
                 BOOST_TEST(snapshot.getStorage()[0].getStringValue() == "old first");
                 BOOST_TEST(snapshot.getStorage()[1].getStringValue() == "old second");
                 BOOST_TEST(replacement.getStorage()[0].getStringValue() == "new first");
@@ -448,14 +449,11 @@ BOOST_AUTO_TEST_CASE(stored_field_writes_do_not_copy_unrelated_fields) {
             for (const auto* path : {"", ".leaf", "leaf.", "leaf..number", "missing", "sibling.number"}) {
                 BOOST_CHECK_THROW(interpreter.setProperty(*root, storage, path, number), std::invalid_argument);
                 BOOST_CHECK_THROW(static_cast<void>(interpreter.getProperty(snapshot, path)), std::invalid_argument);
-                BOOST_CHECK_THROW(static_cast<void>(interpreter.setProperty(snapshot, path, number)), std::invalid_argument);
             }
             const InterpreterValue wrongType(runtime.getBooleanType(), RuntimeValue{NomadBoolean{true}});
             BOOST_CHECK_THROW(interpreter.setProperty(*root, storage, "leaf.number", wrongType),
                 std::invalid_argument);
-            BOOST_CHECK_THROW(static_cast<void>(interpreter.setProperty(snapshot, "leaf.number", wrongType)),
-                std::invalid_argument);
-            BOOST_CHECK_THROW(static_cast<void>(interpreter.setProperty(snapshot, siblingId, wrongType)),
+            BOOST_CHECK_THROW(interpreter.setProperty(*root, storage, siblingId, wrongType),
                 std::invalid_argument);
             BOOST_CHECK_THROW(static_cast<void>(interpreter.getProperty(number, "number")), std::invalid_argument);
             BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 53);

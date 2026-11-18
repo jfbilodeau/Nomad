@@ -91,17 +91,6 @@ public:
         const InterpreterValue& receiver,
         NomadStringView propertyPath
     ) const;
-    // Returns a replacement struct without modifying either input.
-    [[nodiscard]] InterpreterValue setProperty(
-        const InterpreterValue& receiver,
-        PropertyId propertyId,
-        const InterpreterValue& value
-    ) const;
-    [[nodiscard]] InterpreterValue setProperty(
-        const InterpreterValue& receiver,
-        NomadStringView propertyPath,
-        const InterpreterValue& value
-    ) const;
     // Assigns only the selected field; the caller keeps borrowed storage alive.
     void setProperty(
         const StructType& type,

@@ -2661,10 +2661,8 @@ copies have independent storage. Strings and class references are retained for
 the value's lifetime; referenced class objects retain their normal mutable
 reference semantics.
 
-`Interpreter::getProperty(receiver, property)` returns an owned field value.
-`setProperty(receiver, property, value)` returns a new `InterpreterValue` with
-that field replaced. Neither operation modifies its inputs or retains returned
-values. Each accepts either:
+`Interpreter::getProperty(receiver, property)` returns an owned field value
+without modifying the receiver. It accepts either:
 
 - A runtime-local `PropertyId` for a direct stored field of the receiver's type.
   An ID for a nested field cannot be applied directly to its outer struct.
@@ -2683,19 +2681,18 @@ For example:
 const Interpreter interpreter(*machine);
 const auto leaf = interpreter.getProperty(rootValue, "leaf");
 const auto number = interpreter.getProperty(leaf, numberPropertyId);
-const auto updated = interpreter.setProperty(rootValue, "leaf.number", replacement);
 ```
 
-The replacement must have the final field's exact type. Unknown names, invalid
-or wrong-owner IDs, empty paths/segments, non-struct owners, and incompatible
-replacement types throw `std::invalid_argument`. Failed copying releases partial
-results and leaves both inputs unchanged. These value operations require no
-interpreter context and do not change a context's result.
+Unknown names, invalid or wrong-owner IDs, empty paths/segments, and non-struct
+owners throw `std::invalid_argument`. Failed copying releases partial results
+and leaves the receiver unchanged. Reads require no interpreter context and do
+not change a context's result.
 
-`Interpreter::setProperty(structType, storage, property, value)` instead updates
+`Interpreter::setProperty(structType, storage, property, value)` updates
 borrowed mutable struct storage. The span must contain exactly
 `structType.getSize()` slots; empty structs use empty spans. The selector accepts
-the same direct IDs and field names/dotted paths as the immutable-value overload.
+the same direct IDs and field names/dotted paths described above. The replacement
+must have the final field's exact type.
 Only the selected field is copied and replaced; unrelated fields are not copied.
 Copying completes before the previous field value is released, including for
 self-assignment. A failed field copy leaves that destination unchanged.
@@ -2703,6 +2700,11 @@ Invalid selectors, mismatched value types, and incorrect span widths throw
 `std::invalid_argument` before replacement. The caller must keep the borrowed
 storage alive throughout the operation. This overload returns no value and
 does not change context results or immutable snapshots.
+
+The functional `setProperty(InterpreterValue, property, value)` overloads have
+been removed. Update callers to operate on explicitly owned mutable storage;
+`InterpreterValue` remains an immutable snapshot. No replacement-value wrapper
+is provided.
 
 Use the span overloads of `InterpreterContext::setVariable(name, type, storage)`
 and `setResult(type, storage)` for structs. Both copy the complete value before

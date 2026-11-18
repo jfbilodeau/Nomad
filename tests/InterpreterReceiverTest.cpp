@@ -370,7 +370,7 @@ BOOST_AUTO_TEST_CASE(struct_property_copy_failures_preserve_original_and_caller_
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
-BOOST_AUTO_TEST_CASE(owned_property_replacement_failures_release_staging_and_preserve_sources) {
+BOOST_AUTO_TEST_CASE(borrowed_property_update_failures_preserve_storage_and_sources) {
     Runtime runtime;
     FailingCompositeCopyType* field = nullptr;
     const auto fieldId = runtime.getTypeManager().registerClass<FailingCompositeCopyType>(
@@ -395,30 +395,35 @@ BOOST_AUTO_TEST_CASE(owned_property_replacement_failures_release_staging_and_pre
         RuntimeValue replacementSource{NomadString{"replacement"}};
         const InterpreterValue replacement(field, replacementSource);
         replacementSource.freeObjectValue();
+        InterpreterStorage storage(pair, receiver.getStorage());
+        const auto receiverStorage = storage.getMutableStorage();
 
         field->copyCount = 0;
         auto copyStages = NomadIndex{0};
         {
-            const auto updated = interpreter.setProperty(receiver, firstProperty, replacement);
+            interpreter.setProperty(*pair, receiverStorage, firstProperty, replacement);
             copyStages = field->copyCount;
-            BOOST_TEST(updated.getStorage()[0].getStringValue() == "replacement");
-            BOOST_TEST(updated.getStorage()[1].getStringValue() == "old second");
+            BOOST_TEST(storage.getStorage()[0].getStringValue() == "replacement");
+            BOOST_TEST(storage.getStorage()[1].getStringValue() == "old second");
             BOOST_TEST(receiver.getStorage()[0].getStringValue() == "old first");
         }
         BOOST_REQUIRE(copyStages > 0);
+        storage.assign(receiver.getStorage());
         const auto liveStrings = RuntimeValue::getLiveStringCount();
         const auto liveObjects = NomadObject::getLiveObjectCount();
         for (auto failAt = NomadIndex{1}; failAt <= copyStages; ++failAt) {
             field->copyCount = 0;
             field->failCopyAt = failAt;
             BOOST_CHECK_THROW(
-                static_cast<void>(interpreter.setProperty(receiver, firstProperty, replacement)),
+                interpreter.setProperty(*pair, receiverStorage, firstProperty, replacement),
                 NomadException
             );
+            BOOST_TEST(storage.getStorage()[0].getStringValue() == "old first");
+            BOOST_TEST(storage.getStorage()[1].getStringValue() == "old second");
             BOOST_TEST(receiver.getStorage()[0].getStringValue() == "old first");
             BOOST_TEST(receiver.getStorage()[1].getStringValue() == "old second");
-            BOOST_TEST(receiver.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
-            BOOST_TEST(receiver.getStorage()[1].getObjectValue()->getReferenceCount() == 1U);
+            BOOST_TEST(receiver.getStorage()[0].getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(receiver.getStorage()[1].getObjectValue()->getReferenceCount() == 2U);
             BOOST_TEST(replacement.getValue().getObjectValue()->getReferenceCount() == 1U);
             BOOST_TEST(RuntimeValue::getLiveStringCount() == liveStrings);
             BOOST_TEST(NomadObject::getLiveObjectCount() == liveObjects);
