@@ -565,7 +565,7 @@ BOOST_AUTO_TEST_CASE(interpreter_and_host_object_methods_copy_struct_arguments_a
     BOOST_TEST(frameVisits == 9);
 }
 
-BOOST_AUTO_TEST_CASE(script_and_aggregate_native_methods_restore_state_while_scalar_native_stop_propagates) {
+BOOST_AUTO_TEST_CASE(script_and_native_methods_restore_caller_state_after_stop) {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     BOOST_REQUIRE(runtime.registerNativeFunction("stopHostMethod", [](VirtualMachine* active) {
@@ -617,7 +617,7 @@ BOOST_AUTO_TEST_CASE(script_and_aggregate_native_methods_restore_state_while_sca
             BOOST_TEST(after.stackIndex == before.stackIndex);
             BOOST_TEST(after.parameterIndex == before.parameterIndex);
             BOOST_TEST(after.variableIndex == before.variableIndex);
-            BOOST_TEST(after.running == (methodId == scalarStop ? false : initiallyRunning));
+            BOOST_TEST(after.running == initiallyRunning);
             BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
             BOOST_TEST(machine->getIntegerResult() == 41);
             BOOST_TEST(machine->getIntegerIntermediate() == 43);

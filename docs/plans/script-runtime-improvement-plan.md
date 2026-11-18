@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2 implemented and validated. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
 
 ## Component contract
 
@@ -141,7 +141,7 @@ ABI and verification:
 | Checked reference read | 122.440 | 117.452 | 4.07% |
 | Checked reference write | 189.949 | 178.839 | 5.85% |
 
-What follows: stop for review. Step 5 begins with a fresh review of I1 against the existing native-call stop/running-state contracts. Release and other-platform performance remain unmeasured; do not extrapolate these microbenchmark results.
+Step 5's I1/I2 running-state review and approved change are recorded below. Release and other-platform performance remain unmeasured; do not extrapolate these microbenchmark results.
 
 ### Registration ownership
 
@@ -155,10 +155,14 @@ What follows: stop for review. Step 5 begins with a fresh review of I1 against t
 - Registration-before-compile setup, Game API setup, and fresh runtimes for language-server analysis batches existed only to satisfy the seal and are dropped. Whether the Interpreter or VM should require successful compilation is an open question (Q4).
 - The earlier blanket V5 `static_cast` and ScriptObject field-table proposals were not implemented. The checked query preserves receiver validation and per-instance layouts; registration ownership changes do not authorize changing those contracts.
 
-### Step 5: Interpreter correctness and simplification
+### Step 5: Interpreter correctness and simplification (in progress)
 
-- Correctness first: I1 (running flag not restored), I9 (receiver storage bounds), I3 (confirm caller contexts before changing the reset), I6 (exception policy and null check), I10 (confirm assignability rules).
-- Simplify: one compile pipeline (I4), one native invocation policy (I2), one closure and compiled-function validation path (I7, I8), stored-property paths resolved once (I12), unambiguous `setProperty` names (I13), const-correct VM access (I15).
+- I1/I2 policy was reviewed before implementation. The user chose to restore the caller's running state for all Interpreter native function/method calls, replacing the former propagation behavior of native free functions and scalar-only native class methods. Direct bytecode execution, constructors, and the object model are unchanged.
+- I1/I2 are implemented with the existing `ExecutionStateGuard`. Removed the duplicate synchronous-native helper and the struct-signature heuristic; all native function/method paths use one restoration policy without adding a guard class or flag.
+- Regressions first reproduced the approved behavior gap: stopped/throwing nested native calls left the caller stopped, and real bytecode reentry returned 41 instead of reaching 42. Coverage also verifies that a direct native `stop` still terminates bytecode execution.
+- I1/I2 validation: all 13 CTest entries pass on `windows-debug`. Coverage includes running/stopped callers, scalar and empty-struct native function/method signatures, normal return, `stop`, exceptions, `stop` followed by an exception, actual bytecode reentry, and unchanged direct bytecode stop behavior. Existing struct-method, ownership, frame-restoration, and constructor tests remain green.
+- Next reviewable sub-step: I9 (receiver storage bounds), then I3 (confirm caller contexts before changing the reset), I6 (exception policy and null check), and I10 (confirm assignability rules).
+- Simplify: one compile pipeline (I4), one closure and compiled-function validation path (I7, I8), stored-property paths resolved once (I12), unambiguous `setProperty` names (I13), const-correct VM access (I15).
 - InterpreterContext: const-correct storage resolvers (C1), API cleanup (C3), and the remaining name-keyed accessors (C4).
 
 ### Step 6: Runtime correctness and dead code
@@ -261,8 +265,8 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 
 | ID | Priority | Kind | Finding | Evidence | Status | Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| I1 | P2 | correctness | `runNativeCallable` sets `state.running` from the current VM state before restore, so the running flag is never restored; the comment is misleading | `Interpreter.cpp`: runNativeCallable `BOOST_SCOPE_EXIT` block | verified-text | 5 |
-| I2 | P2 | consistency | Three native invocation policies: runFunction always uses runNativeCallable; runStructMethod is always synchronous; runObjectMethod chooses by a struct-return and argument heuristic | `Interpreter.cpp`: runFunction, runStructMethod, runObjectMethod | verified | 5 |
+| I1 | P2 | correctness | `runNativeCallable` preserves callback changes to the running flag rather than restoring its caller | `Interpreter.cpp`: runNativeCallable | Fixed after policy approval: existing ExecutionStateGuard restores complete caller state on return/throw | 5 |
+| I2 | P2 | consistency | Native function/method stop behavior depends on owner and struct-signature heuristics | `Interpreter.cpp`: runFunction, runStructMethod, runObjectMethod | Fixed with I1: one native function/method restoration policy; duplicate helper/heuristic removed | 5 |
 | I3 | P2 | correctness | evaluateFormatExpression calls resetEvaluation (clears diagnostics, result, loop control). Safe for the fresh context in `OpCode.cpp`; caller contexts at `Expression.cpp`:346,1752 are unverified | `Interpreter.cpp`: evaluateFormatExpression, formatString; `Expression.cpp`:346,1752 | partly-verified | 5 |
 | I4 | P2 | redundancy | Compile pipeline duplicated in execute(SourceText) and evaluateFormatExpression; each dynamic-format segment creates a new Compiler (which runs setup callbacks) | `Interpreter.cpp`: execute, evaluateFormatExpression; `Runtime.cpp`: createCompiler | verified | 5 |
 | I5 | P2 | perf | Dynamic format templates are re-tokenized and re-parsed on every execution; no compiled-segment cache | `Interpreter.cpp`: formatString loop; `OpCode.cpp`:1215–1226 | verified | 8 (Q2) |

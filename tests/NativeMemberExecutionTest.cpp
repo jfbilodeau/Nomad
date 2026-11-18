@@ -1318,9 +1318,14 @@ BOOST_AUTO_TEST_CASE(host_method_reentry_and_failure_restore_receivers_arguments
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
 }
 
-BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_frame_indices) {
+BOOST_AUTO_TEST_CASE(typed_native_calls_restore_caller_state_on_stop_and_exceptions) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
+    const auto emptyId = runtime.getTypeManager().registerStruct("NativeControlEmpty");
+    BOOST_REQUIRE(emptyId.isValid());
+    runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
+    const auto* emptyType = runtime.getTypeByName("NativeControlEmpty");
+    const InterpreterValue empty(emptyType, std::span<const RuntimeValue>{});
     auto action = 1;
     const auto callback = [&](VirtualMachine* active) {
         active->setIntegerResult(17);
@@ -1337,12 +1342,32 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_fra
         .name = "nativeControl", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = callback
     });
-    BOOST_REQUIRE(functionId.isValid() && methodId.isValid());
+    const auto aggregateFunctionId = runtime.registerNativeFunction(
+        "aggregateNativeControl",
+        callback,
+        {defParameter("empty", emptyType, "")},
+        emptyType,
+        ""
+    );
+    const auto aggregateMethodId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+        .name = "aggregateNativeControl",
+        .parameters = {{emptyId, "empty", ""}},
+        .returnTypeId = emptyId,
+        .function = callback
+    });
+    BOOST_REQUIRE(
+        functionId.isValid() && methodId.isValid() &&
+        aggregateFunctionId.isValid() && aggregateMethodId.isValid()
+    );
     auto machine = runtime.createVirtualMachine();
     const Interpreter interpreter(*machine);
     const auto receiver = interpreter.construct(type->getConstructors().front()->getId(), {});
     machine->pushInteger(1234);
-    for (const auto isMethod : {false, true}) {
+    for (const auto callableId : {functionId, methodId, aggregateFunctionId, aggregateMethodId}) {
+        const auto isMethod = callableId == methodId || callableId == aggregateMethodId;
+        const auto aggregate = callableId == aggregateFunctionId || callableId == aggregateMethodId;
+        const auto arguments = aggregate ?
+            std::span<const InterpreterValue>{&empty, 1} : std::span<const InterpreterValue>{};
         for (const auto initiallyRunning : {false, true}) {
             for (action = 1; action <= 4; ++action) {
                 machine->setIntegerResult(41);
@@ -1351,22 +1376,29 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_fra
                 before.running = initiallyRunning;
                 machine->restoreExecutionState(before);
                 const auto invoke = [&]() {
-                    return isMethod ? interpreter.runObjectMethod(receiver, methodId, {}) :
-                        interpreter.runFunction(functionId, {});
+
+                    return isMethod ? interpreter.runObjectMethod(receiver, callableId, arguments) :
+                        interpreter.runFunction(callableId, arguments);
                 };
                 if (action >= 3) {
                     BOOST_CHECK_THROW(static_cast<void>(invoke()), NomadException);
                 } else {
-                    BOOST_TEST(invoke().getValue().getIntegerValue() == 17);
+                    const auto result = invoke();
+                    if (aggregate) {
+                        BOOST_TEST(result.getType() == emptyType);
+                        BOOST_TEST(result.getStorage().empty());
+                    } else {
+                        BOOST_TEST(result.getValue().getIntegerValue() == 17);
+                    }
                 }
+
                 const auto after = machine->captureExecutionState();
                 BOOST_TEST(after.instructionIndex == before.instructionIndex);
                 BOOST_TEST(after.stackIndex == before.stackIndex);
                 BOOST_TEST(after.parameterIndex == before.parameterIndex);
                 BOOST_TEST(after.variableIndex == before.variableIndex);
                 BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
-                const auto stops = action == 2 || action == 4;
-                BOOST_TEST(after.running == (initiallyRunning && !stops));
+                BOOST_TEST(after.running == before.running);
                 BOOST_TEST(machine->getIntegerResult() == 41);
                 BOOST_TEST(machine->getIntegerIntermediate() == 43);
                 BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
@@ -1376,6 +1408,60 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_preserve_control_effects_and_restore_fra
     }
     machine->stop(RuntimeValue{NomadInteger{41}});
     machine->pop1();
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_native_reentry_does_not_stop_enclosing_bytecode) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto fail = false;
+    const auto stoppedId = runtime.registerNativeFunction(
+        "stopNestedNative",
+        [&](VirtualMachine* active) {
+            active->stop(RuntimeValue{NomadInteger{17}});
+            if (fail) {
+                throw NomadException("Expected nested native failure");
+            }
+        },
+        {},
+        runtime.getIntegerType(),
+        ""
+    );
+    BOOST_REQUIRE(stoppedId.isValid());
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "reenterStoppedNative",
+        [&](VirtualMachine* active) {
+            const Interpreter interpreter(*active);
+            if (fail) {
+                BOOST_CHECK_EXCEPTION(
+                    static_cast<void>(interpreter.runFunction(stoppedId, {})),
+                    NomadException,
+                    [](const auto& error) { return NomadString{error.what()} == "Expected nested native failure"; }
+                );
+            } else {
+                BOOST_TEST(interpreter.runFunction(stoppedId, {}).getValue().getIntegerValue() == 17);
+            }
+
+            BOOST_TEST(active->isRunning());
+            active->setIntegerResult(41);
+        },
+        {},
+        runtime.getIntegerType(),
+        ""
+    ).isValid());
+    fixture.addFunction("nestedNativeCompletion", "value = reenterStoppedNative\nreturn value + 1");
+    fixture.addFunction("directNativeStop", "stopNestedNative\nreturn 99");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    for (const auto failure : {false, true}) {
+        fail = failure;
+        const auto outcome = fixture.execute("nestedNativeCompletion");
+        BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+        BOOST_TEST(outcome.integerValue == 42);
+    }
+
+    fail = false;
+    const auto direct = fixture.execute("directNativeStop");
+    BOOST_REQUIRE_MESSAGE(!direct.fault.has_value(), direct.fault.value_or(""));
+    BOOST_TEST(direct.integerValue == 17);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -28,7 +28,6 @@
 
 #include <boost/scope_exit.hpp>
 
-#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -395,21 +394,6 @@ void Interpreter::runNativeCallable(
     const NativeFunctionFn& callback,
     const RuntimeValue& receiver
 ) const {
-    auto state = m_virtualMachine.captureExecutionState();
-    BOOST_SCOPE_EXIT_ALL(&, this) {
-        // Scalar native calls retain their existing stop behavior.
-        state.running = m_virtualMachine.isRunning();
-        m_virtualMachine.restoreExecutionState(state);
-    };
-
-    m_virtualMachine.enterNativeFrame(receiver);
-    callback(&m_virtualMachine);
-}
-
-void Interpreter::runSynchronousNativeCallable(
-    const NativeFunctionFn& callback,
-    const RuntimeValue& receiver
-) const {
     const ExecutionStateGuard state(m_virtualMachine);
     m_virtualMachine.enterNativeFrame(receiver);
     callback(&m_virtualMachine);
@@ -419,7 +403,7 @@ void Interpreter::runStructMethod(const Method& method) const {
     if (const auto* script = method.asScriptMethod()) {
         runScriptCallable(*script);
     } else {
-        runSynchronousNativeCallable(
+        runNativeCallable(
             method.asNativeMethod()->getFn(),
             RuntimeValue{}
         );
@@ -460,12 +444,6 @@ InterpreterValue Interpreter::runObjectMethod(
     InterpreterCallFrame frame(m_virtualMachine, method, arguments, method.getReturnType());
     if (const auto* script = method.asScriptMethod()) {
         runScriptCallable(*script, receiver.getValue());
-    } else if (method.getReturnType()->isStruct() ||
-        std::ranges::any_of(arguments, [](const auto& argument) { return argument.getType()->isStruct(); })) {
-        runSynchronousNativeCallable(
-            method.asNativeMethod()->getFn(),
-            receiver.getValue()
-        );
     } else {
         runNativeCallable(method.asNativeMethod()->getFn(), receiver.getValue());
     }

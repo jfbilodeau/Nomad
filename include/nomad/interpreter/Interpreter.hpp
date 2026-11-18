@@ -46,6 +46,7 @@ public:
         RuntimeValue* storage
     ) const;
 
+    // Function/method calls restore caller execution state even after stop or exceptions.
     [[nodiscard]] InterpreterValue runFunction(
         CallableId functionId,
         std::span<const InterpreterValue> arguments
@@ -137,10 +138,6 @@ private:
     void runNativeCallable(
         const NativeFunctionFn& callback,
         const RuntimeValue& receiver = RuntimeValue{}
-    ) const;
-    void runSynchronousNativeCallable(
-        const NativeFunctionFn& callback,
-        const RuntimeValue& receiver
     ) const;
     void runStructMethod(const Method& method) const;
     [[nodiscard]] InterpreterValue runObjectMethod(

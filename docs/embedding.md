@@ -2863,9 +2863,13 @@ Interpreter struct results are returned as independent values. The interpreter
 does not forward caller destinations or apply return-value optimization to
 struct storage.
 
-Completed calls preserve the enclosing VM registers/frame. Script calls execute
-synchronously for scalar and struct signatures. For captured functions, use the
-closure overload described below rather than passing a function ID.
+Function calls restore the enclosing VM registers, frame, and running state on
+return and exception unwinding. Native and script calls execute synchronously
+for scalar and struct signatures. A nested invocation's `stop` does not stop
+the enclosing VM. Host code that needs to stop that VM must call
+`VirtualMachine::stop` explicitly after the interpreter call returns.
+For captured functions, use the closure overload described below rather than
+passing a function ID.
 Fatal VM fault recovery remains unsupported.
 Call `context.setResult(result)` explicitly to publish a returned value in a
 context. The context no longer exposes function-execution or construction APIs.
@@ -2906,11 +2910,12 @@ including changes made before a method throws. Method results retain returned
 objects and strings independently of the receiver, arguments, interpreter,
 and VM, provided their runtime/type descriptors remain alive.
 
-Completed method calls restore the enclosing VM frame and result/intermediate
-registers. All methods execute synchronously. Script methods and native methods
-with any struct argument or result restore the caller's running state, including
-empty-struct signatures. Scalar-only native methods propagate `stop` to the VM's
-running state.
+Method calls restore the enclosing VM frame, result/intermediate registers, and
+running state on return and exception unwinding. All methods execute
+synchronously, regardless of native/script implementation or scalar/struct
+signature, including empty structs. Scalar-only native methods no longer
+propagate `stop` across this interpreter API boundary. Direct bytecode execution
+still honors `stop`; constructor execution is unchanged.
 Execution and value-copy failures propagate to host callers; fatal VM fault
 recovery remains unsupported. Property/accessor execution is separate from
 this method API.
