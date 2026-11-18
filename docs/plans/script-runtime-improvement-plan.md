@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2/I3/I7/I8/I12/I13/C1/C3 validated and I4/I6/I9/I10/I15 resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 5 are implemented or resolved by review. Step 6 is in progress with R3 implemented and validated. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split remains incomplete and separate. All 13 CTest entries pass on `windows-debug`.
 
 ## Component contract
 
@@ -155,7 +155,7 @@ Step 5's I1/I2 running-state review and approved change are recorded below. Rele
 - Registration-before-compile setup, Game API setup, and fresh runtimes for language-server analysis batches existed only to satisfy the seal and are dropped. Whether the Interpreter or VM should require successful compilation is an open question (Q4).
 - The earlier blanket V5 `static_cast` and ScriptObject field-table proposals were not implemented. The checked query preserves receiver validation and per-instance layouts; registration ownership changes do not authorize changing those contracts.
 
-### Step 5: Interpreter correctness and simplification (in progress)
+### Step 5: Interpreter correctness and simplification (complete)
 
 - I1/I2 policy was reviewed before implementation. The user chose to restore the caller's running state for all Interpreter native function/method calls, replacing the former propagation behavior of native free functions and scalar-only native class methods. Direct bytecode execution, constructors, and the object model are unchanged.
 - I1/I2 are implemented with the existing `ExecutionStateGuard`. Removed the duplicate synchronous-native helper and the struct-signature heuristic; all native function/method paths use one restoration policy without adding a guard class or flag.
@@ -198,10 +198,20 @@ Step 5's I1/I2 running-state review and approved change are recorded below. Rele
 - Retained `reportInputError` for explicitly named source input and `addDiagnostic` for full diagnostic metadata; these are distinct host contracts, not dead forwarding APIs. Retained the deleted `const Interpreter&&` constructors: they reject both const and non-const temporary interpreters and prevent contexts from borrowing a destroyed facade. Existing temporary-rejection checks remain unchanged.
 - No diagnostic ordering, source attribution, result/loop-control state, disposable-formatting policy, or constructor lifetime behavior changed.
 - C3 validation: the build and all 13 CTest entries pass on `windows-debug`. Existing append/first-error ordering, warning/error clearing, explicit-source diagnostics, reset/formatting, and temporary-interpreter rejection coverage remains green. No old diagnostic method names remain in engine, test, app, module, template, or sample C++ code.
-- Next reviewable sub-step: C4 (remaining name-keyed accessors).
+- C4 is resolved by review, retaining the step-2 convenience decisions. Name-based reads support host/console bindings and parameter names; ID-based variable and parameter storage APIs serve already-resolved AST references. Scalar name reads also enforce the scalar-versus-struct contract. These are distinct entry points, not duplicate compatibility shims.
+- `setVariable(name, type, storage)` is used by interpreted assignment and debugger/console editing, and can declare or retype context-owned variables while preserving the stricter frame-variable/parameter rules. Replacing it with raw ID writes would change declaration, ownership, and binding behavior. Resolved AST reads already use variable IDs rather than performing repeated name lookup.
+- Kept the explicitly approved `setVariableProperty`, `setReceiverProperty`, `getVariableStorage(name)`, and `hasWarning` conveniences. No additional accessor removal, cache, index, lookup benchmark, or binding-semantics change was introduced. Lookup cost alone does not justify removing the host-facing API.
+- C4 verification is source/contracts review only. Existing context-growth/rebinding, scalar/struct restriction, parameter/local access, missing/empty storage, snapshot, and retired-storage tests cover the retained contracts. Only documentation changed, so no C++ rebuild or test rerun was needed; the last full 13-entry run remains C3 validation above. Step 5 is complete.
+- Next stage: step 6, Runtime correctness and dead code, starting with R3 string-lookup validation. The separate registration ownership split remains incomplete; completing step 5 does not claim that architectural work is done.
 
-### Step 6: Runtime correctness and dead code
+### Step 6: Runtime correctness and dead code (in progress)
 
+- R3's failure policy was revised by user decision: `getString` and `getStringByName` return `nullptr` without logging for invalid/unregistered IDs or absent text. The caller decides whether to log. No empty-string fallback or implicit registration is permitted.
+- R3 is implemented: guard the string table index before conversion/access; name lookup delegates to that checked accessor, including for missing text. Successful lookups remain borrowed, identity-stable, and reference-count neutral; registered empty text remains a valid non-null result.
+- The new language-registry regression first reproduced the unchecked index as a Debug CRT vector-bounds failure. Its scoped test-process settings keep Windows assertion reporting non-interactive without hiding test failures. Coverage checks negative IDs, an ID outside the table, the first unregistered index, missing text, absence of lookup logging, unchanged interning/reference counts, and registered empty text. No opcode or string-registration policy was changed.
+- R3's initial implementation passed the build and all 13 CTest entries on `windows-debug`. The regression now requires null results without logging, no implicit registration, unchanged valid-string identity/reference counts, and non-null registered empty-string lookup.
+- R3 logging-policy follow-up: the build and targeted `nomad_test_language` entry pass on `windows-debug`, including the no-logging regression. No full-suite rerun was performed for this follow-up.
+- Next reviewable sub-step: R4 (failed callable publication and hub membership).
 - Invalid IDs and publication: R3, R4, R6, R21.
 - Null-safe dynamic variables: R7.
 - Ownership: R5 (verify first).
@@ -267,10 +277,10 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | --- | --- | --- | --- | --- | --- | --- |
 | R1 | P1 | perf | Name-keyed linear scans over all callables (`getCallableId`, overload counts, `resolveFunction`, `resolveMethod`, `resolveConstructor` per call site, multi-pass `registerNativeFunction`); no name index | `Runtime.cpp`: getCallableId, getCallableOverloads, getCallableOverloadCount, resolveFunction, resolveMethod, resolveConstructor, registerNativeFunction | verified | 8 |
 | R2 | P1 | perf | Linear interning and lookups: `getStringId` O(S), `internContextVariable` O(C), `getEventId`, `getKeywordId`, `getDynamicVariableId`, `getFormatStringId`, `getContextId`, `getInstructionId(name)` | `Runtime.cpp`: getStringId, internContextVariable, getEventId, getKeywordId, getDynamicVariableId, getFormatStringId, getContextId, getInstructionId | verified | 8 |
-| R3 | P1 | correctness | `getString(id)` and `getStringByName(missing)` index `m_strings` with the INVALID id (out of bounds) | `Runtime.cpp`: getString, getStringByName | verified | 6 |
+| R3 | P1 | correctness | `getString(id)` and `getStringByName(missing)` index `m_strings` with the INVALID id (out of bounds) | `Runtime.cpp`: getString, getStringByName; `LanguageRegistryIdTest.cpp`: failed-lookup regression | Fixed: null on failure without logging; caller owns logging policy, valid/empty-string results and interning preserved | 6 |
 | R4 | P1 | correctness | `registerNativeFunction` and `registerScriptFunction` publish a hub member even when `addCallableToTable` returned INVALID | `Runtime.cpp`: registerNativeFunction tail, registerScriptFunction tail | verified | 6 |
 | R5 | P2 | correctness | Iterator current getter copies into owned (retained) storage, then raw-assigns the result; possible leak for object values | `Runtime.cpp`: constructor, registerNativeClassProperty getter lambda; verify `RuntimeValue` assignment semantics | unverified | 6 |
-| R6 | P2 | correctness | Unchecked accessors index vectors with invalid ids (instruction, dynamic variable, context name, constants) while sibling accessors validate | `Runtime.cpp`: getInstructionFn, getInstructionName, getInstructionOperands, getDynamicVariable*, getContextName, getString | verified | 6 |
+| R6 | P2 | correctness | Unchecked accessors index vectors with invalid ids (instruction, dynamic variable, context name, constants) while sibling accessors validate | `Runtime.cpp`: getInstructionFn, getInstructionName, getInstructionOperands, getDynamicVariable*, getContextName | Open; string lookup portion fixed and validated under R3 | 6 |
 | R7 | P2 | correctness | `setDynamicVariable` and `getDynamicVariableValue` call `std::function` without a null check; VM `getVariableValue` skips `canGetDynamicVariable` | `Runtime.cpp`: setDynamicVariable, getDynamicVariableValue; `VirtualMachine.cpp`: getVariableValue | verified | 6 |
 | R8 | P2 | dead-code | `NOMAD_FUNCTION_DOC` blocks reference commented-out docs; the macro is never defined; keyword docs are discarded | `Runtime.cpp`: registerKeyword and registerDynamicVariable (`/*doc*/`), `#if defined(NOMAD_FUNCTION_DOC)` blocks | verified | 6 |
 | R9 | P2 | dead-code | getFunctionAtLine, getFunctionByStartAddress, and getStringContextVariableValue were recorded as having no callers. **Corrected:** they have test-only callers | `Runtime.cpp`; `Runtime.hpp` declarations | verified (corrected) | 2 |
@@ -323,7 +333,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | C1 | P2 | const-correctness | Shared private const storage resolvers return writable variable/parameter/receiver spans | `InterpreterContext.cpp`: getVariableStorageById, getParameterStorage and explicit mutable accessors; `InterpreterContext.hpp` | Fixed internally: reads use existing const storage APIs; writes remain non-const; redundant private resolvers removed, public contracts unchanged | 5 |
 | C2 | P2 | perf | One heap allocation per variable (`vector<unique_ptr<InterpreterStorage>>`); retired storage accumulates until the outermost evaluation ends | `InterpreterContext.hpp`: m_variables, m_retiredStorage | verified-text | 8 |
 | C3 | P3 | api | Diagnostic names obscure append/clear-all behavior; review overlap and deleted temporary-interpreter constructors | `InterpreterContext.hpp`, `InterpreterContext.cpp`: constructors and diagnostics API | Approved renames implemented: addError and clearDiagnostics, no aliases; distinct source/metadata entry points and temporary-lifetime rejection retained | 5 |
-| C4 | P3 | api | Name-keyed accessors alongside ById variants; name lookups cost on every call | `InterpreterContext.hpp`: getVariable*, setVariable* | verified-text | 2, 5 |
+| C4 | P3 | api | Name-keyed host accessors coexist with resolved-ID variable/parameter storage APIs | `InterpreterContext.hpp`, `InterpreterContext.cpp`: name/ID access; `Expression.cpp`: IdentifierExpression::onEvaluate; `SyntaxTree.cpp`: assignment; `DebugConsole.cpp`: console editing | Resolved by review: distinct host/binding and resolved-AST contracts retained, honoring step-2 convenience decisions; no further API or performance change | 2, 5 (done) |
 
 ### VirtualMachine
 

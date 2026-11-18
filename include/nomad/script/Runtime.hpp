@@ -414,6 +414,7 @@ public:
     // values point directly into this table, so it must not grow or change once functions start executing.
     StringId registerString(const NomadString& string);
     [[nodiscard]] StringId getStringId(const NomadString& string) const;
+    // Borrowed objects; invalid IDs or missing names return nullptr without logging.
     [[nodiscard]] NomadStringObject* getString(StringId stringId) const;
     [[nodiscard]] NomadStringObject* getStringByName(const NomadString& name) const;
 

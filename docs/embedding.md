@@ -709,6 +709,13 @@ up the definition or forwarding a dispatch request.
 `Runtime::registerString(text)` returns a `StringId`, reusing the existing ID
 for identical text. `getStringId(text)` returns `StringId::INVALID` when absent.
 Pass a registered ID to `getString(id)` to borrow its string object.
+`getStringByName(text)` borrows an already-registered object by its text.
+An invalid or unregistered ID, or missing text, returns `nullptr` without
+logging. The caller decides whether to log a failed lookup. Failed lookups do
+not register text or substitute an empty string.
+Registered empty text still returns its non-null empty string object.
+Successful lookup preserves object identity and does not change reference counts;
+the returned object remains owned by the runtime.
 Register static strings before executing functions; the static string table
 must not grow while functions execute.
 
@@ -2729,6 +2736,12 @@ releasing what they replace, so their own storage can be supplied as the source.
 `setResult(const InterpreterValue&)` likewise takes an owned copy.
 `getVariableStorage(name)` and `getVariableStorageById(variableId)` borrow
 complete variable storage; `getResult()->getStorage()` borrows result storage.
+Name-based variable access also resolves parameters in a frame-backed context.
+The `ById` accessors take variable IDs from the context's callable metadata;
+parameter IDs are separate and use `getParameterStorage(parameterId)`.
+Use names for host/console bindings and resolved IDs when the variable is
+already known. `setVariable(name, type, storage)` can create or retype
+context-owned bindings; it is not just a writable ID-based slot accessor.
 Variable and parameter read accessors return read-only slot views.
 `getMutableVariableStorageById(variableId)` and
 `getMutableParameterStorage(parameterId)` require a mutable context and expose

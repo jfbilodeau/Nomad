@@ -4,13 +4,22 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
+#include <nomad/log/Logger.hpp>
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
+
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#include <windows.h>
+#endif
 
 #include <type_traits>
 
@@ -31,6 +40,58 @@ static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadDynamicVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
 
 BOOST_AUTO_TEST_SUITE(language_registry_ids)
+
+BOOST_AUTO_TEST_CASE(string_lookup_failures_return_null_without_logging_or_changing_interned_objects) {
+#if defined(_MSC_VER) && defined(_DEBUG)
+    // Keep a bounds-check regression non-interactive under the Debug CRT.
+    const auto previousErrorMode = GetErrorMode();
+    SetErrorMode(previousErrorMode | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    const auto previousReportMode = _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    const auto previousReportFile = _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    BOOST_SCOPE_EXIT_ALL(=) {
+        _CrtSetReportFile(_CRT_ASSERT, previousReportFile);
+        _CrtSetReportMode(_CRT_ASSERT, previousReportMode);
+        SetErrorMode(previousErrorMode);
+    };
+#endif
+
+    Runtime runtime;
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    const auto sinkId = logger.createMemorySink();
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Error);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    for (const auto id : {StringId::INVALID, StringId{-2}, StringId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(runtime.getString(id) == nullptr);
+    }
+
+    const auto id = runtime.registerString("checked string");
+    const auto* original = runtime.getString(id);
+    BOOST_REQUIRE(original != nullptr);
+    const auto references = original->getReferenceCount();
+    const auto unregistered = StringId{id.id + 1};
+    BOOST_TEST(runtime.getString(unregistered) == nullptr);
+    BOOST_TEST(runtime.getStringByName("missing string") == nullptr);
+    BOOST_TEST(runtime.getStringId("missing string") == StringId::INVALID);
+    BOOST_TEST(runtime.registerString("checked string") == id);
+    BOOST_TEST(runtime.getString(id) == original);
+    BOOST_TEST(runtime.getStringByName("checked string") == original);
+    BOOST_TEST(original->getReferenceCount() == references);
+    const auto emptyId = runtime.registerString("");
+    const auto* empty = runtime.getString(emptyId);
+    BOOST_REQUIRE(empty != nullptr);
+    BOOST_TEST(empty->getView().empty());
+    BOOST_TEST(runtime.getStringByName("") == empty);
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
+}
 
 BOOST_AUTO_TEST_CASE(string_ids_deduplicate_and_keep_borrowed_objects_stable)
 {

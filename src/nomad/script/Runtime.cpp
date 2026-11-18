@@ -1936,7 +1936,12 @@ StringId Runtime::getStringId(const NomadString& string) const {
 }
 
 NomadStringObject* Runtime::getString(const StringId stringId) const {
+    if (isIdOutOfRange(stringId.id, m_strings.size())) {
+        return nullptr;
+    }
+
     const auto stringIndex = toNomadIndex(stringId.id);
+
     return m_strings[stringIndex];
 }
 
