@@ -2903,7 +2903,9 @@ CallableId Runtime::registerScriptFunction(
         std::make_unique<ScriptFunction>(getNextCallableId(), name, path, source)
     );
 
-    registerHubMember(name, HubFunctions{{id}});
+    if (id.isValid()) {
+        registerHubMember(name, HubFunctions{{id}});
+    }
 
     return id;
 }

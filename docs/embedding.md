@@ -2213,6 +2213,8 @@ preserves the path and source in the shared callable catalog, just as
 make it executable. Both hub modes accept host registration. Invalid owners,
 conflicting members and existing callable names are logged and
 return `CallableId::INVALID`; this API does not introduce script overloads.
+If the callable catalog is full, registration returns `CallableId::INVALID`
+without adding a callable or hub member.
 Use compiler source registration for normal source compilation.
 
 Use `registerHubVariable(hubId, name)` to declare a variable using a host-supplied
