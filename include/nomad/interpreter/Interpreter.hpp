@@ -28,7 +28,7 @@ struct StructMethodResult {
 
 class Interpreter {
 public:
-    // The caller owns the VM, which must outlive this interpreter.
+    // Borrows the caller's mutable VM, which must outlive this interpreter.
     explicit Interpreter(VirtualMachine& machine);
     Interpreter(const Interpreter&) = delete;
     Interpreter& operator=(const Interpreter&) = delete;
@@ -119,8 +119,6 @@ public:
     ) const;
 
 private:
-    VirtualMachine& m_virtualMachine;
-
     void runScriptCallable(
         const ScriptCallableBase& callable,
         const RuntimeValue& receiver = RuntimeValue{}
@@ -136,13 +134,14 @@ private:
         NomadObject* object,
         std::span<const InterpreterValue> arguments
     ) const;
-
+    
     [[nodiscard]] std::optional<InterpreterValue> evaluateFormatExpression(
         const SourceText& source,
         InterpreterContext& context,
         NomadIndex sourceLine
     ) const;
-
+    
+    VirtualMachine& m_virtualMachine;
 };
 
 } // namespace nomad

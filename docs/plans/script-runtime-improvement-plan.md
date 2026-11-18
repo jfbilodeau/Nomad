@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2/I3/I7/I8/I12/I13 validated and I4/I6/I9/I10 resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2/I3/I7/I8/I12/I13 validated and I4/I6/I9/I10/I15 resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
 
 ## Component contract
 
@@ -188,8 +188,10 @@ Step 5's I1/I2 running-state review and approved change are recorded below. Rele
 - I13 validation-order policy was approved separately: both in-place setters now check receiver-storage width before resolving a property selector, matching the existing direct-ID setter. Existing error text and valid mutation/ownership behavior are unchanged. Only the diagnostic precedence changes when both the storage span and selector are invalid.
 - The new regression first reproduced nine wrong-precedence cases for empty, undersized, and oversized receiver spans combined with invalid path selectors. It also checks direct-ID selectors, a valid path, and that rejected calls leave all supplied slots unchanged.
 - I13 storage-first validation: all 13 CTest entries pass on `windows-debug`. Both retained setters now report the existing receiver-width error consistently when storage and selector are invalid, while existing valid assignment, selector/type-error, empty-struct, ownership, and copy-failure coverage remains green.
-- Next reviewable sub-step: I15 (const-correct VM access).
-- Remaining simplification: const-correct VM access (I15).
+- I15 is resolved by the user's approved borrowed-facade contract: `Interpreter` holds a reference to the caller's mutable VM, not owned execution state. Constness applies to the facade, not transitively to that VM. Execution through `const Interpreter&` and the mutable reference returned by `getVirtualMachine() const` are intentional; contexts and receiver wrappers retain their existing const Interpreter references.
+- Documented that contract and the existing VM/interpreter/context lifetime requirements. No signatures, execution behavior, `mutable` members, casts, or extra getters changed. This does not decide the separate C1 context-storage-accessor contract.
+- I15 verification is documentation/comment-only: existing `InterpreterTest.cpp` assertions and borrowing/bound-VM tests explicitly cover const facade access, independent contexts, and calls reaching the supplied VM. No C++ rebuild or test rerun was needed; the last full 13-entry run remains I13 validation above.
+- Next reviewable sub-step: C1 (InterpreterContext storage-accessor constness), followed by C3/C4 API review.
 - InterpreterContext: const-correct storage resolvers (C1), API cleanup (C3), and the remaining name-keyed accessors (C4).
 
 ### Step 6: Runtime correctness and dead code
@@ -306,7 +308,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | I12 | P3 | redundancy | Stored-property path lookup copies each segment into a NomadString; per-owner validation is required | `CompositeType.cpp`: getProperty(NomadStringView); `Interpreter.cpp`: resolveStoredPropertyPath; `InterpreterReceiver.cpp`: resolveProperty | Name-copy removal implemented using existing borrowed-view lookup; required segment/owner checks and diagnostics retained | 5 |
 | I13 | P2 | api | setProperty name shared by a test-only functional API and production in-place API; size-check order differs between PropertyId and path variants | `Interpreter.cpp`: in-place setProperty overloads; `Interpreter.hpp`; `InterpreterStructAssignmentTest.cpp`: validation-order regression | Fixed: functional API removed; both retained setters use approved storage-first validation, preserving valid mutation behavior | 5 |
 | I14 | P3 | redundancy | Free function formatDynamicString forwards to Interpreter::formatString | `Interpreter.cpp`: formatDynamicString; `FormatString.hpp`:34 | verified | 1 (done) |
-| I15 | P2 | const-correctness | Interpreter::getVirtualMachine() const returns VirtualMachine&; many const methods mutate the VM | `Interpreter.hpp`, `Interpreter.cpp` | verified | 5 |
+| I15 | P2 | const-correctness | Interpreter::getVirtualMachine() const returns VirtualMachine&; const execution methods use the borrowed VM | `Interpreter.hpp`: borrowing/accessor contract; `Interpreter.cpp`; `InterpreterTest.cpp`: const facade and bound-VM coverage | Resolved by user decision: preserve and document const-callable facade over a caller-owned mutable VM; no signature or behavior change | 5 |
 
 ### InterpreterContext
 

@@ -2477,6 +2477,14 @@ and module lifecycle are preserved.
 
 ## Persistent interpretation
 
+`Interpreter` is a non-owning facade over a caller-owned mutable
+`VirtualMachine`. A `const Interpreter` keeps the same VM binding but does not
+make that VM or supplied contexts and receivers read-only. Execution methods
+remain callable through a const facade, and `getVirtualMachine() const`
+intentionally returns the borrowed mutable `VirtualMachine&`.
+The VM must outlive the interpreter, and the interpreter must outlive its
+contexts and receiver wrappers.
+
 ```cpp
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
