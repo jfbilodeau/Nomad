@@ -115,13 +115,7 @@ const Method& resolveMethod(
 
 void validateMethodImplementation(const Method& method) {
     const auto* script = method.asScriptMethod();
-    if (
-        script != nullptr &&
-        (
-            script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-            script->getFunctionStart() >= script->getFunctionEnd()
-        )
-    ) {
+    if (script != nullptr && !script->hasCompiledBody()) {
         throw std::invalid_argument("Method '" + method.getName() + "' is not compiled");
     }
 
@@ -311,8 +305,7 @@ InterpreterValue Interpreter::runFunction(
     }
 
     const auto* script = function->asScriptFunction();
-    if (script == nullptr || script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        script->getFunctionStart() >= script->getFunctionEnd()) {
+    if (script == nullptr || !script->hasCompiledBody()) {
         throw std::invalid_argument("Function '" + function->getName() + "' is not compiled");
     }
     if (script->getCaptureCount() != 0) {
@@ -332,8 +325,7 @@ InterpreterValue Interpreter::runFunction(
     const auto* function = closure.getFunction();
     if (
         machine.getRuntime()->getScriptFunction(function->getId()) != function ||
-        function->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        function->getFunctionStart() >= function->getFunctionEnd()
+        !function->hasCompiledBody()
     ) {
         throw std::invalid_argument(
             "Closure requires a compiled script function in the interpreter's runtime"
@@ -341,11 +333,7 @@ InterpreterValue Interpreter::runFunction(
     }
 
     const auto captureCount = closure.getCaptureCount();
-    if (
-        captureCount != function->getCaptureCount() ||
-        captureCount > function->getParameterCount() ||
-        arguments.size() != function->getParameterCount() - captureCount
-    ) {
+    if (!closure.acceptsArgumentCount(arguments.size())) {
         throw std::invalid_argument("Incorrect explicit argument or capture count for closure");
     }
 
@@ -496,8 +484,7 @@ InterpreterValue Interpreter::construct(
         throw std::invalid_argument("Constructor has an unresolved constructed type");
     }
     if (const auto* script = constructor->asScriptConstructor()) {
-        if (script->getFunctionStart() == NOMAD_INVALID_INDEX ||
-            script->getFunctionStart() >= script->getFunctionEnd()) {
+        if (!script->hasCompiledBody()) {
             throw std::invalid_argument("Constructor '" + constructor->getName() + "' is not compiled");
         }
     }

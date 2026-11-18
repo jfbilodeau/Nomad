@@ -34,6 +34,9 @@ public:
     NomadIndex getCaptureCount() const;
 
     [[nodiscard]]
+    bool acceptsArgumentCount(NomadIndex argumentCount) const;
+
+    [[nodiscard]]
     const RuntimeValue& getCaptureValue(NomadIndex captureIndex) const;
 
     // Borrows complete owned slots; empty struct captures have no storage pointer.

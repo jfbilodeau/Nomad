@@ -299,8 +299,7 @@ void VirtualMachine::run(
     const auto* function = closure.getFunction();
     if (
         m_runtime->getScriptFunction(function->getId()) != function ||
-        function->getFunctionStart() == NOMAD_INVALID_INDEX ||
-        function->getFunctionStart() >= function->getFunctionEnd()
+        !function->hasCompiledBody()
     ) {
         throw std::invalid_argument(
             "Closure requires a compiled script function in the virtual machine's runtime"
@@ -308,11 +307,7 @@ void VirtualMachine::run(
     }
 
     const auto captureCount = closure.getCaptureCount();
-    if (
-        captureCount != function->getCaptureCount() ||
-        captureCount > function->getParameterCount() ||
-        arguments.size() != function->getParameterCount() - captureCount
-    ) {
+    if (!closure.acceptsArgumentCount(arguments.size())) {
         throw std::invalid_argument("Incorrect explicit argument or capture count for closure");
     }
 

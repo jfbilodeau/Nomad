@@ -251,6 +251,7 @@ public:
     [[nodiscard]] NomadIndex getFunctionStart() const { return m_functionStartIndex; }
     void setFunctionEnd(const NomadIndex functionEndIndex) { m_functionEndIndex = functionEndIndex; }
     [[nodiscard]] NomadIndex getFunctionEnd() const { return m_functionEndIndex; }
+    [[nodiscard]] bool hasCompiledBody() const noexcept;
     [[nodiscard]] NomadIndex getFunctionLength() const { return m_functionEndIndex - m_functionStartIndex; }
     void setReservedStackSlots(const NomadIndex slots) { m_reservedStackSlots = slots; }
     [[nodiscard]] NomadIndex getReservedStackSlots() const { return m_reservedStackSlots; }

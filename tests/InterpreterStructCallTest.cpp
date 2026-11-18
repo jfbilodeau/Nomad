@@ -857,6 +857,51 @@ BOOST_AUTO_TEST_CASE(host_call_validation_rejects_bad_metadata_and_arguments_bef
     machine.pop1();
 }
 
+BOOST_AUTO_TEST_CASE(host_function_and_closure_calls_reject_unfinished_compiled_body_ranges) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto calls = 0;
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "recordCheckedBody",
+        [&](VirtualMachine*) { ++calls; },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction("checkedBody", "recordCheckedBody\nreturn 17");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    runtime.initializeScripts();
+    const auto functionId = runtime.getFunctionId("checkedBody");
+    auto* function = runtime.getScriptFunction(functionId);
+    const Closure closure(function);
+    const auto compiledEnd = function->getFunctionEnd();
+    function->setFunctionEnd(NOMAD_INVALID_INDEX);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    machine->pushInteger(1234);
+    machine->setIntegerResult(41);
+    machine->setIntegerIntermediate(43);
+    const auto before = machine->captureExecutionState();
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runFunction(functionId, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(static_cast<void>(interpreter.runFunction(closure, {})), std::invalid_argument);
+    BOOST_CHECK_THROW(machine->run(closure, {}), std::invalid_argument);
+    const auto after = machine->captureExecutionState();
+    BOOST_TEST(calls == 0);
+    BOOST_TEST(after.instructionIndex == before.instructionIndex);
+    BOOST_TEST(after.stackIndex == before.stackIndex);
+    BOOST_TEST(after.parameterIndex == before.parameterIndex);
+    BOOST_TEST(after.variableIndex == before.variableIndex);
+    BOOST_TEST(after.running == before.running);
+    BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+    BOOST_TEST(machine->getIntegerResult() == 41);
+    BOOST_TEST(machine->getIntegerIntermediate() == 43);
+    BOOST_TEST(machine->peekStack(0).getIntegerValue() == 1234);
+    function->setFunctionEnd(compiledEnd);
+    BOOST_TEST(interpreter.runFunction(closure, {}).getValue().getIntegerValue() == 17);
+    BOOST_TEST(calls == 1);
+    machine->pop1();
+}
+
 BOOST_AUTO_TEST_CASE(ordinary_scalar_calls_use_the_prepared_frame_stack_boundary) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();

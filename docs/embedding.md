@@ -2031,6 +2031,12 @@ the same view from a descriptor. Method and constructor descriptors remain owned
 by their declaring composite type; they are not returned by `getFunction(id)` or
 `getScriptFunction(id)`.
 
+`ScriptCallableBase::hasCompiledBody()` reports whether both instruction-range
+endpoints are set and the range is nonempty. It does not report overall
+compilation success or script initialization readiness. Typed host calls and
+raw closure invocation reject an unset endpoint or empty/reversed body range
+before execution.
+
 Include `<nomad/script/Callable.hpp>` for common callable metadata,
 `<nomad/script/NativeCallable.hpp>` for native implementations, and
 `<nomad/script/ScriptCallable.hpp>` for script functions, methods, constructors, and
@@ -3063,6 +3069,9 @@ retains responsibility for its owned values if validation fails. The closure is
 noncopyable; the function/type metadata and its owning runtime must outlive it.
 
 - `getCaptureCount()` reports logical captures, not slots or parameter count.
+- `acceptsArgumentCount(count)` checks the explicit argument count against the
+  callable's parameters and the closure's capture count. It does not validate
+  argument types, result support, runtime ownership, or compilation readiness.
 - `getCaptureType(index)` returns the declared capture type.
 - `getCaptureStorage(index)` borrows that capture's complete immutable slots.
   Empty captures return an empty span with no slot pointer.

@@ -14,11 +14,20 @@ ScriptCallableBase::ScriptCallableBase(NomadString path, NomadString source):
 
 ScriptCallableBase::~ScriptCallableBase() = default;
 
+bool ScriptCallableBase::hasCompiledBody() const noexcept {
+    return 
+        m_functionStartIndex != NOMAD_INVALID_INDEX &&
+        m_functionEndIndex != NOMAD_INVALID_INDEX &&
+        m_functionStartIndex < m_functionEndIndex;
+}
+
 bool ScriptCallableBase::isVariableStoredLocally(const VariableId variableId) const {
-    return variableId.isInvalid() ||
-        (variableId != m_returnVariables.candidate &&
-         variableId != m_returnVariables.assignmentStaging &&
-         variableId != m_returnVariables.returnStaging);
+    return 
+        variableId.isInvalid() || (
+            variableId != m_returnVariables.candidate &&
+            variableId != m_returnVariables.assignmentStaging &&
+            variableId != m_returnVariables.returnStaging
+        );
 }
 
 VariableId ScriptCallableBase::getNamedReturnVariable() const {

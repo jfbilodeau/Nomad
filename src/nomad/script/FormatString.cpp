@@ -76,8 +76,7 @@ NomadString FormatString::format(VirtualMachine* machine) const {
             segment.valueType == nullptr ||
             segment.valueType->isVoid() ||
             function->getReturnType() != segment.valueType ||
-            function->getFunctionStart() == NOMAD_INVALID_INDEX ||
-            function->getFunctionStart() >= function->getFunctionEnd()
+            !function->hasCompiledBody()
         ) {
             machine->fault("Internal error: Invalid function in format string segment");
         }

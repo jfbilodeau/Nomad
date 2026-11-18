@@ -61,6 +61,15 @@ NomadIndex Closure::getCaptureCount() const {
     return m_captureCount;
 }
 
+bool Closure::acceptsArgumentCount(const NomadIndex argumentCount) const {
+    const auto parameterCount = m_function->getParameterCount();
+
+    return 
+        m_captureCount == m_function->getCaptureCount() &&
+        m_captureCount <= parameterCount &&
+        argumentCount == parameterCount - m_captureCount;
+}
+
 const RuntimeValue& Closure::getCaptureValue(
     const NomadIndex captureIndex
 ) const {
