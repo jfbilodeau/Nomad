@@ -193,7 +193,7 @@ StoredPropertySelection resolveStoredPropertyPath(const Type* type, const NomadS
             throw std::invalid_argument("Stored property paths require struct owners");
         }
         const auto* owner = type->asCompositeType();
-        const auto* property = owner->getProperty(NomadString{name});
+        const auto* property = owner->getProperty(name);
         if (property == nullptr || property->asNativeProperty() != nullptr) {
             throw std::invalid_argument("Unknown stored property '" + NomadString{name} +
                 "' on type '" + type->getTypeName() + "'");

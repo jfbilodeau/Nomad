@@ -151,7 +151,7 @@ PropertyId CompositeType::registerProperty(
     return id;
 }
 
-const Property* CompositeType::getProperty(const NomadString& name) const {
+const Property* CompositeType::getProperty(const NomadStringView name) const {
     const auto property = std::find_if(
         m_properties.begin(),
         m_properties.end(),

@@ -1416,6 +1416,11 @@ the owner's properties as borrowed const pointers. IDs and pointers remain
 stable as more properties are registered and are valid for the owning runtime's
 lifetime. Property IDs are runtime-wide, not per-object field offsets.
 
+The name overload on `CompositeType` (including class and struct descriptors)
+accepts a borrowed `NomadStringView`; names need not be null-terminated and are
+not retained. Existing string arguments remain valid. Rebuild C++ hosts and
+native modules against the updated name-lookup signature.
+
 `ClassType::getFieldIndex(id)` returns the zero-based owner-local logical index
 for a stored/script property. Indices remain stable when properties are appended.
 Native properties do not occupy field indices; native, invalid, and other owners'

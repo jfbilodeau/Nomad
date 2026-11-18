@@ -49,7 +49,7 @@ public:
         const TypeManager& manager,
         std::unique_ptr<Property> property
     );
-    [[nodiscard]] const Property* getProperty(const NomadString& name) const;
+    [[nodiscard]] const Property* getProperty(NomadStringView name) const;
     [[nodiscard]] const Property* getProperty(PropertyId id) const;
     [[nodiscard]] const Property* getPropertyAt(NomadIndex index) const;
     [[nodiscard]] std::vector<const Property*> getProperties() const;

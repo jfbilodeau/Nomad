@@ -1371,6 +1371,61 @@ BOOST_AUTO_TEST_CASE(calls_need_only_existing_frames_and_requested_pointer_slots
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(stored_property_paths_add_no_allocations_beyond_returned_value_storage) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto emptyId = manager.registerStruct("LookupEmpty");
+    const auto nestedId = manager.registerStruct("LookupNested");
+    const auto rootId = manager.registerStruct("LookupRoot");
+    const auto* emptyType = runtime.getTypeByName("LookupEmpty");
+    const auto* nestedType = runtime.getTypeByName("LookupNested");
+    const auto* rootType = runtime.getTypeByName("LookupRoot");
+    const NomadString nestedName = "nested_property_name_longer_than_inline_string_storage";
+    const NomadString leafName = "empty_property_name_longer_than_inline_string_storage";
+    BOOST_REQUIRE(manager.registerScriptStructProperty(nestedId, leafName, emptyType).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(rootId, nestedName, nestedType).isValid());
+    const auto directId = manager.registerScriptStructProperty(rootId, "direct", emptyType);
+    BOOST_REQUIRE(directId.isValid());
+    manager.finalizeCompositeFieldLayout(rootId);
+    const InterpreterValue receiver(rootType, std::span<const RuntimeValue>{});
+    const NomadString decoratedPath = "[" + nestedName + "." + leafName + "]";
+    const auto path = NomadStringView{decoratedPath}.substr(1, decoratedPath.size() - 2);
+    VirtualMachine machine(&runtime);
+    const Interpreter interpreter(machine);
+    auto completedReads = 0;
+    callAllocations = 0;
+    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+    {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
+            _CrtSetAllocHook(previousHook);
+        };
+
+        for (auto index = 0; index < 100; ++index) {
+            const auto value = interpreter.getProperty(receiver, directId);
+            completedReads += value.getType() == emptyType && value.getStorage().empty();
+        }
+    }
+
+    const auto resultStorageAllocations = callAllocations;
+    callAllocations = 0;
+    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+    {
+        const auto previousHook = previousAllocationHook;
+        BOOST_SCOPE_EXIT_ALL(=) {
+            _CrtSetAllocHook(previousHook);
+        };
+
+        for (auto index = 0; index < 100; ++index) {
+            const auto value = interpreter.getProperty(receiver, path);
+            completedReads += value.getType() == emptyType && value.getStorage().empty();
+        }
+    }
+
+    BOOST_TEST(callAllocations == resultStorageAllocations);
+    BOOST_TEST(completedReads == 200);
+}
+
 BOOST_AUTO_TEST_CASE(prepared_script_execution_guards_do_not_allocate) {
     Runtime runtime;
     const auto functionId = runtime.registerScriptFunction("allocationFreeExecution", "allocation.nomad", "");

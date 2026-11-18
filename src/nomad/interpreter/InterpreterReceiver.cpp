@@ -30,7 +30,7 @@ PropertyId InterpreterReceiver::resolveProperty(const NomadStringView name) cons
         return std::get<PropertyId>(member);
     }
     const auto* owner = m_type.asCompositeType();
-    const auto* property = owner != nullptr ? owner->getProperty(NomadString{name}) : nullptr;
+    const auto* property = owner != nullptr ? owner->getProperty(name) : nullptr;
     if (property == nullptr) {
         throw std::invalid_argument("Unknown interpreter property '" + NomadString{name} + "'");
     }
