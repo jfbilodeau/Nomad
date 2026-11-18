@@ -409,12 +409,12 @@ const ParameterDefinition distance{
 ```
 
 These input structures do not register anything when constructed.
-Use the explicit TypeManager registration APIs, including `registerNativeClassIndexer` and
+Use the explicit Runtime registration APIs, including `registerNativeClassIndexer` and
 `registerNativeClassIterable`. The latter registers a native factory method
 and its iterable association. Include `<nomad/script/NativeMember.hpp>` for
 the native member creation definitions.
 Register native class accessors through
-`runtime.getTypeManager().registerNativeClassProperty(ownerId, definition)`.
+`runtime.registerNativeClassProperty(ownerId, definition)`.
 Their metadata structures are now named `NativePropertyInfo`,
 `NativeIndexerInfo`, and `IterableInfo`. Corresponding lookup operations are
 `Runtime::getNativePropertyInfo`, `Runtime::getNativeIndexerInfo`, and
@@ -469,19 +469,26 @@ The existing Runtime lookup methods remain available with the same behavior.
 Finalize layouts through `runtime.getTypeManager().finalizeCompositeFieldLayout(id)`.
 Declare stored fields with
 `TypeManager::registerScriptClassProperty` or `registerScriptStructProperty`.
-Register native class accessors with `TypeManager::registerNativeClassProperty`.
+Register native class accessors with `Runtime::registerNativeClassProperty`.
 Register class methods and constructors with the explicit
-native/script class APIs on TypeManager. The manager also exposes
+native/script class APIs on Runtime. The runtime also exposes
 `registerNativeStructMethod` and `registerScriptStructMethod`.
-Native property accessors remain class-only and are registered through TypeManager.
+Native property accessors remain class-only and are registered through Runtime.
 Register struct constructors with
-`TypeManager::registerNativeStructConstructor(ownerId, definition)` or
+`Runtime::registerNativeStructConstructor(ownerId, definition)` or
 `registerScriptStructConstructor(ownerId, parameters, path, source)`.
 Struct constructors construct their declaring type; unlike class native
 factories, they cannot specify a different constructed type. Invalid owners,
 invalid parameters, empty native callbacks, and duplicate signatures are
 rejected without publishing a callable. Native/script duplicates share the
 same owner constructor catalog.
+
+The former TypeManager execution-member registration entry points have no
+forwarding aliases. Register methods, constructors, native properties, indexers,
+and iterable factories directly on Runtime. Type declarations, stored-field
+declarations, layout finalization, and type/property catalogs remain on TypeManager.
+Property IDs still come from that catalog; registered properties are available
+through both TypeManager and Runtime lookups.
 
 Struct constructor callables return `void`; `Constructor::getConstructedType()`
 identifies the struct value produced by construction. Their call layout includes
@@ -1759,7 +1766,7 @@ native-only.
 
 ### Native property creation
 
-`TypeManager::registerNativeClassProperty(TypeId id, NativePropertyDefinition definition)` registers
+`Runtime::registerNativeClassProperty(TypeId id, NativePropertyDefinition definition)` registers
 a native property and returns its `PropertyId`. The owner ID must identify a
 class type in that runtime. `definition.valueType` takes a `const Type*` from the
 same runtime, or a placeholder obtained from its configured compiler's
@@ -1777,7 +1784,7 @@ the callbacks are invoked.
 For an already registered class type identified by `typeId`:
 
 ```cpp
-const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
+const auto propertyId = runtime.registerNativeClassProperty(typeId, {
     .valueType = runtime.getIntegerType(),
     .name = "answer",
     .getter = [](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
@@ -1815,7 +1822,7 @@ Invalid methods, owners, or signatures are logged and rejected without
 publishing the property or executing a callback.
 
 ```cpp
-const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(ownerTypeId, {
+const auto propertyId = runtime.registerNativeClassProperty(ownerTypeId, {
     .valueType = pointType,
     .name = "point",
     .documentation = "A point snapshot.",
@@ -1886,7 +1893,7 @@ used after their owning compiler is destroyed.
 
 ### Native method creation
 
-`TypeManager::registerNativeClassMethod(TypeId id, NativeMethodDefinition definition)` registers a
+`Runtime::registerNativeClassMethod(TypeId id, NativeMethodDefinition definition)` registers a
 native method and returns its `CallableId`. The owner ID must identify an object
 type. Parameter and return-type IDs are resolved in the same runtime; IDs are
 runtime-local and must not be transferred between runtimes.
@@ -1902,7 +1909,7 @@ parameter types retain their existing calling conventions. The return type may
 be `void`, but otherwise must be public. The callback must be nonempty.
 
 ```cpp
-const auto methodId = runtime.getTypeManager().registerNativeClassMethod(typeId, {
+const auto methodId = runtime.registerNativeClassMethod(typeId, {
     .name = "move",
     .parameters = {{runtime.getTypeId("float"), "distance", "Distance to move."}},
     .returnTypeId = runtime.getTypeId("void"),
@@ -2004,8 +2011,8 @@ do not implicitly convert to integers or other ID categories.
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
 
-`TypeManager::registerNativeClassProperty` returns a `PropertyId`;
-`TypeManager::registerNativeClassMethod` and `registerNativeStructMethod` return
+`Runtime::registerNativeClassProperty` returns a `PropertyId`;
+`Runtime::registerNativeClassMethod` and `registerNativeStructMethod` return
 the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
 `CallableId::INVALID`, respectively.
 `getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
@@ -2056,7 +2063,7 @@ the shared implementation template. The common compilation interface is in
 `<nomad/script/ScriptCallableBase.hpp>`. No receiver parameter is synthesized by
 the callable constructors.
 
-`TypeManager::registerScriptClassMethod(typeId, name, parameters, path, source)` and
+`Runtime::registerScriptClassMethod(typeId, name, parameters, path, source)` and
 `registerScriptClassConstructor(typeId, parameters, path, source)` publish script
 signatures on a runtime-owned class type. They return an invalid ID and log an
 error for an invalid owner, unsupported parameter types, or duplicate signatures.
@@ -2066,18 +2073,18 @@ an implicit local or a receiver to the explicit parameter list. A parameter name
 source is retained for compiler diagnostics; registration alone does not parse,
 compile, or enable invocation of the member.
 
-Register constructors through the manager's explicit class/struct APIs.
+Register constructors through the runtime's explicit class/struct APIs.
 Callable IDs and category lookup APIs remain runtime-wide. Class descriptors
 own their methods and constructors; returned pointers are borrowed for the
 runtime's lifetime. Registration does not run native callbacks or alter stored
 field layouts, and remains available after field layout finalization.
 Struct owner IDs are rejected by these class APIs.
 
-`TypeManager::registerScriptStructMethod(typeId, name, parameters, path, source)`
+`Runtime::registerScriptStructMethod(typeId, name, parameters, path, source)`
 registers the corresponding struct-method signature. Class owner IDs are rejected.
 `registerScriptStructConstructor(typeId, parameters, path, source)` provides the
 corresponding struct-constructor registration.
-Register script methods through the manager's explicit owner-category API. Struct descriptors
+Register script methods through the runtime's explicit owner-category API. Struct descriptors
 own their methods under the same runtime-lifetime contract. Registration alone
 still does not parse or compile the retained source; embedding code must supply
 the method body through the existing compiler integration APIs.
@@ -3329,7 +3336,7 @@ selects `Pair<string int>`. Argument expressions can include variables and neste
 inferred constructors. Deduction does not execute argument expressions.
 The selected specialization is reused through the normal type registry, and its
 concrete constructor must still match the arguments. Hosts register that
-constructor with `TypeManager::registerNativeClassConstructor`, usually in the type-family
+constructor with `Runtime::registerNativeClassConstructor`, usually in the type-family
 initializer. Compiled scripts and the interpreter both support inferred
 construction through the existing native constructor execution paths.
 
@@ -3428,7 +3435,7 @@ Hosts overriding these functions must use the pointer signatures; existing
 callers passing a `RuntimeValue` reference must instead pass its address.
 
 Register a constructor through
-`TypeManager::registerNativeClassConstructor(typeId, definition)`.
+`Runtime::registerNativeClassConstructor(typeId, definition)`.
 `NativeConstructorDefinition` supplies parameter definitions, a `function` callback, and
 documentation. By default, the constructor creates its declaring type.
 The overload taking `(typeId, createdTypeId, definition)` registers a constructor
@@ -3448,7 +3455,7 @@ const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
 }
-const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(typeId, {
+const auto constructorId = runtime.registerNativeClassConstructor(typeId, {
     .parameters = {{runtime.getIntegerType()->getId(), "size", ""}},
     .function = [](nomad::VirtualMachine* machine) {
         machine->getResult().setObjectValue(new ExampleObject(machine->getIntegerParameter(0)));
@@ -3467,7 +3474,7 @@ signatures are rejected, even if their parameter names differ. Use an empty para
 list for a parameterless constructor.
 
 When a class creates a different kind of object, use
-`runtime.getTypeManager().registerNativeClassConstructor(typeId, createdTypeId, definition)`.
+`runtime.registerNativeClassConstructor(typeId, createdTypeId, definition)`.
 Different overloads of one class may then create different types. The created type must be a public
 class type.
 
@@ -3494,7 +3501,7 @@ time in both compiled scripts and the interpreter.
 For a constructor with type arguments, use
 `TypeManager::registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
 initializer receives the specialized name and resolved type arguments; it registers
-a type with that name and its constructors with `registerNativeClassConstructor`.
+a type with that name and its constructors with `Runtime::registerNativeClassConstructor`.
 Specializations are reused on subsequent requests through
 `TypeManager::getParameterizedConstructorName(name, arguments)`. The manager owns
 the family registrations and specialization cache. Existing Runtime registration
@@ -3648,7 +3655,7 @@ explicit script types.
 
 ## Native object methods
 
-Use `runtime.getTypeManager().registerNativeClassMethod(typeId, NativeMethodDefinition{...})`
+Use `runtime.registerNativeClassMethod(typeId, NativeMethodDefinition{...})`
 for methods on a registered class type. Read the instance inside the callback:
 
 ```cpp
@@ -3659,7 +3666,7 @@ for methods on a registered class type. Read the instance inside the callback:
 ```
 
 Use `registerNativeFunction` for module/free functions,
-`registerHubNativeFunction` for hub members, and the manager's
+`registerHubNativeFunction` for hub members, and the runtime's
 `registerNativeClassMethod` or `registerNativeStructMethod` for a
 method on a class or struct type identified by its runtime-local `TypeId`.
 Global function lookup and enumeration exclude methods.
@@ -3688,7 +3695,7 @@ receivers and its independent receiver/result snapshots.
 ## Native indexers
 
 Register an indexer with
-`TypeManager::registerNativeClassIndexer(typeId, NativeIndexerDefinition{...})`.
+`Runtime::registerNativeClassIndexer(typeId, NativeIndexerDefinition{...})`.
 The definition supplies `valueTypeId`, a non-empty `std::vector<TypeId>` named
 `indexTypes`, `getter`, `setter`, and `documentation`.
 The index vector specifies the number and types of indices. All IDs are local
@@ -3739,7 +3746,7 @@ Omit the setter for read-only indexing, or omit
 the getter for write-only indexing. Invalid access is rejected during compilation.
 
 ```cpp
-const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(classType->getId(), {
+const auto indexerId = runtime.registerNativeClassIndexer(classType->getId(), {
     .valueTypeId = runtime.getStringType()->getId(),
     .indexTypes = {runtime.getIntegerType()->getId()},
     .getter = [](nomad::VirtualMachine* machine) {
@@ -3775,7 +3782,7 @@ Built-in string methods use the same object-method API. Read the instance with
 `getThisAs<Object>()`:
 
 ```cpp
-const auto methodId = runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
+const auto methodId = runtime.registerNativeClassMethod(runtime.getTypeId("string"), {
     .name = "textSize",
     .parameters = {},
     .returnTypeId = runtime.getTypeId("int"),
@@ -3815,12 +3822,12 @@ compiler support:
    `runtime.getTypeManager().getIteratorType(elementType)`.
    It exposes parameterless `moveNext` and the read-only `current` property.
    Reading `current` before a successful advance or after completion faults.
-3. Use `TypeManager::registerNativeClassIterable` to register a parameterless native factory method and its
+3. Use `Runtime::registerNativeClassIterable` to register a parameterless native factory method and its
    association with the source type. The factory returns a fresh cursor of that
    iterator type. Its name is not prescribed:
 
 ```cpp
-runtime.getTypeManager().registerNativeClassIterable(sourceType->getId(), {
+runtime.registerNativeClassIterable(sourceType->getId(), {
     .valueTypeId = elementType->getId(),
     .factory = {
         .name = "iterator",
@@ -3913,7 +3920,7 @@ overload queries continue to return only concrete members.
 
 ## Native object properties
 
-Use `runtime.getTypeManager().registerNativeClassProperty(typeId, NativePropertyDefinition{...})`.
+Use `runtime.registerNativeClassProperty(typeId, NativePropertyDefinition{...})`.
 Either callback may be empty for a write-only or read-only property. Both
 callbacks access the borrowed instance through `getThisAs<T>()`.
 
@@ -3924,7 +3931,7 @@ assign that local to `result`; this retains object references without reading th
 output's previous contents.
 
 ```cpp
-const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
+const auto propertyId = runtime.registerNativeClassProperty(typeId, {
     .valueType = runtime.getFloatType(),
     .name = "value",
     .getter = [](nomad::VirtualMachine* vm, nomad::RuntimeValue& result) {

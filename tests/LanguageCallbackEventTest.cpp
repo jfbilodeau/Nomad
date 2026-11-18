@@ -355,14 +355,14 @@ BOOST_AUTO_TEST_CASE(typed_closures_accept_complete_arguments_and_return_owned_s
     const auto* emptyType = runtime.getTypeByName("TypedCallbackEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructConstructor(valueId, {
+    BOOST_REQUIRE(runtime.registerNativeStructConstructor(valueId, {
         .parameters = {},
         .function = [](VirtualMachine* active) {
             active->getStorageParameter(0, 0).setIntegerValue(7);
             active->getStorageParameter(0, 1).setStringValue("callback");
         }
     }).isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructConstructor(emptyId, {
+    BOOST_REQUIRE(runtime.registerNativeStructConstructor(emptyId, {
         .parameters = {}, .function = [](VirtualMachine*) {}
     }).isValid());
     std::vector<std::unique_ptr<Closure>> callbacks;
@@ -957,14 +957,14 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
     std::vector<CallableId> descriptors;
     for (const auto* receiverType : std::array<const Type*, 3>{type, empty, owner}) {
         const auto methodId = receiverType->isStruct() ?
-            runtime.getTypeManager().registerScriptStructMethod(
+            runtime.registerScriptStructMethod(
                 receiverType->getId(),
                 "capture",
                 {},
                 "receiver-capture.nomad",
                 ""
             ) :
-            runtime.getTypeManager().registerScriptClassMethod(
+            runtime.registerScriptClassMethod(
                 receiverType->getId(),
                 "capture",
                 {},

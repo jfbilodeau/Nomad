@@ -52,19 +52,19 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
             const auto* type = owningRuntime->getType(id).value();
             const auto* classType = static_cast<const ClassType*>(type);
             const auto* valueType = classType->getTypeArguments()[0];
-            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(classType->getId(), {
+            BOOST_REQUIRE(runtime.registerNativeClassConstructor(classType->getId(), {
                 .parameters = {{valueType->getId(), "value", ""}},
                 .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); },
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(classType->getId(), {
+            BOOST_REQUIRE(runtime.registerNativeClassProperty(classType->getId(), {
                 .valueType = valueType,
                 .name = "declaredProperty",
                 .getter = [](VirtualMachine*, RuntimeValue&) {},
                 .setter = {},
                 .documentation = ""
             }).isValid());
-            BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(classType->getId(), {
+            BOOST_REQUIRE(runtime.registerNativeClassMethod(classType->getId(), {
                 .name = "declaredMethod",
                 .parameters = {
                     {valueType->getId(), "value", ""},
@@ -161,7 +161,7 @@ BOOST_AUTO_TEST_CASE(rejects_reading_write_only_property) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
@@ -199,7 +199,7 @@ BOOST_AUTO_TEST_CASE(allows_assigning_write_only_property) {
     CompilerContext context(compiler.get());
     ScriptFunction function(CallableId::INVALID, "test", "test.nomad", "");
     function.registerVariable("name", runtime.getStringType());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
@@ -219,7 +219,7 @@ BOOST_AUTO_TEST_CASE(chained_assignment_reads_receiver_but_only_requires_final_s
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "sink",
         .getter = {},
@@ -256,7 +256,7 @@ BOOST_AUTO_TEST_CASE(allows_object_method_on_temporary) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
 
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "clear",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -291,7 +291,7 @@ BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_name
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
     runtime.registerVariableContext("entity", "this.", std::make_unique<SimpleVariableContext>());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(runtime.getTypeId("string"), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue&) {},

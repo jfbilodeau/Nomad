@@ -27,7 +27,7 @@ void registerKeyValueType(Runtime* runtime) {
             const auto* classType = static_cast<const KeyValueType*>(type);
             const auto* keyType = classType->getTypeArguments()[0];
             const auto* valueType = classType->getTypeArguments()[1];
-            const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(id, {
+            const auto constructorId = runtime->registerNativeClassConstructor(id, {
                 .parameters = {
                     {keyType->getId(), "key", NomadDoc("The key to store.")},
                     {valueType->getId(), "value", NomadDoc("The value to store.")}
@@ -39,7 +39,7 @@ void registerKeyValueType(Runtime* runtime) {
                 },
                 .documentation = NomadDoc("Creates a pair with read-only key and value properties.")
             });
-            const auto keyId = runtime->getTypeManager().registerNativeClassProperty(id, {
+            const auto keyId = runtime->registerNativeClassProperty(id, {
                 .valueType = keyType,
                 .name = "key",
                 .getter = [keyType](VirtualMachine* machine, RuntimeValue& result) {
@@ -52,7 +52,7 @@ void registerKeyValueType(Runtime* runtime) {
                 .setter = {},
                 .documentation = NomadDoc("The read-only key. Object keys share their referenced object.")
             });
-            const auto valueId = runtime->getTypeManager().registerNativeClassProperty(id, {
+            const auto valueId = runtime->registerNativeClassProperty(id, {
                 .valueType = valueType,
                 .name = "value",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {

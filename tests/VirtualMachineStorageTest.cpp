@@ -293,7 +293,7 @@ BOOST_AUTO_TEST_CASE(native_method_and_function_frames_restore_nested_receivers_
         ""
     );
     BOOST_REQUIRE(functionId.isValid());
-    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto methodId = runtime.registerNativeClassMethod(ownerId, {
         .name = "guardedMethod",
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
@@ -362,7 +362,7 @@ BOOST_AUTO_TEST_CASE(native_indexer_frames_restore_enclosing_receivers_and_param
     const RuntimeValueGuard indexedGuard(*owner, &indexedReceiver);
     indexedReceiver.setObjectValue(new NomadObject);
     auto fail = false;
-    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+    const auto indexerId = runtime.registerNativeClassIndexer(ownerId, {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = [&](VirtualMachine* active) {
@@ -463,7 +463,7 @@ BOOST_AUTO_TEST_CASE(host_indexer_arguments_release_every_partial_copy_and_callb
             throw NomadException("Expected host indexer failure");
         }
     };
-    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+    const auto indexerId = runtime.registerNativeClassIndexer(ownerId, {
         .valueTypeId = argumentId,
         .indexTypes = {argumentId, argumentId, argumentId},
         .getter = [&](VirtualMachine* active) { inspectArguments(active, false); },
@@ -549,7 +549,7 @@ BOOST_AUTO_TEST_CASE(indexer_opcodes_release_arguments_and_only_discard_failed_r
         }
     };
     const auto stringId = runtime.getStringType()->getId();
-    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+    const auto indexerId = runtime.registerNativeClassIndexer(ownerId, {
         .valueTypeId = stringId,
         .indexTypes = {stringId, stringId, stringId},
         .getter = [&](VirtualMachine* active) { inspectArguments(active, false); },
@@ -640,7 +640,7 @@ BOOST_AUTO_TEST_CASE(native_struct_creation_restores_hidden_slots_frames_and_own
     BOOST_REQUIRE(emptyType->getSize() == 0U);
     BOOST_REQUIRE(valueType->getInitializer() != nullptr);
     BOOST_REQUIRE(emptyType->getInitializer() != nullptr);
-    const auto valueConstructor = runtime.getTypeManager().registerNativeStructConstructor(valueType->getId(), {
+    const auto valueConstructor = runtime.registerNativeStructConstructor(valueType->getId(), {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
         .function = [&](VirtualMachine* active) {
             ++valueConstructorCalls;
@@ -655,7 +655,7 @@ BOOST_AUTO_TEST_CASE(native_struct_creation_restores_hidden_slots_frames_and_own
             }
         }
     });
-    const auto emptyConstructor = runtime.getTypeManager().registerNativeStructConstructor(emptyType->getId(), {
+    const auto emptyConstructor = runtime.registerNativeStructConstructor(emptyType->getId(), {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
         .function = [&](VirtualMachine* active) {
             ++emptyConstructorCalls;
@@ -768,7 +768,7 @@ BOOST_AUTO_TEST_CASE(constructor_opcodes_preserve_arguments_and_release_failed_s
     const auto* structType = runtime.getTypeByName("NativeRollbackStruct")->asStructType();
     const auto* emptyType = runtime.getTypeByName("NativeRollbackEmpty")->asStructType();
     const auto stringId = runtime.getStringType()->getId();
-    const auto nativeObjectId = runtime.getTypeManager().registerNativeClassConstructor(objectType->getId(), {
+    const auto nativeObjectId = runtime.registerNativeClassConstructor(objectType->getId(), {
         .parameters = {{stringId, "input", ""}},
         .function = [&](VirtualMachine* active) {
             auto* object = new ScriptObject(objectType);
@@ -779,7 +779,7 @@ BOOST_AUTO_TEST_CASE(constructor_opcodes_preserve_arguments_and_release_failed_s
             }
         }
     });
-    const auto nativeStructId = runtime.getTypeManager().registerNativeStructConstructor(structType->getId(), {
+    const auto nativeStructId = runtime.registerNativeStructConstructor(structType->getId(), {
         .parameters = {{stringId, "input", ""}},
         .function = [&](VirtualMachine* active) {
             runtime.getStringType()->copyValue(
@@ -790,7 +790,7 @@ BOOST_AUTO_TEST_CASE(constructor_opcodes_preserve_arguments_and_release_failed_s
             }
         }
     });
-    const auto nativeEmptyId = runtime.getTypeManager().registerNativeStructConstructor(emptyType->getId(), {
+    const auto nativeEmptyId = runtime.registerNativeStructConstructor(emptyType->getId(), {
         .parameters = {{stringId, "input", ""}},
         .function = [&](VirtualMachine*) {
             if (fail) {
@@ -1466,7 +1466,7 @@ BOOST_AUTO_TEST_CASE(indexer_argument_guards_do_not_allocate) {
     const RuntimeValueGuard receiverGuard(*owner, &receiver);
     receiver.setObjectValue(new NomadObject);
     const auto integerId = runtime.getIntegerType()->getId();
-    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(ownerId, {
+    const auto indexerId = runtime.registerNativeClassIndexer(ownerId, {
         .valueTypeId = integerId,
         .indexTypes = {integerId},
         .getter = [](VirtualMachine* active) { active->setIntegerResult(71); },
@@ -1580,13 +1580,13 @@ BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocat
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
-    const auto nativeId = runtime.getTypeManager().registerNativeStructConstructor(typeId, {
+    const auto nativeId = runtime.registerNativeStructConstructor(typeId, {
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
         .function = [](VirtualMachine* active) {
             active->getStorageParameter(1, 0) = active->getParameter(0);
         }
     });
-    const auto scriptId = runtime.getTypeManager().registerScriptStructConstructor(typeId,
+    const auto scriptId = runtime.registerScriptStructConstructor(typeId,
         {defParameter("number", runtime.getIntegerType(), ""), defParameter("unused", runtime.getIntegerType(), "")},
         "", "");
     BOOST_REQUIRE(nativeId.isValid());
@@ -1640,7 +1640,7 @@ BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) 
     const auto nativeTypeId = runtime.getTypeManager().registerClass("CountedNative", ClassMode::Closed);
     const auto* nativeType = runtime.getTypeByName("CountedNative")->asClassType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(nativeTypeId);
-    const auto nativeId = runtime.getTypeManager().registerNativeClassConstructor(nativeTypeId, {
+    const auto nativeId = runtime.registerNativeClassConstructor(nativeTypeId, {
         .parameters = {},
         .function = [nativeType](VirtualMachine* active) {
             active->getResult().setObjectValue(new ScriptObject(nativeType));

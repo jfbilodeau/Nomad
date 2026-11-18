@@ -681,7 +681,7 @@ BOOST_AUTO_TEST_CASE(field_slots_are_owner_local_stable_and_distinct_from_catalo
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(first->getId(), "later", runtime.getBooleanType()).isValid());
     BOOST_TEST(first->getFieldIndex(firstId) == 0u);
     BOOST_TEST(first->getFieldIndex(first->getProperty("later")->getId()) == 2u);
-    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(first->getId(), {
+    const auto nativeId = runtime.registerNativeClassProperty(first->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
@@ -722,7 +722,7 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
     registerCallbackTestFunctions(runtime);
     const auto otherId = runtime.getTypeManager().registerClass("Other", ClassMode::Closed);
     BOOST_REQUIRE(otherId.isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(otherId, {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(otherId, {
         .valueType = runtime.getFloatType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadFloat{1.0}}; },
@@ -959,7 +959,7 @@ BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_nati
     auto& runtime = fixture.getRuntime();
     const auto id = runtime.getTypeManager().registerClass("Host", ClassMode::Opened);
     BOOST_REQUIRE(id.isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(id, {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(id, {
         .valueType = runtime.getIntegerType(),
         .name = "nativeValue",
         .getter = [](VirtualMachine*, RuntimeValue& value) { value = RuntimeValue{NomadInteger{1}}; },
@@ -1019,7 +1019,7 @@ BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
         auto& runtime = fixture.getRuntime();
         const auto id = runtime.getTypeManager().registerClass("Other", ClassMode::Closed);
         BOOST_REQUIRE(id.isValid());
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(id, {
+        BOOST_REQUIRE(runtime.registerNativeClassMethod(id, {
             .name = "extra",
             .parameters = {{
                 sourceParameter ? runtime.getLineNumberType()->getId() : runtime.getIntegerType()->getId(), "value", ""

@@ -468,11 +468,11 @@ BOOST_AUTO_TEST_CASE(native_methods_use_distinct_receiver_argument_and_result_st
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
-    const auto readId = runtime.getTypeManager().registerNativeStructMethod(valueId, {
+    const auto readId = runtime.registerNativeStructMethod(valueId, {
         .name = "read", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) { active->setIntegerResult(active->getStorageParameter(0, 0).getIntegerValue()); }
     });
-    const auto mutateId = runtime.getTypeManager().registerNativeStructMethod(valueId, {
+    const auto mutateId = runtime.registerNativeStructMethod(valueId, {
         .name = "mutate",
         .parameters = {{valueId, "snapshot", ""}, {emptyId, "empty", ""}, {runtime.getIntegerType()->getId(), "delta", ""}},
         .returnTypeId = valueId,
@@ -549,15 +549,15 @@ BOOST_AUTO_TEST_CASE(native_empty_and_one_slot_receivers_keep_hidden_pointer_lay
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(oneId);
     auto emptyCalls = 0;
-    const auto emptyMethodId = runtime.getTypeManager().registerNativeStructMethod(emptyId, {
+    const auto emptyMethodId = runtime.registerNativeStructMethod(emptyId, {
         .name = "empty", .parameters = {{emptyId, "argument", ""}}, .returnTypeId = emptyId,
         .function = [&](VirtualMachine*) { ++emptyCalls; }
     });
-    const auto makeId = runtime.getTypeManager().registerNativeStructMethod(emptyId, {
+    const auto makeId = runtime.registerNativeStructMethod(emptyId, {
         .name = "make", .parameters = {}, .returnTypeId = oneId,
         .function = [](VirtualMachine* active) { active->getStorageParameter(0, 0).setIntegerValue(9); }
     });
-    const auto clearId = runtime.getTypeManager().registerNativeStructMethod(oneId, {
+    const auto clearId = runtime.registerNativeStructMethod(oneId, {
         .name = "clear", .parameters = {}, .returnTypeId = runtime.getVoidType()->getId(),
         .function = [](VirtualMachine* active) { active->getStorageParameter(0, 0).setIntegerValue(0); }
     });
@@ -593,22 +593,22 @@ BOOST_AUTO_TEST_CASE(validation_rejects_bad_calls_before_execution_and_source_st
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(otherId);
     auto calls = 0;
-    const auto methodId = runtime.getTypeManager().registerNativeStructMethod(valueId, {
+    const auto methodId = runtime.registerNativeStructMethod(valueId, {
         .name = "read", .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
         .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [&](VirtualMachine* active) { ++calls; active->setIntegerResult(active->getIntegerParameter(0)); }
     });
     const auto functionId = runtime.registerNativeFunction("notStructMethod", [](VirtualMachine*) {},
         {}, runtime.getVoidType(), "");
-    const auto uncompiledId = runtime.getTypeManager().registerScriptStructMethod(valueId, "uncompiled", {},
+    const auto uncompiledId = runtime.registerScriptStructMethod(valueId, "uncompiled", {},
         "uncompiled.nomad", "return 1");
     const auto classId = runtime.getTypeManager().registerClass<ClassType>("ClassMethodReceiver", ClassMode::Closed);
     const auto* classType = runtime.getType(classId).value();
-    const auto classMethodId = runtime.getTypeManager().registerNativeClassMethod(classId, {
+    const auto classMethodId = runtime.registerNativeClassMethod(classId, {
         .name = "classOnly", .parameters = {}, .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++calls; }
     });
-    const auto uncompiledClassId = runtime.getTypeManager().registerScriptClassMethod(
+    const auto uncompiledClassId = runtime.registerScriptClassMethod(
         classId,
         "uncompiledClass",
         {},
@@ -736,7 +736,7 @@ BOOST_AUTO_TEST_CASE(native_failures_discard_struct_replacements_but_keep_shared
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "owner", ownerType).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
-    const auto methodId = runtime.getTypeManager().registerNativeStructMethod(valueId, {
+    const auto methodId = runtime.registerNativeStructMethod(valueId, {
         .name = "fail", .parameters = {}, .returnTypeId = valueId,
         .function = [](VirtualMachine* active) {
             auto* receiver = &active->getStorageParameter(0, 0);
@@ -797,7 +797,7 @@ BOOST_AUTO_TEST_CASE(native_struct_completion_stop_and_exceptions_restore_caller
     runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
     auto stop = false;
     auto fail = false;
-    const auto methodId = runtime.getTypeManager().registerNativeStructMethod(typeId, {
+    const auto methodId = runtime.registerNativeStructMethod(typeId, {
         .name = "complete", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [&](VirtualMachine* active) {
             active->getStorageParameter(0, 0).setIntegerValue(99);
@@ -864,7 +864,7 @@ BOOST_AUTO_TEST_CASE(native_struct_reentry_preserves_enclosing_class_receiver_an
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(probeId, "number", runtime.getIntegerType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(probeId);
     auto probes = 0;
-    const auto methodId = runtime.getTypeManager().registerNativeStructMethod(probeId, {
+    const auto methodId = runtime.registerNativeStructMethod(probeId, {
         .name = "inspect", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [&](VirtualMachine* active) {
             ++probes;
@@ -889,7 +889,7 @@ BOOST_AUTO_TEST_CASE(native_struct_reentry_preserves_enclosing_class_receiver_an
         }
         const auto* owner = runtime.getTypeByName("EnclosingStructHost");
         BOOST_REQUIRE(owner != nullptr);
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassMethod(owner->getId(), {
             .name = "probeStructHost", .parameters = {}, .returnTypeId = runtime.getVoidType()->getId(),
             .function = [&](VirtualMachine* active) {
                 const auto* callable = active->getCurrentCallable();

@@ -162,7 +162,7 @@ void Game::initAudioFunctions() {
         NomadDoc("Stops every playing or paused sound effect.")
     );
 
-    const auto volumeId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
+    const auto volumeId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getFloatType(),
         .name = "volume",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -176,7 +176,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("The sound-effect instance volume from 0.0 to 1.0.")
     });
 
-    const auto playingId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
+    const auto playingId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "playing",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -186,7 +186,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Whether the sound effect is currently playing.")
     });
 
-    const auto pausedId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
+    const auto pausedId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "paused",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -196,7 +196,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Whether the sound effect is currently paused.")
     });
 
-    const auto loopingId = m_runtime->getTypeManager().registerNativeClassProperty(audioTypeId, {
+    const auto loopingId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "looping",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -209,7 +209,7 @@ void Game::initAudioFunctions() {
         raiseError("Failed to register Audio properties");
     }
 
-    const auto playId = m_runtime->getTypeManager().registerNativeClassMethod(audioTypeId, {
+    const auto playId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "play",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -221,7 +221,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Plays the sound effect once from the beginning.")
     });
 
-    const auto playLoopId = m_runtime->getTypeManager().registerNativeClassMethod(audioTypeId, {
+    const auto playLoopId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "playLoop",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -233,7 +233,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Plays the sound effect repeatedly.")
     });
 
-    const auto playOnceThenId = m_runtime->getTypeManager().registerNativeClassMethod(audioTypeId, {
+    const auto playOnceThenId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "playOnceThen",
         .parameters = {{
             m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType())->getId(),
@@ -249,7 +249,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Plays the sound effect once and invokes a callback when it finishes.")
     });
 
-    const auto pauseId = m_runtime->getTypeManager().registerNativeClassMethod(audioTypeId, {
+    const auto pauseId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "pause",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -261,7 +261,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Pauses the sound effect.")
     });
 
-    const auto resumeId = m_runtime->getTypeManager().registerNativeClassMethod(audioTypeId, {
+    const auto resumeId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "resume",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -273,7 +273,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Resumes the paused sound effect.")
     });
 
-    const auto stopId = m_runtime->getTypeManager().registerNativeClassMethod(audioTypeId, {
+    const auto stopId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "stop",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),

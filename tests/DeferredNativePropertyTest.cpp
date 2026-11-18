@@ -23,7 +23,7 @@ class PropertyOwner final : public NomadObject {};
 TypeId registerPropertyOwner(Runtime& runtime) {
     const auto id = runtime.getTypeManager().registerClass("PropertyOwner", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(id, {
+    BOOST_REQUIRE(runtime.registerNativeClassConstructor(id, {
         .parameters = {},
         .function = [](VirtualMachine* machine) {
             machine->getResult().setObjectValue(new PropertyOwner);
@@ -47,7 +47,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         auto getterCalls = 0;
         auto setterCalls = 0;
         NomadInteger stored = 1;
-        const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        const auto id = runtime.registerNativeClassProperty(ownerId, {
             .valueType = placeholder,
             .name = "level",
             .getter = [&](VirtualMachine*, RuntimeValue& result) {
@@ -92,7 +92,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         compiler->registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
             if (phase == CompilationPhase::Parse) {
                 for (auto index = 0; index < 64; ++index) {
-                    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+                    BOOST_REQUIRE(runtime.registerNativeClassProperty(ownerId, {
                         .valueType = runtime.getIntegerType(),
                         .name = "extra" + std::to_string(index),
                         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(0); }
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership
     auto compiler = runtime.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
     RuntimeValue stored;
-    const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto id = runtime.registerNativeClassProperty(ownerId, {
         .valueType = compiler->deferType({"Settings"}),
         .name = "settings",
         .getter = [&](VirtualMachine*, RuntimeValue& result) {
@@ -176,12 +176,12 @@ BOOST_AUTO_TEST_CASE(missing_types_fail_with_property_context_before_applying_an
         auto compiler = runtime.createCompiler();
         const auto ownerId = registerPropertyOwner(runtime);
         const auto* known = compiler->deferType({"Known"});
-        const auto firstId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        const auto firstId = runtime.registerNativeClassProperty(ownerId, {
             .valueType = known,
             .name = "known",
             .getter = [](VirtualMachine*, RuntimeValue&) {}
         });
-        const auto missingId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        const auto missingId = runtime.registerNativeClassProperty(ownerId, {
             .valueType = compiler->deferType({"Missing"}),
             .name = "missing",
             .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -210,7 +210,7 @@ BOOST_AUTO_TEST_CASE(invalid_resolved_types_and_foreign_placeholders_are_rejecte
             auto compiler = runtime.createCompiler();
             const auto ownerId = registerPropertyOwner(runtime);
             const auto* invalid = internal ? runtime.getFileNameType() : runtime.getVoidType();
-            const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+            const auto id = runtime.registerNativeClassProperty(ownerId, {
                 .valueType = compiler->deferType({invalid->getTypeName()}),
                 .name = "invalid",
                 .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -230,7 +230,7 @@ BOOST_AUTO_TEST_CASE(invalid_resolved_types_and_foreign_placeholders_are_rejecte
     auto otherCompiler = other.createCompiler();
     const auto ownerId = registerPropertyOwner(runtime);
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(ownerId, "storedDeferred", compiler->deferType({"Settings"})).isInvalid());
-    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    BOOST_TEST(runtime.registerNativeClassProperty(ownerId, {
         .valueType = otherCompiler->deferType({"Settings"}),
         .name = "foreign",
         .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -248,7 +248,7 @@ BOOST_AUTO_TEST_CASE(checked_resolution_preserves_readiness_until_central_comple
     BOOST_REQUIRE(stateId.isValid());
     BOOST_REQUIRE(otherStateId.isValid());
     auto calls = 0;
-    const auto id = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto id = runtime.registerNativeClassProperty(ownerId, {
         .valueType = compiler->deferType({"State"}),
         .name = "state",
         .getter = [&](VirtualMachine*, RuntimeValue& result) { ++calls; result.setIntegerValue(1); }

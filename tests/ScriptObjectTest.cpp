@@ -92,7 +92,7 @@ void compileTestConstructor(
     const ClassType* type,
     CallableId initializerId
 ) {
-    const auto id = runtime.getTypeManager().registerScriptClassConstructor(type->getId(), {}, "", "");
+    const auto id = runtime.registerScriptClassConstructor(type->getId(), {}, "", "");
     BOOST_REQUIRE(id.isValid());
     auto* constructor = runtime.getScriptCallable(id);
     constructor->setFunctionStart(runtime.getInstructions().size());
@@ -115,7 +115,7 @@ BOOST_AUTO_TEST_CASE(fields_use_owner_local_slots_and_zeroed_raw_storage) {
     const auto* unrelated = createTestType(runtime, "Unrelated");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(unrelated->getId(), "other", runtime.getIntegerType()).isValid());
     const auto* type = createTestType(runtime, "Fields");
-    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+    const auto nativeId = runtime.registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
@@ -427,7 +427,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
         const auto* type = createTestType(runtime, "Stored");
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "text", runtime.getStringType()).isValid());
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "next", type).isValid());
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassProperty(type->getId(), {
             .valueType = runtime.getIntegerType(),
             .name = "nativeLength",
             .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -439,7 +439,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
             .setter = {},
             .documentation = ""
         }).isValid());
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassConstructor(type->getId(), {
             .parameters = {},
             .function = [type](VirtualMachine* machine) {
                 auto object = std::make_unique<ScriptObject>(type);
@@ -747,10 +747,10 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto* type = createTestType(runtime, "Receiver");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "visits", runtime.getIntegerType()).isValid());
-    const auto initializerId = runtime.getTypeManager().registerScriptClassMethod(type->getId(), "Receiver$init", {}, "", "");
+    const auto initializerId = runtime.registerScriptClassMethod(type->getId(), "Receiver$init", {}, "", "");
     BOOST_REQUIRE(initializerId.isValid());
     auto* initializer = runtime.getScriptCallable(initializerId);
-    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+    const auto propertyId = runtime.registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -841,7 +841,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_restores_after_nested_host_construction_and
     }, "", {});
     for (const auto* name : {"OuterReceiver", "InnerReceiver", "BrokenReceiver"}) {
         const auto* type = createTestType(runtime, name);
-        const auto id = runtime.getTypeManager().registerScriptClassMethod(type->getId(), type->getInitializerName(), {}, "", "");
+        const auto id = runtime.registerScriptClassMethod(type->getId(), type->getInitializerName(), {}, "", "");
         BOOST_REQUIRE(id.isValid());
         auto* initializer = runtime.getScriptCallable(id);
         initializer->setFunctionStart(runtime.getInstructions().size());
@@ -883,7 +883,7 @@ BOOST_AUTO_TEST_CASE(compiled_field_access_uses_full_width_physical_offsets_and_
     const auto numberId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType());
     const auto textId = runtime.getTypeManager().registerScriptClassProperty(ownerId, "text", runtime.getStringType());
     auto accessorCalls = 0;
-    const auto accessorId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto accessorId = runtime.registerNativeClassProperty(ownerId, {
         .valueType = runtime.getIntegerType(),
         .name = "accessor",
         .getter = [&](VirtualMachine*, RuntimeValue& result) {

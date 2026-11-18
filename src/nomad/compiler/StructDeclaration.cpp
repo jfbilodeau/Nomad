@@ -238,15 +238,15 @@ bool registerMemberSignatures(
         if (member->getKind() == StructMemberKind::Field) {
             if (initializerRegistered) continue;
             initializerRegistered = true;
-            id = runtime->getTypeManager().registerScriptStructMethod(
+            id = runtime->registerScriptStructMethod(
                 type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
             );
         } else if (member->getKind() == StructMemberKind::Constructor) {
-            id = runtime->getTypeManager().registerScriptStructConstructor(
+            id = runtime->registerScriptStructConstructor(
                 type->getId(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         } else {
-            id = runtime->getTypeManager().registerScriptStructMethod(
+            id = runtime->registerScriptStructMethod(
                 type->getId(), member->getName(), member->getParameters(), tokens->getSourceName(), tokens->getSource()
             );
         }
@@ -268,7 +268,7 @@ bool registerMemberSignatures(
         }
     }
     if (!initializerRegistered) {
-        const auto id = runtime->getTypeManager().registerScriptStructMethod(
+        const auto id = runtime->registerScriptStructMethod(
             type->getId(), initializerName, {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {
@@ -281,7 +281,7 @@ bool registerMemberSignatures(
         context->getCompiler()->setFunctionBody(id, std::make_unique<FunctionNode>(0, 0));
     }
     if (type->getConstructors().empty()) {
-        const auto id = runtime->getTypeManager().registerScriptStructConstructor(
+        const auto id = runtime->registerScriptStructConstructor(
             type->getId(), {}, tokens->getSourceName(), tokens->getSource()
         );
         if (id.isInvalid()) {

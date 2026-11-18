@@ -2812,7 +2812,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     BOOST_TEST(runtime.getKeywordId("new").isValid());
     const auto* listType = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
     BOOST_REQUIRE(listType != nullptr);
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(listType->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(listType->getId(), {
         .valueType = runtime.getBooleanType(),
         .name = "testPresent",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -2914,7 +2914,7 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("Broken", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassConstructor(type->getId(), {
         .parameters = {},
         .function = [](VirtualMachine*) {},
         .documentation = ""
@@ -3106,7 +3106,7 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
         },
         {}, type, ""
     );
-    const auto memberId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto memberId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "copyReference",
         .parameters = {},
         .returnTypeId = type->getId(),

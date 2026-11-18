@@ -35,12 +35,12 @@ const ClassType* registerTestObject(Runtime& runtime) {
     const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("TestObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassConstructor(type->getId(), {
         .parameters = {},
         .function = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new TestObject); },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -51,7 +51,7 @@ const ClassType* registerTestObject(Runtime& runtime) {
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassMethod(type->getId(), {
         .name = "increment",
         .parameters = {{runtime.getTypeId("int"), "amount", ""}},
         .returnTypeId = runtime.getTypeId("int"),
@@ -98,7 +98,7 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
         std::move(receiver), std::move(arguments));
     BOOST_REQUIRE(expression.resolve(&compilation, nullptr));
 
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassConstructor(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassConstructor(type->getId(), {
         .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
         .function = [](VirtualMachine* machine) {
             auto* object = new TestObject;
@@ -107,7 +107,7 @@ BOOST_AUTO_TEST_CASE(resolved_method_and_constructor_survive_catalog_growth) {
         },
         .documentation = ""
     }).isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "increment",
         .parameters = {{runtime.getTypeId("int"), "amount", ""}},
         .returnTypeId = runtime.getTypeId("int"),
@@ -156,7 +156,7 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
     bool called = false;
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(runtime.getTypeId("string"), {
+    BOOST_REQUIRE(runtime.registerNativeClassMethod(runtime.getTypeId("string"), {
         .name = "typedLength",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -180,7 +180,7 @@ BOOST_AUTO_TEST_CASE(typed_method_borrows_the_string_receiver) {
 BOOST_AUTO_TEST_CASE(typed_method_supports_a_host_defined_object) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto memberId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto memberId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "hostObject",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -228,7 +228,7 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
     auto* instance = new TestObject;
-    const auto memberId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto memberId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "checkInstance",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("int"),
@@ -268,7 +268,7 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     const auto first = runtime.registerNativeFunction(
         "catalog.first", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
-    const auto method = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto method = runtime.registerNativeClassMethod(type->getId(), {
         .name = "catalogMethod",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -301,7 +301,7 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
         BOOST_TEST(function->getClassType() == nullptr);
         BOOST_TEST(function->getName() != "catalogMethod");
     }
-    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(TypeId::INVALID, {
+    BOOST_TEST(runtime.registerNativeClassMethod(TypeId::INVALID, {
         .name = "invalid",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -418,7 +418,7 @@ BOOST_AUTO_TEST_CASE(interpreter_executes_properties_and_methods) {
 BOOST_AUTO_TEST_CASE(failed_method_preserves_object_mutations_and_restores_this) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassMethod(type->getId(), {
         .name = "fail",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -494,7 +494,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerTestObject(runtime);
-    const auto indexerId = runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+    const auto indexerId = runtime.registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = [](VirtualMachine* machine) {
@@ -511,7 +511,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_indexers_keep_owner_identity_after
     const auto functionId = compileFunction(runtime,
         "value = new TestObject\nvalue[2] = 40\nreturn value[3]");
     for (auto count = NomadIndex{2}; count <= 32; ++count) {
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getIntegerType()->getId(),
             .indexTypes = std::vector<TypeId>(count, runtime.getIntegerType()->getId()),
             .getter = [](VirtualMachine* machine) { machine->setIntegerResult(-1); },
@@ -537,7 +537,7 @@ BOOST_AUTO_TEST_CASE(write_only_indexer_supports_assignment_but_not_reads) {
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerTestObject(runtime);
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = {},
@@ -566,7 +566,7 @@ BOOST_AUTO_TEST_CASE(indexer_callbacks_release_operands_and_partial_results_on_f
     for (const auto* source : {"return (new TestObject)[0]", "(new TestObject)[0] = \"assigned\""}) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getStringType()->getId(),
             .indexTypes = {runtime.getIntegerType()->getId()},
             .getter = [](VirtualMachine* vm) {
@@ -594,7 +594,7 @@ BOOST_AUTO_TEST_CASE(interpreter_indexer_failures_release_operands_and_partial_r
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
         auto indexerCalls = 0;
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getStringType()->getId(),
             .indexTypes = {runtime.getIntegerType()->getId()},
             .getter = [&](VirtualMachine* machine) {
@@ -628,7 +628,7 @@ BOOST_AUTO_TEST_CASE(interpreter_indexers_restore_borrowed_registers_on_success_
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     auto fail = false;
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getStringType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
         .getter = [&](VirtualMachine* active) {
@@ -703,7 +703,7 @@ BOOST_AUTO_TEST_CASE(indexers_support_object_valued_keys_and_literal_delimiters)
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerTestObject(runtime);
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getStringType()->getId()},
         .getter = [](VirtualMachine* vm) {
@@ -739,7 +739,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getStringType()->getId(), runtime.getIntegerType()->getId()},
         .getter = [&calls](VirtualMachine* machine) {
@@ -812,7 +812,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_access_permissions_are_checked_in_both_exec
             machine->getThisAs<TestObject>()->value =
                 machine->getIntegerParameter(0) + machine->getIntegerParameter(1) + machine->getIntegerParameter(2);
         };
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getIntegerType()->getId(),
             .indexTypes = {runtime.getIntegerType()->getId(), runtime.getIntegerType()->getId()},
             .getter = readOnly ? getter : NativeFunctionFn{},
@@ -849,7 +849,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_interpreter_stops_after_a_failed_index_with
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
     NomadString calls;
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getStringType()->getId(), runtime.getStringType()->getId()},
         .getter = [&calls](VirtualMachine* machine) {
@@ -902,7 +902,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexer_faults_release_object_keys_receiver
     }) {
         Runtime runtime;
         const auto* type = registerTestObject(runtime);
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getStringType()->getId(),
             .indexTypes = {runtime.getStringType()->getId(), runtime.getStringType()->getId()},
             .getter = [](VirtualMachine* machine) {
@@ -948,7 +948,7 @@ BOOST_AUTO_TEST_CASE(native_property_reentry_restores_outer_receivers_on_success
     innerReceiver.setObjectValue(new TestObject);
     auto failInner = false;
     auto failOuter = false;
-    const auto innerProperty = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+    const auto innerProperty = runtime.registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "innerState",
         .getter = [&](VirtualMachine* machine, RuntimeValue& result) {
@@ -961,7 +961,7 @@ BOOST_AUTO_TEST_CASE(native_property_reentry_restores_outer_receivers_on_success
         }
     });
     BOOST_REQUIRE(innerProperty.isValid());
-    const auto outerProperty = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+    const auto outerProperty = runtime.registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "outerState",
         .getter = [&](VirtualMachine* machine, RuntimeValue& result) {
@@ -1014,7 +1014,7 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
     for (const auto count : {NomadIndex{1}, NomadIndex{2}, NomadIndex{3}, NomadIndex{5}, NomadIndex{8}}) {
         std::vector<TypeId> types(count, runtime.getIntegerType()->getId());
         types.back() = runtime.getStringType()->getId();
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassIndexer(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassIndexer(type->getId(), {
             .valueTypeId = runtime.getIntegerType()->getId(),
             .indexTypes = types,
             .getter = [count, increment, &nestedReceiver](VirtualMachine* machine) {
@@ -1091,13 +1091,13 @@ BOOST_AUTO_TEST_CASE(host_method_calls_preserve_reference_semantics_and_return_o
     const auto* type = registerTestObject(runtime);
     const auto increment = runtime.resolveMethod(type, "increment", {runtime.getIntegerType()});
     BOOST_REQUIRE(increment.isResolved());
-    const auto resetId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto resetId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "reset",
         .parameters = {},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [](VirtualMachine* active) { active->getThisAs<TestObject>()->value = 4; }
     });
-    const auto selfId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto selfId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "self",
         .parameters = {},
         .returnTypeId = type->getId(),
@@ -1107,7 +1107,7 @@ BOOST_AUTO_TEST_CASE(host_method_calls_preserve_reference_semantics_and_return_o
             active->getResult().setObjectValue(object);
         }
     });
-    const auto echoId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto echoId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "echo",
         .parameters = {{runtime.getStringType()->getId(), "text", ""}},
         .returnTypeId = runtime.getStringType()->getId(),
@@ -1178,20 +1178,20 @@ BOOST_AUTO_TEST_CASE(host_method_validation_precedes_stack_changes_and_execution
     const auto emptyId = runtime.getTypeManager().registerStruct("HostMethodEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto unsupportedCalls = 0;
-    const auto structMethodId = runtime.getTypeManager().registerNativeStructMethod(emptyId, {
+    const auto structMethodId = runtime.registerNativeStructMethod(emptyId, {
         .name = "emptyMethod", .parameters = {}, .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++unsupportedCalls; }
     });
-    const auto structArgumentId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto structArgumentId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "acceptEmpty", .parameters = {{emptyId, "empty", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++unsupportedCalls; }
     });
-    const auto structReturnId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto structReturnId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "returnEmpty", .parameters = {}, .returnTypeId = emptyId,
         .function = [&](VirtualMachine*) { ++unsupportedCalls; }
     });
-    const auto uncompiledId = runtime.getTypeManager().registerScriptClassMethod(type->getId(), "uncompiled", {},
+    const auto uncompiledId = runtime.registerScriptClassMethod(type->getId(), "uncompiled", {},
         "uncompiled.nomad", "return 1");
     BOOST_REQUIRE(functionId.isValid() && structMethodId.isValid() && structArgumentId.isValid() &&
         structReturnId.isValid() && uncompiledId.isValid());
@@ -1255,7 +1255,7 @@ BOOST_AUTO_TEST_CASE(host_method_reentry_and_failure_restore_receivers_arguments
     const auto* type = registerTestObject(runtime);
     const auto increment = runtime.resolveMethod(type, "increment", {runtime.getIntegerType()});
     BOOST_REQUIRE(increment.isResolved());
-    const auto nestedId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto nestedId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "nested", .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
         .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [&](VirtualMachine* active) {
@@ -1271,7 +1271,7 @@ BOOST_AUTO_TEST_CASE(host_method_reentry_and_failure_restore_receivers_arguments
             active->setIntegerResult(result.getValue().getIntegerValue());
         }
     });
-    const auto failingId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto failingId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "failWithResult", .parameters = {{runtime.getStringType()->getId(), "text", ""}},
         .returnTypeId = runtime.getStringType()->getId(),
         .function = [](VirtualMachine* active) {
@@ -1338,7 +1338,7 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_restore_caller_state_on_stop_and_excepti
         }
     };
     const auto functionId = runtime.registerNativeFunction("nativeControl", callback, {}, runtime.getIntegerType(), "");
-    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto methodId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "nativeControl", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = callback
     });
@@ -1349,7 +1349,7 @@ BOOST_AUTO_TEST_CASE(typed_native_calls_restore_caller_state_on_stop_and_excepti
         emptyType,
         ""
     );
-    const auto aggregateMethodId = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto aggregateMethodId = runtime.registerNativeClassMethod(type->getId(), {
         .name = "aggregateNativeControl",
         .parameters = {{emptyId, "empty", ""}},
         .returnTypeId = emptyId,

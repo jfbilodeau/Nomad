@@ -177,19 +177,19 @@ BOOST_AUTO_TEST_CASE(explicit_finalization_freezes_stored_fields_but_not_values_
     BOOST_TEST(object.getField(owner->getFieldIndex(first)).getFloatValue() == 7.0);
 
     auto callbackCalls = 0;
-    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
+    const auto native = runtime.registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
     });
-    const auto method = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
+    const auto method = runtime.registerNativeClassMethod(owner->getId(), {
         .name = "update",
         .parameters = {},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""
     });
-    const auto constructor = runtime.getTypeManager().registerNativeClassConstructor(owner->getId(), {
+    const auto constructor = runtime.registerNativeClassConstructor(owner->getId(), {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""
@@ -327,7 +327,7 @@ BOOST_AUTO_TEST_CASE(class_references_and_native_properties_do_not_create_inline
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "location", point).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(point->getId(), "player", owner).isValid());
     auto getterCalls = 0;
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(point->getId(), {
+    BOOST_REQUIRE(runtime.registerNativeClassProperty(point->getId(), {
         .valueType = nativeOnly,
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++getterCalls; }
@@ -461,19 +461,19 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
         std::make_unique<Property>(runtime.getTypeManager().getNextPropertyId(), composite, "stored", runtime.getStringType()));
     BOOST_REQUIRE(stored.isValid());
     auto callbackCalls = 0;
-    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
+    const auto native = runtime.registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
     });
-    const auto method = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
+    const auto method = runtime.registerNativeClassMethod(owner->getId(), {
         .name = "update",
         .parameters = {},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""
     });
-    const auto constructor = runtime.getTypeManager().registerNativeClassConstructor(owner->getId(), {
+    const auto constructor = runtime.registerNativeClassConstructor(owner->getId(), {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = ""
@@ -520,7 +520,7 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     ).isValid());
     const auto* owner = createTestType(runtime, "Fields", ClassMode::Opened);
     auto callbackCalls = 0;
-    const auto nativeBefore = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
+    const auto nativeBefore = runtime.registerNativeClassProperty(owner->getId(), {
         .valueType = pointType,
         .name = "nativeBefore",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; },
@@ -528,7 +528,7 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     });
     const auto first = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", emptyType);
     const auto point = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "point", pointType);
-    const auto nativeBetween = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
+    const auto nativeBetween = runtime.registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "nativeBetween",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
@@ -537,7 +537,7 @@ BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots)
     const auto middle = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "middle", emptyType);
     const auto number = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "number", runtime.getIntegerType());
     const auto last = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "last", emptyType);
-    const auto nativeAfter = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
+    const auto nativeAfter = runtime.registerNativeClassProperty(owner->getId(), {
         .valueType = emptyType,
         .name = "nativeAfter",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++callbackCalls; }
@@ -581,7 +581,7 @@ BOOST_AUTO_TEST_CASE(empty_and_native_only_field_layouts_use_no_storage) {
     BOOST_TEST(owner->getFieldStorageSize() == 0U);
     BOOST_TEST(owner->getSize() == 1U);
     auto getterCalls = 0;
-    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
+    const auto native = runtime.registerNativeClassProperty(owner->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [&](VirtualMachine*, RuntimeValue&) { ++getterCalls; }
@@ -604,7 +604,7 @@ BOOST_AUTO_TEST_CASE(field_layout_queries_follow_size_resolution) {
     const auto first = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "first", runtime.getIntegerType());
     const auto pending = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "pending", pendingType);
     const auto following = runtime.getTypeManager().registerScriptClassProperty(owner->getId(), "following", runtime.getFloatType());
-    const auto native = runtime.getTypeManager().registerNativeClassProperty(owner->getId(), {
+    const auto native = runtime.registerNativeClassProperty(owner->getId(), {
         .valueType = pendingType,
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue&) {}
@@ -762,7 +762,7 @@ BOOST_AUTO_TEST_CASE(explicit_initializer_metadata_is_owned_by_each_stored_prope
     runtime.setPropertyHasExplicitInitializer(firstId, false);
     BOOST_TEST(!first->hasExplicitInitializer());
 
-    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+    const auto nativeId = runtime.registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); }
@@ -797,7 +797,7 @@ BOOST_AUTO_TEST_CASE(native_and_script_properties_share_a_stable_type_owned_cata
     const auto* first = createTestType(runtime, "First", ClassMode::Opened);
     const auto* second = createTestType(runtime, "Second", ClassMode::Opened);
     const auto scriptId = runtime.getTypeManager().registerScriptClassProperty(first->getId(), "value", runtime.getFloatType());
-    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(second->getId(), {
+    const auto nativeId = runtime.registerNativeClassProperty(second->getId(), {
         .valueType = runtime.getIntegerType(),
         .name = "value",
         .getter = [](VirtualMachine*, RuntimeValue& result) { result.setIntegerValue(42); },
@@ -847,7 +847,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     }
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "value", other.getIntegerType()).isInvalid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "value", runtime.getVoidType()).isInvalid());
-    const auto method = runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    const auto method = runtime.registerNativeClassMethod(type->getId(), {
         .name = "move",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -857,7 +857,7 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
     BOOST_REQUIRE(method.isValid());
     BOOST_TEST(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "move", runtime.getFloatType()).isInvalid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(type->getId(), "x", runtime.getFloatType()).isValid());
-    BOOST_TEST(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+    BOOST_TEST(runtime.registerNativeClassMethod(type->getId(), {
         .name = "x",
         .parameters = {},
         .returnTypeId = runtime.getTypeId("void"),
@@ -865,14 +865,14 @@ BOOST_AUTO_TEST_CASE(properties_require_registered_owners_and_types_and_reject_m
         .documentation = ""
     }).isInvalid());
     const auto typeId = type->getId();
-    BOOST_TEST(runtime.getTypeManager().registerNativeClassProperty(typeId, {
+    BOOST_TEST(runtime.registerNativeClassProperty(typeId, {
         .valueType = runtime.getIntegerType(),
         .name = "x",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
         .setter = {},
         .documentation = ""
     }).isInvalid());
-    const auto nativeId = runtime.getTypeManager().registerNativeClassProperty(typeId, {
+    const auto nativeId = runtime.registerNativeClassProperty(typeId, {
         .valueType = runtime.getIntegerType(),
         .name = "native",
         .getter = [](VirtualMachine*, RuntimeValue&) {},
@@ -898,7 +898,7 @@ BOOST_AUTO_TEST_CASE(type_owned_native_property_callbacks_are_destroyed_once) {
             delete value;
         });
         observer = probe;
-        const auto id = runtime.getTypeManager().registerNativeClassProperty(type->getId(), {
+        const auto id = runtime.registerNativeClassProperty(type->getId(), {
             .valueType = runtime.getIntegerType(),
             .name = "value",
             .getter = [probe](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(*probe); },

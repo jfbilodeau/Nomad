@@ -18,7 +18,7 @@ void registerRangeType(Runtime* runtime) {
     }
     const auto* rangeType = static_cast<const RangeType*>(runtime->getType(id).value());
     const auto* integerType = runtime->getIntegerType();
-    runtime->getTypeManager().registerNativeClassIterable(id, {
+    runtime->registerNativeClassIterable(id, {
         .valueTypeId = integerType->getId(),
         .factory = {
             .name = "iterator",

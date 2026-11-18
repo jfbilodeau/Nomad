@@ -39,7 +39,7 @@ void registerArrayFamily(
             const auto* type = runtime->getType(id).value();
             registerMembers(type, writable);
             const auto* classType = static_cast<const ArrayType*>(type);
-            const auto countId = runtime->getTypeManager().registerNativeClassProperty(id, {
+            const auto countId = runtime->registerNativeClassProperty(id, {
                 .valueType = runtime->getIntegerType(),
                 .name = "count",
                 .getter = [](VirtualMachine* machine, RuntimeValue& result) {
@@ -56,7 +56,7 @@ void registerArrayFamily(
                 const auto* readOnlyType = runtime->getTypeManager().getParameterizedType(
                     "ReadOnly" + name, {classType->getElementType()}
                 );
-                if (readOnlyType == nullptr || runtime->getTypeManager().registerNativeClassMethod(id, {
+                if (readOnlyType == nullptr || runtime->registerNativeClassMethod(id, {
                     .name = "toReadOnly",
                     .parameters = {},
                     .returnTypeId = readOnlyType->getId(),
@@ -107,7 +107,7 @@ void registerArrayType(Runtime* runtime) {
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
             if (writable) {
-                const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(arrayType->getId(), {
+                const auto constructorId = runtime->registerNativeClassConstructor(arrayType->getId(), {
                     .parameters = {{runtime->getIntegerType()->getId(), "size", ""}},
                     .function = [arrayType](VirtualMachine* machine) {
                         const auto size = machine->getIntegerParameter(0);
@@ -120,7 +120,7 @@ void registerArrayType(Runtime* runtime) {
                 }
             }
             const auto* elementType = arrayType->getElementType();
-            runtime->getTypeManager().registerNativeClassIterable(arrayType->getId(), {
+            runtime->registerNativeClassIterable(arrayType->getId(), {
                 .valueTypeId = elementType->getId(),
                 .factory = {
                     .name = "iterator",
@@ -132,7 +132,7 @@ void registerArrayType(Runtime* runtime) {
                     .documentation = NomadDoc("Creates an independent live iterator over the array.")
                 }
             });
-            if (runtime->getTypeManager().registerNativeClassIndexer(arrayType->getId(), {
+            if (runtime->registerNativeClassIndexer(arrayType->getId(), {
                 .valueTypeId = elementType->getId(),
                 .indexTypes = {runtime->getIntegerType()->getId()},
                 .getter = [](nomad::VirtualMachine* machine) {
@@ -166,7 +166,7 @@ void registerArrayType(Runtime* runtime) {
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
             if (writable) {
-                const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(arrayType->getId(), {
+                const auto constructorId = runtime->registerNativeClassConstructor(arrayType->getId(), {
                     .parameters = {
                         {runtime->getIntegerType()->getId(), "size1", ""},
                         {runtime->getIntegerType()->getId(), "size2", ""}
@@ -182,7 +182,7 @@ void registerArrayType(Runtime* runtime) {
                     throw nomad::NomadException("Failed to register Array2 constructor");
                 }
             }
-            if (runtime->getTypeManager().registerNativeClassIndexer(arrayType->getId(), {
+            if (runtime->registerNativeClassIndexer(arrayType->getId(), {
                 .valueTypeId = arrayType->getElementType()->getId(),
                 .indexTypes = {runtime->getIntegerType()->getId(), runtime->getIntegerType()->getId()},
                 .getter = [](nomad::VirtualMachine* machine) {
@@ -218,7 +218,7 @@ void registerArrayType(Runtime* runtime) {
         [runtime](const nomad::Type* type, const bool writable) {
             const auto* arrayType = static_cast<const nomad::ArrayType*>(type);
             if (writable) {
-                const auto constructorId = runtime->getTypeManager().registerNativeClassConstructor(arrayType->getId(), {
+                const auto constructorId = runtime->registerNativeClassConstructor(arrayType->getId(), {
                     .parameters = {
                         {runtime->getIntegerType()->getId(), "size1", ""},
                         {runtime->getIntegerType()->getId(), "size2", ""},
@@ -236,7 +236,7 @@ void registerArrayType(Runtime* runtime) {
                     throw nomad::NomadException("Failed to register Array3 constructor");
                 }
             }
-            if (runtime->getTypeManager().registerNativeClassIndexer(arrayType->getId(), {
+            if (runtime->registerNativeClassIndexer(arrayType->getId(), {
                 .valueTypeId = arrayType->getElementType()->getId(),
                 .indexTypes = {
                     runtime->getIntegerType()->getId(),
@@ -290,7 +290,7 @@ void registerArrayType(Runtime* runtime) {
                 for (const auto& parameter : constructor->getParameters()) {
                     parameters.push_back({parameter.type->getId(), parameter.name, parameter.doc});
                 }
-                if (runtime->getTypeManager().registerNativeClassConstructor(id, constructor->getReturnType()->getId(), {
+                if (runtime->registerNativeClassConstructor(id, constructor->getReturnType()->getId(), {
                     .parameters = std::move(parameters),
                     .function = constructor->getFn(),
                     .documentation = ""

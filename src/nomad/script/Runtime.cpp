@@ -50,7 +50,7 @@ Runtime::Runtime():
             const auto* type = runtime->getType(id).value();
             const auto* iteratorType = static_cast<const ClassType*>(type);
             const auto* valueType = iteratorType->getTypeArguments()[0];
-            const auto advanceId = runtime->getTypeManager().registerNativeClassMethod(id, {
+            const auto advanceId = runtime->registerNativeClassMethod(id, {
                 .name = "moveNext",
                 .parameters = {},
                 .returnTypeId = runtime->getTypeId("bool"),
@@ -59,7 +59,7 @@ Runtime::Runtime():
                 },
                 .documentation = NomadDoc("Advances the iterator. Returns false at the end.")
             });
-            const auto currentId = runtime->getTypeManager().registerNativeClassProperty(id, {
+            const auto currentId = runtime->registerNativeClassProperty(id, {
                 .valueType = valueType,
                 .name = "current",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
@@ -739,6 +739,512 @@ CallableId Runtime::catalogCallable(Callable* callable) {
     m_callables.push_back(callable);
 
     return id;
+}
+
+PropertyId Runtime::registerNativeClassProperty(
+    const TypeId ownerId,
+    NativePropertyDefinition definition
+) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    if (classType == nullptr) {
+        log::error("Cannot register native property '" + definition.name + "': owner must identify a class type");
+        return PropertyId::INVALID;
+    }
+    const auto* valueType = definition.valueType;
+    const auto hasCallbacks = static_cast<bool>(definition.getter) || static_cast<bool>(definition.setter);
+    const auto hasMethods = definition.getterMethodId.isValid() || definition.setterMethodId.isValid();
+    if (hasMethods && hasCallbacks) {
+        log::error("Cannot register native property '" + definition.name + "': callbacks and accessor methods cannot be mixed");
+        return PropertyId::INVALID;
+    }
+    if (hasMethods) {
+        const auto* getter = getMethod(definition.getterMethodId);
+        const auto* setter = getMethod(definition.setterMethodId);
+        if (!ownsType(valueType) || valueType->isVoid() || valueType->isInternal()) {
+            log::error("Cannot register native property '" + definition.name + "': accessor methods require a resolved value type");
+            return PropertyId::INVALID;
+        }
+        if (
+            definition.getterMethodId.isValid() &&
+            (getter == nullptr || getter->asNativeMethod() == nullptr ||
+            getter->getClassType() != classType ||
+             getter->getParameterCount() != 0 ||
+             getter->getReturnType() != valueType)
+        ) {
+            log::error("Cannot register native property '" + definition.name + "': getter must be a native method on its owner with no arguments and a matching result");
+            return PropertyId::INVALID;
+        }
+        if (
+            definition.setterMethodId.isValid() &&
+            (
+                setter == nullptr ||
+                setter->asNativeMethod() == nullptr ||
+                setter->getClassType() != classType ||
+                setter->getParameterCount() != 1 ||
+                setter->getParameters()[0].type != valueType ||
+                setter->getReturnType() == nullptr ||
+                !setter->getReturnType()->isVoid()
+            )
+        ) {
+            log::error("Cannot register native property '" + definition.name + "': setter must be a native method on its owner with one matching argument and a void result");
+            return PropertyId::INVALID;
+        }
+    }
+    const auto hasAccessors = hasCallbacks || hasMethods;
+    auto property = std::make_unique<NativeProperty>(
+        m_typeManager.getNextPropertyId(),
+        classType,
+        definition.name,
+        valueType,
+        std::move(definition.getter),
+        std::move(definition.setter),
+        std::move(definition.documentation),
+        definition.getterMethodId,
+        definition.setterMethodId
+    );
+    const auto belongsToRuntime = valueType != nullptr && valueType->getRuntime() == this;
+    const auto isDeferredType = !property->isTypeResolved() && belongsToRuntime;
+    // Same-runtime placeholders may be registered before their value type resolves.
+    const auto hasValidValueType =
+        isDeferredType ||
+        (
+            ownsType(valueType) &&
+            !valueType->isVoid() &&
+            !valueType->isInternal()
+        );
+    if (!hasValidValueType) {
+        log::error("Cannot register native property '" + definition.name + "': invalid value type");
+        return PropertyId::INVALID;
+    }
+    if (!hasAccessors) {
+        log::error("Cannot register native property '" + definition.name + "': property has no accessor or mutator");
+        return PropertyId::INVALID;
+    }
+    NomadString error;
+    if (!canRegisterNativeMember(classType, definition.name, MemberType::Property, {}, error)) {
+        log::error("Cannot register native property '" + definition.name + "': " + error);
+        return PropertyId::INVALID;
+    }
+    auto* owner = m_typeManager.getMutableClassType(classType);
+    const auto propertyId = m_typeManager.registerProperty(owner, std::move(property));
+    if (propertyId.isInvalid()) {
+        return PropertyId::INVALID;
+    }
+    catalogNativeProperty(propertyId);
+    return propertyId;
+}
+
+CallableId Runtime::registerScriptClassMethod(
+    const TypeId ownerId,
+    NomadString name,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    auto* owner = m_typeManager.getMutableClassType(classType);
+
+    return registerScriptMethod(
+        owner,
+        std::move(name),
+        std::move(parameters),
+        std::move(path),
+        std::move(source)
+    );
+}
+
+CallableId Runtime::registerScriptStructMethod(
+    const TypeId ownerId,
+    NomadString name,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    auto* owner = m_typeManager.getMutableCompositeType(ownerId);
+
+    return registerScriptMethod(
+        owner != nullptr && owner->isStruct() ? owner : nullptr,
+        std::move(name),
+        std::move(parameters),
+        std::move(path),
+        std::move(source)
+    );
+}
+
+CallableId Runtime::registerScriptMethod(
+    CompositeType* owner,
+    NomadString name,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto canValidateParameters = owner != nullptr && !name.empty();
+    const auto hasInvalidParameters =
+        canValidateParameters &&
+         std::ranges::any_of(parameters,
+        [this](const auto& parameter) {
+            const auto isReceiverName = parameter.name == "this";
+            const auto
+                hasValidType = !isReceiverName &&
+                ownsType(parameter.type) &&
+                !parameter.type->isVoid() &&
+                !parameter.type->isInternal();
+
+            return !hasValidType;
+        }
+    );
+    if (owner == nullptr || name.empty() || hasInvalidParameters) {
+        log::error("Cannot register script method: invalid owner, name, or parameter type");
+        return CallableId::INVALID;
+    }
+    for (const auto* method : owner->getMethods()) {
+        const auto hasSameName = method->getName() == name;
+        const auto hasSameSignature = hasSameName && std::ranges::equal(
+            method->getParameters(), parameters,
+            [](const auto& first, const auto& second) { return first.type == second.type; }
+        );
+
+        if (hasSameSignature) {
+            log::error("Cannot register script method: duplicate signature");
+            return CallableId::INVALID;
+        }
+    }
+
+    auto method = std::make_unique<ScriptMethod>(
+        getNextCallableId(),
+        std::move(name),
+        owner,
+        std::move(parameters),
+        nullptr,
+        std::move(path),
+        std::move(source)
+    );
+
+    return registerMethod(
+        owner,
+        std::move(method)
+    );
+}
+
+CallableId Runtime::registerScriptClassConstructor(
+    const TypeId ownerId,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    auto* owner = m_typeManager.getMutableClassType(classType);
+    return registerScriptConstructor(
+        owner,
+        std::move(parameters),
+        std::move(path),
+        std::move(source)
+    );
+}
+
+CallableId Runtime::registerScriptStructConstructor(
+    const TypeId ownerId,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto type = getType(ownerId);
+    auto* owner = type.has_value() && (*type)->isStruct() ? m_typeManager.getMutableCompositeType(ownerId) : nullptr;
+
+    return registerScriptConstructor(owner, std::move(parameters), std::move(path), std::move(source));
+}
+
+CallableId Runtime::registerScriptConstructor(
+    CompositeType* owner,
+    std::vector<Parameter> parameters,
+    NomadString path,
+    NomadString source
+) {
+    const auto hasInvalidParameters = owner != nullptr && std::ranges::any_of(parameters, [this](const auto& parameter) {
+        const auto isReceiverName = parameter.name == "this";
+        const auto hasValidType = !isReceiverName && ownsType(parameter.type) &&
+            !parameter.type->isVoid() && !parameter.type->isInternal();
+        return !hasValidType;
+    });
+    if (owner == nullptr || hasInvalidParameters) {
+        log::error("Cannot register script constructor: invalid owner or parameter type");
+        return CallableId::INVALID;
+    }
+    for (const auto* constructor : owner->getConstructors()) {
+        const auto hasSameSignature = std::ranges::equal(
+            constructor->getParameters(), parameters,
+            [](const auto& first, const auto& second) { return first.type == second.type; }
+        );
+        if (hasSameSignature) {
+            log::error("Cannot register script constructor: duplicate signature");
+            return CallableId::INVALID;
+        }
+    }
+    auto constructor = std::make_unique<ScriptConstructor>(
+        getNextCallableId(),
+        owner,
+        std::move(parameters),
+        std::move(path),
+        std::move(source)
+    );
+    return registerConstructor(owner, std::move(constructor));
+}
+
+CallableId Runtime::registerNativeClassMethod(
+    const TypeId ownerId,
+    NativeMethodDefinition definition
+) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    return registerNativeMethod(m_typeManager.getMutableClassType(classType), std::move(definition));
+}
+
+CallableId Runtime::registerNativeStructMethod(
+    const TypeId ownerId,
+    NativeMethodDefinition definition
+) {
+    auto* owner = m_typeManager.getMutableCompositeType(ownerId);
+    return registerNativeMethod(owner != nullptr && owner->isStruct() ? owner : nullptr,
+        std::move(definition));
+}
+
+CallableId Runtime::registerNativeMethod(
+    CompositeType* owner,
+    NativeMethodDefinition definition
+) {
+    if (owner == nullptr) {
+        log::error("Cannot register native method '" + definition.name + "': invalid owner type");
+        return CallableId::INVALID;
+    }
+    const auto returnType = getType(definition.returnTypeId);
+    if (!returnType.has_value()) {
+        log::error("Cannot register native method '" + definition.name + "': invalid return type ID");
+        return CallableId::INVALID;
+    }
+    std::vector<Parameter> parameters;
+    parameters.reserve(definition.parameters.size());
+    for (const auto& parameterDefinition : definition.parameters) {
+        const auto parameterType = getType(parameterDefinition.typeId);
+        if (!parameterType.has_value()) {
+            log::error("Cannot register native method '" + definition.name + "': invalid parameter type ID");
+            return CallableId::INVALID;
+        }
+        parameters.push_back(defParameter(
+            parameterDefinition.name, *parameterType, parameterDefinition.documentation
+        ));
+    }
+    const auto hasValidReturnType = definition.function &&
+        (!(*returnType)->isInternal() || (*returnType)->isVoid());
+    if (!definition.function || !hasValidReturnType) {
+        log::error("Cannot register native callable '" + definition.name + "': invalid callback or return type");
+        return CallableId::INVALID;
+    }
+    for (const auto& parameter : parameters) {
+        if (parameter.name.empty() || parameter.type->isVoid()) {
+            log::error("Cannot register native callable '" + definition.name + "': invalid parameter definition");
+            return CallableId::INVALID;
+        }
+    }
+    NomadString error;
+    if (!canRegisterNativeMember(owner, definition.name, MemberType::Method, parameters, error)) {
+        log::error("Cannot register native method '" + definition.name + "': " + error);
+        return CallableId::INVALID;
+    }
+    const auto id = registerMethod(owner, std::make_unique<NativeMethod>(
+        getNextCallableId(),
+        definition.name,
+        owner,
+        std::move(definition.function),
+        std::move(parameters),
+        *returnType,
+        std::move(definition.documentation)
+    ));
+    if (id.isInvalid()) {
+        return CallableId::INVALID;
+    }
+    catalogNativeMethod(id);
+    return id;
+}
+
+CallableId Runtime::registerNativeClassConstructor(
+    const TypeId ownerId,
+    NativeConstructorDefinition definition
+) {
+    return registerNativeClassConstructor(ownerId, ownerId, std::move(definition));
+}
+
+CallableId Runtime::registerNativeClassConstructor(
+    const TypeId ownerId,
+    const TypeId createdTypeId,
+    NativeConstructorDefinition definition
+) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    if (classType == nullptr) {
+        log::error("Cannot register constructor: owner must identify a class type");
+        return CallableId::INVALID;
+    }
+    const auto resultType = getType(createdTypeId);
+    const auto* createdType = resultType.has_value() ? (*resultType)->asClassType() : nullptr;
+    if (createdType == nullptr) {
+        log::error("Cannot register constructor: created type must identify a class type");
+        return CallableId::INVALID;
+    }
+    return registerNativeConstructor(m_typeManager.getMutableClassType(classType), createdType, std::move(definition));
+}
+
+CallableId Runtime::registerNativeStructConstructor(
+    const TypeId ownerId,
+    NativeConstructorDefinition definition
+) {
+    const auto type = getType(ownerId);
+    auto* owner = type.has_value() && (*type)->isStruct() ? m_typeManager.getMutableCompositeType(ownerId) : nullptr;
+    if (owner == nullptr) {
+        log::error("Cannot register constructor: owner must identify a struct type");
+        return CallableId::INVALID;
+    }
+    return registerNativeConstructor(owner, owner, std::move(definition));
+}
+
+CallableId Runtime::registerNativeConstructor(
+    CompositeType* owner,
+    const Type* createdType,
+    NativeConstructorDefinition definition
+) {
+    std::vector<Parameter> parameters;
+    parameters.reserve(definition.parameters.size());
+    for (const auto& parameterDefinition : definition.parameters) {
+        const auto parameterType = getType(parameterDefinition.typeId);
+        if (!parameterType.has_value()) {
+            log::error("Cannot register constructor: invalid parameter type ID");
+            return CallableId::INVALID;
+        }
+        parameters.push_back(defParameter(
+            parameterDefinition.name, *parameterType, parameterDefinition.documentation
+        ));
+    }
+    if (createdType->isInternal() || !definition.function) {
+        log::error("Cannot register constructor: a registered public constructed type and callback are required");
+        return CallableId::INVALID;
+    }
+    const auto name = owner->getTypeName();
+    const auto isReservedName = name.empty() ||
+        m_typeManager.getParameterizedConstructorArgumentCount(name).has_value() ||
+        m_typeManager.getParameterizedTypeArgumentCount(name).has_value();
+    if (isReservedName) {
+        log::error("Cannot register constructor '" + name + "': the name is reserved");
+        return CallableId::INVALID;
+    }
+    for (const auto& parameter : parameters) {
+        if (
+            owner->isStruct() &&
+             (
+                parameter.type->isInternal() ||
+                parameter.name == "this")
+            ) {
+            log::error("Cannot register struct constructor: invalid parameter type or receiver parameter");
+            return CallableId::INVALID;
+        }
+        if (parameter.type->isVoid()) {
+            log::error("Cannot register constructor: parameter types must be registered and non-void");
+            return CallableId::INVALID;
+        }
+    }
+    for (const auto* existing : owner->getConstructors()) {
+        if (existing->getParameterCount() != parameters.size()) {
+            continue;
+        }
+        const auto hasSameSignature = std::ranges::equal(
+            existing->getParameters(), parameters,
+            [](const auto& left, const auto& right) {
+                 return left.type->sameType(right.type);
+            }
+        );
+        if (hasSameSignature) {
+            log::error("Cannot register constructor '" + name + "': duplicate signature");
+            return CallableId::INVALID;
+        }
+    }
+    return registerConstructor(owner, std::make_unique<NativeConstructor>(
+        getNextCallableId(),
+        name,
+        owner,
+        createdType,
+        std::move(definition.function),
+        std::move(parameters),
+        std::move(definition.documentation)
+    ));
+}
+
+void Runtime::registerNativeClassIterable(const TypeId ownerId, NativeInterableDefinition definition) {
+    const auto type = getType(ownerId);
+    auto* owner = type.has_value() ? m_typeManager.getMutableClassType((*type)->asClassType()) : nullptr;
+    if (owner == nullptr) {
+        throw NomadException("Cannot register iterable: owner must identify a class type");
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    const auto hasValidValueType =
+        valueType.has_value() &&
+        !(
+            (*valueType)->isVoid() ||
+            (*valueType)->isInternal()
+        );
+    if (!hasValidValueType) {
+        throw NomadException("Cannot register iterable: value type must identify a public, non-void type");
+    }
+    if (owner->getIterableInfo().has_value()) {
+        throw NomadException("Cannot register iterable: type already has an iterable association");
+    }
+    const auto hasValidFactory = definition.factory.parameters.empty() && definition.factory.function;
+    if (!hasValidFactory) {
+        throw NomadException("Cannot register iterable: a parameterless factory callback is required");
+    }
+    const auto returnType = getType(definition.factory.returnTypeId);
+    const auto hasMatchingReturnType = returnType.has_value() && *returnType == m_typeManager.getIteratorType(*valueType);
+    if (!hasMatchingReturnType) {
+        throw NomadException("Cannot register iterable: factory must return the matching iterator type");
+    }
+    const auto factoryId = registerNativeClassMethod(ownerId, std::move(definition.factory));
+    if (factoryId.isInvalid()) {
+        throw NomadException("Cannot register iterable: failed to register factory method");
+    }
+    owner->registerIterableType(*this, *valueType, getMethod(factoryId));
+}
+
+IndexerId Runtime::registerNativeClassIndexer(const TypeId ownerId, NativeIndexerDefinition definition) {
+    const auto type = getType(ownerId);
+    const auto* classType = type.has_value() ? (*type)->asClassType() : nullptr;
+    if (classType == nullptr) {
+        log::error("Cannot register native indexer: owner must identify a class type");
+        return IndexerId::INVALID;
+    }
+    const auto valueType = getType(definition.valueTypeId);
+    if (!valueType.has_value()) {
+        log::error("Cannot register native indexer: invalid value type ID");
+        return IndexerId::INVALID;
+    }
+    std::vector<const Type*> indexTypes;
+    indexTypes.reserve(definition.indexTypes.size());
+    for (const auto indexTypeId : definition.indexTypes) {
+        const auto indexType = getType(indexTypeId);
+        if (!indexType.has_value()) {
+            log::error("Cannot register native indexer: invalid index type ID");
+            return IndexerId::INVALID;
+        }
+        indexTypes.push_back(*indexType);
+    }
+    auto* owner = m_typeManager.getMutableClassType(classType);
+    if (owner == nullptr) {
+        log::error("Cannot register native indexer: class type must be registered with this runtime");
+        return IndexerId::INVALID;
+    }
+    return owner->registerNativeIndexer(*this, {
+        IndexerId::INVALID, classType, std::move(indexTypes), *valueType,
+        std::move(definition.getter), std::move(definition.setter), definition.documentation
+    });
 }
 
 CallableId Runtime::registerMethod(

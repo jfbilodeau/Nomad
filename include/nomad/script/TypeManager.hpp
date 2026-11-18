@@ -114,59 +114,6 @@ public:
     void finalizeCompositeFieldLayout(TypeId id);
     [[nodiscard]] const ClassType* getIteratorType(const Type* valueType);
     [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
-    void registerNativeClassIterable(TypeId ownerId, NativeInterableDefinition definition);
-    [[nodiscard]] IndexerId registerNativeClassIndexer(TypeId ownerId, NativeIndexerDefinition definition);
-    [[nodiscard]] CallableId registerNativeClassMethod(
-        TypeId ownerId,
-        NativeMethodDefinition definition
-    );
-    [[nodiscard]] CallableId registerNativeStructMethod(
-        TypeId ownerId,
-        NativeMethodDefinition definition
-    );
-    [[nodiscard]] CallableId registerNativeClassConstructor(
-        TypeId ownerId,
-        NativeConstructorDefinition definition
-    );
-    [[nodiscard]] CallableId registerNativeClassConstructor(
-        TypeId ownerId,
-        TypeId createdTypeId,
-        NativeConstructorDefinition definition
-    );
-    [[nodiscard]] CallableId registerNativeStructConstructor(
-        TypeId ownerId,
-        NativeConstructorDefinition definition
-    );
-    [[nodiscard]] CallableId registerScriptClassMethod(
-        TypeId ownerId,
-        NomadString name,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-    [[nodiscard]] CallableId registerScriptStructMethod(
-        TypeId ownerId,
-        NomadString name,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-    [[nodiscard]] CallableId registerScriptClassConstructor(
-        TypeId ownerId,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-    [[nodiscard]] CallableId registerScriptStructConstructor(
-        TypeId ownerId,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-    [[nodiscard]] PropertyId registerNativeClassProperty(
-        TypeId ownerId,
-        NativePropertyDefinition definition
-    );
     [[nodiscard]] PropertyId registerScriptClassProperty(
         TypeId ownerId,
         const NomadString& name,
@@ -191,17 +138,6 @@ public:
     void catalogType(std::unique_ptr<Type> type);
 
 private:
-    [[nodiscard]] CallableId registerScriptConstructor(
-        CompositeType* owner,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-    [[nodiscard]] CallableId registerNativeConstructor(
-        CompositeType* owner,
-        const Type* createdType,
-        NativeConstructorDefinition definition
-    );
     struct ParameterizedConstructorRegistration {
         NomadString name;
         NomadIndex argumentCount;
@@ -236,18 +172,6 @@ private:
         const NomadString& name,
         const Type* valueType
     );
-    [[nodiscard]] CallableId registerNativeMethod(
-        CompositeType* owner,
-        NativeMethodDefinition definition
-    );
-    [[nodiscard]] CallableId registerScriptMethod(
-        CompositeType* owner,
-        NomadString name,
-        std::vector<Parameter> parameters,
-        NomadString path,
-        NomadString source
-    );
-
     Runtime& m_runtime;
     std::vector<std::unique_ptr<Type>> m_types;
     std::vector<Property*> m_properties;

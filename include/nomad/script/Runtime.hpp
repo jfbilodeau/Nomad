@@ -244,6 +244,61 @@ public:
     // Member declarations
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
+    // Member registration
+    void registerNativeClassIterable(TypeId ownerId, NativeInterableDefinition definition);
+    [[nodiscard]] IndexerId registerNativeClassIndexer(TypeId ownerId, NativeIndexerDefinition definition);
+    [[nodiscard]] CallableId registerNativeClassMethod(
+        TypeId ownerId,
+        NativeMethodDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeStructMethod(
+        TypeId ownerId,
+        NativeMethodDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeClassConstructor(
+        TypeId ownerId,
+        NativeConstructorDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeClassConstructor(
+        TypeId ownerId,
+        TypeId createdTypeId,
+        NativeConstructorDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeStructConstructor(
+        TypeId ownerId,
+        NativeConstructorDefinition definition
+    );
+    [[nodiscard]] CallableId registerScriptClassMethod(
+        TypeId ownerId,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptStructMethod(
+        TypeId ownerId,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptClassConstructor(
+        TypeId ownerId,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptStructConstructor(
+        TypeId ownerId,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] PropertyId registerNativeClassProperty(
+        TypeId ownerId,
+        NativePropertyDefinition definition
+    );
+
     // Native members
     [[nodiscard]] IndexerId getNativeIndexerId(const Type* classType, NomadIndex indexCount) const;
     [[nodiscard]] IndexerId catalogNativeIndexer(const NativeIndexerInfo* info);
@@ -563,6 +618,28 @@ private:
     };
 
     // Callable registration and resolution
+    [[nodiscard]] CallableId registerNativeConstructor(
+        CompositeType* owner,
+        const Type* createdType,
+        NativeConstructorDefinition definition
+    );
+    [[nodiscard]] CallableId registerNativeMethod(
+        CompositeType* owner,
+        NativeMethodDefinition definition
+    );
+    [[nodiscard]] CallableId registerScriptConstructor(
+        CompositeType* owner,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
+    [[nodiscard]] CallableId registerScriptMethod(
+        CompositeType* owner,
+        NomadString name,
+        std::vector<Parameter> parameters,
+        NomadString path,
+        NomadString source
+    );
     CallableId registerNativeFunctionEntry(
         const NomadString& name,
         NativeFunctionFn function,

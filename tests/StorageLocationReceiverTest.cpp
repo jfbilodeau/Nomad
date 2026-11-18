@@ -73,7 +73,7 @@ BOOST_AUTO_TEST_CASE(named_and_nested_struct_receivers_borrow_storage_without_co
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "prefix", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(rootId, "leaf", leaf).isValid());
     InterpreterContext* evaluation = nullptr;
-    const auto incrementId = runtime.getTypeManager().registerNativeStructMethod(leafId, {
+    const auto incrementId = runtime.registerNativeStructMethod(leafId, {
         .name = "increment", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [&](VirtualMachine* active) {
             auto& number = active->getStorageParameter(0, 0);
@@ -280,7 +280,7 @@ BOOST_AUTO_TEST_CASE(native_property_failures_release_temporary_object_receivers
     Runtime runtime;
     const auto ownerId = runtime.getTypeManager().registerClass("EvaluationFailureOwner", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
-    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto propertyId = runtime.registerNativeClassProperty(ownerId, {
         .valueType = runtime.getStringType(), .name = "fail",
         .getter = [](VirtualMachine*, RuntimeValue& result) {
             result.setStringValue("partial result");

@@ -171,7 +171,7 @@ BOOST_AUTO_TEST_CASE(native_method_reentry_restores_receiver_and_parameter_bindi
     fixture.getCompiler().registerPhaseHook([&](CompilerContext*, const CompilationPhase phase) {
         if (phase != CompilationPhase::Parse) return;
         const auto* type = runtime.getTypeByName("Counter");
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassMethod(type->getId(), {
+        BOOST_REQUIRE(runtime.registerNativeClassMethod(type->getId(), {
             .name = "invokeHost",
             .parameters = {{runtime.getIntegerType()->getId(), "amount", ""}},
             .returnTypeId = runtime.getIntegerType()->getId(),
@@ -579,12 +579,12 @@ BOOST_AUTO_TEST_CASE(script_and_native_methods_restore_caller_state_after_stop) 
     const auto* owner = runtime.getTypeByName("HostCompletionOwner")->asClassType();
     const auto* emptyType = runtime.getTypeByName("HostCompletionEmpty");
     const auto scriptStop = runtime.resolveMethod(owner, "stop", {});
-    const auto aggregateStop = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
+    const auto aggregateStop = runtime.registerNativeClassMethod(owner->getId(), {
         .name = "aggregateStop", .parameters = {{emptyType->getId(), "empty", ""}},
         .returnTypeId = emptyType->getId(),
         .function = [](VirtualMachine* active) { active->stop(RuntimeValue{NomadInteger{37}}); }
     });
-    const auto scalarStop = runtime.getTypeManager().registerNativeClassMethod(owner->getId(), {
+    const auto scalarStop = runtime.registerNativeClassMethod(owner->getId(), {
         .name = "scalarStop", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) { active->stop(RuntimeValue{NomadInteger{37}}); }
     });

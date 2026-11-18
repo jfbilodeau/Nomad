@@ -256,7 +256,7 @@ BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_nativ
     const auto numberProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "number", runtime.getIntegerType());
     const auto leafProperty = runtime.getTypeManager().registerScriptClassProperty(ownerId, "leaf", leaf);
     BOOST_REQUIRE(numberProperty.isValid() && leafProperty.isValid());
-    const auto nativeProperty = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto nativeProperty = runtime.registerNativeClassProperty(ownerId, {
         .valueType = runtime.getIntegerType(), .name = "nativeNumber",
         .getter = [owner, numberProperty](VirtualMachine* active, RuntimeValue& result) {
             result = active->getThisAs<ScriptObject>()->getField(owner->getFieldIndex(numberProperty));
@@ -265,7 +265,7 @@ BOOST_AUTO_TEST_CASE(object_wrappers_share_identity_and_support_stored_and_nativ
             active->getThisAs<ScriptObject>()->setField(owner->getFieldIndex(numberProperty), value);
         }
     });
-    const auto failureProperty = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto failureProperty = runtime.registerNativeClassProperty(ownerId, {
         .valueType = runtime.getStringType(), .name = "fail",
         .getter = [](VirtualMachine*, RuntimeValue& result) {
             result.setStringValue("partial property value");
@@ -567,13 +567,13 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
     auto setterCalls = 0;
     auto emptyGetterCalls = 0;
     auto emptySetterCalls = 0;
-    const auto numberMethod = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto numberMethod = runtime.registerNativeClassMethod(ownerId, {
         .name = "readNumber", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             active->setIntegerResult(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0)[0].getIntegerValue());
         }
     });
-    const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto getter = runtime.registerNativeClassMethod(ownerId, {
         .name = "getValue", .parameters = {}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             ++getterCalls;
@@ -587,7 +587,7 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
             type->copyValue(object->getFieldStorage(0).data(), destination);
         }
     });
-    const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto setter = runtime.registerNativeClassMethod(ownerId, {
         .name = "setValue", .parameters = {{valueId, "value", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine* active) {
@@ -604,35 +604,35 @@ BOOST_AUTO_TEST_CASE(method_backed_struct_properties_return_snapshots_and_invoke
             argument[0].setIntegerValue(99);
         }
     });
-    const auto emptyGetter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto emptyGetter = runtime.registerNativeClassMethod(ownerId, {
         .name = "getEmpty", .parameters = {}, .returnTypeId = emptyId,
         .function = [&](VirtualMachine*) { ++emptyGetterCalls; }
     });
-    const auto emptySetter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto emptySetter = runtime.registerNativeClassMethod(ownerId, {
         .name = "setEmpty", .parameters = {{emptyId, "empty", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++emptySetterCalls; }
     });
     BOOST_REQUIRE(numberMethod.isValid() && getter.isValid() && setter.isValid() &&
         emptyGetter.isValid() && emptySetter.isValid());
-    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto propertyId = runtime.registerNativeClassProperty(ownerId, {
         .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
     });
-    const auto readOnlyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto readOnlyId = runtime.registerNativeClassProperty(ownerId, {
         .valueType = type, .name = "readOnly", .getterMethodId = getter
     });
-    const auto writeOnlyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto writeOnlyId = runtime.registerNativeClassProperty(ownerId, {
         .valueType = type, .name = "writeOnly", .setterMethodId = setter
     });
-    const auto emptyProperty = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto emptyProperty = runtime.registerNativeClassProperty(ownerId, {
         .valueType = emptyType, .name = "empty", .getterMethodId = emptyGetter, .setterMethodId = emptySetter
     });
-    const auto numberProperty = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto numberProperty = runtime.registerNativeClassProperty(ownerId, {
         .valueType = runtime.getIntegerType(), .name = "number", .getterMethodId = numberMethod
     });
     BOOST_REQUIRE(propertyId.isValid() && readOnlyId.isValid() && writeOnlyId.isValid() &&
         emptyProperty.isValid() && numberProperty.isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerNativeStructMethod(valueId, {
+    BOOST_REQUIRE(runtime.registerNativeStructMethod(valueId, {
         .name = "bump", .parameters = {}, .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             auto& number = active->getStorageParameter(0, 0);
@@ -740,7 +740,7 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
     runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId);
     auto failGetter = false;
     auto failSetter = false;
-    const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto getter = runtime.registerNativeClassMethod(ownerId, {
         .name = "getValue", .parameters = {}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             auto* destination = &active->getStorageParameter(0, 0);
@@ -751,7 +751,7 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
             type->copyValue(static_cast<ScriptObject*>(active->getThis())->getFieldStorage(0).data(), destination);
         }
     });
-    const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto setter = runtime.registerNativeClassMethod(ownerId, {
         .name = "setValue", .parameters = {{valueId, "value", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine* active) {
@@ -764,7 +764,7 @@ BOOST_AUTO_TEST_CASE(method_backed_property_failures_clean_partial_values_and_pr
         }
     });
     BOOST_REQUIRE(getter.isValid() && setter.isValid());
-    const auto propertyId = runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+    const auto propertyId = runtime.registerNativeClassProperty(ownerId, {
         .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
     });
     BOOST_REQUIRE(propertyId.isValid());
@@ -839,15 +839,15 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_compile_as_native_method_calls_wit
         const auto ownerId = runtime.getTypeManager().registerClass("PendingAccessorOwner", ClassMode::Closed);
         const auto* owner = runtime.getTypeByName("PendingAccessorOwner")->asClassType();
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
-        const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        const auto getter = runtime.registerNativeClassMethod(ownerId, {
             .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = [](VirtualMachine*) {}
         });
-        const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        const auto setter = runtime.registerNativeClassMethod(ownerId, {
             .name = "setValue", .parameters = {{valueId, "value", ""}},
             .returnTypeId = runtime.getVoidType()->getId(), .function = [](VirtualMachine*) {}
         });
         BOOST_REQUIRE(getter.isValid() && setter.isValid());
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        BOOST_REQUIRE(runtime.registerNativeClassProperty(ownerId, {
             .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
         }).isValid());
         fixture.addFunction("main", NomadString{"params owner:PendingAccessorOwner argument:PendingAccessorValue\n"} +
@@ -877,21 +877,21 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_keep_read_write_and_value
         BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
         const auto ownerId = runtime.getTypeManager().registerClass("RestrictedAccessorOwner", ClassMode::Closed);
         runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
-        const auto getter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        const auto getter = runtime.registerNativeClassMethod(ownerId, {
             .name = "getValue", .parameters = {}, .returnTypeId = valueId, .function = [](VirtualMachine*) {}
         });
-        const auto setter = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+        const auto setter = runtime.registerNativeClassMethod(ownerId, {
             .name = "setValue", .parameters = {{valueId, "value", ""}},
             .returnTypeId = runtime.getVoidType()->getId(), .function = [](VirtualMachine*) {}
         });
         BOOST_REQUIRE(getter.isValid() && setter.isValid());
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        BOOST_REQUIRE(runtime.registerNativeClassProperty(ownerId, {
             .valueType = type, .name = "value", .getterMethodId = getter, .setterMethodId = setter
         }).isValid());
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        BOOST_REQUIRE(runtime.registerNativeClassProperty(ownerId, {
             .valueType = type, .name = "readOnly", .getterMethodId = getter
         }).isValid());
-        BOOST_REQUIRE(runtime.getTypeManager().registerNativeClassProperty(ownerId, {
+        BOOST_REQUIRE(runtime.registerNativeClassProperty(ownerId, {
             .valueType = type, .name = "writeOnly", .setterMethodId = setter
         }).isValid());
         fixture.addFunction("main", NomadString{"params owner:RestrictedAccessorOwner argument:RestrictedAccessorValue\n"} +

@@ -292,11 +292,11 @@ BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_neste
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto emptyCalls = 0;
-    const auto emptyConstructor = runtime.getTypeManager().registerNativeStructConstructor(emptyId, {
+    const auto emptyConstructor = runtime.registerNativeStructConstructor(emptyId, {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++emptyCalls; }
     });
-    const auto constructor = runtime.getTypeManager().registerNativeStructConstructor(valueId, {
+    const auto constructor = runtime.registerNativeStructConstructor(valueId, {
         .parameters = {
             {runtime.getIntegerType()->getId(), "number", ""},
             {runtime.getStringType()->getId(), "text", ""}
@@ -409,7 +409,7 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
         order.push_back(0);
         active->getResult().setObjectValue(new NomadObject());
     }, {}, boxType, "");
-    const auto combineId = runtime.getTypeManager().registerNativeClassMethod(boxId, {
+    const auto combineId = runtime.registerNativeClassMethod(boxId, {
         .name = "combine",
         .parameters = {
             {runtime.getIntegerType()->getId(), "first", ""},
@@ -583,7 +583,7 @@ BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_own
         destination[0].setStringValue("first result");
         destination[1].setStringValue("second result");
     }, {}, valueType, "");
-    const auto constructorId = runtime.getTypeManager().registerNativeStructConstructor(valueId, {
+    const auto constructorId = runtime.registerNativeStructConstructor(valueId, {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++calls; }
     });
@@ -723,7 +723,7 @@ BOOST_AUTO_TEST_CASE(host_native_calls_and_factories_preserve_values_frames_and_
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     const auto* valueType = runtime.getTypeByName("HostValue");
-    const auto constructorId = runtime.getTypeManager().registerNativeStructConstructor(valueId, {
+    const auto constructorId = runtime.registerNativeStructConstructor(valueId, {
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
         .function = [](VirtualMachine* active) {
             active->getStorageParameter(1, 0) = active->getParameter(0);
@@ -746,7 +746,7 @@ BOOST_AUTO_TEST_CASE(host_native_calls_and_factories_preserve_values_frames_and_
     }, {defParameter("value", valueType, "")}, valueType, "");
     const auto ownerId = runtime.getTypeManager().registerClass<ClassType>("HostFactory", ClassMode::Closed);
     const auto createdId = runtime.getTypeManager().registerClass<ClassType>("HostCreated", ClassMode::Closed);
-    const auto factoryId = runtime.getTypeManager().registerNativeClassConstructor(ownerId, createdId, {
+    const auto factoryId = runtime.registerNativeClassConstructor(ownerId, createdId, {
         .parameters = {},
         .function = [&](VirtualMachine* active) {
             active->getResult().setObjectValue(new ScriptObject(runtime.getType(createdId).value()->asClassType()));
@@ -787,7 +787,7 @@ BOOST_AUTO_TEST_CASE(host_call_validation_rejects_bad_metadata_and_arguments_bef
     }, {defParameter("number", runtime.getIntegerType(), "")}, runtime.getIntegerType(), "");
     const auto emptyId = runtime.getTypeManager().registerStruct("HostCheckedEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
-    const auto constructorId = runtime.getTypeManager().registerNativeStructConstructor(emptyId, {
+    const auto constructorId = runtime.registerNativeStructConstructor(emptyId, {
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
         .function = [&](VirtualMachine*) { ++calls; }
     });
@@ -1011,17 +1011,17 @@ BOOST_AUTO_TEST_CASE(host_method_copy_failures_release_arguments_results_and_rec
     const auto ownerId = runtime.getTypeManager().registerClass<ClassType>("FailingMethodOwner", ClassMode::Closed);
     BOOST_REQUIRE(fieldId.isValid() && ownerId.isValid());
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
-    const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(ownerId, {
+    const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
         .parameters = {},
         .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
     });
     auto calls = 0;
-    const auto consumeId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto consumeId = runtime.registerNativeClassMethod(ownerId, {
         .name = "consume", .parameters = {{fieldId, "value", ""}},
         .returnTypeId = runtime.getVoidType()->getId(),
         .function = [&](VirtualMachine*) { ++calls; }
     });
-    const auto makeId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto makeId = runtime.registerNativeClassMethod(ownerId, {
         .name = "make", .parameters = {}, .returnTypeId = fieldId,
         .function = [](VirtualMachine* active) { active->setStringResult("method result"); }
     });
@@ -1083,18 +1083,18 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(singleId);
-    const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(ownerId, {
+    const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
         .parameters = {},
         .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
     });
-    const auto readId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto readId = runtime.registerNativeClassMethod(ownerId, {
         .name = "read", .parameters = {{valueId, "value", ""}},
         .returnTypeId = runtime.getIntegerType()->getId(),
         .function = [](VirtualMachine* active) {
             active->setIntegerResult(active->getParameterStorage(0, 2)[0].getIntegerValue());
         }
     });
-    const auto singleMethodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto singleMethodId = runtime.registerNativeClassMethod(ownerId, {
         .name = "single", .parameters = {{singleId, "value", ""}}, .returnTypeId = singleId,
         .function = [singleType](VirtualMachine* active) {
             singleType->copyValue(active->getParameterStorage(0, 1).data(), &active->getStorageParameter(1, 0));
@@ -1102,7 +1102,7 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
     });
     auto calls = 0;
     InterpreterContext* activeContext = nullptr;
-    const auto exchangeId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto exchangeId = runtime.registerNativeClassMethod(ownerId, {
         .name = "exchange",
         .parameters = {{valueId, "value", ""}, {emptyId, "empty", ""},
             {runtime.getIntegerType()->getId(), "delta", ""}},
@@ -1209,13 +1209,13 @@ BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     const auto ownerId = runtime.getTypeManager().registerClass("ObjectAggregateCopyOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("ObjectAggregateCopyOwner")->asClassType();
-    const auto constructorId = runtime.getTypeManager().registerNativeClassConstructor(ownerId, {
+    const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
         .parameters = {},
         .function = [owner](VirtualMachine* active) { active->getResult().setObjectValue(new ScriptObject(owner)); }
     });
     auto calls = 0;
     auto throwAfterWrite = false;
-    const auto methodId = runtime.getTypeManager().registerNativeClassMethod(ownerId, {
+    const auto methodId = runtime.registerNativeClassMethod(ownerId, {
         .name = "copy", .parameters = {{valueId, "argument", ""}}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             ++calls;
@@ -1772,7 +1772,7 @@ BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_ever
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     auto calls = 0;
-    const auto methodId = runtime.getTypeManager().registerNativeStructMethod(valueId, {
+    const auto methodId = runtime.registerNativeStructMethod(valueId, {
         .name = "copy", .parameters = {{valueId, "snapshot", ""}}, .returnTypeId = valueId,
         .function = [&](VirtualMachine* active) {
             ++calls;
