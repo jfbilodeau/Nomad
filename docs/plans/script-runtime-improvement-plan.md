@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2/I3/I7/I8/I12/I13 validated and I4/I6/I9/I10/I15 resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2/I3/I7/I8/I12/I13/C1 validated and I4/I6/I9/I10/I15 resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
 
 ## Component contract
 
@@ -191,8 +191,10 @@ Step 5's I1/I2 running-state review and approved change are recorded below. Rele
 - I15 is resolved by the user's approved borrowed-facade contract: `Interpreter` holds a reference to the caller's mutable VM, not owned execution state. Constness applies to the facade, not transitively to that VM. Execution through `const Interpreter&` and the mutable reference returned by `getVirtualMachine() const` are intentional; contexts and receiver wrappers retain their existing const Interpreter references.
 - Documented that contract and the existing VM/interpreter/context lifetime requirements. No signatures, execution behavior, `mutable` members, casts, or extra getters changed. This does not decide the separate C1 context-storage-accessor contract.
 - I15 verification is documentation/comment-only: existing `InterpreterTest.cpp` assertions and borrowing/bound-VM tests explicitly cover const facade access, independent contexts, and calls reaching the supplied VM. No C++ rebuild or test rerun was needed; the last full 13-entry run remains I13 validation above.
-- Next reviewable sub-step: C1 (InterpreterContext storage-accessor constness), followed by C3/C4 API review.
-- InterpreterContext: const-correct storage resolvers (C1), API cleanup (C3), and the remaining name-keyed accessors (C4).
+- C1 is implemented internally without public API changes. Variable and parameter read accessors now resolve through the existing const VM storage overloads or `InterpreterStorage::getStorage()`. Writable accessors continue using mutable storage APIs. Removed the shared private const resolvers that returned writable spans and the receiver's redundant private forwarding resolver; receiver storage resolution remains a non-const operation.
+- The small read/write validation blocks remain specialized rather than introducing mutability flags, casts, templates, or new public helpers. Frame validation, invalid/missing ID handling, slot addresses, zero-sized storage, ownership, and diagnostics are unchanged. The approved I15 borrowed mutable-VM facade contract remains separate and unchanged.
+- C1 validation: the build and all 13 CTest entries pass on `windows-debug`. Compilation checks the internal const-span paths; existing tests preserve read/write alias identity, live parameter/local/receiver access, missing and empty storage, stale-frame errors, nested evaluation lifetimes, and reference ownership. No new behavior or private-signature-only test was introduced.
+- Next reviewable sub-step: C3 (InterpreterContext API cleanup), followed by C4 (remaining name-keyed accessors).
 
 ### Step 6: Runtime correctness and dead code
 
@@ -314,7 +316,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 
 | ID | Priority | Kind | Finding | Evidence | Status | Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| C1 | P2 | const-correctness | resolveVariableStorage and resolveParameterStorage are const but return mutable spans | `InterpreterContext.hpp`: resolve* declarations | verified-text | 5 |
+| C1 | P2 | const-correctness | Shared private const storage resolvers return writable variable/parameter/receiver spans | `InterpreterContext.cpp`: getVariableStorageById, getParameterStorage and explicit mutable accessors; `InterpreterContext.hpp` | Fixed internally: reads use existing const storage APIs; writes remain non-const; redundant private resolvers removed, public contracts unchanged | 5 |
 | C2 | P2 | perf | One heap allocation per variable (`vector<unique_ptr<InterpreterStorage>>`); retired storage accumulates until the outermost evaluation ends | `InterpreterContext.hpp`: m_variables, m_retiredStorage | verified-text | 8 |
 | C3 | P3 | api | Unconventional deleted `const Interpreter&&` overloads; clearError also clears warnings; setError, reportInputError, and addDiagnostic overlap | `InterpreterContext.hpp`: constructors and diagnostics API | verified-text | 5 |
 | C4 | P3 | api | Name-keyed accessors alongside ById variants; name lookups cost on every call | `InterpreterContext.hpp`: getVariable*, setVariable* | verified-text | 2, 5 |

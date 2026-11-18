@@ -2722,6 +2722,11 @@ releasing what they replace, so their own storage can be supplied as the source.
 `setResult(const InterpreterValue&)` likewise takes an owned copy.
 `getVariableStorage(name)` and `getVariableStorageById(variableId)` borrow
 complete variable storage; `getResult()->getStorage()` borrows result storage.
+Variable and parameter read accessors return read-only slot views.
+`getMutableVariableStorageById(variableId)` and
+`getMutableParameterStorage(parameterId)` require a mutable context and expose
+the same live slots for writes. Read-only views are not snapshots: they observe
+changes made through writable storage, without copying or retaining values.
 Assignments to an existing context-owned variable of the same type preserve its
 slot addresses and update its contents. Adding other variables does not relocate
 those slots. Changing a variable's type or clearing it removes its old storage
@@ -2747,8 +2752,9 @@ frame, not the original caller's copied arguments. New interpreter variables
 remain context-owned. Borrowed frame storage is valid only while that frame is
 active; it must not be used after the frame returns.
 
-`getReceiverStorage()` borrows the complete struct receiver of an active
-method or constructor frame, including from an intervening native callback.
+`getMutableReceiverStorage()` borrows writable storage for the complete struct
+receiver of an active method or constructor frame, including from an intervening
+native callback.
 It returns an empty view without a pointer for an empty struct. Calling it on
 a non-frame context or a class/free-function frame throws `NomadBug`.
 The interpreter can read `this` and its stored fields in such struct frames;

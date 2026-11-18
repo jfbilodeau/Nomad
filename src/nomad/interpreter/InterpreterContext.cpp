@@ -227,14 +227,30 @@ std::span<const RuntimeValue> InterpreterContext::getVariableStorage(const Nomad
 }
 
 std::span<const RuntimeValue> InterpreterContext::getVariableStorageById(const VariableId variableId) const {
-    return resolveVariableStorage(variableId);
+    if (isFrameVariable(variableId)) {
+        validateFrame();
+        const auto& machine = *getVirtualMachine();
+
+        return machine.getFunctionVariableStorage(variableId);
+    }
+
+    if (variableId.isInvalid()) {
+
+        return {};
+    }
+
+    const auto index = toNomadIndex(variableId.id);
+    if (index >= m_variables.size()) {
+
+        return {};
+    }
+
+    const auto& variable = m_variables[index];
+
+    return variable != nullptr ? variable->getStorage() : std::span<const RuntimeValue>{};
 }
 
 std::span<RuntimeValue> InterpreterContext::getMutableVariableStorageById(const VariableId variableId) {
-    return resolveVariableStorage(variableId);
-}
-
-std::span<RuntimeValue> InterpreterContext::resolveVariableStorage(const VariableId variableId) const {
     if (isFrameVariable(variableId)) {
         validateFrame();
         return getVirtualMachine()->getFunctionVariableStorage(variableId);
@@ -506,14 +522,20 @@ void InterpreterContext::setParameter(const NomadId parameterId, const RuntimeVa
 }
 
 std::span<const RuntimeValue> InterpreterContext::getParameterStorage(const NomadId parameterId) const {
-    return resolveParameterStorage(parameterId);
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter access");
+    }
+
+    validateFrame();
+    const auto& machine = *getVirtualMachine();
+
+    return machine.getEnclosingParameterStorage(
+        m_frameCallable->getParameterOffset(parameterId),
+        m_frameCallable->getParameterType(parameterId)->getSize()
+    );
 }
 
 std::span<RuntimeValue> InterpreterContext::getMutableParameterStorage(const NomadId parameterId) {
-    return resolveParameterStorage(parameterId);
-}
-
-std::span<RuntimeValue> InterpreterContext::resolveParameterStorage(const NomadId parameterId) const {
     if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
         throw NomadBug("Invalid frame-backed parameter access");
     }
@@ -523,10 +545,6 @@ std::span<RuntimeValue> InterpreterContext::resolveParameterStorage(const NomadI
 }
 
 std::span<RuntimeValue> InterpreterContext::getMutableReceiverStorage() {
-    return resolveReceiverStorage();
-}
-
-std::span<RuntimeValue> InterpreterContext::resolveReceiverStorage() const {
     if (!isFrameBacked() || m_frameCallable->getClassType() == nullptr ||
         !m_frameCallable->getClassType()->isStruct()) {
         throw NomadBug("Struct receiver storage requires an active struct callable frame");

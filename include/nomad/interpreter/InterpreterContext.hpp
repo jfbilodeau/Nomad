@@ -155,9 +155,6 @@ public:
 
 private:
     void validateFrame() const;
-    [[nodiscard]] std::span<RuntimeValue> resolveVariableStorage(VariableId variableId) const;
-    [[nodiscard]] std::span<RuntimeValue> resolveParameterStorage(NomadId parameterId) const;
-    [[nodiscard]] std::span<RuntimeValue> resolveReceiverStorage() const;
     [[nodiscard]] std::pair<const StructType*, std::span<RuntimeValue>> resolveVariablePropertyStorage(
         const NomadString& name
     );
