@@ -476,8 +476,8 @@ BOOST_AUTO_TEST_CASE(runtime_creates_object_hub_members_and_rejects_conflicting_
     const auto constantId = runtime.registerConstant(
         "example.answer", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
     );
-    const auto functionId = runtime.registerNativeFunction(
-        "example.read", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    const auto functionId = runtime.registerHubNativeFunction(
+        hubId, "read", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
     BOOST_REQUIRE(variableId.isValid());
     BOOST_REQUIRE(constantId.isValid());
@@ -646,7 +646,8 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_enum_definitions_without_partial_re
 
 BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishing_values) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
     const auto constantId = runtime.registerConstant(
         "example.State", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
     );
@@ -656,8 +657,8 @@ BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishi
     );
     BOOST_REQUIRE(valueId.isValid());
     BOOST_REQUIRE(runtime.registerHub("example.HubConflict.Reserved", HubMode::Opened).isValid());
-    const auto functionId = runtime.registerNativeFunction(
-        "example.FunctionConflict.Reserved", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    const auto functionId = runtime.registerHubNativeFunction(
+        hubId, "FunctionConflict.Reserved", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
     BOOST_REQUIRE(functionId.isValid());
     std::vector<const Type*> originalTypes;

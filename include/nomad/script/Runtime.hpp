@@ -165,7 +165,38 @@ public:
         if (!qualifiedName) {
             return CallableId::INVALID;
         }
-        return registerNativeFunction(*qualifiedName, std::move(function), parameters, doc);
+
+        using Binding = detail::TypedNativeFunctionTraits<Function>;
+        if (parameters.size() != Binding::parameterCount) {
+            log::error("Cannot register typed native function '" + *qualifiedName + "': incorrect parameter definition count");
+
+            return CallableId::INVALID;
+        }
+
+        if constexpr (std::is_pointer_v<Function>) {
+            if (function == nullptr) {
+                log::error("Cannot register typed native function '" + *qualifiedName + "': null function");
+
+                return CallableId::INVALID;
+            }
+        }
+
+        for (const auto& parameter : parameters) {
+            if (parameter.name.empty()) {
+                log::error("Cannot register typed native function '" + *qualifiedName + "': empty parameter name");
+
+                return CallableId::INVALID;
+            }
+        }
+
+        return registerHubNativeFunction(
+            hubId,
+            name,
+            Binding::bind(std::move(function), typename Binding::Indices{}),
+            Binding::makeParameters(*this, parameters, typename Binding::Indices{}),
+            detail::getTypedNativeType<typename Binding::ReturnType>(*this),
+            doc
+        );
     }
     [[nodiscard]] CallableId registerHubScriptFunction(
         HubId hubId,
@@ -275,7 +306,6 @@ public:
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(OpCodeId id) const;
     [[nodiscard]] const StackEffect& getInstructionStackEffect(OpCodeId id) const;
 
-    // NativeFunctions
     CallableId registerNativeFunction(
         const NomadString& name, 
         NativeFunctionFn nativeFunction_fn, 
@@ -533,6 +563,13 @@ private:
     };
 
     // Callable registration and resolution
+    CallableId registerNativeFunctionEntry(
+        const NomadString& name,
+        NativeFunctionFn function,
+        const std::vector<Parameter>& parameters,
+        const Type* returnType,
+        const NomadString& doc
+    );
     CallableId addCallableToTable(std::unique_ptr<Function> function);
     CallableId catalogCallable(Callable* callable);
     [[nodiscard]] bool canOverloadCallable(
@@ -550,6 +587,11 @@ private:
     [[nodiscard]] bool ownsType(const Type* type) const;
     // Hub registration
     [[nodiscard]] std::optional<NomadString> qualifyHubMemberName(HubId hubId, const NomadString& name) const;
+    void addHubMember(
+        std::unordered_map<NomadString, HubMember>& members,
+        const NomadString& name,
+        HubMember member
+    );
     void registerHubMember(const NomadString& name, HubMember member);
     [[nodiscard]] bool canRegisterHubMember(const NomadString& name, bool function = false) const;
     void rebuildHubMembers();

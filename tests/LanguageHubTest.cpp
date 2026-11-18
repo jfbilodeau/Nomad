@@ -32,6 +32,105 @@ static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, HubTypeFa
 
 BOOST_AUTO_TEST_SUITE(language_hubs)
 
+BOOST_AUTO_TEST_CASE(native_free_functions_do_not_join_hubs_before_or_after_hub_registration) {
+    Runtime runtime;
+    const auto beforeId = runtime.registerNativeFunction(
+        "explicit.child.before",
+        [](VirtualMachine* machine) { machine->setIntegerResult(17); },
+        {},
+        runtime.getIntegerType(),
+        ""
+    );
+    BOOST_REQUIRE(beforeId.isValid());
+    const auto parentId = runtime.registerHub("explicit", HubMode::Opened);
+    BOOST_REQUIRE(parentId.isValid());
+    const auto* parent = runtime.getHub(parentId);
+    BOOST_TEST(parent->getMember("child.before") == nullptr);
+    const auto afterId = runtime.registerNativeFunction(
+        "explicit.child.after",
+        [] { return NomadInteger{23}; },
+        {},
+        NomadDoc("")
+    );
+    BOOST_REQUIRE(afterId.isValid());
+    BOOST_TEST(parent->getMember("child.after") == nullptr);
+    const auto childId = runtime.registerHub("explicit.child", HubMode::Opened);
+    BOOST_REQUIRE(childId.isValid());
+    const auto* child = runtime.getHub(childId);
+    BOOST_TEST(child->getMember("before") == nullptr);
+    BOOST_TEST(child->getMember("after") == nullptr);
+    BOOST_REQUIRE(runtime.registerHub("unrelated", HubMode::Opened).isValid());
+    BOOST_TEST(parent->getMembers().empty());
+    BOOST_TEST(child->getMembers().empty());
+    BOOST_TEST(runtime.getNativeFunctionId("explicit.child.before") == beforeId);
+    BOOST_TEST(runtime.getNativeFunctionId("explicit.child.after") == afterId);
+    BOOST_TEST(runtime.getNativeFunction(beforeId)->getClassType() == nullptr);
+    BOOST_TEST(runtime.getNativeFunction(afterId)->getClassType() == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(native_hub_functions_keep_the_explicit_owner_when_nested_hubs_are_registered) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    const auto parentId = runtime.registerHub("owned", HubMode::Opened);
+    BOOST_REQUIRE(parentId.isValid());
+    const auto firstId = runtime.registerHubNativeFunction(
+        parentId,
+        "child.answer",
+        [](VirtualMachine* machine) { machine->setIntegerResult(40); },
+        {},
+        runtime.getIntegerType(),
+        ""
+    );
+    BOOST_REQUIRE(firstId.isValid());
+    const auto childId = runtime.registerHub("owned.child", HubMode::Opened);
+    BOOST_REQUIRE(childId.isValid());
+    const auto secondId = runtime.registerHubNativeFunction(
+        parentId,
+        "child.answer",
+        [](NomadInteger value) { return value; },
+        {{"value", ""}},
+        NomadDoc("")
+    );
+    BOOST_REQUIRE(secondId.isValid());
+    const auto childFunctionId = runtime.registerHubNativeFunction(
+        childId,
+        "local",
+        [] { return NomadInteger{3}; },
+        {},
+        NomadDoc("")
+    );
+    BOOST_REQUIRE(childFunctionId.isValid());
+    BOOST_REQUIRE(runtime.registerHub("owned.sibling", HubMode::Opened).isValid());
+    const auto* parent = runtime.getHub(parentId);
+    const auto* child = runtime.getHub(childId);
+    const auto* member = parent->getMember("child.answer");
+    BOOST_REQUIRE(member != nullptr);
+    const auto* functions = std::get_if<HubFunctions>(member);
+    BOOST_REQUIRE(functions != nullptr);
+    BOOST_REQUIRE(functions->ids.size() == 2U);
+    BOOST_TEST(functions->ids[0] == firstId);
+    BOOST_TEST(functions->ids[1] == secondId);
+    BOOST_TEST(child->getMember("answer") == nullptr);
+    BOOST_REQUIRE(child->getMember("local") != nullptr);
+    BOOST_TEST(std::get<HubFunctions>(*child->getMember("local")).ids.front() == childFunctionId);
+    const auto functionCount = runtime.getFunctionTableSize();
+    BOOST_TEST(runtime.registerHubNativeFunction(
+        parentId,
+        "child.answer",
+        [] { return NomadInteger{99}; },
+        {},
+        NomadDoc("")
+    ).isInvalid());
+    BOOST_TEST(runtime.getFunctionTableSize() == functionCount);
+    BOOST_TEST(std::get<HubFunctions>(*parent->getMember("child.answer")).ids.size() == 2U);
+    fixture.addFunction(
+        "main",
+        "first = owned.child.answer\nsecond = owned.child.answer 2\nreturn first + second"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(fixture.execute("main").integerValue == 42);
+}
+
 BOOST_AUTO_TEST_CASE(hub_script_functions_share_the_runtime_callable_catalog)
 {
     for (const auto mode : {HubMode::Opened, HubMode::Closed}) {
@@ -472,8 +571,9 @@ BOOST_AUTO_TEST_CASE(hub_native_functions_use_local_names_and_shared_overload_re
             {}, runtime.getIntegerType(), "Returns forty."
         );
         BOOST_REQUIRE(first.isValid());
-        const auto second = runtime.registerNativeFunction(
-            "example.child.answer",
+        const auto second = runtime.registerHubNativeFunction(
+            hubId,
+            "answer",
             [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
             {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
         );
@@ -997,13 +1097,13 @@ BOOST_AUTO_TEST_CASE(hub_objects_index_members_without_duplicating_callable_owne
     BOOST_REQUIRE(hub != nullptr);
     BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
     BOOST_TEST(runtime.getHub(id) == hub);
-    const auto functionId = runtime.registerNativeFunction(
-        "example.answer", [](VirtualMachine* machine) { machine->setIntegerResult(42); },
+    const auto functionId = runtime.registerHubNativeFunction(
+        id, "answer", [](VirtualMachine* machine) { machine->setIntegerResult(42); },
         {}, runtime.getIntegerType(), ""
     );
     BOOST_REQUIRE(functionId.isValid());
-    const auto overloadId = runtime.registerNativeFunction(
-        "example.answer", [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
+    const auto overloadId = runtime.registerHubNativeFunction(
+        id, "answer", [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
     );
     BOOST_REQUIRE(overloadId.isValid());
@@ -1096,12 +1196,15 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
         [](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(42); },
         runtime.getIntegerType(), ""
     );
-    const auto functionId = runtime.registerNativeFunction(
-        "example.child.read", [](VirtualMachine* machine) { machine->setIntegerResult(42); },
+    const auto parentId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(parentId.isValid());
+    const auto functionId = runtime.registerHubNativeFunction(
+        parentId, "child.read", [](VirtualMachine* machine) { machine->setIntegerResult(42); },
         {}, runtime.getIntegerType(), ""
     );
-    const auto overloadId = runtime.registerNativeFunction(
-        "example.child.read",
+    const auto overloadId = runtime.registerHubNativeFunction(
+        parentId,
+        "child.read",
         [](VirtualMachine* machine) { machine->setIntegerResult(machine->getIntegerParameter(0)); },
         {defParameter("value", runtime.getIntegerType(), "")}, runtime.getIntegerType(), ""
     );
@@ -1118,8 +1221,6 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
         }
     ));
 
-    const auto parentId = runtime.registerHub("example", HubMode::Opened);
-    BOOST_REQUIRE(parentId.isValid());
     const auto* parent = runtime.getHub(parentId);
     const auto verifyMembers = [&](const Hub* hub, const NomadString& prefix) {
         const auto requireMember = [&](const NomadString& name) {
@@ -1132,12 +1233,14 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
         BOOST_TEST(std::get<EventId>(*requireMember("changed")) == eventId);
         BOOST_TEST(std::get<DynamicVariableId>(*requireMember("current")) == dynamicVariableId);
         BOOST_TEST(std::get<HubTypeFamily>(*requireMember("Box")).argumentCount == 1U);
-        const auto& functions = std::get<HubFunctions>(*requireMember("read")).ids;
-        BOOST_REQUIRE(functions.size() == 2U);
-        BOOST_TEST(functions[0] == functionId);
-        BOOST_TEST(functions[1] == overloadId);
     };
     verifyMembers(parent, "child.");
+    const auto* nativeMember = parent->getMember("child.read");
+    BOOST_REQUIRE(nativeMember != nullptr);
+    const auto& functions = std::get<HubFunctions>(*nativeMember).ids;
+    BOOST_REQUIRE(functions.size() == 2U);
+    BOOST_TEST(functions[0] == functionId);
+    BOOST_TEST(functions[1] == overloadId);
 
     const auto childId = runtime.registerHub("example.child", HubMode::Opened);
     BOOST_REQUIRE(childId.isValid());
@@ -1145,6 +1248,10 @@ BOOST_AUTO_TEST_CASE(rebuilding_hubs_preserves_native_member_values_and_overload
     BOOST_TEST(parent->getMember("child") == nullptr);
     const auto* child = runtime.getHub(childId);
     verifyMembers(child, "");
+    BOOST_TEST(child->getMember("read") == nullptr);
+    BOOST_REQUIRE(parent->getMember("child.read") != nullptr);
+    BOOST_TEST(std::get<HubFunctions>(*parent->getMember("child.read")).ids[0] == functionId);
+    BOOST_TEST(std::get<HubFunctions>(*parent->getMember("child.read")).ids[1] == overloadId);
 
     BOOST_TEST(runtime.registerHub("example.child.answer", HubMode::Opened) == HubId::INVALID);
     BOOST_TEST(!runtime.isHub("example.child.answer"));

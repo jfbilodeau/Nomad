@@ -2184,12 +2184,20 @@ use `HubFunctions::ids`; generic families use `HubTypeFamily::argumentCount`.
 Use `registerHubNativeFunction(hubId, name, function, parameters, returnType, documentation)`
 to register a native function with a local member name, such as `"info"` in hub
 `"log"`. The supplied name is appended to the hub name without identifier validation.
+Membership stays with the supplied hub, including when the local name contains
+dots or a nested hub is registered later.
 The function is available under its qualified name and shares overload resolution,
 documentation, and compiler-supplied source parameters with `registerNativeFunction`.
 Both open and closed hubs accept host registrations. Invalid hub IDs,
 callbacks, type references, and conflicting declarations are logged and return
 `CallableId::INVALID` without adding a function. Referenced types must belong to
 the receiving runtime; hidden source parameter types are supported.
+
+`registerNativeFunction`, including its typed overload, registers an ordinary
+module/free function. A qualified name such as `"log.info"` does not make it a
+hub member, and registering a hub later does not adopt it. To expose an existing
+native API as a hub member, replace registration under the full name with
+`registerHubNativeFunction(logHubId, "info", ...)`, using the owning hub's ID.
 
 Use `registerHubScriptFunction(hubId, name, path, source)` to register a script
 function descriptor with a host-supplied member name. It returns a `CallableId` and
@@ -3650,9 +3658,10 @@ for methods on a registered class type. Read the instance inside the callback:
 }
 ```
 
-Use `registerNativeFunction` for a global function and the manager's
+Use `registerNativeFunction` for module/free functions,
+`registerHubNativeFunction` for hub members, and the manager's
 `registerNativeClassMethod` or `registerNativeStructMethod` for a
-method on a class type identified by its runtime-local `TypeId`.
+method on a class or struct type identified by its runtime-local `TypeId`.
 Global function lookup and enumeration exclude methods.
 
 `ClassType::getMethods()` lists the type's registered methods as borrowed
