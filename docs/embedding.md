@@ -2697,8 +2697,10 @@ Only the selected field is copied and replaced; unrelated fields are not copied.
 Copying completes before the previous field value is released, including for
 self-assignment. A failed field copy leaves that destination unchanged.
 Invalid selectors, mismatched value types, and incorrect span widths throw
-`std::invalid_argument` before replacement. The caller must keep the borrowed
-storage alive throughout the operation. This overload returns no value and
+`std::invalid_argument` before replacement. Both selector overloads check the
+receiver's span width before resolving the property, so an incorrect width takes
+precedence over selector and replacement-type errors. The caller must keep the
+borrowed storage alive throughout the operation. This overload returns no value and
 does not change context results or immutable snapshots.
 
 The functional `setProperty(InterpreterValue, property, value)` overloads have

@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2/I3/I7/I8/I12 validated, I4/I6/I9/I10 resolved by review, and I13 partially complete. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 4 are implemented or resolved by review. Step 5 is in progress with I1/I2/I3/I7/I8/I12/I13 validated and I4/I6/I9/I10 resolved by review. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. The registration ownership split is in progress. All 13 CTest entries pass.
 
 ## Component contract
 
@@ -185,9 +185,11 @@ Step 5's I1/I2 running-state review and approved change are recorded below. Rele
 - I13 API ambiguity is resolved by the user's removal decision, not a rename: removed both test-only functional `Interpreter::setProperty` overloads and their private `setStoredProperty` helper. Production borrowed-storage setters and receiver/context wrappers are unchanged. No compatibility shim or replacement-value API was added.
 - Migrated useful assignment, snapshot lifetime, exact-type/path validation, zero-sized field, and copy-failure coverage to explicit `InterpreterStorage` ownership plus the existing in-place setters. Removed redundant functional-setter assertions from the property-read test; production getter coverage remains.
 - I13 removal validation: all 13 CTest entries pass on `windows-debug`, including migrated ownership/copy-failure tests, borrowed and empty struct mutation, property selection/type errors, and module integration. No functional setter or private helper remains in the engine; mutating production call sites are unchanged.
-- I13's validation-order discrepancy remains a separate review item: the direct-ID in-place setter checks storage width first, while the path setter resolves its selector first. Removal approval did not choose a new error precedence, so neither behavior changed.
-- Next reviewable sub-step: settle the remaining I13 validation-order policy, then I15 (const-correct VM access).
-- Remaining simplification: I13 validation order and const-correct VM access (I15).
+- I13 validation-order policy was approved separately: both in-place setters now check receiver-storage width before resolving a property selector, matching the existing direct-ID setter. Existing error text and valid mutation/ownership behavior are unchanged. Only the diagnostic precedence changes when both the storage span and selector are invalid.
+- The new regression first reproduced nine wrong-precedence cases for empty, undersized, and oversized receiver spans combined with invalid path selectors. It also checks direct-ID selectors, a valid path, and that rejected calls leave all supplied slots unchanged.
+- I13 storage-first validation: all 13 CTest entries pass on `windows-debug`. Both retained setters now report the existing receiver-width error consistently when storage and selector are invalid, while existing valid assignment, selector/type-error, empty-struct, ownership, and copy-failure coverage remains green.
+- Next reviewable sub-step: I15 (const-correct VM access).
+- Remaining simplification: const-correct VM access (I15).
 - InterpreterContext: const-correct storage resolvers (C1), API cleanup (C3), and the remaining name-keyed accessors (C4).
 
 ### Step 6: Runtime correctness and dead code
@@ -302,7 +304,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | I10 | P2 | consistency | Stored-property assignment requires exact type equality; call arguments use acceptsArgument. Verify against the Compiler's assignability rules | `Interpreter.cpp`: validateStoredPropertyAssignment, validateCallArgument; `SyntaxTree.cpp`: MemberAssignmentStatement::onResolve; `Compiler.cpp`: resolveStructField/resolveObjectField; `Argument.cpp`: ExpressionArgument::onResolve | Resolved by review: Compiler and Interpreter both use exact descriptor identity for stored-field assignments and acceptsArgument for calls; no behavior change | 5 |
 | I11 | P2 | perf | assignStoredProperty allocates a std::vector scratch buffer on every struct field write | `Interpreter.cpp`: assignStoredProperty | verified | 8 |
 | I12 | P3 | redundancy | Stored-property path lookup copies each segment into a NomadString; per-owner validation is required | `CompositeType.cpp`: getProperty(NomadStringView); `Interpreter.cpp`: resolveStoredPropertyPath; `InterpreterReceiver.cpp`: resolveProperty | Name-copy removal implemented using existing borrowed-view lookup; required segment/owner checks and diagnostics retained | 5 |
-| I13 | P2 | api | setProperty name shared by a test-only functional API and production in-place API; size-check order differs between PropertyId and path variants | `Interpreter.cpp`: in-place setProperty overloads; `Interpreter.hpp` | Functional overloads/helper removed by user decision; production mutation preserved; validation-order alignment still pending approval | 5 (partial) |
+| I13 | P2 | api | setProperty name shared by a test-only functional API and production in-place API; size-check order differs between PropertyId and path variants | `Interpreter.cpp`: in-place setProperty overloads; `Interpreter.hpp`; `InterpreterStructAssignmentTest.cpp`: validation-order regression | Fixed: functional API removed; both retained setters use approved storage-first validation, preserving valid mutation behavior | 5 |
 | I14 | P3 | redundancy | Free function formatDynamicString forwards to Interpreter::formatString | `Interpreter.cpp`: formatDynamicString; `FormatString.hpp`:34 | verified | 1 (done) |
 | I15 | P2 | const-correctness | Interpreter::getVirtualMachine() const returns VirtualMachine&; many const methods mutate the VM | `Interpreter.hpp`, `Interpreter.cpp` | verified | 5 |
 

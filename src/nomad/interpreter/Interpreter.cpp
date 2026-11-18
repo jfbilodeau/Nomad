@@ -530,11 +530,11 @@ void Interpreter::setProperty(
     const NomadStringView propertyPath,
     const InterpreterValue& value
 ) const {
-    const auto property = resolveStoredPropertyPath(&type, propertyPath);
     if (receiverStorage.size() != type.getSize()) {
         throw std::invalid_argument("Struct receiver storage must match its type's physical size");
     }
 
+    const auto property = resolveStoredPropertyPath(&type, propertyPath);
     validateStoredPropertyAssignment(property, value);
     assignStoredProperty(receiverStorage, property, value);
 }

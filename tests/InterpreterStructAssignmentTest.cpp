@@ -13,6 +13,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <array>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -60,6 +61,51 @@ public:
 } // namespace
 
 BOOST_AUTO_TEST_SUITE(interpreter_struct_assignments)
+
+BOOST_AUTO_TEST_CASE(borrowed_property_setters_validate_storage_before_selectors) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto typeId = manager.registerStruct("PropertyValidationOrder");
+    const auto propertyId = manager.registerScriptStructProperty(typeId, "number", runtime.getIntegerType());
+    BOOST_REQUIRE(propertyId.isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(typeId, "tail", runtime.getIntegerType()).isValid());
+    manager.finalizeCompositeFieldLayout(typeId);
+    const auto* type = runtime.getTypeByName("PropertyValidationOrder")->asStructType();
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    const InterpreterValue replacement(runtime.getIntegerType(), RuntimeValue{NomadInteger{31}});
+    std::array storage{
+        RuntimeValue{NomadInteger{17}},
+        RuntimeValue{NomadInteger{23}},
+        RuntimeValue{NomadInteger{29}}
+    };
+    const auto isStorageError = [](const std::invalid_argument& error) {
+
+        return NomadStringView{error.what()} == "Struct receiver storage must match its type's physical size";
+    };
+    for (const auto size : {NomadIndex{0}, NomadIndex{1}, NomadIndex{3}}) {
+        const auto receiverStorage = std::span{storage}.first(size);
+        for (const auto selector : {propertyId, PropertyId::INVALID}) {
+            BOOST_CHECK_EXCEPTION(
+                interpreter.setProperty(*type, receiverStorage, selector, replacement),
+                std::invalid_argument,
+                isStorageError
+            );
+        }
+
+        for (const auto* selector : {"number", "", "missing", "number.extra"}) {
+            BOOST_CHECK_EXCEPTION(
+                interpreter.setProperty(*type, receiverStorage, selector, replacement),
+                std::invalid_argument,
+                isStorageError
+            );
+        }
+
+        BOOST_TEST(storage[0].getIntegerValue() == 17);
+        BOOST_TEST(storage[1].getIntegerValue() == 23);
+        BOOST_TEST(storage[2].getIntegerValue() == 29);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(named_roots_copy_nested_fields_and_preserve_shared_references) {
     nomad::test::LanguageTestFixture fixture;
