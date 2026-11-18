@@ -3985,6 +3985,16 @@ that template. Each diagnostic includes a message, source location, and zero-bas
 byte offset and length in the template. Diagnostics are also logged; nested
 templates emit their own diagnostics.
 
+Formatting treats context diagnostics, the published result, and loop control
+as disposable evaluation state. It resets that state before evaluation and
+between segments, including for empty and literal-only templates. It does not
+save or restore earlier context state. Variable, parameter, and receiver
+bindings remain live, so placeholder side effects are still visible.
+Each returned result owns only that call's template diagnostics; every returned
+diagnostic is logged through `log::error`, and the context accumulates no history.
+Template text and source-name views may refer to the prior published string
+result; formatting captures those inputs before discarding it.
+
 Whole structs format as their type name, matching ordinary class objects; fields
 are not enumerated, including for empty structs. Explicit fields such as
 `{point.x}` and `{player.location.name}` use ordinary expression evaluation and
@@ -3994,7 +4004,7 @@ returns never require scalar `InterpreterValue::getValue()` access.
 Compiled expression placeholders own captured struct copies. Mutating such a
 copy does not write back to the original struct, while contained class objects
 retain shared identity. Dynamic templates use live context/frame receivers.
-Both preserve left-to-right placeholder evaluation, existing diagnostics, and
+Both preserve left-to-right placeholder evaluation and
 ownership of extracted strings and temporary results.
 
 Placeholders require exactly one non-void expression. Assignments, statements,

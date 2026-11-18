@@ -120,6 +120,7 @@ public:
     [[nodiscard]] NomadBoolean execute(const NomadString& source, InterpreterContext& context) const;
     [[nodiscard]] NomadBoolean execute(const SourceText& source, InterpreterContext& context) const;
     // Placeholder syntax/type errors produce diagnostics; execution exceptions propagate.
+    // Resets transient context state; variable and receiver bindings stay live.
     [[nodiscard]] DynamicFormatResult formatString(
         InterpreterContext& context,
         NomadStringView format,

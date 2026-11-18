@@ -585,7 +585,6 @@ std::optional<InterpreterValue> Interpreter::evaluateFormatExpression(
     InterpreterContext& evaluation,
     NomadIndex sourceLine
 ) const {
-    evaluation.resetEvaluation();
     auto* function = evaluation.getCallable();
     auto compiler = evaluation.getRuntime()->createCompiler();
     CompilerContext context(compiler.get(), CompilerMode::Interpreter, &evaluation);
@@ -643,11 +642,13 @@ DynamicFormatResult Interpreter::formatString(
     const auto guard = context.beginEvaluation();
     DynamicFormatResult result;
     const auto parsed = parseFormatTemplate(format);
+    const auto source = NomadString{sourceName};
+    context.resetEvaluation();
     const auto appendError = [&](const FormatTemplateSegment& segment, const NomadString& message) {
         result.text += "{" + message + "}";
-        result.diagnostics.push_back({message, NomadString{sourceName}, line, column,
+        result.diagnostics.push_back({message, source, line, column,
             segment.offset, segment.length});
-        log::error("Dynamic format error: source=" + NomadString{sourceName} +
+        log::error("Dynamic format error: source=" + source +
             ", line=" + std::to_string(line) + ", column=" + std::to_string(column) +
             ", offset=" + std::to_string(segment.offset) + ", length=" + std::to_string(segment.length) +
             ", message=" + message);
@@ -661,7 +662,7 @@ DynamicFormatResult Interpreter::formatString(
                 ? "missing `}`" : "empty expression");
         } else if (const auto value = evaluateFormatExpression(
             SourceText{
-                NomadString{sourceName},
+                source,
                 segment.text
             },
             context,
@@ -680,8 +681,7 @@ DynamicFormatResult Interpreter::formatString(
                     "invalid identifier: '" + error->subject + "'" : error->message
             );
         }
-        context.clearError();
-        context.clearResult();
+        context.resetEvaluation();
     }
     return result;
 }

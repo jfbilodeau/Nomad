@@ -4,6 +4,9 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
+#include <nomad/log/Logger.hpp>
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/FormatString.hpp>
@@ -13,6 +16,7 @@
 #include <nomad/script/ValueType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
@@ -729,6 +733,74 @@ BOOST_AUTO_TEST_CASE(dynamic_format_reports_structured_diagnostics_and_continues
     BOOST_TEST(runtime.getInstructions().size() == before);
     BOOST_REQUIRE(context.getInterpreter().execute("$(\"{score}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "10");
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_format_discards_previous_context_state_and_logs_current_diagnostics) {
+    Runtime runtime;
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    context.setVariable("score", runtime.getIntegerType(), RuntimeValue{NomadInteger{10}});
+    const auto* binding = context.getVariableValue("score");
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    const auto sinkId = logger.createMemorySink();
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Error);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    for (const auto* format : {"", "literal", "{score}", "{}{", "{missing}{}{"}) {
+        context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "previous warning", "previous.nomad", 1, 1});
+        context.setError("previous error");
+        RuntimeValue previousResult{NomadString{"previous result"}};
+        context.setResult(runtime.getStringType(), previousResult);
+        previousResult.freeObjectValue();
+        context.setLoopControl(LoopControl::Break);
+        sink->clear();
+
+        const auto result = interpreter.formatString(context, format, "current.nomad", 3, 5);
+        logger.flush();
+        BOOST_TEST(context.getDiagnostics().empty());
+        BOOST_TEST(context.getResult() == nullptr);
+        BOOST_CHECK(context.getLoopControl() == LoopControl::None);
+        BOOST_TEST(context.getVariableValue("score") == binding);
+        BOOST_TEST(binding->getIntegerValue() == 10);
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_REQUIRE(sink->getEntries().size() == result.diagnostics.size());
+        for (auto index = NomadIndex{0}; index < result.diagnostics.size(); ++index) {
+            const auto& diagnostic = result.diagnostics[index];
+            const auto& entry = sink->getEntries()[index];
+            BOOST_CHECK(entry.level == LogLevel::Error);
+            BOOST_TEST(entry.message.find(diagnostic.message) != NomadString::npos);
+            BOOST_TEST(entry.message.find("source=current.nomad") != NomadString::npos);
+            BOOST_TEST(entry.message.find("line=3, column=5") != NomadString::npos);
+        }
+    }
+
+    sink->clear();
+    const auto recovered = interpreter.formatString(context, "{score}", "next.nomad", 1, 1);
+    logger.flush();
+    BOOST_TEST(recovered.text == "10");
+    BOOST_TEST(recovered.diagnostics.empty());
+    BOOST_TEST(sink->getEntries().empty());
+
+    RuntimeValue previousTemplate{NomadString{"{score}|{missing}"}};
+    context.setResult(runtime.getStringType(), previousTemplate);
+    previousTemplate.freeObjectValue();
+    const auto templateText = context.getResult()->getValue().getStringObject()->getView();
+    const auto aliased = interpreter.formatString(context, templateText, templateText, 1, 1);
+    logger.flush();
+    BOOST_TEST(aliased.text == "10|{invalid identifier: 'missing'}");
+    BOOST_REQUIRE(aliased.diagnostics.size() == 1U);
+    BOOST_TEST(aliased.diagnostics.front().sourceName == "{score}|{missing}");
+    BOOST_TEST(context.getResult() == nullptr);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
 BOOST_AUTO_TEST_CASE(dynamic_format_structured_errors_preserve_markers_recovery_and_locations)
