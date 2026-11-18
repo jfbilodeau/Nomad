@@ -115,7 +115,7 @@ const Method& resolveMethod(
 
 void validateMethodImplementation(const Method& method) {
     const auto* script = method.asScriptMethod();
-    if (script != nullptr && !script->hasCompiledBody()) {
+    if (script != nullptr && !script->isCompiled()) {
         throw std::invalid_argument("Method '" + method.getName() + "' is not compiled");
     }
 
@@ -305,7 +305,7 @@ InterpreterValue Interpreter::runFunction(
     }
 
     const auto* script = function->asScriptFunction();
-    if (script == nullptr || !script->hasCompiledBody()) {
+    if (script == nullptr || !script->isCompiled()) {
         throw std::invalid_argument("Function '" + function->getName() + "' is not compiled");
     }
     if (script->getCaptureCount() != 0) {
@@ -325,7 +325,7 @@ InterpreterValue Interpreter::runFunction(
     const auto* function = closure.getFunction();
     if (
         machine.getRuntime()->getScriptFunction(function->getId()) != function ||
-        !function->hasCompiledBody()
+        !function->isCompiled()
     ) {
         throw std::invalid_argument(
             "Closure requires a compiled script function in the interpreter's runtime"
@@ -484,7 +484,7 @@ InterpreterValue Interpreter::construct(
         throw std::invalid_argument("Constructor has an unresolved constructed type");
     }
     if (const auto* script = constructor->asScriptConstructor()) {
-        if (!script->hasCompiledBody()) {
+        if (!script->isCompiled()) {
             throw std::invalid_argument("Constructor '" + constructor->getName() + "' is not compiled");
         }
     }

@@ -299,7 +299,7 @@ void VirtualMachine::run(
     const auto* function = closure.getFunction();
     if (
         m_runtime->getScriptFunction(function->getId()) != function ||
-        !function->hasCompiledBody()
+        !function->isCompiled()
     ) {
         throw std::invalid_argument(
             "Closure requires a compiled script function in the virtual machine's runtime"

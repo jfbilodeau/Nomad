@@ -14,7 +14,7 @@ ScriptCallableBase::ScriptCallableBase(NomadString path, NomadString source):
 
 ScriptCallableBase::~ScriptCallableBase() = default;
 
-bool ScriptCallableBase::hasCompiledBody() const noexcept {
+bool ScriptCallableBase::isCompiled() const noexcept {
     return 
         m_functionStartIndex != NOMAD_INVALID_INDEX &&
         m_functionEndIndex != NOMAD_INVALID_INDEX &&
