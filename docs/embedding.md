@@ -2582,7 +2582,7 @@ the complete first error, or `std::nullopt` when there are no errors. The snapsh
 remains valid after context diagnostics are changed or cleared. Save the returned
 optional when inspecting several fields rather than requesting repeated copies.
 Each new evaluation clears previous diagnostics; inspect or copy them before
-executing more input. Call `clearError()` to dismiss both errors and warnings
+executing more input. Call `clearDiagnostics()` to dismiss both errors and warnings
 without starting another evaluation.
 
 `resetEvaluation()` clears diagnostics, releases the current result, and resets
@@ -2602,6 +2602,13 @@ source coordinates; `getLineCount()`, `getLine()`, and `getSource()` describe on
 the supplied text. Before advancement and after `reset()`, the line coordinate is
 `firstLine - 1`. Invalid origins or overflowing line ranges throw
 `std::invalid_argument`. No leading blank lines are needed for source fragments.
+
+`InterpreterContext::addError(message)` appends a general error using the
+context callable's source path and unspecified line/column positions. It does
+not replace earlier diagnostics. Use `addDiagnostic(diagnostic)` when the
+severity or other diagnostic metadata needs to be supplied explicitly.
+The former `setError()` and `clearError()` names have been removed; update C++
+callers to `addError()` and `clearDiagnostics()`.
 
 `reportInputError(source, message)` appends an error using `source.sourceName`
 and unspecified line/column positions. It does not clear existing diagnostics,

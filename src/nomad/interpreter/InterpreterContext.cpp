@@ -451,12 +451,12 @@ const InterpreterValue* InterpreterContext::getResult() const {
 }
 
 void InterpreterContext::resetEvaluation() {
-    clearError();
+    clearDiagnostics();
     clearResult();
     setLoopControl(LoopControl::None);
 }
 
-void InterpreterContext::setError(const NomadString& error) {
+void InterpreterContext::addError(const NomadString& error) {
     addDiagnostic({CompilerDiagnosticSeverity::Error, error, m_function->getPath(),
         NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
 }
@@ -471,7 +471,7 @@ void InterpreterContext::reportInputError(const SourceText& source, const NomadS
     });
 }
 
-void InterpreterContext::clearError() {
+void InterpreterContext::clearDiagnostics() {
     m_diagnostics.clear();
 }
 

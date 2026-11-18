@@ -757,7 +757,7 @@ BOOST_AUTO_TEST_CASE(dynamic_format_discards_previous_context_state_and_logs_cur
     BOOST_REQUIRE(sink != nullptr);
     for (const auto* format : {"", "literal", "{score}", "{}{", "{missing}{}{"}) {
         context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "previous warning", "previous.nomad", 1, 1});
-        context.setError("previous error");
+        context.addError("previous error");
         RuntimeValue previousResult{NomadString{"previous result"}};
         context.setResult(runtime.getStringType(), previousResult);
         previousResult.freeObjectValue();

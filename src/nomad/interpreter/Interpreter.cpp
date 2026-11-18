@@ -650,7 +650,7 @@ NomadBoolean Interpreter::execute(const NomadString& source, InterpreterContext&
         return execute(SourceText{evaluation.getCallable()->getPath(), source}, evaluation);
     } catch (const NomadBug& error) {
         evaluation.resetEvaluation();
-        evaluation.setError(error.what());
+        evaluation.addError(error.what());
         return false;
     }
 }

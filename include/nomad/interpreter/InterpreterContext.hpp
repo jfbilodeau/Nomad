@@ -111,16 +111,16 @@ public:
 
     // Clears diagnostics, result, and loop control without changing bindings or evaluation lifetime.
     void resetEvaluation();
-    void setError(const NomadString& error);
+    void addError(const NomadString& error);
     void reportInputError(const SourceText& source, const NomadString& message);
     void addDiagnostic(const CompilerDiagnostic& diagnostic);
     void copyCompilerDiagnostic(
         std::span<const CompilerDiagnostic> diagnostics,
         const NomadString& sourceName
     );
-    // Includes warnings and errors in reporting order. clearError clears this collection too.
+    // Includes warnings and errors in reporting order. clearDiagnostics clears this collection.
     [[nodiscard]] std::span<const CompilerDiagnostic> getDiagnostics() const;
-    void clearError();
+    void clearDiagnostics();
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] NomadBoolean hasWarning() const;
     // Returns an owned snapshot of the first error, or std::nullopt.

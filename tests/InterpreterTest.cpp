@@ -751,7 +751,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_expression_and_void_results)
     BOOST_TEST(context.getResult() == nullptr);
 }
 
-BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
+BOOST_AUTO_TEST_CASE(interpreter_context_appends_errors_and_clears_diagnostics)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
@@ -761,22 +761,22 @@ BOOST_AUTO_TEST_CASE(interpreter_context_stores_and_clears_errors)
     BOOST_TEST(!context.hasError());
     BOOST_TEST(context.getFirstError().has_value() == false);
 
-    context.setError("Unknown variable 'score'");
+    context.addError("Unknown variable 'score'");
     BOOST_TEST(context.hasError());
     BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message == "Unknown variable 'score'");
 
-    context.setError("A later nested error");
+    context.addError("A later nested error");
     BOOST_TEST(context.getFirstError()->message == "Unknown variable 'score'");
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
     BOOST_TEST(context.getDiagnostics()[1].message == "A later nested error");
 
-    context.clearError();
+    context.clearDiagnostics();
     BOOST_TEST(!context.hasError());
     BOOST_TEST(!context.hasWarning());
     BOOST_TEST(context.getFirstError().has_value() == false);
 
-    context.setError("A later input error");
+    context.addError("A later input error");
     BOOST_TEST(context.hasError());
     BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message == "A later input error");
@@ -826,7 +826,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_resets_evaluation_without_clearing_bind
     for (const auto control : {LoopControl::Break, LoopControl::Continue}) {
         context.setResult(runtime.getStringType(), *storage);
         context.addDiagnostic({CompilerDiagnosticSeverity::Warning, "warning", "test.nomad", 1, 2});
-        context.setError("error");
+        context.addError("error");
         context.setLoopControl(control);
         BOOST_TEST(object->getReferenceCount() == 2U);
         context.resetEvaluation();
@@ -865,7 +865,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_retains_multiple_diagnostics_and_first_
     BOOST_TEST(context.getFirstError()->message == "first error");
     BOOST_TEST(context.hasError());
     BOOST_TEST(context.hasWarning());
-    context.clearError();
+    context.clearDiagnostics();
     BOOST_TEST(context.getDiagnostics().empty());
     BOOST_TEST(!context.hasError());
     BOOST_TEST(!context.hasWarning());
@@ -926,7 +926,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_copies_compiler_diagnostics_in_order_wi
     BOOST_TEST(context.getFirstError()->message == "compiler error");
     context.copyCompilerDiagnostic({}, "unused.nomad");
     BOOST_TEST(context.getDiagnostics().size() == 3U);
-    context.clearError();
+    context.clearDiagnostics();
     BOOST_TEST(context.getDiagnostics().empty());
     BOOST_TEST(context.getFirstError().has_value() == false);
 }
