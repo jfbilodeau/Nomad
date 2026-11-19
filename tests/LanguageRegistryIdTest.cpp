@@ -11,6 +11,7 @@
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -240,6 +241,54 @@ BOOST_FIXTURE_TEST_CASE(
     BOOST_TEST(!runtime.canGetDynamicVariable(writeOnlyId));
     BOOST_TEST(runtime.canSetDynamicVariable(writeOnlyId));
     BOOST_TEST(runtime.getContextName(contextId).empty());
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
+}
+
+BOOST_FIXTURE_TEST_CASE(
+    constant_lookup_failures_leave_output_unchanged_without_logging_and_reads_remain_borrowed,
+    BoundsCheckReportingFixture
+) {
+    Runtime runtime;
+    const auto* type = runtime.getStringType();
+    RuntimeValue source(NomadString{"borrowed constant"});
+    const RuntimeValueGuard sourceOwner(*type, &source);
+    const auto id = runtime.registerConstant("", source, type);
+    BOOST_REQUIRE(id.isValid());
+    const auto references = source.getObjectValue()->getReferenceCount();
+
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    RuntimeValue output(NomadInteger{91});
+    for (const auto invalidId : {
+        ConstantId::INVALID,
+        ConstantId{-2},
+        ConstantId{NOMAD_ID_MAX},
+        ConstantId{id.id + 1}
+    }) {
+        BOOST_CHECK_THROW(runtime.getConstantValue(invalidId, output), NomadException);
+        BOOST_TEST(output.getIntegerValue() == 91);
+        BOOST_CHECK_THROW(static_cast<void>(runtime.getConstantName(invalidId)), NomadException);
+        BOOST_TEST(runtime.getConstantType(invalidId) == nullptr);
+    }
+
+    runtime.getConstantValue(id, output);
+    BOOST_TEST(output.getObjectValue() == source.getObjectValue());
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == references);
+    BOOST_TEST(runtime.getConstantName(id).empty());
+    BOOST_TEST(runtime.getConstantType(id) == type);
     logger.flush();
     BOOST_TEST(sink->getEntries().empty());
 }

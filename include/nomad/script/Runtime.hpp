@@ -482,10 +482,21 @@ public:
     ConstantId registerConstant(const NomadString& name, const RuntimeValue& value, const Type* type);
     // Borrows the constant's value. The runtime retains ownership, so callers must not free the
     // returned value; copy it with `Type::copyValue` first if they need to own it.
+    // Invalid IDs throw NomadException without changing the output or logging.
     void getConstantValue(ConstantId id, RuntimeValue& value) const;
+    // Requires a compiler-resolved ID; the same borrowed-value contract applies without validation.
+    void getUncheckedConstantValue(const ConstantId id, RuntimeValue& value) const {
+        value = m_constants[toNomadIndex(id.id)];
+    }
     [[nodiscard]] ConstantId getConstantId(const NomadString& name) const;
+    // Throws NomadException for invalid or unregistered IDs without logging.
     [[nodiscard]] const NomadString& getConstantName(ConstantId id) const;
+    // Returns nullptr for an invalid or unregistered ID without logging.
     [[nodiscard]] const Type* getConstantType(ConstantId id) const;
+    // Requires an ID already resolved by the compiler; performs no validation.
+    [[nodiscard]] const Type* getUncheckedConstantType(const ConstantId id) const {
+        return m_constantsMap.getVariableType(VariableId{id.id});
+    }
     [[nodiscard]] ConstantId getFirstConstantId() const;
     [[nodiscard]] ConstantId getNextConstantId(ConstantId currentId) const;
 

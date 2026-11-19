@@ -2402,13 +2402,11 @@ ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue
 }
 
 void Runtime::getConstantValue(const ConstantId id, RuntimeValue& value) const {
-    const auto constantIndex = toNomadIndex(id.id);
-
-    if (constantIndex >= m_constants.size()) {
-        return;
+    if (isIdOutOfRange(id.id, m_constants.size())) {
+        throw NomadException("Constant ID out of range");
     }
 
-    value = m_constants[constantIndex];
+    getUncheckedConstantValue(id, value);
 }
 
 ConstantId Runtime::getConstantId(const NomadString& name) const {
@@ -2416,11 +2414,19 @@ ConstantId Runtime::getConstantId(const NomadString& name) const {
 }
 
 const NomadString& Runtime::getConstantName(const ConstantId id) const {
+    if (isIdOutOfRange(id.id, m_constants.size())) {
+        throw NomadException("Constant ID out of range");
+    }
+
     return m_constantsMap.getVariableName(VariableId{id.id});
 }
 
 const Type* Runtime::getConstantType(const ConstantId id) const {
-    return m_constantsMap.getVariableType(VariableId{id.id});
+    if (isIdOutOfRange(id.id, m_constants.size())) {
+        return nullptr;
+    }
+
+    return getUncheckedConstantType(id);
 }
 
 ConstantId Runtime::getFirstConstantId() const

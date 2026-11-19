@@ -1135,7 +1135,7 @@ bool VirtualMachine::getVariableValue(IdentifierType identifierType, NomadId var
         value.setObjectValue(getThis());
         return true;
     case IdentifierType::Constant:
-        m_runtime->getConstantValue(ConstantId{variableId}, value);
+        m_runtime->getUncheckedConstantValue(ConstantId{variableId}, value);
         return true;
 
     case IdentifierType::DynamicVariable:

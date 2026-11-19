@@ -697,8 +697,18 @@ one-slot, multi-slot, and unfinalized structs. Invalid types are logged and
 return `ConstantId::INVALID` without publishing a constant or hub member or
 retaining the supplied value. Strings and class references remain supported.
 
-Pass a registered ID to `getConstantName`, `getConstantType`, or
-`getConstantValue`. The value is borrowed; the runtime retains ownership.
+`getConstantName` and `getConstantValue` throw `NomadException` for invalid or
+unregistered IDs; a failed value read leaves its output unchanged.
+`getConstantType` returns `nullptr` for an invalid or unregistered ID.
+None of these lookups log. Successful value reads are borrowed and do not retain
+the value; the runtime retains ownership. Do not free a borrowed result; copy it
+through its type when an owned value is needed.
+
+`getUncheckedConstantValue` and `getUncheckedConstantType` require a registered,
+compiler-resolved ID and do not validate it. The value getter has the same
+borrowed-output contract. Compiled constant loads copy into owned destinations;
+the unchecked accessors themselves do not add references.
+
 `getFirstConstantId` and `getNextConstantId` enumerate registered constants in
 registration order, ending at `ConstantId::INVALID`. Hub constant members also
 contain a `ConstantId`. Constant IDs do not implicitly convert to integers or

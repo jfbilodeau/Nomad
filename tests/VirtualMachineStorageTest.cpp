@@ -71,6 +71,42 @@ int countCallAllocations(
 
 BOOST_AUTO_TEST_SUITE(virtual_machine_storage)
 
+BOOST_AUTO_TEST_CASE(constant_loads_copy_owned_values_for_all_expression_targets) {
+    Runtime runtime;
+    const auto* type = runtime.getStringType();
+    RuntimeValue source(NomadString{"owned constant load"});
+    const RuntimeValueGuard sourceOwner(*type, &source);
+    const auto id = runtime.registerConstant("constantText", source, type);
+    BOOST_REQUIRE(id.isValid());
+    auto compiler = runtime.createCompiler();
+    const auto resultOperand = compiler->addLoadConstant(id, ExpressionTarget::Result);
+    const auto intermediateOperand = compiler->addLoadConstant(id, ExpressionTarget::Intermediate);
+    const auto stackOperand = compiler->addLoadConstant(id, ExpressionTarget::Stack);
+    const auto references = source.getObjectValue()->getReferenceCount();
+    {
+        VirtualMachine machine(&runtime, 32);
+        const RuntimeValueGuard resultOwner(*type, &machine.getResult());
+        const RuntimeValueGuard intermediateOwner(*type, &machine.getIntermediate());
+        RuntimeValue borrowed;
+        BOOST_REQUIRE(machine.getVariableValue(IdentifierType::Constant, id.id, borrowed));
+        BOOST_TEST(borrowed.getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references);
+        executeInstruction(runtime, machine, resultOperand - 1);
+        BOOST_TEST(machine.getResult().getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 1);
+        executeInstruction(runtime, machine, intermediateOperand - 1);
+        BOOST_TEST(machine.getIntermediate().getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 2);
+        executeInstruction(runtime, machine, stackOperand - 1);
+        auto stackValue = machine.popValue();
+        const RuntimeValueGuard stackOwner(*type, &stackValue);
+        BOOST_TEST(stackValue.getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 3);
+    }
+
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == references);
+}
+
 BOOST_AUTO_TEST_CASE(factory_virtual_machines_keep_results_and_return_ownership_independent) {
     Runtime runtime;
     auto firstMachine = runtime.createVirtualMachine();
