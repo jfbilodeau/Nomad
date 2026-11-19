@@ -734,6 +734,15 @@ Event callback and dispatch native APIs receive raw IDs through the existing
 VM parameter slots. Construct `EventId{machine->getIdParameter(0)}` before looking
 up the definition or forwarding a dispatch request.
 
+### Keyword IDs
+
+`registerKeyword(name, documentation)` returns a runtime-local `KeywordId`.
+Registering the same name again returns the original ID without replacing its
+documentation. `getKeywordId(name)` returns `KeywordId::INVALID` when absent.
+`getKeywords(definitions)` replaces the supplied vector with registered
+`KeywordDefinition` entries, including their documentation in `doc`.
+Keyword documentation is retained without enabling a preprocessor switch.
+
 ### String and format-string IDs
 
 `Runtime::registerString(text)` returns a `StringId`, reusing the existing ID

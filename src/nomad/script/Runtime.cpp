@@ -2343,7 +2343,7 @@ CallableId Runtime::getNextNativeFunctionId(const CallableId currentId) const {
     return CallableId::INVALID;
 }
 
-KeywordId Runtime::registerKeyword(const NomadString& keyword, const NomadString& /*doc*/) {
+KeywordId Runtime::registerKeyword(const NomadString& keyword, const NomadString& doc) {
     const auto existingId = getKeywordId(keyword);
     if (existingId.isValid()) {
         return existingId;
@@ -2354,9 +2354,7 @@ KeywordId Runtime::registerKeyword(const NomadString& keyword, const NomadString
     KeywordDefinition definition;
 
     definition.keyword = keyword;
-#if defined(NOMAD_FUNCTION_DOC)
     definition.doc = doc;
-#endif
 
     m_keywords.push_back(definition);
 
@@ -2594,8 +2592,8 @@ DynamicVariableId Runtime::registerDynamicVariable(
     DynamicVariableSetFn setFn,
     DynamicVariableGetFn getFn,
     const Type* type,
-    const NomadString& /*doc*/
-    ) {
+    const NomadString& doc
+) {
     if (isHub(name) || !canRegisterHubMember(name)) {
         log::error("Cannot register dynamic variable '" + name + "': name is reserved by a hub declaration");
         return DynamicVariableId::INVALID;
@@ -2607,9 +2605,7 @@ DynamicVariableId Runtime::registerDynamicVariable(
     definition.type = type;
     definition.setFn = std::move(setFn);
     definition.getFn = std::move(getFn);
-#if defined(NOMAD_FUNCTION_DOC)
     definition.doc = doc;
-#endif
 
     m_dynamicVariables.push_back(definition);
     registerHubMember(name, id);

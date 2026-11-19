@@ -78,9 +78,7 @@ BOOST_AUTO_TEST_CASE(keyword_ids_support_registration_lookup_and_catalog_growth)
     runtime.getKeywords(keywords);
     BOOST_REQUIRE(keywords.size() == originalCount + 65);
     BOOST_TEST(keywords[originalCount].keyword == "reservedword");
-#if defined(NOMAD_FUNCTION_DOC)
     BOOST_TEST(keywords[originalCount].doc == "Test keyword.");
-#endif
 
     const auto compiler = runtime.createCompiler();
     BOOST_TEST((compiler->getIdentifierType("reservedword", nullptr) == IdentifierType::Keyword));
