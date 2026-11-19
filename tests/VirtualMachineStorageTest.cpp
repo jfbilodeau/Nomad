@@ -7,6 +7,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/InstructionDump.hpp>
+#include <nomad/script/OpCode.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -104,6 +105,72 @@ BOOST_AUTO_TEST_CASE(constant_loads_copy_owned_values_for_all_expression_targets
         BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 3);
     }
 
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == references);
+}
+
+BOOST_AUTO_TEST_CASE(dynamic_callbacks_transfer_owned_results_and_borrow_setter_inputs) {
+    Runtime runtime;
+    const auto* type = runtime.getStringType();
+    RuntimeValue source(NomadString{"dynamic callback text"});
+    const RuntimeValueGuard sourceOwner(*type, &source);
+    RuntimeValue retained;
+    const RuntimeValueGuard retainedOwner(*type, &retained);
+    auto reads = 0;
+    auto writes = 0;
+    const auto id = runtime.registerDynamicVariable(
+        "dynamicText",
+        [&](VirtualMachine*, const RuntimeValue& value) {
+            ++writes;
+            type->assignValue(&value, &retained);
+        },
+        [&](VirtualMachine*, RuntimeValue& value) {
+            ++reads;
+            type->copyValue(&source, &value);
+        },
+        type,
+        NomadDoc("")
+    );
+    BOOST_REQUIRE(id.isValid());
+    auto compiler = runtime.createCompiler();
+    const auto resultOperand = compiler->addLoadDynamicVariable(id, type, ExpressionTarget::Result);
+    const auto intermediateOperand = compiler->addLoadDynamicVariable(id, type, ExpressionTarget::Intermediate);
+    const auto stackOperand = compiler->addLoadDynamicVariable(id, type, ExpressionTarget::Stack);
+    const auto setterOperand = type->emitStoreDynamicVariable(*compiler, id.id);
+    const auto references = source.getObjectValue()->getReferenceCount();
+    {
+        VirtualMachine machine(&runtime, 32);
+        const RuntimeValueGuard resultOwner(*type, &machine.getResult());
+        const RuntimeValueGuard intermediateOwner(*type, &machine.getIntermediate());
+        {
+            RuntimeValue formatted;
+            const RuntimeValueGuard formattedOwner(*type, &formatted);
+            BOOST_REQUIRE(machine.getVariableValue(IdentifierType::DynamicVariable, id.id, formatted));
+            BOOST_TEST(formatted.getObjectValue() == source.getObjectValue());
+            BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 1);
+        }
+
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references);
+        executeInstruction(runtime, machine, resultOperand - 1);
+        BOOST_TEST(machine.getResult().getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 1);
+        executeInstruction(runtime, machine, intermediateOperand - 1);
+        BOOST_TEST(machine.getIntermediate().getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 2);
+        executeInstruction(runtime, machine, stackOperand - 1);
+        auto stackValue = machine.popValue();
+        const RuntimeValueGuard stackOwner(*type, &stackValue);
+        BOOST_TEST(stackValue.getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 3);
+        executeInstruction(runtime, machine, setterOperand - 1);
+        BOOST_TEST(retained.getObjectValue() == source.getObjectValue());
+        BOOST_TEST(machine.getResult().getObjectValue() == source.getObjectValue());
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 4);
+        BOOST_TEST(reads == 4);
+        BOOST_TEST(writes == 1);
+    }
+
+    BOOST_TEST(source.getObjectValue()->getReferenceCount() == references + 1);
+    type->freeValue(&retained);
     BOOST_TEST(source.getObjectValue()->getReferenceCount() == references);
 }
 

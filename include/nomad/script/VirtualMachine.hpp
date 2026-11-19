@@ -272,6 +272,7 @@ public:
 
     void jump(NomadIndex index);
 
+    // IDs and dynamic-variable readability must already be resolved by the compiler.
     bool getVariableValue(IdentifierType identifierType, NomadId variableId, RuntimeValue& value);
 
     [[nodiscard]] bool isRunning() const { return m_running; }

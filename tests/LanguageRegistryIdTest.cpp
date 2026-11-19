@@ -23,7 +23,9 @@
 #include <windows.h>
 #endif
 
+#include <exception>
 #include <memory>
+#include <stdexcept>
 #include <type_traits>
 
 using namespace nomad;
@@ -448,6 +450,183 @@ BOOST_AUTO_TEST_CASE(dynamic_variable_ids_support_lookup_iteration_growth_and_fo
     BOOST_TEST(format.format(machine.get()) == "answer=42");
     runtime.setDynamicVariable(machine.get(), id, RuntimeValue{NomadInteger{7}});
     BOOST_TEST(format.format(machine.get()) == "answer=7");
+}
+
+BOOST_FIXTURE_TEST_CASE(
+    host_dynamic_access_rejects_invalid_ids_and_missing_callbacks_without_logging,
+    BoundsCheckReportingFixture
+) {
+    Runtime runtime;
+    auto reads = 0;
+    auto writes = 0;
+    const auto readOnlyId = runtime.registerDynamicVariable(
+        "hostReadOnly",
+        {},
+        [&](VirtualMachine*, RuntimeValue& value) {
+            ++reads;
+            value.setIntegerValue(42);
+        },
+        runtime.getIntegerType(),
+        NomadDoc("")
+    );
+    const auto writeOnlyId = runtime.registerDynamicVariable(
+        "hostWriteOnly",
+        [&](VirtualMachine*, const RuntimeValue&) { ++writes; },
+        {},
+        runtime.getIntegerType(),
+        NomadDoc("")
+    );
+    const auto unavailableId = runtime.registerDynamicVariable(
+        "hostUnavailable", {}, {}, runtime.getIntegerType(), NomadDoc("")
+    );
+    BOOST_REQUIRE(readOnlyId.isValid());
+    BOOST_REQUIRE(writeOnlyId.isValid());
+    BOOST_REQUIRE(unavailableId.isValid());
+    auto machine = runtime.createVirtualMachine();
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    RuntimeValue output(NomadInteger{91});
+    const RuntimeValue input(NomadInteger{17});
+    BOOST_CHECK_THROW(runtime.getDynamicVariableValue(machine.get(), writeOnlyId, output), NomadException);
+    BOOST_TEST(output.getIntegerValue() == 91);
+    BOOST_CHECK_THROW(runtime.setDynamicVariable(machine.get(), readOnlyId, input), NomadException);
+    BOOST_CHECK_THROW(runtime.getDynamicVariableValue(machine.get(), unavailableId, output), NomadException);
+    BOOST_CHECK_THROW(runtime.setDynamicVariable(machine.get(), unavailableId, input), NomadException);
+    for (const auto invalidId : {
+        DynamicVariableId::INVALID,
+        DynamicVariableId{-2},
+        DynamicVariableId{NOMAD_ID_MAX},
+        DynamicVariableId{unavailableId.id + 1}
+    }) {
+        BOOST_CHECK_THROW(runtime.getDynamicVariableValue(machine.get(), invalidId, output), NomadException);
+        BOOST_TEST(output.getIntegerValue() == 91);
+        BOOST_CHECK_THROW(runtime.setDynamicVariable(machine.get(), invalidId, input), NomadException);
+    }
+
+    BOOST_TEST(reads == 0);
+    BOOST_TEST(writes == 0);
+    BOOST_TEST(output.getIntegerValue() == 91);
+    BOOST_TEST(input.getIntegerValue() == 17);
+    runtime.getDynamicVariableValue(machine.get(), readOnlyId, output);
+    runtime.setDynamicVariable(machine.get(), writeOnlyId, input);
+    BOOST_TEST(output.getIntegerValue() == 42);
+    BOOST_TEST(reads == 1);
+    BOOST_TEST(writes == 1);
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
+}
+
+BOOST_AUTO_TEST_CASE(host_dynamic_callback_exceptions_preserve_callback_side_effects) {
+    Runtime runtime;
+    NomadInteger assigned = 0;
+    const auto id = runtime.registerDynamicVariable(
+        "hostThrowing",
+        [&](VirtualMachine*, const RuntimeValue& value) {
+            assigned = value.getIntegerValue();
+            throw std::runtime_error("setter failed");
+        },
+        [](VirtualMachine*, RuntimeValue& value) {
+            value.setIntegerValue(23);
+            throw std::runtime_error("getter failed");
+        },
+        runtime.getIntegerType(),
+        NomadDoc("")
+    );
+    BOOST_REQUIRE(id.isValid());
+    auto machine = runtime.createVirtualMachine();
+    RuntimeValue output(NomadInteger{91});
+    BOOST_CHECK_EXCEPTION(
+        runtime.getDynamicVariableValue(machine.get(), id, output),
+        std::runtime_error,
+        [](const std::runtime_error& error) {
+
+            return NomadString{error.what()} == "getter failed";
+        }
+    );
+    BOOST_TEST(output.getIntegerValue() == 23);
+    BOOST_CHECK_EXCEPTION(
+        runtime.setDynamicVariable(machine.get(), id, RuntimeValue{NomadInteger{17}}),
+        std::runtime_error,
+        [](const std::runtime_error& error) {
+
+            return NomadString{error.what()} == "setter failed";
+        }
+    );
+    BOOST_TEST(assigned == 17);
+}
+
+BOOST_AUTO_TEST_CASE(string_dynamic_setters_release_temporaries_on_return_and_throw) {
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    for (const auto retain : {false, true}) {
+        for (const auto fail : {false, true}) {
+            Runtime runtime;
+            const auto* type = runtime.getStringType();
+            RuntimeValue retained;
+            const RuntimeValueGuard retainedOwner(*type, &retained);
+            const auto id = runtime.registerDynamicVariable(
+                "stringSink",
+                [&, retain, fail](VirtualMachine*, const RuntimeValue& value) {
+                    if (retain) {
+                        type->copyValue(&value, &retained);
+                    }
+
+                    if (fail) {
+                        throw std::runtime_error("setter failed");
+                    }
+                },
+                {},
+                type,
+                NomadDoc("")
+            );
+            BOOST_REQUIRE(id.isValid());
+            auto machine = runtime.createVirtualMachine();
+            if (fail) {
+                BOOST_CHECK_EXCEPTION(
+                    runtime.setStringDynamicVariable(machine.get(), id, "retained text"),
+                    std::runtime_error,
+                    [](const std::runtime_error& error) {
+
+                        return NomadString{error.what()} == "setter failed";
+                    }
+                );
+            } else {
+                BOOST_CHECK_NO_THROW(runtime.setStringDynamicVariable(machine.get(), id, "retained text"));
+            }
+
+            if (retain) {
+                BOOST_TEST(retained.getStringValue() == "retained text");
+                BOOST_TEST(retained.getObjectValue()->getReferenceCount() == 1U);
+            }
+        }
+    }
+
+    {
+        Runtime runtime;
+        const auto id = runtime.registerDynamicVariable(
+            "stringReadOnly",
+            {},
+            [](VirtualMachine*, RuntimeValue&) {},
+            runtime.getStringType(),
+            NomadDoc("")
+        );
+        BOOST_REQUIRE(id.isValid());
+        auto machine = runtime.createVirtualMachine();
+        BOOST_CHECK_THROW(runtime.setStringDynamicVariable(machine.get(), id, "discarded text"), std::exception);
+    }
+
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_dynamic_reads_require_getters) {

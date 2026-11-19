@@ -574,7 +574,11 @@ void op_constant_push(VirtualMachine* machine) {
 void op_dynamic_variable_set(VirtualMachine* interpreter) {
     const auto variableId = DynamicVariableId{interpreter->nextId()};
 
-    interpreter->getRuntime()->setDynamicVariable(interpreter, variableId, interpreter->getResult());
+    interpreter->getRuntime()->setUncheckedDynamicVariable(
+        interpreter,
+        variableId,
+        interpreter->getResult()
+    );
 }
 
 void op_dynamic_variable_get_r(VirtualMachine* interpreter) {
@@ -582,7 +586,7 @@ void op_dynamic_variable_get_r(VirtualMachine* interpreter) {
 
     RuntimeValue value;
 
-    interpreter->getRuntime()->getDynamicVariableValue(interpreter, variableId, value);
+    interpreter->getRuntime()->getUncheckedDynamicVariableValue(interpreter, variableId, value);
 
     interpreter->setResult(value);
 }
@@ -592,7 +596,7 @@ void op_dynamic_variable_get_i(VirtualMachine* interpreter) {
 
     RuntimeValue value;
 
-    interpreter->getRuntime()->getDynamicVariableValue(interpreter, variableId, value);
+    interpreter->getRuntime()->getUncheckedDynamicVariableValue(interpreter, variableId, value);
 
     interpreter->setIntermediate(value);
 }
@@ -602,7 +606,7 @@ void op_dynamic_variable_push(VirtualMachine* interpreter) {
 
     RuntimeValue value;
 
-    interpreter->getRuntime()->getDynamicVariableValue(interpreter, variableId, value);
+    interpreter->getRuntime()->getUncheckedDynamicVariableValue(interpreter, variableId, value);
 
     interpreter->pushValue(value);
 }

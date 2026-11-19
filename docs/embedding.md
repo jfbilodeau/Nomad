@@ -774,9 +774,19 @@ Compiled scripts and interpreter expressions reject reads without a getter and
 assignments without a setter. Format-placeholder identifier resolution also
 requires a getter.
 
-Getter and setter invocation requires a registered ID and the corresponding
-callback. `setStringDynamicVariable` releases its temporary string after
-invoking the setter; a setter that retains a value must copy it through its type.
+`getDynamicVariableValue` and `setDynamicVariable` are checked host entry points.
+Invalid or unregistered IDs and absent callbacks throw `NomadException` without
+logging. Rejected reads leave their output unchanged before callback invocation.
+Exceptions thrown by an actual callback propagate unchanged; its output writes
+and other side effects are not rolled back.
+
+`getUncheckedDynamicVariableValue` and `setUncheckedDynamicVariable` require a
+compiler-resolved ID and the corresponding getter or setter. They perform no
+validation and serve trusted VM dispatch. On both paths, getters provide owned
+results and setters borrow their inputs, copying values they retain.
+
+`setStringDynamicVariable` releases its temporary string on both return and
+throw. A value retained by the setter remains setter-owned, even if it then throws.
 
 `getFirstDynamicVariableId` and `getNextDynamicVariableId` enumerate registrations
 in registration order, ending at `DynamicVariableId::INVALID`. IDs belong to the

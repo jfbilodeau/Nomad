@@ -536,8 +536,28 @@ public:
     [[nodiscard]] const Type* getDynamicVariableType(DynamicVariableId id) const;
     [[nodiscard]] bool canSetDynamicVariable(DynamicVariableId id) const;
     [[nodiscard]] bool canGetDynamicVariable(DynamicVariableId id) const;
+    // Host dispatch throws NomadException for invalid IDs or absent callbacks without logging.
+    // Callback exceptions and side effects propagate unchanged.
     void setDynamicVariable(VirtualMachine* interpreter, DynamicVariableId id, const RuntimeValue& value);
+    // Rejected reads leave the output unchanged before a callback is invoked.
     void getDynamicVariableValue(VirtualMachine* interpreter, DynamicVariableId id, RuntimeValue& value) const;
+    // Requires a compiler-resolved ID with a setter; performs no validation.
+    void setUncheckedDynamicVariable(
+        VirtualMachine* machine,
+        const DynamicVariableId id,
+        const RuntimeValue& value
+    ) {
+        m_dynamicVariables[toNomadIndex(id.id)].setFn(machine, value);
+    }
+    // Requires a compiler-resolved ID with a getter; performs no validation.
+    void getUncheckedDynamicVariableValue(
+        VirtualMachine* machine,
+        const DynamicVariableId id,
+        RuntimeValue& value
+    ) const {
+        m_dynamicVariables[toNomadIndex(id.id)].getFn(machine, value);
+    }
+    // Releases the temporary even when the setter throws.
     void setStringDynamicVariable(VirtualMachine* interpreter, DynamicVariableId id, const NomadString& value);
 
 

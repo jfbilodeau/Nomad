@@ -14,6 +14,7 @@
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/RegisterRangeType.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -2667,22 +2668,41 @@ bool Runtime::canGetDynamicVariable(const DynamicVariableId id) const {
 }
 
 void Runtime::setDynamicVariable(VirtualMachine* vm, const DynamicVariableId id, const RuntimeValue& value) {
+    if (isIdOutOfRange(id.id, m_dynamicVariables.size())) {
+        throw NomadException("Dynamic variable ID out of range");
+    }
+
     const auto dynamicVariableIndex = toNomadIndex(id.id);
-    m_dynamicVariables[dynamicVariableIndex].setFn(vm, value);
+    if (!m_dynamicVariables[dynamicVariableIndex].setFn) {
+        throw NomadException(
+            "Dynamic variable '" + m_dynamicVariables[dynamicVariableIndex].name + "' is read-only"
+        );
+    }
+
+    setUncheckedDynamicVariable(vm, id, value);
 }
 
 void Runtime::getDynamicVariableValue(VirtualMachine* vm, const DynamicVariableId id, RuntimeValue& value) const {
+    if (isIdOutOfRange(id.id, m_dynamicVariables.size())) {
+        throw NomadException("Dynamic variable ID out of range");
+    }
+
     const auto dynamicVariableIndex = toNomadIndex(id.id);
-    m_dynamicVariables[dynamicVariableIndex].getFn(vm, value);
+    if (!m_dynamicVariables[dynamicVariableIndex].getFn) {
+        throw NomadException(
+            "Dynamic variable '" + m_dynamicVariables[dynamicVariableIndex].name + "' cannot be read"
+        );
+    }
+
+    getUncheckedDynamicVariableValue(vm, id, value);
 }
 
 void Runtime::setStringDynamicVariable(VirtualMachine* vm, const DynamicVariableId id, const NomadString& value) {
     RuntimeValue stringValue;
+    const RuntimeValueGuard stringValueOwner(*getStringType(), &stringValue);
     stringValue.setStringValue(value);
 
     setDynamicVariable(vm, id, stringValue);
-
-    stringValue.freeObjectValue();
 }
 
 DynamicVariableId Runtime::getFirstDynamicVariableId() const {
