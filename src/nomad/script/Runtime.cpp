@@ -220,12 +220,12 @@ ConstantId Runtime::registerHubConstant(
     const RuntimeValue& value,
     const Type* type
 ) {
-    const auto* hub = getHub(hubId);
-    if (hub == nullptr) {
-        log::error("Cannot register hub constant '" + name + "': invalid hub");
+    const auto qualifiedName = qualifyHubMemberName(hubId, name);
+    if (!qualifiedName) {
         return ConstantId::INVALID;
     }
-    return registerConstant(hub->getName() + "." + name, value, type);
+
+    return registerConstant(*qualifiedName, value, type);
 }
 
 TypeId Runtime::registerHubEnum(
@@ -234,12 +234,12 @@ TypeId Runtime::registerHubEnum(
     std::vector<EnumValueDefinition> values,
     NomadString documentation
 ) {
-    const auto* hub = getHub(hubId);
-    if (hub == nullptr) {
-        log::error("Cannot register hub enum '" + name + "': invalid hub");
+    const auto qualifiedName = qualifyHubMemberName(hubId, name);
+    if (!qualifiedName) {
         return TypeId::INVALID;
     }
-    return m_typeManager.createEnum(hub->getName() + "." + name, std::move(values), std::move(documentation));
+
+    return m_typeManager.createEnum(*qualifiedName, std::move(values), std::move(documentation));
 }
 
 CallableId Runtime::registerHubNativeFunction(
@@ -250,21 +250,20 @@ CallableId Runtime::registerHubNativeFunction(
     const Type* returnType,
     NomadDocArg
 ) {
-    const auto* hub = getHub(hubId);
-    if (hub == nullptr) {
-        log::error("Cannot register hub native function '" + name + "': invalid hub");
+    const auto qualifiedName = qualifyHubMemberName(hubId, name);
+    if (!qualifiedName) {
         return CallableId::INVALID;
     }
 
-    const auto* member = hub->getMember(name);
+    const auto* member = getHub(hubId)->getMember(name);
     if (member != nullptr && !std::holds_alternative<HubFunctions>(*member)) {
-        log::error("Hub member '" + hub->getName() + "." + name + "' is already declared");
+        log::error("Hub member '" + *qualifiedName + "' is already declared");
 
         return CallableId::INVALID;
     }
 
     const auto id = registerNativeFunctionEntry(
-        hub->getName() + "." + name,
+        *qualifiedName,
         std::move(function),
         parameters,
         returnType,

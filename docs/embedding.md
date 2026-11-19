@@ -2235,6 +2235,10 @@ child namespace members. Function members refer
 to registered callables; types and events refer to their registered definitions.
 Hub pointers remain valid when more hubs are registered.
 
+Hub-member registration reports an invalid or unregistered owner ID as
+`Cannot register hub member '<name>': invalid hub` before validating the member
+definition, and returns the corresponding invalid ID.
+
 `HubMember` stores variables, constants, events, and dynamic
 variables directly as `VariableId`, `ConstantId`, `EventId`, and
 `DynamicVariableId`. Type members store a borrowed `const Type*`.

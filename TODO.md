@@ -6,6 +6,8 @@ Things the author wants to do.
 [ ] `$init` shows up in LSP
 
 ## Open
+[ ] Auto static methods (Auto `this` detection`)
+[ ] `object` dynamic type
 [ ] Code: distinguish between property and variable
 [ ] Line continuation. Use operator? (`myMethod.nextMethod` -> `myMethod\n.nextMethod`)
 [ ] Use `Task<T>` for captures?

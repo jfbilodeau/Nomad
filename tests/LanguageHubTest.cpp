@@ -4,12 +4,16 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
+#include <nomad/log/Logger.hpp>
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/RangeType.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <type_traits>
@@ -31,6 +35,40 @@ static_assert(std::is_same_v<std::variant_alternative_t<5, HubMember>, DynamicVa
 static_assert(std::is_same_v<std::variant_alternative_t<6, HubMember>, HubTypeFamily>);
 
 BOOST_AUTO_TEST_SUITE(language_hubs)
+
+BOOST_AUTO_TEST_CASE(invalid_hub_owners_share_one_qualification_diagnostic) {
+    Runtime runtime;
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    for (const auto invalidId : {HubId::INVALID, HubId{-2}, HubId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(runtime.registerHubConstant(invalidId, "answer", RuntimeValue{}, nullptr).isInvalid());
+        BOOST_TEST(runtime.registerHubEnum(invalidId, "answer", {}).isInvalid());
+        BOOST_TEST(runtime.registerHubNativeFunction(
+            invalidId, "answer", {}, {}, nullptr, ""
+        ).isInvalid());
+    }
+
+    logger.flush();
+    BOOST_REQUIRE(sink->getEntries().size() == 9U);
+    for (const auto& entry : sink->getEntries()) {
+        BOOST_TEST((entry.level == LogLevel::Error));
+        BOOST_TEST(
+            entry.message.find("Cannot register hub member 'answer': invalid hub") != NomadString::npos
+        );
+    }
+}
 
 BOOST_AUTO_TEST_CASE(native_free_functions_do_not_join_hubs_before_or_after_hub_registration) {
     Runtime runtime;
