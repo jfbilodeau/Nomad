@@ -678,7 +678,9 @@ the registered callback, or `nullptr` for an invalid or unregistered ID without
 logging. The caller decides how to report a failed lookup.
 
 `getInstructionName`, `getInstructionOperands`, and `getInstructionStackEffect`
-require a registered instruction ID.
+return the registered metadata, or throw `NomadException` for an invalid or
+unregistered instruction ID without logging. Registered empty names and operand
+lists remain valid results.
 
 ### Constant IDs
 
@@ -753,8 +755,13 @@ Include `<nomad/script/DynamicVariable.hpp>` for `DynamicVariableId`.
 `registerDynamicVariable(name, setter, getter, type, doc)` returns a
 `DynamicVariableId`, or `DynamicVariableId::INVALID` when registration fails.
 `getDynamicVariableId(name)` returns `DynamicVariableId::INVALID` when absent.
-Pass a registered ID to the dynamic-variable metadata, permission, getter, and
-setter APIs. `setStringDynamicVariable` releases its temporary string after
+For invalid or unregistered IDs, `getDynamicVariableName` throws `NomadException`,
+`getDynamicVariableType` returns `nullptr`, and `canGetDynamicVariable` and
+`canSetDynamicVariable` return `false`. These metadata and capability queries do
+not log. Registered empty names remain valid results.
+
+Getter and setter invocation requires a registered ID and the corresponding
+callback. `setStringDynamicVariable` releases its temporary string after
 invoking the setter; a setter that retains a value must copy it through its type.
 
 `getFirstDynamicVariableId` and `getNextDynamicVariableId` enumerate registrations
@@ -772,9 +779,10 @@ or other ID categories.
 
 `registerVariableContext(name, prefix, context)` returns a `VariableContextId`.
 `getContextId(name)` and `getVariableContextIdByPrefix(variableName)` return
-`VariableContextId::INVALID` when no context matches. Pass a registered context
-ID to `getContextName` or `getVariableContext`; the latter returns a borrowed
-pointer, or `nullptr` for an invalid or unregistered ID.
+`VariableContextId::INVALID` when no context matches. `getContextName` returns
+the registered name, including an empty name, or throws `NomadException` for an
+invalid or unregistered ID without logging. `getVariableContext` returns a
+borrowed pointer, or `nullptr` for an invalid or unregistered ID.
 `getFirstVariableContextId` and `getNextVariableContextId` enumerate contexts
 in registration order, ending at `VariableContextId::INVALID`.
 

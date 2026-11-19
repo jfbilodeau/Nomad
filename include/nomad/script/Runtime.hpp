@@ -358,6 +358,7 @@ public:
     [[nodiscard]] OpCodeId getInstructionId(InstructionFn fn) const;
     // Returns nullptr for an invalid or unregistered ID without logging.
     [[nodiscard]] InstructionFn getInstructionFn(OpCodeId id) const;
+    // Metadata getters throw NomadException for invalid or unregistered IDs without logging.
     [[nodiscard]] const NomadString& getInstructionName(OpCodeId id) const;
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(OpCodeId id) const;
     [[nodiscard]] const StackEffect& getInstructionStackEffect(OpCodeId id) const;
@@ -518,6 +519,8 @@ public:
         NomadDocArg
     );
     [[nodiscard]] DynamicVariableId getDynamicVariableId(const NomadString& name) const;
+    // Invalid IDs throw for names, return nullptr for types, and false for capabilities.
+    // These metadata queries do not log.
     [[nodiscard]] NomadString getDynamicVariableName(DynamicVariableId id) const;
     [[nodiscard]] const Type* getDynamicVariableType(DynamicVariableId id) const;
     [[nodiscard]] bool canSetDynamicVariable(DynamicVariableId id) const;
@@ -540,6 +543,7 @@ public:
     ContextVariableId registerContextVariable(VariableContextId contextId, const NomadString& variableName, const Type* type);
     ContextVariableId registerOrUpdateContextVariable(const NomadString& variableName, const Type* type);
     [[nodiscard]] VariableContext* getVariableContext(VariableContextId contextId) const;
+    // Throws NomadException for invalid or unregistered IDs without logging.
     [[nodiscard]] NomadString getContextName(VariableContextId id) const;
     ContextVariableId getContextVariableId(const NomadString& variableName);
     [[nodiscard]] VariableContextId getVariableContextIdByPrefix(const NomadString& variableName) const;

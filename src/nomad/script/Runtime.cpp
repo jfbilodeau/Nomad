@@ -2279,14 +2279,26 @@ InstructionFn Runtime::getInstructionFn(const OpCodeId id) const {
 }
 
 const NomadString& Runtime::getInstructionName(const OpCodeId id) const {
+    if (isIdOutOfRange(id.id, m_opCodes.size())) {
+        throw NomadException("Instruction ID out of range");
+    }
+
     return m_opCodes[toNomadIndex(id.id)].name;
 }
 
 const std::vector<Operand>& Runtime::getInstructionOperands(const OpCodeId id) const {
+    if (isIdOutOfRange(id.id, m_opCodes.size())) {
+        throw NomadException("Instruction ID out of range");
+    }
+
     return m_opCodes[toNomadIndex(id.id)].operands;
 }
 
 const StackEffect& Runtime::getInstructionStackEffect(const OpCodeId id) const {
+    if (isIdOutOfRange(id.id, m_opCodes.size())) {
+        throw NomadException("Instruction ID out of range");
+    }
+
     return m_opCodes[toNomadIndex(id.id)].stackEffect;
 }
 
@@ -2609,22 +2621,42 @@ DynamicVariableId Runtime::getDynamicVariableId(const NomadString& name) const {
 }
 
 NomadString Runtime::getDynamicVariableName(const DynamicVariableId id) const {
+    if (isIdOutOfRange(id.id, m_dynamicVariables.size())) {
+        throw NomadException("Dynamic variable ID out of range");
+    }
+
     const auto dynamicVariableIndex = toNomadIndex(id.id);
+
     return m_dynamicVariables[dynamicVariableIndex].name;
 }
 
 const Type* Runtime::getDynamicVariableType(const DynamicVariableId id) const {
+    if (isIdOutOfRange(id.id, m_dynamicVariables.size())) {
+        return nullptr;
+    }
+
     const auto dynamicVariableIndex = toNomadIndex(id.id);
+
     return m_dynamicVariables[dynamicVariableIndex].type;
 }
 
 bool Runtime::canSetDynamicVariable(const DynamicVariableId id) const {
+    if (isIdOutOfRange(id.id, m_dynamicVariables.size())) {
+        return false;
+    }
+
     const auto dynamicVariableIndex = toNomadIndex(id.id);
+
     return m_dynamicVariables[dynamicVariableIndex].setFn != nullptr;
 }
 
 bool Runtime::canGetDynamicVariable(const DynamicVariableId id) const {
+    if (isIdOutOfRange(id.id, m_dynamicVariables.size())) {
+        return false;
+    }
+
     const auto dynamicVariableIndex = toNomadIndex(id.id);
+
     return m_dynamicVariables[dynamicVariableIndex].getFn != nullptr;
 }
 
@@ -2733,7 +2765,12 @@ VariableContext* Runtime::getVariableContext(const VariableContextId contextId) 
 }
 
 NomadString Runtime::getContextName(const VariableContextId id) const {
+    if (isIdOutOfRange(id.id, m_variables.size())) {
+        throw NomadException("Variable context ID out of range");
+    }
+
     const auto contextIndex = toNomadIndex(id.id);
+
     return m_variables[contextIndex].name;
 }
 

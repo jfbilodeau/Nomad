@@ -11,6 +11,7 @@
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/OpCode.hpp>
+#include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/scope_exit.hpp>
@@ -21,6 +22,7 @@
 #include <windows.h>
 #endif
 
+#include <memory>
 #include <type_traits>
 
 using namespace nomad;
@@ -141,6 +143,105 @@ BOOST_FIXTURE_TEST_CASE(
     const auto instructionCount = compiler->getOpCodeSize();
     BOOST_CHECK_THROW(compiler->addOpCode(OpCodeId::INVALID), NomadBug);
     BOOST_TEST(compiler->getOpCodeSize() == instructionCount);
+}
+
+BOOST_FIXTURE_TEST_CASE(
+    metadata_lookup_failures_throw_or_return_absence_without_logging,
+    BoundsCheckReportingFixture
+) {
+    Runtime runtime;
+    const auto instructionId = runtime.registerInstruction(
+        "",
+        [](VirtualMachine*) {},
+        NomadDoc(""),
+        {Operand::Integer},
+        {.delta = -1, .transient = 2}
+    );
+    const auto readOnlyId = runtime.registerDynamicVariable(
+        "",
+        {},
+        [](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(7); },
+        runtime.getIntegerType(),
+        NomadDoc("")
+    );
+    const auto writeOnlyId = runtime.registerDynamicVariable(
+        "registry.writeOnly",
+        [](VirtualMachine*, const RuntimeValue&) {},
+        {},
+        runtime.getIntegerType(),
+        NomadDoc("")
+    );
+    const auto contextId = runtime.registerVariableContext(
+        "",
+        "registry.",
+        std::make_unique<SimpleVariableContext>()
+    );
+    BOOST_REQUIRE(instructionId.isValid());
+    BOOST_REQUIRE(readOnlyId.isValid());
+    BOOST_REQUIRE(writeOnlyId.isValid());
+    BOOST_REQUIRE(contextId.isValid());
+
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    for (const auto invalidId : {
+        OpCodeId::INVALID,
+        OpCodeId{-2},
+        OpCodeId{NOMAD_ID_MAX},
+        OpCodeId{instructionId.id + 1}
+    }) {
+        BOOST_CHECK_THROW(static_cast<void>(runtime.getInstructionName(invalidId)), NomadException);
+        BOOST_CHECK_THROW(static_cast<void>(runtime.getInstructionOperands(invalidId)), NomadException);
+        BOOST_CHECK_THROW(static_cast<void>(runtime.getInstructionStackEffect(invalidId)), NomadException);
+    }
+
+    for (const auto invalidId : {
+        DynamicVariableId::INVALID,
+        DynamicVariableId{-2},
+        DynamicVariableId{NOMAD_ID_MAX},
+        DynamicVariableId{writeOnlyId.id + 1}
+    }) {
+        BOOST_CHECK_THROW(static_cast<void>(runtime.getDynamicVariableName(invalidId)), NomadException);
+        BOOST_TEST(runtime.getDynamicVariableType(invalidId) == nullptr);
+        BOOST_TEST(!runtime.canGetDynamicVariable(invalidId));
+        BOOST_TEST(!runtime.canSetDynamicVariable(invalidId));
+    }
+
+    for (const auto invalidId : {
+        VariableContextId::INVALID,
+        VariableContextId{-2},
+        VariableContextId{NOMAD_ID_MAX},
+        VariableContextId{contextId.id + 1}
+    }) {
+        BOOST_CHECK_THROW(static_cast<void>(runtime.getContextName(invalidId)), NomadException);
+    }
+
+    BOOST_TEST(runtime.getInstructionName(instructionId).empty());
+    BOOST_REQUIRE(runtime.getInstructionOperands(instructionId).size() == 1U);
+    BOOST_TEST((runtime.getInstructionOperands(instructionId).front() == Operand::Integer));
+    BOOST_TEST(runtime.getInstructionStackEffect(instructionId).delta == -1);
+    BOOST_TEST(runtime.getInstructionStackEffect(instructionId).transient == 2);
+    BOOST_TEST(runtime.getInstructionOperands(runtime.getInstructionId(OpCodes::op_nop)).empty());
+    BOOST_TEST(runtime.getDynamicVariableName(readOnlyId).empty());
+    BOOST_TEST(runtime.getDynamicVariableType(readOnlyId) == runtime.getIntegerType());
+    BOOST_TEST(runtime.canGetDynamicVariable(readOnlyId));
+    BOOST_TEST(!runtime.canSetDynamicVariable(readOnlyId));
+    BOOST_TEST(!runtime.canGetDynamicVariable(writeOnlyId));
+    BOOST_TEST(runtime.canSetDynamicVariable(writeOnlyId));
+    BOOST_TEST(runtime.getContextName(contextId).empty());
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
 }
 
 BOOST_AUTO_TEST_CASE(string_ids_deduplicate_and_keep_borrowed_objects_stable)
