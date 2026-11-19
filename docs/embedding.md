@@ -831,8 +831,10 @@ context-local IDs are equal. `registerHubVariable` also returns a
 Pass a registered context-variable handle to the runtime's context-variable
 metadata, read/write tracking, and value APIs. Values read through
 `getContextVariableValue` are borrowed; the context retains ownership.
-`setStringContextVariableValue` releases its temporary string after assigning
-it through the context.
+`setStringContextVariableValue` releases its temporary string on both return and
+throw. The context setter borrows the input and must copy any value it retains.
+Setter exceptions propagate unchanged; a value retained before an exception
+remains context-owned and is not rolled back.
 
 The `VariableContext` interface uses context-local `VariableId` values.
 Do not construct a local ID from a runtime-global handle's numeric value; use

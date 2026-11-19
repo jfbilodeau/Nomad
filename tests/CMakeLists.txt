@@ -27,6 +27,8 @@ add_executable(
     ./FailingArgumentCopyType.hpp
     ./FailingIteratorObject.cpp
     ./FailingIteratorObject.hpp
+    ./FailingVariableContext.cpp
+    ./FailingVariableContext.hpp
     ./FileSinkTest.cpp
     ./FormatStringCompilerTest.cpp
     ./GameConfigurationTest.cpp

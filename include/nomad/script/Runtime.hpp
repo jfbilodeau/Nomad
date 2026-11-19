@@ -584,6 +584,7 @@ public:
     void setContextVariableRead(ContextVariableId contextVariableId, bool read) const;
     void setContextVariableValue(ContextVariableId contextVariableId, const RuntimeValue& value) const;
     void getContextVariableValue(ContextVariableId contextVariableId, RuntimeValue& value) const;
+    // Releases the temporary even when the context throws; retained values remain context-owned.
     void setStringContextVariableValue(ContextVariableId contextVariableId, const NomadString& value) const;
     void getStringContextVariableValue(ContextVariableId contextVariableId, NomadString& value) const;
 

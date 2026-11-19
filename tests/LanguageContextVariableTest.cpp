@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <FailingVariableContext.hpp>
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
@@ -13,6 +14,8 @@
 #include <boost/test/unit_test.hpp>
 
 #include <array>
+#include <memory>
+#include <stdexcept>
 #include <type_traits>
 
 using namespace nomad;
@@ -30,6 +33,47 @@ static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadContextVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
 
 BOOST_AUTO_TEST_SUITE(language_context_variables)
+
+BOOST_AUTO_TEST_CASE(string_context_setter_failures_release_temporaries_and_preserve_retained_values) {
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (const auto retainValueBeforeFailure : {false, true}) {
+        {
+            Runtime runtime;
+            const auto contextId = runtime.registerVariableContext(
+                "failing",
+                "failing.",
+                std::make_unique<FailingVariableContext>(retainValueBeforeFailure)
+            );
+            BOOST_REQUIRE(contextId.isValid());
+            const auto variableId = runtime.registerContextVariable(
+                contextId,
+                "failing.value",
+                runtime.getStringType()
+            );
+            BOOST_REQUIRE(variableId.isValid());
+            BOOST_CHECK_EXCEPTION(
+                runtime.setStringContextVariableValue(variableId, "retained context text"),
+                std::runtime_error,
+                [](const std::runtime_error& error) {
+
+                    return NomadString{error.what()} == "context setter failed";
+                }
+            );
+            RuntimeValue borrowed;
+            runtime.getContextVariableValue(variableId, borrowed);
+            if (retainValueBeforeFailure) {
+                BOOST_TEST(borrowed.getStringValue() == "retained context text");
+                BOOST_TEST(borrowed.getObjectValue()->getReferenceCount() == 1U);
+            } else {
+                BOOST_TEST(borrowed.getObjectValue() == nullptr);
+            }
+        }
+
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(context_ids_support_lookup_iteration_and_catalog_growth)
 {

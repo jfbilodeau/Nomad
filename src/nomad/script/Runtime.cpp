@@ -2894,11 +2894,10 @@ void Runtime::getContextVariableValue(const ContextVariableId contextVariableId,
 
 void Runtime::setStringContextVariableValue(const ContextVariableId contextVariableId, const NomadString& value) const {
     RuntimeValue stringValue;
+    const RuntimeValueGuard stringValueOwner(*getStringType(), &stringValue);
     stringValue.setStringValue(value);
 
     setContextVariableValue(contextVariableId, stringValue);
-
-    stringValue.freeObjectValue();
 }
 
 void Runtime::getStringContextVariableValue(const ContextVariableId contextVariableId, NomadString& value) const {
