@@ -2271,6 +2271,10 @@ OpCodeId Runtime::getInstructionId(const InstructionFn fn) const {
 }
 
 InstructionFn Runtime::getInstructionFn(const OpCodeId id) const {
+    if (isIdOutOfRange(id.id, m_opCodes.size())) {
+        return nullptr;
+    }
+
     return m_opCodes[toNomadIndex(id.id)].fn;
 }
 
@@ -2890,9 +2894,10 @@ CallableId Runtime::registerScriptFunction(
     const NomadString& source
     ) {
     if (isHub(name) || !canRegisterHubMember(name, true)) {
-        log::error("Cannot register function '" + name + "': name is reserved by a hub declaration");
+        log::error("Function registration failed for '" + name + "' due to hub name conflict.");
         return CallableId::INVALID;
     }
+
     if (getCallableId(name) != CallableId::INVALID) {
         log::error("Function with name '" + name + "' conflicts with an already registered callable.");
 

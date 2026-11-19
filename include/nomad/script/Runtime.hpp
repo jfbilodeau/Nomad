@@ -356,6 +356,7 @@ public:
     OpCodeId registerInstruction(const NomadString& name, InstructionFn fn, NomadDocArg, std::vector<Operand> operands, StackEffect stackEffect = {});
     [[nodiscard]] OpCodeId getInstructionId(const NomadString& name) const;
     [[nodiscard]] OpCodeId getInstructionId(InstructionFn fn) const;
+    // Returns nullptr for an invalid or unregistered ID without logging.
     [[nodiscard]] InstructionFn getInstructionFn(OpCodeId id) const;
     [[nodiscard]] const NomadString& getInstructionName(OpCodeId id) const;
     [[nodiscard]] const std::vector<Operand>& getInstructionOperands(OpCodeId id) const;

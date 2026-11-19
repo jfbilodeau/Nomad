@@ -669,6 +669,17 @@ already-registered type names, and conflicts with existing constants or hub
 declarations. Duplicate type creation is rejected even when the definition is
 identical. Rejected definitions do not replace existing registrations.
 
+### Instruction IDs
+
+`registerInstruction` returns a runtime-local `OpCodeId`.
+`getInstructionId(name)` and `getInstructionId(callback)` return
+`OpCodeId::INVALID` when no instruction matches. `getInstructionFn(id)` returns
+the registered callback, or `nullptr` for an invalid or unregistered ID without
+logging. The caller decides how to report a failed lookup.
+
+`getInstructionName`, `getInstructionOperands`, and `getInstructionStackEffect`
+require a registered instruction ID.
+
 ### Constant IDs
 
 Include `<nomad/script/Runtime.hpp>` for `ConstantId`.

@@ -39,22 +39,41 @@ static_assert(!std::is_invocable_v<decltype(&Runtime::getDynamicVariableType), R
 static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadDynamicVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
 
+namespace {
+
+// Keep bounds-check regressions non-interactive under the Debug CRT.
+class BoundsCheckReportingFixture {
+#if defined(_MSC_VER) && defined(_DEBUG)
+public:
+    BoundsCheckReportingFixture():
+        m_previousErrorMode(GetErrorMode()),
+        m_previousReportMode(_CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE)),
+        m_previousReportFile(_CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR))
+    {
+        SetErrorMode(m_previousErrorMode | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+    }
+
+    ~BoundsCheckReportingFixture() {
+        _CrtSetReportFile(_CRT_ASSERT, m_previousReportFile);
+        _CrtSetReportMode(_CRT_ASSERT, m_previousReportMode);
+        SetErrorMode(m_previousErrorMode);
+    }
+
+private:
+    const UINT m_previousErrorMode;
+    const int m_previousReportMode;
+    const _HFILE m_previousReportFile;
+#endif
+};
+
+} // namespace
+
 BOOST_AUTO_TEST_SUITE(language_registry_ids)
 
-BOOST_AUTO_TEST_CASE(string_lookup_failures_return_null_without_logging_or_changing_interned_objects) {
-#if defined(_MSC_VER) && defined(_DEBUG)
-    // Keep a bounds-check regression non-interactive under the Debug CRT.
-    const auto previousErrorMode = GetErrorMode();
-    SetErrorMode(previousErrorMode | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
-    const auto previousReportMode = _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
-    const auto previousReportFile = _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
-    BOOST_SCOPE_EXIT_ALL(=) {
-        _CrtSetReportFile(_CRT_ASSERT, previousReportFile);
-        _CrtSetReportMode(_CRT_ASSERT, previousReportMode);
-        SetErrorMode(previousErrorMode);
-    };
-#endif
-
+BOOST_FIXTURE_TEST_CASE(
+    string_lookup_failures_return_null_without_logging_or_changing_interned_objects,
+    BoundsCheckReportingFixture
+) {
     Runtime runtime;
     auto& logger = log::getLogger();
     logger.flush();
@@ -91,6 +110,37 @@ BOOST_AUTO_TEST_CASE(string_lookup_failures_return_null_without_logging_or_chang
     BOOST_TEST(runtime.getStringByName("") == empty);
     logger.flush();
     BOOST_TEST(sink->getEntries().empty());
+}
+
+BOOST_FIXTURE_TEST_CASE(
+    instruction_function_lookup_rejects_invalid_ids_without_changing_registered_callbacks,
+    BoundsCheckReportingFixture
+) {
+    Runtime runtime;
+    const auto id = runtime.registerInstruction(
+        "registry.testLookup",
+        [](VirtualMachine*) {},
+        NomadDoc(""),
+        {}
+    );
+    BOOST_REQUIRE(id.isValid());
+    const auto originalFunction = runtime.getInstructionFn(id);
+    BOOST_REQUIRE(originalFunction != nullptr);
+    for (const auto invalidId : {
+        OpCodeId::INVALID,
+        OpCodeId{-2},
+        OpCodeId{NOMAD_ID_MAX},
+        OpCodeId{id.id + 1}
+    }) {
+        BOOST_TEST(runtime.getInstructionFn(invalidId) == nullptr);
+    }
+
+    BOOST_TEST(runtime.getInstructionFn(id) == originalFunction);
+    BOOST_TEST(runtime.getInstructionId("registry.testLookup") == id);
+    auto compiler = runtime.createCompiler();
+    const auto instructionCount = compiler->getOpCodeSize();
+    BOOST_CHECK_THROW(compiler->addOpCode(OpCodeId::INVALID), NomadBug);
+    BOOST_TEST(compiler->getOpCodeSize() == instructionCount);
 }
 
 BOOST_AUTO_TEST_CASE(string_ids_deduplicate_and_keep_borrowed_objects_stable)
