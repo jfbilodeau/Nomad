@@ -216,8 +216,14 @@ std::optional<NomadString> compileFormatString(
                     break;
                 }
 
-                case IdentifierType::Constant:
                 case IdentifierType::DynamicVariable:
+                    if (!compiler->getRuntime()->canGetDynamicVariable(identifier.dynamicVariableId)) {
+                        return "Dynamic variable '" + variableName + "' cannot be read";
+                    }
+
+                    break;
+
+                case IdentifierType::Constant:
                 case IdentifierType::ContextVariable:
                 case IdentifierType::FunctionVariable:
                 case IdentifierType::Parameter:

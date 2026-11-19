@@ -1877,9 +1877,10 @@ void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBas
         return;
     }
 
-    if (context->getMode() != CompilerMode::Script &&
+    if (
         m_identifierDefinition.identifierType == IdentifierType::DynamicVariable &&
-        !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.dynamicVariableId)) {
+        !context->getRuntime()->canGetDynamicVariable(m_identifierDefinition.dynamicVariableId)
+    ) {
         reportError(context, function, "Dynamic variable '" + m_identifier + "' cannot be read");
         return;
     }

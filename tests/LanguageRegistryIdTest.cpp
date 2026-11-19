@@ -450,6 +450,124 @@ BOOST_AUTO_TEST_CASE(dynamic_variable_ids_support_lookup_iteration_growth_and_fo
     BOOST_TEST(format.format(machine.get()) == "answer=7");
 }
 
+BOOST_AUTO_TEST_CASE(compiled_dynamic_reads_require_getters) {
+    for (const auto* expression : {
+        "permissionWrite",
+        "$\"{permissionWrite}\"",
+        "$\"{permissionWrite + 1}\""
+    }) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        auto writes = 0;
+        BOOST_REQUIRE(runtime.registerDynamicVariable(
+            "permissionWrite",
+            [&](VirtualMachine*, const RuntimeValue&) { ++writes; },
+            {},
+            runtime.getIntegerType(),
+            NomadDoc("")
+        ).isValid());
+        fixture.addFunction("main", "return " + NomadString{expression});
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.getDiagnostics().find("cannot be read") != NomadString::npos);
+        BOOST_TEST(writes == 0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(compiled_dynamic_writes_require_setters) {
+    for (const auto* statement : {
+        "permissionRead = 7",
+        "permissionRead = permissionRead + 1"
+    }) {
+        LanguageTestFixture fixture;
+        auto& runtime = fixture.getRuntime();
+        auto reads = 0;
+        BOOST_REQUIRE(runtime.registerDynamicVariable(
+            "permissionRead",
+            {},
+            [&](VirtualMachine*, RuntimeValue& value) {
+                ++reads;
+                value.setIntegerValue(42);
+            },
+            runtime.getIntegerType(),
+            NomadDoc("")
+        ).isValid());
+        fixture.addFunction("main", statement);
+        BOOST_TEST(!fixture.compile());
+        BOOST_TEST(fixture.getDiagnostics().find("read-only") != NomadString::npos);
+        BOOST_TEST(reads == 0);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(format_identifier_resolution_requires_dynamic_getters) {
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.registerDynamicVariable(
+        "permissionWrite",
+        [](VirtualMachine*, const RuntimeValue&) {},
+        {},
+        runtime.getIntegerType(),
+        NomadDoc("")
+    ).isValid());
+    auto compiler = runtime.createCompiler();
+    for (const auto populate : {false, true}) {
+        FormatString format("value={permissionWrite}", CallableId::INVALID);
+        const auto error = compileFormatString(
+            compiler.get(),
+            nullptr,
+            format.getFormatString(),
+            populate ? &format : nullptr
+        );
+        BOOST_REQUIRE(error.has_value());
+        BOOST_TEST(error->find("cannot be read") != NomadString::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(supported_dynamic_permissions_work_in_scripts_and_interpreter) {
+    LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    auto reads = 0;
+    auto writes = 0;
+    NomadInteger assigned = 0;
+    BOOST_REQUIRE(runtime.registerDynamicVariable(
+        "permissionRead",
+        {},
+        [&](VirtualMachine*, RuntimeValue& value) {
+            ++reads;
+            value.setIntegerValue(42);
+        },
+        runtime.getIntegerType(),
+        NomadDoc("")
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerDynamicVariable(
+        "permissionWrite",
+        [&](VirtualMachine*, const RuntimeValue& value) {
+            ++writes;
+            assigned = value.getIntegerValue();
+        },
+        {},
+        runtime.getIntegerType(),
+        NomadDoc("")
+    ).isValid());
+    fixture.addFunction("main", "permissionWrite = permissionRead\nreturn permissionRead");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    BOOST_TEST(reads == 0);
+    BOOST_TEST(writes == 0);
+    const auto outcome = fixture.execute("main");
+    BOOST_REQUIRE_MESSAGE(!outcome.fault.has_value(), outcome.fault.value_or(""));
+    BOOST_TEST(outcome.integerValue == 42);
+    BOOST_TEST(assigned == 42);
+    BOOST_TEST(reads == 2);
+    BOOST_TEST(writes == 1);
+    auto machine = runtime.createVirtualMachine();
+    const Interpreter interpreter(*machine);
+    InterpreterContext context(interpreter);
+    BOOST_REQUIRE(interpreter.execute("permissionWrite = permissionRead", context));
+    BOOST_REQUIRE(interpreter.execute("permissionRead", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 42);
+    BOOST_TEST(assigned == 42);
+    BOOST_TEST(reads == 4);
+    BOOST_TEST(writes == 2);
+}
+
 BOOST_AUTO_TEST_CASE(dynamic_ids_remain_live_in_scripts_interpreter_and_format_strings)
 {
     LanguageTestFixture fixture;

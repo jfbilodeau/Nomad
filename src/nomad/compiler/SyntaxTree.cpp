@@ -278,6 +278,15 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
         }
     }
 
+    if (
+        identifier.identifierType == IdentifierType::DynamicVariable &&
+        !context->getRuntime()->canSetDynamicVariable(identifier.dynamicVariableId)
+    ) {
+        reportError(context, function, "Dynamic variable '" + m_identifier + "' is read-only");
+
+        return;
+    }
+
     if (context->getMode() == CompilerMode::Interpreter) {
         auto* interpreterRuntime = context->getRuntime();
 
@@ -299,11 +308,6 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
             break;
         }
         case IdentifierType::DynamicVariable: {
-            if (!interpreterRuntime->canSetDynamicVariable(identifier.dynamicVariableId)) {
-                reportError(context, function, "Dynamic variable '" + m_identifier + "' is read-only");
-                return;
-            }
-
             const auto variableType = interpreterRuntime->getDynamicVariableType(identifier.dynamicVariableId);
             if (expressionType != nullptr && variableType != nullptr && variableType != expressionType) {
                 reportError(

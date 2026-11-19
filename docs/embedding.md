@@ -770,6 +770,10 @@ For invalid or unregistered IDs, `getDynamicVariableName` throws `NomadException
 `canSetDynamicVariable` return `false`. These metadata and capability queries do
 not log. Registered empty names remain valid results.
 
+Compiled scripts and interpreter expressions reject reads without a getter and
+assignments without a setter. Format-placeholder identifier resolution also
+requires a getter.
+
 Getter and setter invocation requires a registered ID and the corresponding
 callback. `setStringDynamicVariable` releases its temporary string after
 invoking the setter; a setter that retains a value must copy it through its type.
