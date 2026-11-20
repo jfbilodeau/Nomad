@@ -541,7 +541,9 @@ ordinary registration.
 
 Runtime maintains hub indexes through `canRegisterTypeName(name)` and
 `publishTypeNamespace(type)`. The former checks hub-name and member collisions,
-not identifier syntax or catalog duplication. The latter requires a same-runtime
+not identifier syntax or catalog duplication, and does not log. Registration
+entry points report namespace rejections themselves, without a second generic
+member-conflict log. The latter requires a same-runtime
 descriptor with an unused reserved ID and publishes a borrowed namespace entry;
 it does not take ownership. It is a low-level coordination operation: the
 descriptor must immediately be cataloged and remain alive for the runtime's

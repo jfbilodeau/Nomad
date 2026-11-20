@@ -218,6 +218,7 @@ public:
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] TypeManager& getTypeManager();
     [[nodiscard]] const TypeManager& getTypeManager() const;
+    // Checks hub-name and member availability without logging.
     [[nodiscard]] bool canRegisterTypeName(const NomadString& name) const;
     void publishTypeNamespace(const Type& type);
     void publishTypeFamilyNamespace(const NomadString& name, NomadIndex argumentCount);

@@ -7,6 +7,7 @@
 #include <nomad/log/Logger.hpp>
 #include <nomad/log/MemorySink.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/RangeType.hpp>
@@ -16,6 +17,7 @@
 #include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <type_traits>
 
 using namespace nomad;
@@ -68,6 +70,72 @@ BOOST_AUTO_TEST_CASE(invalid_hub_owners_share_one_qualification_diagnostic) {
             entry.message.find("Cannot register hub member 'answer': invalid hub") != NomadString::npos
         );
     }
+}
+
+BOOST_AUTO_TEST_CASE(namespace_conflict_checks_do_not_log_and_registration_reports_once) {
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("conflicts", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    BOOST_REQUIRE(runtime.registerHubConstant(
+        hubId, "taken", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
+    ).isValid());
+    BOOST_REQUIRE(runtime.registerHub("conflicts@host", HubMode::Opened).isValid());
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    BOOST_TEST(!runtime.canRegisterTypeName("conflicts"));
+    BOOST_TEST(!runtime.canRegisterTypeName("conflicts.taken"));
+    BOOST_TEST(!runtime.canRegisterTypeName("conflicts@host"));
+    BOOST_TEST(runtime.canRegisterTypeName("conflicts.generated@internal"));
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
+    sink->clear();
+
+    BOOST_TEST(runtime.registerNativeFunction(
+        "conflicts.taken", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    ).isInvalid());
+    BOOST_TEST(runtime.registerScriptFunction("conflicts.taken", "", "").isInvalid());
+    BOOST_TEST(runtime.registerConstant(
+        "conflicts.taken", RuntimeValue{NomadInteger{7}}, runtime.getIntegerType()
+    ).isInvalid());
+    BOOST_TEST(runtime.registerEvent("conflicts.taken", {}).isInvalid());
+    BOOST_TEST(runtime.registerDynamicVariable(
+        "conflicts.taken", {}, {}, runtime.getIntegerType(), ""
+    ).isInvalid());
+    BOOST_TEST(runtime.registerHubVariable("conflicts.taken").isInvalid());
+    logger.flush();
+    const std::array expectedMessages{
+        "Cannot register function 'conflicts.taken': name is reserved by a hub",
+        "Function registration failed for 'conflicts.taken' due to hub name conflict.",
+        "Cannot register constant 'conflicts.taken': name is reserved by a hub",
+        "Cannot register event 'conflicts.taken': name is reserved by a hub",
+        "Cannot register dynamic variable 'conflicts.taken': name is reserved by a hub declaration",
+        "Cannot register hub variable 'conflicts.taken': missing hub or conflicting declaration"
+    };
+    BOOST_REQUIRE(sink->getEntries().size() == expectedMessages.size());
+    for (auto index = NomadIndex{0}; index < expectedMessages.size(); ++index) {
+        const auto& entry = sink->getEntries()[index];
+        BOOST_TEST((entry.level == LogLevel::Error));
+        BOOST_TEST(entry.message.find(expectedMessages[index]) != NomadString::npos);
+    }
+
+    sink->clear();
+    const auto typeId = runtime.getTypeManager().reserveTypeId();
+    ClassType type(&runtime, typeId, "conflicts.taken", ClassMode::Closed);
+    BOOST_CHECK_THROW(runtime.publishTypeNamespace(type), NomadException);
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
 }
 
 BOOST_AUTO_TEST_CASE(native_free_functions_do_not_join_hubs_before_or_after_hub_registration) {

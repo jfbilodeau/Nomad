@@ -340,7 +340,7 @@ ContextVariableId Runtime::registerHubVariable(const HubId hubId, const NomadStr
 ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
     if (m_scriptInitialization.state != ScriptInitializationState::Pending ||
         getContainingHub(name).empty() || !canRegisterHubMember(name) ||
-        isHub(name) || isHubVariable(name) ||
+        isHubVariable(name) ||
         getCallableId(name).isValid() || getConstantId(name).isValid() ||
         getTypeByName(name) != nullptr || getEventId(name).isValid() ||
         getDynamicVariableId(name).isValid() ||
@@ -421,6 +421,10 @@ void Runtime::initializeScripts() {
 }
 
 bool Runtime::canRegisterHubMember(const NomadString& name, const bool function) const {
+    if (isHub(name)) {
+        return false;
+    }
+
     if (name.find('@') != NomadString::npos) {
         return true;
     }
@@ -431,12 +435,7 @@ bool Runtime::canRegisterHubMember(const NomadString& name, const bool function)
 
     const auto* member = hub->getMember(name.substr(hub->getName().size() + 1));
 
-    if (member == nullptr || (function && std::holds_alternative<HubFunctions>(*member))) {
-        return true;
-    }
-
-    log::error("Hub member '" + name + "' is already declared");
-    return false;
+    return member == nullptr || (function && std::holds_alternative<HubFunctions>(*member));
 }
 
 void Runtime::addHubMember(
@@ -621,7 +620,7 @@ CallableId Runtime::registerNativeFunctionEntry(
     const Type* returnType,
     const NomadString& doc
 ) {
-    if (isHub(name) || !canRegisterHubMember(name, true)) {
+    if (!canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub");
         return CallableId::INVALID;
     }
@@ -1664,7 +1663,7 @@ bool Runtime::canOverloadCallable(
 }
 
 bool Runtime::canRegisterTypeName(const NomadString& name) const {
-    return !isHub(name) && !isHubVariable(name) && canRegisterHubMember(name);
+    return !isHubVariable(name) && canRegisterHubMember(name);
 }
 
 void Runtime::publishTypeNamespace(const Type& type) {
@@ -2379,7 +2378,7 @@ ConstantId Runtime::registerConstant(const NomadString& name, const RuntimeValue
         log::error("Cannot register constant '" + name + "': invalid value type");
         return ConstantId::INVALID;
     }
-    if (isHub(name) || !canRegisterHubMember(name)) {
+    if (!canRegisterHubMember(name)) {
         log::error("Cannot register constant '" + name + "': name is reserved by a hub");
         return ConstantId::INVALID;
     }
@@ -2447,7 +2446,7 @@ ConstantId Runtime::getNextConstantId(const ConstantId currentId) const {
 }
 
 EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
-    if (isHub(name) || !canRegisterHubMember(name)) {
+    if (!canRegisterHubMember(name)) {
         log::error("Cannot register event '" + name + "': name is reserved by a hub");
         return EventId::INVALID;
     }
@@ -2593,7 +2592,7 @@ DynamicVariableId Runtime::registerDynamicVariable(
     const Type* type,
     const NomadString& doc
 ) {
-    if (isHub(name) || !canRegisterHubMember(name)) {
+    if (!canRegisterHubMember(name)) {
         log::error("Cannot register dynamic variable '" + name + "': name is reserved by a hub declaration");
         return DynamicVariableId::INVALID;
     }
@@ -2950,7 +2949,7 @@ CallableId Runtime::registerScriptFunction(
     const NomadString& path,
     const NomadString& source
     ) {
-    if (isHub(name) || !canRegisterHubMember(name, true)) {
+    if (!canRegisterHubMember(name, true)) {
         log::error("Function registration failed for '" + name + "' due to hub name conflict.");
         return CallableId::INVALID;
     }
