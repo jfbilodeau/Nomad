@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/EnumType.hpp>
@@ -40,13 +42,18 @@ public:
         ClassMode mode,
         Arguments&&... arguments
     ) {
-        if (!canRegisterClass(name, mode)) {
+        NomadString error;
+        if (!canRegisterClass(name, mode, error)) {
+            log::error(error);
+
             return TypeId::INVALID;
         }
+
         const auto id = reserveTypeId();
         auto type = std::make_unique<Descriptor>(
             &m_runtime, id, name, mode, std::forward<Arguments>(arguments)...
         );
+
         return publishClass(id, name, mode, std::move(type));
     }
     [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
@@ -159,7 +166,11 @@ private:
         const Type* type;
     };
 
-    [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
+    [[nodiscard]] bool canRegisterClass(
+        const NomadString& name,
+        ClassMode mode,
+        NomadString& error
+    ) const;
     [[nodiscard]] bool hasConstructor(const NomadString& name) const;
     [[nodiscard]] TypeId publishClass(
         TypeId id,

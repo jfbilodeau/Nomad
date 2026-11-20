@@ -1,5 +1,10 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <ReentrantRegistrationType.hpp>
+
+#include <nomad/log/Logger.hpp>
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -7,9 +12,11 @@
 #include <nomad/script/StructType.hpp>
 #include <nomad/script/TypeManager.hpp>
 
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -468,6 +475,109 @@ BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_cons
     BOOST_TEST(runtime.getNativeConstructor(id)->getConstructedType() == manager.getTypeByName("ConstructorOwner"));
     BOOST_TEST(runtime.registerNativeClassConstructor(ownerId, definition).isInvalid());
     BOOST_TEST(runtime.getFunctionTableSize() == before + 1);
+}
+
+BOOST_AUTO_TEST_CASE(class_registration_preflight_reports_one_validation_error) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    BOOST_REQUIRE(manager.registerClass("Existing", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerHub("Reserved", HubMode::Opened).isValid());
+    const auto typeCount = manager.getTypeCount();
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    BOOST_TEST(manager.registerClass("", ClassMode::Closed).isInvalid());
+    BOOST_TEST(manager.registerClass("InvalidMode", static_cast<ClassMode>(0)).isInvalid());
+    BOOST_TEST(manager.registerClass("Existing", ClassMode::Closed).isInvalid());
+    BOOST_TEST(manager.registerClass("Reserved", ClassMode::Closed).isInvalid());
+    BOOST_TEST(manager.getTypeCount() == typeCount);
+    logger.flush();
+    const std::array expectedMessages{
+        "Cannot register a class with an empty name",
+        "Cannot register class 'InvalidMode': invalid class mode",
+        "Type with name 'Existing' already registered",
+        "Cannot register class 'Reserved': name is reserved by a hub declaration"
+    };
+    BOOST_REQUIRE(sink->getEntries().size() == expectedMessages.size());
+    for (auto index = NomadIndex{0}; index < expectedMessages.size(); ++index) {
+        const auto& entry = sink->getEntries()[index];
+        BOOST_TEST((entry.level == LogLevel::Error));
+        BOOST_TEST(entry.message.find(expectedMessages[index]) != NomadString::npos);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(class_publication_rechecks_report_the_conflict_without_a_descriptor_error) {
+    for (const auto createHubConflict : {false, true}) {
+        auto destroyed = false;
+        Runtime runtime;
+        auto& manager = runtime.getTypeManager();
+        const NomadString name = createHubConflict ? "HubConflict" : "TypeConflict";
+        TypeId reservedId;
+        TypeId conflictingTypeId;
+        HubId conflictingHubId;
+        auto& logger = log::getLogger();
+        logger.flush();
+        const auto previousLevel = logger.getLogLevel();
+        MemorySinkConfiguration sinkConfiguration;
+        sinkConfiguration.level = LogLevel::Debug;
+        const auto sinkId = logger.createMemorySink(sinkConfiguration);
+        BOOST_SCOPE_EXIT_ALL(&) {
+            logger.removeSink(sinkId);
+            logger.setLogLevel(previousLevel);
+        };
+
+        logger.setLogLevel(LogLevel::Debug);
+        auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+        BOOST_REQUIRE(sink != nullptr);
+        const auto id = manager.registerClass<nomad::test::ReentrantRegistrationType>(
+            name,
+            ClassMode::Closed,
+            [&](Runtime* owner, const TypeId candidateId, const NomadString& registeredName) {
+                reservedId = candidateId;
+                BOOST_TEST(!owner->getType(candidateId).has_value());
+                if (createHubConflict) {
+                    conflictingHubId = owner->registerHub(registeredName, HubMode::Opened);
+                    BOOST_REQUIRE(conflictingHubId.isValid());
+                } else {
+                    conflictingTypeId = owner->getTypeManager().registerClass(registeredName, ClassMode::Closed);
+                    BOOST_REQUIRE(conflictingTypeId.isValid());
+                }
+            },
+            destroyed
+        );
+        BOOST_TEST(id.isInvalid());
+        BOOST_TEST(destroyed);
+        BOOST_REQUIRE(reservedId.isValid());
+        BOOST_TEST(!manager.getType(reservedId).has_value());
+        if (createHubConflict) {
+            BOOST_TEST(runtime.getHubId(name) == conflictingHubId);
+            BOOST_TEST(manager.getTypeId(name).isInvalid());
+        } else {
+            BOOST_TEST(manager.getTypeId(name) == conflictingTypeId);
+            BOOST_TEST(conflictingTypeId != reservedId);
+        }
+
+        logger.flush();
+        BOOST_TEST(sink->getEntries().size() == 1U);
+        BOOST_REQUIRE(!sink->getEntries().empty());
+        const auto expectedMessage = createHubConflict ?
+            "Cannot register class '" + name + "': name is reserved by a hub declaration" :
+            "Type with name '" + name + "' already registered";
+        const auto& entry = sink->getEntries().front();
+        BOOST_TEST((entry.level == LogLevel::Error));
+        BOOST_TEST(entry.message.find(expectedMessage) != NomadString::npos);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(manager_type_registration_publishes_hub_members_and_rejects_conflicts) {

@@ -611,7 +611,7 @@ use the same `ClassType` descriptor; `isOpen()` reports its mode.
 
 The runtime owns the descriptor and its name and documentation. Use
 `getType(id)` to retrieve a borrowed descriptor. Empty names, invalid modes,
-already-registered type names, and conflicting hub declarations are logged and
+already-registered type names, and conflicting hub declarations are logged once and
 return `TypeId::INVALID`. Duplicate creation is rejected even when the mode
 and documentation are identical, without replacing the existing type.
 
@@ -628,6 +628,11 @@ Invalid registration requests are rejected before calling the descriptor constru
 The constructor initializes the descriptor without registering it; the runtime
 registers the completed descriptor and returns its `TypeId`. The descriptor's
 runtime, ID, name, and mode must match the registration request.
+
+Names are checked again after descriptor construction. A type or hub conflict
+introduced by that constructor returns `TypeId::INVALID` and reports the actual
+conflict once, without an additional descriptor-mismatch diagnostic. The rejected
+descriptor is destroyed; declarations made by its constructor are not rolled back.
 
 The ID is reserved before construction and is not resolvable through `getType()`
 until the descriptor is registered. Constructors may create other types without

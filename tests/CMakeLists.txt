@@ -89,6 +89,8 @@ add_executable(
     ./ProjectPackagerTest.cpp
     ./ReadOnlyCollectionTest.cpp
     ./RectanglePackerTest.cpp
+    ./ReentrantRegistrationType.cpp
+    ./ReentrantRegistrationType.hpp
     ./RuntimeTest.cpp
     ./ScriptBindingTest.cpp
     ./ScriptMethodTest.cpp

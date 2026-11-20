@@ -46,23 +46,35 @@ TypeId TypeManager::registerClass(
     );
 }
 
-bool TypeManager::canRegisterClass(const NomadString& name, const ClassMode mode) const {
+bool TypeManager::canRegisterClass(
+    const NomadString& name,
+    const ClassMode mode,
+    NomadString& error
+) const {
     if (name.empty()) {
-        log::error("Cannot register a class with an empty name");
+        error = "Cannot register a class with an empty name";
+
         return false;
     }
+
     if (mode != ClassMode::Opened && mode != ClassMode::Closed) {
-        log::error("Cannot register class '" + name + "': invalid class mode");
+        error = "Cannot register class '" + name + "': invalid class mode";
+
         return false;
     }
+
     if (getTypeId(name).isValid()) {
-        log::error("Type with name '" + name + "' already registered");
+        error = "Type with name '" + name + "' already registered";
+
         return false;
     }
+
     if (!m_runtime.canRegisterTypeName(name)) {
-        log::error("Cannot register class '" + name + "': name is reserved by a hub declaration");
+        error = "Cannot register class '" + name + "': name is reserved by a hub declaration";
+
         return false;
     }
+
     return true;
 }
 
@@ -72,16 +84,24 @@ TypeId TypeManager::publishClass(
     const ClassMode mode,
     std::unique_ptr<ClassType> type
 ) {
+    NomadString error;
     const auto matchesIdentity = type->getRuntime() == &m_runtime &&
         type->getId() == id && type->getTypeName() == name;
     // Descriptor construction may register other types, so recheck name availability.
-    const auto canPublish = matchesIdentity && canRegisterClass(name, mode);
+    const auto canPublish = matchesIdentity && canRegisterClass(name, mode, error);
     const auto matchesMode = canPublish && type->isOpen() == (mode == ClassMode::Opened);
     if (!canPublish || !matchesMode) {
-        log::error("Cannot register class '" + name + "': descriptor does not match its registration request");
+        if (matchesIdentity && !canPublish) {
+            log::error(error);
+        } else {
+            log::error("Cannot register class '" + name + "': descriptor does not match its registration request");
+        }
+
         return TypeId::INVALID;
     }
+
     registerType(std::move(type));
+
     return id;
 }
 
