@@ -2,8 +2,6 @@
 
 #pragma once
 
-#include <nomad/log/Logger.hpp>
-
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/EnumType.hpp>
@@ -42,10 +40,7 @@ public:
         ClassMode mode,
         Arguments&&... arguments
     ) {
-        NomadString error;
-        if (!canRegisterClass(name, mode, error)) {
-            log::error(error);
-
+        if (!canRegisterClass(name, mode)) {
             return TypeId::INVALID;
         }
 
@@ -166,11 +161,7 @@ private:
         const Type* type;
     };
 
-    [[nodiscard]] bool canRegisterClass(
-        const NomadString& name,
-        ClassMode mode,
-        NomadString& error
-    ) const;
+    [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
     [[nodiscard]] bool hasConstructor(const NomadString& name) const;
     [[nodiscard]] TypeId publishClass(
         TypeId id,

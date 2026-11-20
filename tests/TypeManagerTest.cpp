@@ -16,7 +16,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
-#include <array>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -477,7 +476,7 @@ BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_cons
     BOOST_TEST(runtime.getFunctionTableSize() == before + 1);
 }
 
-BOOST_AUTO_TEST_CASE(class_registration_preflight_reports_one_validation_error) {
+BOOST_AUTO_TEST_CASE(class_registration_preflight_returns_invalid_ids_without_logging) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     BOOST_REQUIRE(manager.registerClass("Existing", ClassMode::Closed).isValid());
@@ -503,21 +502,10 @@ BOOST_AUTO_TEST_CASE(class_registration_preflight_reports_one_validation_error) 
     BOOST_TEST(manager.registerClass("Reserved", ClassMode::Closed).isInvalid());
     BOOST_TEST(manager.getTypeCount() == typeCount);
     logger.flush();
-    const std::array expectedMessages{
-        "Cannot register a class with an empty name",
-        "Cannot register class 'InvalidMode': invalid class mode",
-        "Type with name 'Existing' already registered",
-        "Cannot register class 'Reserved': name is reserved by a hub declaration"
-    };
-    BOOST_REQUIRE(sink->getEntries().size() == expectedMessages.size());
-    for (auto index = NomadIndex{0}; index < expectedMessages.size(); ++index) {
-        const auto& entry = sink->getEntries()[index];
-        BOOST_TEST((entry.level == LogLevel::Error));
-        BOOST_TEST(entry.message.find(expectedMessages[index]) != NomadString::npos);
-    }
+    BOOST_TEST(sink->getEntries().empty());
 }
 
-BOOST_AUTO_TEST_CASE(class_publication_rechecks_report_the_conflict_without_a_descriptor_error) {
+BOOST_AUTO_TEST_CASE(class_publication_conflicts_return_invalid_ids_without_logging) {
     for (const auto createHubConflict : {false, true}) {
         auto destroyed = false;
         Runtime runtime;
@@ -569,14 +557,7 @@ BOOST_AUTO_TEST_CASE(class_publication_rechecks_report_the_conflict_without_a_de
         }
 
         logger.flush();
-        BOOST_TEST(sink->getEntries().size() == 1U);
-        BOOST_REQUIRE(!sink->getEntries().empty());
-        const auto expectedMessage = createHubConflict ?
-            "Cannot register class '" + name + "': name is reserved by a hub declaration" :
-            "Type with name '" + name + "' already registered";
-        const auto& entry = sink->getEntries().front();
-        BOOST_TEST((entry.level == LogLevel::Error));
-        BOOST_TEST(entry.message.find(expectedMessage) != NomadString::npos);
+        BOOST_TEST(sink->getEntries().empty());
     }
 }
 

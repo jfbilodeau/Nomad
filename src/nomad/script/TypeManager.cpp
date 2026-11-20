@@ -46,32 +46,20 @@ TypeId TypeManager::registerClass(
     );
 }
 
-bool TypeManager::canRegisterClass(
-    const NomadString& name,
-    const ClassMode mode,
-    NomadString& error
-) const {
+bool TypeManager::canRegisterClass(const NomadString& name, const ClassMode mode) const {
     if (name.empty()) {
-        error = "Cannot register a class with an empty name";
-
         return false;
     }
 
     if (mode != ClassMode::Opened && mode != ClassMode::Closed) {
-        error = "Cannot register class '" + name + "': invalid class mode";
-
         return false;
     }
 
     if (getTypeId(name).isValid()) {
-        error = "Type with name '" + name + "' already registered";
-
         return false;
     }
 
     if (!m_runtime.canRegisterTypeName(name)) {
-        error = "Cannot register class '" + name + "': name is reserved by a hub declaration";
-
         return false;
     }
 
@@ -84,19 +72,12 @@ TypeId TypeManager::publishClass(
     const ClassMode mode,
     std::unique_ptr<ClassType> type
 ) {
-    NomadString error;
     const auto matchesIdentity = type->getRuntime() == &m_runtime &&
         type->getId() == id && type->getTypeName() == name;
     // Descriptor construction may register other types, so recheck name availability.
-    const auto canPublish = matchesIdentity && canRegisterClass(name, mode, error);
+    const auto canPublish = matchesIdentity && canRegisterClass(name, mode);
     const auto matchesMode = canPublish && type->isOpen() == (mode == ClassMode::Opened);
     if (!canPublish || !matchesMode) {
-        if (matchesIdentity && !canPublish) {
-            log::error(error);
-        } else {
-            log::error("Cannot register class '" + name + "': descriptor does not match its registration request");
-        }
-
         return TypeId::INVALID;
     }
 
