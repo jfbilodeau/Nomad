@@ -8,6 +8,9 @@ Building Nomad requires:
 
 Dependencies are pinned and downloaded by CMake during configuration.
 
+CI temporarily uses CMake 4.4.5, which is also recommended for local builds.
+CMake 4.5.0 cannot configure the bundled Boost.Locale release.
+
 ## Windows
 
 ```console
@@ -60,6 +63,10 @@ into `nomad_test_audio`, `nomad_test_language`, `nomad_test_tooling`, and
 `nomad_test_remaining`; together they run the full unit suite. Each group uses
 the same `nomad_test` executable. Tests not assigned to a named group run in the
 remaining group, including newly added tests.
+
+Assertions that require live-string allocation tracking run only in Debug
+builds. Release builds still run the corresponding behavioral and
+reference-count assertions.
 
 In VS Code, select the relevant CTest group for focused validation, or run all
 tests for full validation. The `unit` label selects all unit-test groups without

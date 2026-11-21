@@ -35,12 +35,12 @@ ArrayType::~ArrayType() {
     releaseRef(m_emptyArray);
 }
 
-void ArrayType::initValue(RuntimeValue& value) const {
+void ArrayType::initValue(RuntimeValue* value) const {
     if (m_emptyArray == nullptr) {
         m_emptyArray = createEmptyArray();
     }
     addRef(m_emptyArray);
-    value.setObjectValue(m_emptyArray);
+    value->setObjectValue(m_emptyArray);
 }
 
 const Type* ArrayType::getElementType() const {

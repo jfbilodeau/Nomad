@@ -96,6 +96,11 @@ Modules must be built for the same Nomad SDK, platform, architecture, and
 compatible compiler/runtime settings. Native modules execute trusted native
 code; only use SDKs and modules you trust.
 
+The `NomadObject::asScriptObject()` virtual interface requires rebuilding C++
+hosts, custom object subclasses, and native modules against the updated SDK.
+Do not mix binaries built before this interface change with the updated runtime.
+The loader does not negotiate or validate native C++ ABI versions.
+
 ## Module scripts
 
 A native module can also supply `.nomad` files under its fixed `scripts/`

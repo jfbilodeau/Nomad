@@ -102,7 +102,7 @@ NomadString symbolRequest(
 
 BOOST_AUTO_TEST_SUITE(language_server)
 
-BOOST_AUTO_TEST_CASE(init_completion_and_hover_are_limited_to_class_member_headers)
+BOOST_AUTO_TEST_CASE(init_completion_and_hover_are_limited_to_composite_member_headers)
 {
     TestDirectory directory("nomad_lsp_contextual_init");
     const auto uri = uriFor(directory.getPath() / "point.nomad");
@@ -111,47 +111,163 @@ BOOST_AUTO_TEST_CASE(init_completion_and_hover_are_limited_to_class_member_heade
             {"params", {{"textDocument", {{"uri", uri}}},
                 {"position", {{"line", line}, {"character", character}}}}}});
     };
-    const auto text =
-        "hub model\nopen class Point\n"
-        "ini\n"
-        "init value:float\n"
-        "ini\n"
-        "if true\nini\nend\n"
-        "end\n"
-        "fun move\nini\nend\n"
-        "ini\n"
-        "end\nend\n"
-        "ini\n";
-    std::istringstream input(start() + frame(openDocument(uri, text)) +
-        query(10, "textDocument/completion", 2, 3) +
-        query(11, "textDocument/hover", 3, 2) +
-        query(12, "textDocument/completion", 4, 3) +
-        query(13, "textDocument/completion", 6, 3) +
-        query(14, "textDocument/completion", 10, 3) +
-        query(15, "textDocument/completion", 12, 3) +
-        query(16, "textDocument/completion", 15, 3) +
-        query(17, "textDocument/completion", 3, 5) + finish());
+    for (const auto* declaration : {"open class Point", "struct Point"}) {
+        BOOST_TEST_CONTEXT(declaration) {
+            const auto text = NomadString{"hub model\n"} + declaration + "\n"
+                "ini\n"
+                "init value:float\n"
+                "ini\n"
+                "if true\nini\nend\n"
+                "end\n"
+                "fun move\nini\nend\n"
+                "ini\n"
+                "end\nend\n"
+                "ini\n";
+            std::istringstream input(start() + frame(openDocument(uri, text)) +
+                query(10, "textDocument/completion", 2, 3) +
+                query(11, "textDocument/hover", 3, 2) +
+                query(12, "textDocument/completion", 4, 3) +
+                query(13, "textDocument/completion", 6, 3) +
+                query(14, "textDocument/completion", 10, 3) +
+                query(15, "textDocument/completion", 12, 3) +
+                query(16, "textDocument/completion", 15, 3) +
+                query(17, "textDocument/completion", 3, 5) + finish());
+            std::ostringstream output;
+            std::ostringstream errors;
+            BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+            std::map<std::int64_t, json::object> replies;
+            for (const auto& message : responses(output.str())) {
+                if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
+            }
+            for (const auto id : {10, 15}) {
+                const auto& items = replies.at(id).at("result").as_object().at("items").as_array();
+                BOOST_REQUIRE(items.size() == 1u);
+                BOOST_TEST(items.front().as_object().at("label").as_string() == "init");
+                BOOST_TEST(items.front().as_object().at("kind").as_int64() == 14);
+            }
+            BOOST_TEST(!replies.at(11).at("result").is_null());
+            for (const auto id : {12, 13, 14, 16}) {
+                BOOST_TEST(replies.at(id).at("result").as_object().at("items").as_array().empty());
+            }
+            for (const auto& item : replies.at(17).at("result").as_object().at("items").as_array()) {
+                BOOST_TEST(item.as_object().at("label").as_string() != "init");
+            }
+            BOOST_TEST(errors.str().empty());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(struct_members_and_signatures_preserve_logical_types_and_receiver_scopes)
+{
+    TestDirectory directory("nomad_lsp_struct_members");
+    const auto uri = uriFor(directory.getPath() / "structs.nomad");
+    const NomadString source =
+        "hub model\nstruct Empty\nend\n"
+        "struct Point\nlabel = \"point\"\nnumber = 0\n"
+        "init number:int label:string\nthis.number = number\nthis.label = label\nend\n"
+        "init label:string\nthis.number = label.length\nthis.label = label\nend\n"
+        "fun read delta:int\nlocal = this.number + delta\nreturn local\nend\n"
+        "fun read suffix:string\nreturn $\"{this.label}{suffix}\"\nend\n"
+        "fun accept other:model.Point empty:model.Empty\nreturn other.number\nend\nend\n"
+        "struct Outer\npoint = new model.Point 3 \"nested\"\nend\nend\n"
+        "class Other\notherOnly = true\nfun read amount:float\nreturn amount\nend\nend\n"
+        "fun makePoint\ncandidate = new model.Point 4 \"candidate\"\nreturn candidate\nend\n"
+        "point = new model.Point 2 \"position\"\nouter = new model.Outer\nempty = new model.Empty\n"
+        "number = point.read 3\ntext = point.read \"x\"\n"
+        "accepted = point.accept point empty\nnested = outer.point.read 2\nreturn point.number";
+    const auto diagnostics = analyzeLanguageDocuments({{uri, {source, 1}}});
+    BOOST_REQUIRE_MESSAGE(diagnostics.empty(), (diagnostics.empty() ? "" : json::serialize(diagnostics.begin()->second)));
+    const auto query = [&](const int id, const char* method, const NomadString& word, const std::size_t offset) {
+        return symbolRequest(id, method, uri, source, word, offset);
+    };
+    std::istringstream input(start() + frame(openDocument(uri, source)) +
+        query(10, "textDocument/completion", "point.read 3", 6) +
+        query(11, "textDocument/hover", "point.read 3", 8) +
+        query(12, "textDocument/hover", "point.number", 8) +
+        query(13, "textDocument/completion", "outer.point.read 2", 12) +
+        query(14, "textDocument/signatureHelp", "point.read 3", NomadString{"point.read 3"}.size()) +
+        query(15, "textDocument/signatureHelp", "new model.Point 2 ", NomadString{"new model.Point 2 "}.size()) +
+        query(16, "textDocument/signatureHelp", "point.accept point ", NomadString{"point.accept point "}.size()) +
+        query(17, "textDocument/completion", "this.number = number", 5) +
+        query(18, "textDocument/hover", "return local", 10) +
+        query(19, "textDocument/completion", "new model.Point 2 ", NomadString{"new model.Point"}.size()) +
+        query(20, "textDocument/signatureHelp", "new model.Empty", NomadString{"new model.Empty"}.size()) +
+        query(21, "textDocument/hover", "candidate = new", 3) +
+        query(22, "textDocument/completion", "return candidate", 7) + finish());
     std::ostringstream output;
     std::ostringstream errors;
     BOOST_TEST(runLanguageServer(input, output, errors, [](const auto&) { return LanguageDiagnostics{}; }) == 0);
+    BOOST_REQUIRE_MESSAGE(errors.str().empty(), errors.str());
     std::map<std::int64_t, json::object> replies;
     for (const auto& message : responses(output.str())) {
         if (message.contains("id")) replies.emplace(message.at("id").as_int64(), message);
     }
-    for (const auto id : {10, 15}) {
-        const auto& items = replies.at(id).at("result").as_object().at("items").as_array();
-        BOOST_REQUIRE(items.size() == 1u);
-        BOOST_TEST(items.front().as_object().at("label").as_string() == "init");
-        BOOST_TEST(items.front().as_object().at("kind").as_int64() == 14);
+    const std::set<NomadString> expectedMethods{
+        "model.Point.read delta:int -> int", "model.Point.read suffix:string -> string"
+    };
+    for (const auto id : {10, 13, 17}) {
+        std::set<NomadString> names;
+        std::set<NomadString> methods;
+        for (const auto& value : replies.at(id).at("result").as_object().at("items").as_array()) {
+            const auto& item = value.as_object();
+            const NomadString name{item.at("label").as_string()};
+            names.insert(name);
+            BOOST_TEST(name.find('$') == NomadString::npos);
+            if (name == "read") methods.emplace(item.at("detail").as_string());
+        }
+        BOOST_TEST(methods == expectedMethods, boost::test_tools::per_element());
+        BOOST_TEST(names.contains("number"));
+        BOOST_TEST(names.contains("label"));
+        BOOST_TEST(!names.contains("otherOnly"));
+        BOOST_TEST(!names.contains("init"));
     }
-    BOOST_TEST(!replies.at(11).at("result").is_null());
-    for (const auto id : {12, 13, 14, 16}) {
-        BOOST_TEST(replies.at(id).at("result").as_object().at("items").as_array().empty());
+    const auto hover = json::serialize(replies.at(11).at("result"));
+    for (const auto& method : expectedMethods) BOOST_TEST(hover.find(method) != NomadString::npos);
+    BOOST_TEST(hover.find("Other.read") == NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(12).at("result")).find("model.Point.number:int") != NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(18).at("result")).find("local:int") != NomadString::npos);
+    BOOST_TEST(json::serialize(replies.at(21).at("result")).find("candidate:model.Point") != NomadString::npos);
+    for (const auto id : {14, 15}) {
+        BOOST_REQUIRE_MESSAGE(replies.at(id).at("result").is_object(), json::serialize(replies.at(id)));
+        const auto& result = replies.at(id).at("result").as_object();
+        const auto& signatures = result.at("signatures").as_array();
+        BOOST_REQUIRE(signatures.size() == 2U);
+        for (const auto& signature : signatures) {
+            const NomadString label{signature.as_object().at("label").as_string()};
+            BOOST_TEST(label.starts_with(id == 14 ? "model.Point.read " : "new model.Point "));
+            BOOST_TEST(label.find('$') == NomadString::npos);
+        }
+        BOOST_TEST(result.at("activeParameter").as_int64() == (id == 14 ? 0 : 1));
     }
-    for (const auto& item : replies.at(17).at("result").as_object().at("items").as_array()) {
-        BOOST_TEST(item.as_object().at("label").as_string() != "init");
+    const auto& accepted = replies.at(16).at("result").as_object();
+    BOOST_TEST(accepted.at("activeParameter").as_int64() == 1);
+    const auto& parameters = accepted.at("signatures").as_array().front().as_object().at("parameters").as_array();
+    BOOST_REQUIRE(parameters.size() == 2U);
+    BOOST_TEST(parameters[0].as_object().at("label").as_string() == "other:model.Point");
+    BOOST_TEST(parameters[1].as_object().at("label").as_string() == "empty:model.Empty");
+    auto foundType = false;
+    for (const auto& value : replies.at(19).at("result").as_object().at("items").as_array()) {
+        const auto& item = value.as_object();
+        if (item.at("label").as_string() == "model.Point") {
+            foundType = true;
+            BOOST_TEST(item.at("kind").as_int64() == 22);
+        }
     }
-    BOOST_TEST(errors.str().empty());
+    BOOST_TEST(foundType);
+    const auto& empty = replies.at(20).at("result").as_object();
+    const auto& emptySignature = empty.at("signatures").as_array().front().as_object();
+    BOOST_TEST(emptySignature.at("label").as_string() == "new model.Empty -> model.Empty");
+    BOOST_TEST(emptySignature.at("parameters").as_array().empty());
+    BOOST_TEST(!empty.contains("activeParameter"));
+    auto foundCandidate = false;
+    for (const auto& value : replies.at(22).at("result").as_object().at("items").as_array()) {
+        const auto& item = value.as_object();
+        const NomadString name{item.at("label").as_string()};
+        BOOST_TEST(name.find('$') == NomadString::npos);
+        BOOST_TEST(name.find('@') == NomadString::npos);
+        if (name == "candidate") foundCandidate = true;
+    }
+    BOOST_TEST(foundCandidate);
 }
 
 BOOST_AUTO_TEST_CASE(initializes_full_sync_utf16_and_shutdown)

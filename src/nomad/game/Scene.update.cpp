@@ -96,7 +96,6 @@ void Scene::generateLayerPhysicsBodies(Scene::Layer& layer) const {
 
     // Auxiliary vector to track processed tiles
     auto processed = createTempVector<bool>(static_cast<size_t>(m_tileMapHeight * m_tileMapWidth), false);
-    // std::vector<bool> processed(m_tileMapHeight * m_tileMapWidth, false);
 
     for (auto y = 0; y < m_tileMapHeight; ++y) {
         for (auto x = 0; x < m_tileMapWidth; ++x) {

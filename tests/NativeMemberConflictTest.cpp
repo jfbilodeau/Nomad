@@ -5,7 +5,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -25,7 +26,7 @@ BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
     }}}, {}});
 
     BOOST_TEST(!compiler->compileFunctions(&context));
-    BOOST_REQUIRE(context.getFirstError() != nullptr);
+    BOOST_REQUIRE(context.getFirstError().has_value());
     BOOST_TEST(context.getFirstError()->message.find("name.length") != NomadString::npos);
     BOOST_TEST(context.getFirstError()->message.find("conflicts with an existing identifier") != NomadString::npos);
 }
@@ -33,20 +34,22 @@ BOOST_AUTO_TEST_CASE(compiled_function_rejects_existing_qualified_identifier) {
 BOOST_AUTO_TEST_CASE(interpreter_rejects_creating_unknown_qualified_identifier) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
-    BOOST_TEST(!Interpreter{}.execute("name.length = 10", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_CHECK_MESSAGE(interpreter.getError()->find("name.length") != NomadString::npos, *interpreter.getError());
-    BOOST_CHECK_MESSAGE(interpreter.getError()->find("Cannot assign") != NomadString::npos, *interpreter.getError());
+    BOOST_TEST(!interpreter.getInterpreter().execute("name.length = 10", interpreter));
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_CHECK_MESSAGE(interpreter.getFirstError()->message.find("name.length") != NomadString::npos, interpreter.getFirstError()->message);
+    BOOST_CHECK_MESSAGE(interpreter.getFirstError()->message.find("Cannot assign") != NomadString::npos, interpreter.getFirstError()->message);
     BOOST_TEST(interpreter.getVariableValue("name.length") == nullptr);
-    const auto succeeded = Interpreter{}.execute("name = \"J-F\"", interpreter);
-    const auto diagnostic = interpreter.getError() ? *interpreter.getError() : NomadString{};
+    const auto succeeded = interpreter.getInterpreter().execute("name = \"J-F\"", interpreter);
+    const auto diagnostic = interpreter.getFirstError() ? interpreter.getFirstError()->message : NomadString{};
     BOOST_REQUIRE_MESSAGE(succeeded, diagnostic);
 }
 
 BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
 
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
@@ -60,9 +63,9 @@ BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
     BOOST_TEST(result.getStringValue() == "J-F");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

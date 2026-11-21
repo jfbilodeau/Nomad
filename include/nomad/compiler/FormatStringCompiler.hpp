@@ -20,10 +20,16 @@ enum class FormatTemplateSegmentType {
     Error,
 };
 
+enum class FormatTemplateDiagnosticCode {
+    EmptyPlaceholder = 1,
+    MissingClosingBrace,
+};
+
 struct FormatTemplateDiagnostic {
     NomadString message;
     NomadIndex offset;
     NomadIndex length;
+    FormatTemplateDiagnosticCode code;
 };
 
 struct FormatTemplateSegment {

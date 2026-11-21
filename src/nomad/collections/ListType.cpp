@@ -23,8 +23,8 @@ ListType::ListType(
     }
 }
 
-void ListType::initValue(RuntimeValue& value) const {
-    value.setObjectValue(new ListObject(getTypeArguments()[0]));
+void ListType::initValue(RuntimeValue* value) const {
+    value->setObjectValue(new ListObject(getTypeArguments()[0]));
 }
 
 } // namespace nomad

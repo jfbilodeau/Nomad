@@ -12,9 +12,11 @@
 
 #include <nomad/game/resource/ResourceManager.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Path.hpp>
 #include <nomad/system/SystemFunctions.hpp>
@@ -214,6 +216,7 @@ Game::~Game() {
     // (including the error message buffer), which is allocated even when no subsystem was initialized.
     SDL_Quit();
 
+    m_virtualMachine.reset();
     m_ownedRuntime.reset();
     m_runtime = nullptr;
 }
@@ -755,7 +758,7 @@ void Game::executeFunction(const CallableId functionId, Scene *scene, Entity *th
         m_currentContext.addOtherEntity(otherEntity);
     }
 
-    m_runtime->executeFunction(functionId);
+    m_virtualMachine->executeFunction(functionId);
 }
 
 void Game::executeFunction(
@@ -767,7 +770,7 @@ void Game::executeFunction(
 ) {
     m_currentContext.reset(scene, entity);
 
-    m_runtime->executeFunction(functionId, args, returnValue);
+    m_virtualMachine->executeFunction(functionId, args, returnValue);
 }
 
 void Game::executeFunction(
@@ -780,7 +783,7 @@ void Game::executeFunction(
     m_currentContext.reset(scene, entity);
     m_currentContext.setOtherEntities(others);
 
-    m_runtime->executeFunction(functionId, args);
+    m_virtualMachine->executeFunction(functionId, args);
 }
 
 void Game::executeFunction(
@@ -794,7 +797,7 @@ void Game::executeFunction(
     m_currentContext.reset(scene, entity);
     m_currentContext.setOtherEntities(others);
 
-    m_runtime->executeFunction(functionId, args, returnValue);
+    m_virtualMachine->executeFunction(functionId, args, returnValue);
 }
 
 void Game::executeFunction(
@@ -812,7 +815,7 @@ void Game::executeFunction(
     m_currentContext.reset(scene, entity);
     m_currentContext.setOtherEntities(others);
 
-    m_runtime->executeFunction(closure, args);
+    m_virtualMachine->executeFunction(closure, args);
 }
 
 void Game::executeFunction(
@@ -831,7 +834,7 @@ void Game::executeFunction(
     m_currentContext.reset(scene, entity);
     m_currentContext.setOtherEntities(others);
 
-    m_runtime->executeFunction(closure, args, returnValue);
+    m_virtualMachine->executeFunction(closure, args, returnValue);
 }
 
 //
@@ -908,7 +911,7 @@ void Game::executeFunction(
 bool Game::executePredicate(const CallableId functionId) const {
     RuntimeValue return_value;
 
-    m_runtime->executeFunction(functionId, {}, return_value);
+    m_virtualMachine->executeFunction(functionId, {}, return_value);
 
     return return_value.getBooleanValue();
 }
@@ -1238,6 +1241,7 @@ void Game::initRuntime() {
         m_runtime = m_ownedRuntime.get();
         registerSystemFunctions(m_runtime);
     }
+    m_virtualMachine = m_runtime->createVirtualMachine();
 
     for (const auto* hubName : {
         "game",
@@ -1472,7 +1476,7 @@ void Game::loadTextIntoConst(const NomadString& languageCode) const {
 
         m_runtime->registerConstant(constantName, constantValue, constantType);
 
-        constantType->freeValue(constantValue);
+        constantType->freeValue(&constantValue);
     }
 }
 
@@ -1580,7 +1584,7 @@ void Game::executeEntry() {
 
     try {
         m_currentContext.reset(nullptr, nullptr);
-        m_runtime->executeFunction(initFunctionId);
+        m_virtualMachine->executeFunction(initFunctionId);
     } catch (std::exception& e) {
         raiseError(
             "Failed to execute entry function '" + m_options.entryFunction + "': " + e.what()

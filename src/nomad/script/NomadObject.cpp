@@ -43,4 +43,14 @@ NomadIndex NomadObject::getReferenceCount() const noexcept {
     return m_referenceCount.load(std::memory_order_relaxed);
 }
 
+ScriptObject* NomadObject::asScriptObject() noexcept {
+
+    return nullptr;
+}
+
+const ScriptObject* NomadObject::asScriptObject() const noexcept {
+
+    return nullptr;
+}
+
 } // namespace nomad

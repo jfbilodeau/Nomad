@@ -4,8 +4,9 @@
 
 #include <nomad/Nomad.hpp>
 
-#include <nomad/compiler/Diagnostic.hpp>
+#include <nomad/compiler/CompilerDiagnostic.hpp>
 
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -44,23 +45,24 @@ public:
     void setHub(NomadString hub);
     [[nodiscard]] NomadString qualifyDeclaration(const NomadString& name) const;
 
-    void reportDiagnostics(std::span<const Diagnostic> diagnostics);
+    void addDiagnostic(const CompilerDiagnostic& diagnostic);
+    void addDiagnostics(std::span<const CompilerDiagnostic> diagnostics);
 
-    void reportError(NomadStringView message);
-    void reportError(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
+    void addError(NomadStringView message);
+    void addError(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
     // Reports at the tokenizer's source, line and column.
-    void reportError(NomadStringView message, const Tokenizer* tokens);
-    void reportWarning(NomadStringView message);
-    void reportWarning(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
-    void reportWarning(NomadStringView message, const Tokenizer* tokens);
+    void addError(NomadStringView message, const Tokenizer* tokens);
+    void addWarning(NomadStringView message);
+    void addWarning(NomadStringView message, NomadStringView sourceName, NomadIndex line, NomadIndex column);
+    void addWarning(NomadStringView message, const Tokenizer* tokens);
 
     [[nodiscard]] NomadBoolean hasError() const;
     [[nodiscard]] NomadBoolean hasWarning() const;
     [[nodiscard]] NomadIndex getErrorCount() const;
     [[nodiscard]] NomadIndex getWarningCount() const;
-    [[nodiscard]] std::span<const Diagnostic> getDiagnostics() const;
-    // Returns nullptr when no error has been reported.
-    [[nodiscard]] const Diagnostic* getFirstError() const;
+    [[nodiscard]] std::span<const CompilerDiagnostic> getDiagnostics() const;
+    // Returns an owned snapshot of the first error, or std::nullopt.
+    [[nodiscard]] std::optional<CompilerDiagnostic> getFirstError() const;
     void clearDiagnostics();
 
     struct Block {
@@ -82,7 +84,7 @@ public:
 
 private:
     void report(
-        DiagnosticSeverity severity,
+        CompilerDiagnosticSeverity severity,
         NomadStringView message,
         NomadStringView sourceName,
         NomadIndex line,
@@ -93,7 +95,7 @@ private:
     CompilerMode m_mode;
     const InterpreterContext* m_interpreterContext;
     bool m_hubInitializer;
-    std::vector<Diagnostic> m_diagnostics;
+    std::vector<CompilerDiagnostic> m_diagnostics;
     NomadIndex m_errorCount = 0;
     NomadIndex m_warningCount = 0;
     std::vector<Block> m_blocks;

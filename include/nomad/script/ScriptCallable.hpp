@@ -18,6 +18,14 @@ public:
     [[nodiscard]] const NomadString& getName() const override { return Base::getName(); }
     [[nodiscard]] const std::vector<Parameter>& getParameters() const override { return Base::getParameters(); }
     [[nodiscard]] NomadIndex getParameterCount() const override { return Base::getParameterCount(); }
+    [[nodiscard]] NomadIndex getParameterOffset(const NomadId parameterId) const override {
+        return Base::getParameterOffset(parameterId);
+    }
+    [[nodiscard]] NomadIndex getParameterStorageSize() const override { return Base::getParameterStorageSize(); }
+    [[nodiscard]] CallStorageLayout getCallStorageLayout() const override { return Base::getCallStorageLayout(); }
+    [[nodiscard]] CallStorageLayout getCallStorageLayout(const NomadIndex argumentSlotCount) const override {
+        return Base::getCallStorageLayout(argumentSlotCount);
+    }
     [[nodiscard]] const Type* getReturnType() const override { return Base::getReturnType(); }
     [[nodiscard]] const Type* getClassType() const override { return Base::getClassType(); }
     void setReturnType(const Type* returnType) override { Base::setReturnType(returnType); }
@@ -32,10 +40,9 @@ protected:
         NomadString source,
         Arguments&&... arguments
     ):
-        Base(CallableSource::Script, std::forward<Arguments>(arguments)...),
+        Base(id, CallableSource::Script, std::forward<Arguments>(arguments)...),
         ScriptCallableBase(std::move(path), std::move(source))
     {
-        this->setId(id);
     }
 
     [[nodiscard]] std::vector<Parameter>& getEditableParameters() override {
@@ -70,6 +77,7 @@ public:
 class ScriptMethod final : public ScriptCallable<Method> {
 public:
     ScriptMethod(
+        CallableId id,
         NomadString name,
         const Type* classType,
         std::vector<Parameter> parameters,
@@ -84,6 +92,7 @@ public:
 class ScriptConstructor final : public ScriptCallable<Constructor> {
 public:
     ScriptConstructor(
+        CallableId id,
         const Type* classType,
         std::vector<Parameter> parameters,
         NomadString path,

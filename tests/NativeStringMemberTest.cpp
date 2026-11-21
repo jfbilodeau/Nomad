@@ -5,8 +5,9 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Documentation.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -32,15 +33,48 @@ BOOST_AUTO_TEST_CASE(textmate_init_is_scoped_to_constructor_headers_not_global_k
     BOOST_TEST(!std::regex_search(std::string("system.init"), header));
     const auto& keywords = repository.at("keywords").as_object().at("patterns").as_array()[0].as_object();
     BOOST_TEST(!std::regex_search(std::string("init"), std::regex(keywords.at("match").as_string().c_str())));
-    const auto& classPatterns = repository.at("classes").as_object().at("patterns").as_array()[0]
-        .as_object().at("patterns").as_array();
-    BOOST_TEST(classPatterns[0].as_object().at("include").as_string() == "#constructors");
+    for (const auto* name : {"classes", "structs"}) {
+        const auto& memberPatterns = repository.at(name).as_object().at("patterns").as_array()[0]
+            .as_object().at("patterns").as_array();
+        BOOST_TEST(memberPatterns[0].as_object().at("include").as_string() == "#constructors");
+    }
     for (const auto& pattern : grammar.at("patterns").as_array()) {
         BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
     }
     for (const auto& pattern : constructor.at("patterns").as_array()) {
         BOOST_TEST(pattern.as_object().at("include").as_string() != "#constructors");
     }
+}
+
+BOOST_AUTO_TEST_CASE(textmate_struct_headers_capture_type_names_and_support_folding)
+{
+    Runtime runtime;
+    std::ostringstream output;
+    generateTextMateGrammar(&runtime, output);
+    const auto grammar = boost::json::parse(output.str()).as_object();
+    const auto& repository = grammar.at("repository").as_object();
+    const auto& declaration = repository.at("structs").as_object().at("patterns").as_array()[0].as_object();
+    const std::regex header{declaration.at("begin").as_string().c_str()};
+    std::cmatch captures;
+    BOOST_REQUIRE(std::regex_match("    struct model.Point # stored fields", captures, header));
+    BOOST_TEST(captures[1].str() == "struct");
+    BOOST_TEST(captures[2].str() == "model.Point");
+    BOOST_TEST(declaration.at("beginCaptures").as_object().at("2").as_object().at("name").as_string() ==
+        "entity.name.type.nomad");
+    BOOST_TEST(declaration.at("end").as_string() == "^\\s*end\\b");
+    for (const auto* invalid : {"open struct Point", "fun struct", "point.struct", "struct Point extra"}) {
+        BOOST_TEST(!std::regex_match(invalid, header));
+    }
+    const auto& keywords = repository.at("keywords").as_object().at("patterns").as_array()[0].as_object();
+    BOOST_TEST(std::regex_match("struct", std::regex(keywords.at("match").as_string().c_str())));
+    BOOST_TEST(std::regex_search("struct Point", std::regex(grammar.at("foldingStartMarker").as_string().c_str())));
+    auto seenStruct = false;
+    for (const auto& pattern : grammar.at("patterns").as_array()) {
+        const auto& include = pattern.as_object().at("include").as_string();
+        if (include == "#structs") seenStruct = true;
+        if (include == "#keywords") BOOST_TEST(seenStruct);
+    }
+    BOOST_TEST(seenStruct);
 }
 
 namespace {
@@ -52,8 +86,8 @@ CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     const auto functionId = runtime.getFunctionId("test");
 
     const auto compiled = compiler->compileFunctions(&context);
-    const auto* error = context.getFirstError();
-    const auto message = error == nullptr ? NomadString("Unknown compilation error") : error->message;
+    const auto error = context.getFirstError();
+    const auto message = !error.has_value() ? NomadString("Unknown compilation error") : error->message;
     BOOST_REQUIRE_MESSAGE(compiled, message);
     return functionId;
 }
@@ -157,32 +191,35 @@ BOOST_AUTO_TEST_CASE(textmate_grammar_supports_expression_interpolation_and_form
 
 BOOST_AUTO_TEST_CASE(compiled_length_counts_unicode_code_points) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto functionId = compileFunction(runtime, "return \"J-F \xF0\x9F\x98\x80\".length");
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getIntegerValue() == 5);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_to_upper_uses_unicode_casing) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto functionId = compileFunction(runtime, "return \"h\xC3\xA9llo\".toUpper");
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getStringValue() == "H\xC3\x89LLO");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(to_upper_does_not_modify_receiver) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
-    BOOST_REQUIRE(Interpreter{}.execute("name = \"h\xC3\xA9llo\"", interpreter));
-    BOOST_REQUIRE(Interpreter{}.execute("upper = name.toUpper", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("name = \"h\xC3\xA9llo\"", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("upper = name.toUpper", interpreter));
     BOOST_REQUIRE(interpreter.getVariableValue("name") != nullptr);
     BOOST_REQUIRE(interpreter.getVariableValue("upper") != nullptr);
 
@@ -193,95 +230,100 @@ BOOST_AUTO_TEST_CASE(to_upper_does_not_modify_receiver) {
 BOOST_AUTO_TEST_CASE(exposes_byte_length_and_empty_properties) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"h\xC3\xA9\".byteLength", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"h\xC3\xA9\".byteLength", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
     BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 3);
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"\".isEmpty", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"\".isEmpty", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad\".isEmpty", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"Nomad\".isEmpty", interpreter));
     BOOST_REQUIRE(interpreter.getResult() != nullptr);
     BOOST_TEST(!interpreter.getResult()->getValue().getBooleanValue());
 }
 
 BOOST_AUTO_TEST_CASE(to_lower_uses_unicode_casing) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     const auto functionId = compileFunction(runtime, "return \"H\xC3\x89LLO\".toLower");
 
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getStringValue() == "h\xC3\xA9llo");
-    runtime.getStringType()->freeValue(result);
+    runtime.getStringType()->freeValue(&result);
 }
 
 BOOST_AUTO_TEST_CASE(trim_methods_remove_locale_whitespace) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
-    BOOST_REQUIRE(Interpreter{}.execute("\" \\tNomad\\n \".trim", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\" \\tNomad\\n \".trim", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == "Nomad");
 
-    BOOST_REQUIRE(Interpreter{}.execute("\" \\tNomad \".trimStart", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\" \\tNomad \".trimStart", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == "Nomad ");
 
-    BOOST_REQUIRE(Interpreter{}.execute("\" Nomad\\n \".trimEnd", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\" Nomad\\n \".trimEnd", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == " Nomad");
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"\xC2\xA0Nomad\xE2\x80\x83\".trim", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"\xC2\xA0Nomad\xE2\x80\x83\".trim", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getStringValue() == "Nomad");
 }
 
 BOOST_AUTO_TEST_CASE(search_methods_are_case_sensitive) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".startsWith \"Nomad\"", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"Nomad Engine\".startsWith \"Nomad\"", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".endsWith \"Engine\"", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"Nomad Engine\".endsWith \"Engine\"", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".contains \"ad En\"", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"Nomad Engine\".contains \"ad En\"", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getBooleanValue());
 
-    BOOST_REQUIRE(Interpreter{}.execute("\"Nomad Engine\".contains \"nomad\"", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("\"Nomad Engine\".contains \"nomad\"", interpreter));
     BOOST_TEST(!interpreter.getResult()->getValue().getBooleanValue());
 }
 
 BOOST_AUTO_TEST_CASE(string_members_reject_malformed_utf8) {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
     RuntimeValue invalidValue;
     invalidValue.setStringValue(NomadString("\xC3\x28", 2));
     interpreter.setVariable("text", runtime.getStringType(), invalidValue);
-    runtime.getStringType()->freeValue(invalidValue);
+    runtime.getStringType()->freeValue(&invalidValue);
 
-    BOOST_REQUIRE(Interpreter{}.execute("text.byteLength", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("text.byteLength", interpreter));
     BOOST_TEST(interpreter.getResult()->getValue().getIntegerValue() == 2);
 
-    BOOST_TEST(!Interpreter{}.execute("text.length", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_TEST(!interpreter.getInterpreter().execute("text.length", interpreter));
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 
-    BOOST_TEST(!Interpreter{}.execute("text.toUpper", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_TEST(!interpreter.getInterpreter().execute("text.toUpper", interpreter));
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 
-    BOOST_TEST(!Interpreter{}.execute("text.trim", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_TEST(!interpreter.getInterpreter().execute("text.trim", interpreter));
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 
-    BOOST_TEST(!Interpreter{}.execute("\"valid\".contains text", interpreter));
-    BOOST_REQUIRE(interpreter.getError() != nullptr);
-    BOOST_TEST(interpreter.getError()->find("valid UTF-8") != NomadString::npos);
+    BOOST_TEST(!interpreter.getInterpreter().execute("\"valid\".contains text", interpreter));
+    BOOST_REQUIRE(interpreter.getFirstError().has_value());
+    BOOST_TEST(interpreter.getFirstError()->message.find("valid UTF-8") != NomadString::npos);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

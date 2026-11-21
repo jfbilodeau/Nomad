@@ -18,13 +18,15 @@ namespace nomad {
 void Game::initGameFunctions() {
     log::debug("Initializing game functions");
 
+    const auto hubId = m_runtime->getHubId("game");
     const auto* fontType = m_runtime->getTypeByName("Font");
     if (fontType == nullptr) {
         raiseError("Font type is not registered");
     }
 
-    m_runtime->registerNativeFunction(
-        "game.createScene",
+    const auto createSceneId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "createScene",
         [this](VirtualMachine* interpreter) {
             const auto callableId = interpreter->getCallableIdParameter(0);
 
@@ -44,7 +46,7 @@ void Game::initGameFunctions() {
         }, {
             defParameter(
                 "function",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("The function to execute to initialize the scene. Return the scene id.")
             )
         },
@@ -52,8 +54,9 @@ void Game::initGameFunctions() {
         NomadDoc("Creates a new scene.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.createSceneByName",
+    const auto createSceneByNameId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "createSceneByName",
         [this](VirtualMachine* interpreter) {
             const auto& functionName = interpreter->getStringParameter(0)->getString();
 
@@ -77,8 +80,9 @@ void Game::initGameFunctions() {
         NomadDoc("Creates a new scene.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.createSceneByNameThen",
+    const auto createSceneByNameThenId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "createSceneByNameThen",
         [this](VirtualMachine* interpreter) {
             const auto& functionName = interpreter->getStringParameter(0)->getString();
             const auto postCreateFunction = interpreter->getCallableIdParameter(1);
@@ -104,7 +108,7 @@ void Game::initGameFunctions() {
             ),
             defParameter(
                 "postCreateFunction",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to execute once the scene is created.")
             )
         },
@@ -112,8 +116,9 @@ void Game::initGameFunctions() {
         NomadDoc("Creates a new scene and execute a function once the scene is created. Returns the scene id.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.createSceneThen",
+    const auto createSceneThenId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "createSceneThen",
         [this](VirtualMachine* interpreter) {
             const auto functionId = interpreter->getCallableIdParameter(0);
             const auto postCreateFunction = interpreter->getCallableIdParameter(1);
@@ -136,11 +141,11 @@ void Game::initGameFunctions() {
         },
         {
             defParameter(
-                "function", m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                "function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("The function to execute to initialize the scene.")
             ),
             defParameter(
-                "postCreateFunction", m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                "postCreateFunction", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to execute once the scene is created.")
             )
         },
@@ -148,8 +153,9 @@ void Game::initGameFunctions() {
         NomadDoc("Creates a new scene and execute a function once the scene is created. Returns the scene id.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.isInScene",
+    const auto isInSceneId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "isInScene",
         [this](VirtualMachine* interpreter) {
 
             const auto currentContext = getCurrentContext();
@@ -168,8 +174,9 @@ void Game::initGameFunctions() {
         NomadDoc("Returns true if this function is executing in a scene.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.loadFont",
+    const auto loadFontId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "loadFont",
         [this](VirtualMachine* interpreter) {
             const auto& fontName = interpreter->getStringParameter(0)->getString();
             const auto fontSize = interpreter->getIntegerParameter(1);
@@ -184,8 +191,9 @@ void Game::initGameFunctions() {
         NomadDoc("Loads a font from a file and returns a Font object.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.loadImage",
+    const auto loadImageId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "loadImage",
         [this](VirtualMachine* interpreter) {
             const auto& textureName = interpreter->getStringParameter(0)->getString();
 
@@ -201,8 +209,9 @@ void Game::initGameFunctions() {
         NomadDoc("Loads a font from a file.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.trigger",
+    const auto triggerId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "trigger",
         [this](VirtualMachine* interpreter) {
             const auto eventId = EventId{interpreter->getIdParameter(0)};
 
@@ -223,7 +232,7 @@ void Game::initGameFunctions() {
                 RuntimeValue value;
 
                 if (type) {
-                    (*type)->copyValue(interpreter->peekStack(static_cast<NomadIndex>(i) + 1), value);
+                    (*type)->copyValue(&interpreter->peekStack(static_cast<NomadIndex>(i) + 1), &value);
                 } else {
                     log::error("Invalid type id for event parameter: " + toString(parameter.typeId.id));
                 }
@@ -246,6 +255,18 @@ void Game::initGameFunctions() {
         NomadDoc("Trigger a global event.")
     );
 
+    if (
+        createSceneId.isInvalid() ||
+        createSceneByNameId.isInvalid() ||
+        createSceneByNameThenId.isInvalid() ||
+        createSceneThenId.isInvalid() ||
+        isInSceneId.isInvalid() ||
+        loadFontId.isInvalid() ||
+        loadImageId.isInvalid() ||
+        triggerId.isInvalid()
+    ) {
+        raiseError("Failed to register game hub functions");
+    }
 
 }
 

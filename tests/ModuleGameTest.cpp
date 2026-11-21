@@ -7,8 +7,9 @@
 
 #include <nomad/game/resource/SpritePacker.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -18,6 +19,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <memory>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -33,6 +35,7 @@ struct ModuleGameFixture {
     TestDirectory directory{"nomad_module_game"};
     bool entryExecuted = false;
     Runtime runtime;
+    std::unique_ptr<VirtualMachine> virtualMachine = runtime.createVirtualMachine();
     GameOptions options;
 
     ModuleGameFixture() {
@@ -137,7 +140,7 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     BOOST_REQUIRE(inventorySaveMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*inventorySaveMember));
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("game.inventory.save"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("game.inventory.save"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 
     const auto* settingsHub = runtime.getHub(runtime.getHubId("game.settings"));
@@ -145,7 +148,7 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     const auto* settingsSaveMember = settingsHub->getMember("save");
     BOOST_REQUIRE(settingsSaveMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*settingsSaveMember));
-    runtime.executeFunction(runtime.getFunctionId("game.settings.save"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("game.settings.save"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 7);
 }
 
@@ -157,7 +160,7 @@ BOOST_AUTO_TEST_CASE(borrowed_runtime_remains_usable_after_game_destruction)
 
     const auto functionId = compile("afterGame", "return 42\n");
     RuntimeValue result;
-    runtime.executeFunction(functionId, {}, result);
+    virtualMachine->executeFunction(functionId, {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 }
 
@@ -190,13 +193,14 @@ BOOST_AUTO_TEST_CASE(debug_console_interprets_format_literal_arithmetic)
     options.debug = true;
     auto game = Game::createForRuntime(&runtime, options, false);
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
     for (const auto* source : {R"($"{1+2}")", R"(text = $"{1+2}")", "text"}) {
-        BOOST_REQUIRE(Interpreter{}.execute(source, context));
+        BOOST_REQUIRE(context.getInterpreter().execute(source, context));
         BOOST_REQUIRE(context.getResult() != nullptr);
         if (!context.getResult()->getType()->isVoid()) {
-            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getValue()) == "3");
+            BOOST_TEST(context.getResult()->getType()->toString(context.getResult()->getStorage().data()) == "3");
         }
     }
 }
@@ -213,7 +217,7 @@ BOOST_AUTO_TEST_CASE(script_preparation_runs_host_compilation_on_a_worker)
 
     BOOST_TEST(compilationThread != mainThread);
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("prepared"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("prepared"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 17);
     BOOST_TEST(!entryExecuted);
 }

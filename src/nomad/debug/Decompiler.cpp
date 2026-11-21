@@ -343,9 +343,6 @@ void decompile_instruction(DecompileState& state, const OpCodeRegistration& opco
         decompile_expression(state, DEFAULT_PREFIX);
     } else if (opcode.name == "i_return_zero") {
         state.end_line();
-    } else if (opcode.name == "i_yield") {
-        state.end_line();
-        decompile_expression(state, DEFAULT_PREFIX);
     } else if (opcode.name == "i_call_native_function") {
         const auto nativeFunction_id = state.function->get_op_code(state.index);
         state.index++;
@@ -435,31 +432,6 @@ void decompile_instruction(DecompileState& state, const OpCodeRegistration& opco
         state.output << "<<unknown instruction>>" << std::endl;
     }
 }
-
-//void decompile_nativeFunction(DecompileState& state, OpCodeRegistration& opcode) {
-//
-//    for (auto& parameter: opcode.parameters) {
-//        switch (parameter.type) {
-//            case NativeFunctionParameterType::Number:
-//                decompile_expression(state, DEFAULT_PREFIX);
-//                break;
-//            case NativeFunctionParameterType::String:
-//                decompile_string_expression(state, DEFAULT_PREFIX);
-//                break;
-//            case NativeFunctionParameterType::Variable:
-//                state.output << "TODO: NativeFunctionParameterType::Variable" << std::endl;
-//                break;
-//            case NativeFunctionParameterType::VarArgs:
-//                state.output << "TODO: NativeFunctionParameterType::VarArgs" << std::endl;
-//                break;
-//            case NativeFunctionParameterType::Function:
-//                state.output << "TODO: NativeFunctionParameterType::Function" << std::endl;
-//                break;
-//            default:
-//                state.output << "Error: Unexpected parameter type: " << static_cast<int>(parameter.type) << std::endl;
-//        }
-//    }
-//}
 
 NomadString decompile(Runtime* runtime, Function* function) {
     try {

@@ -34,13 +34,38 @@ The Nomad game engine is a 2D game engine written in C++ using modern C++20 feat
 	- Keep headers sorted alphabetically within each group.
 - Prefer C++20 standard library types and features over Boost equivalents when one exists (for example, `std::optional` instead of `boost::optional`). Use Boost only for utilities that have no C++20 standard equivalent. Do not replace existing Boost usage unless the task asks for it.
 - Use K&R style for formatting and indentation. Follow the existing formatting manually; do not run `clang-format`.
-- When a C++ function or method parameter list is too long for one line, put each parameter on its own indented line, with the closing parenthesis on a separate line. Apply this to both declarations and definitions. Do not combine multiple parameters on the same line:
+- When a C++ parameter or argument list is too long for one line, leave the opening `(` on the declaration, definition, or call line. Put each parameter or argument on its own line, indented by one level (four spaces, not a literal tab). Separate items with commas, without a trailing comma after the final item. Put the closing `)` on its own line, aligned with the declaration or call; keep the terminating `;` or opening `{` on that closing line as appropriate. Apply this to declarations, definitions, and calls:
   ```cpp
-  void myFunc(
-      int param1,
-      int param2,
-      int param3
+  void myFunction(
+      int firstParameter,
+      int secondParameter,
+      int thirdParameter
   );
+  ```
+- Format long control-flow conditions similarly: leave `(` with the control-flow keyword, put each condition on its own line indented by four spaces, and align the closing `)` with the keyword.
+- Always include a blank line after a closing block (`}`) unless followed by another closing block.
+- Always include a blank line before a `return` statement. When this follows a closing block, one blank line satisfies both rules:
+  ```cpp
+  if (
+      script != nullptr &&
+      context->getMode() == CompilerMode::Script &&
+      function != nullptr
+  ) {
+      compiler->addFunctionCallDependency(
+          function->getId(),
+          script->getId()
+      );
+  }
+
+  if (returnType == nullptr) {
+      reportError(
+          context,
+          function,
+          "Cannot determine return type"
+      );
+
+      return;
+  }
   ```
 - Use PascalCase for class names and camelCase for functions and variables. Acronyms should not be fully capitalized (e.g., `SdlManager`).
 - Prefix member variables with `m_` and static member variables with `s_`.

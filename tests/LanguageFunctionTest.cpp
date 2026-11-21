@@ -26,6 +26,48 @@ BOOST_AUTO_TEST_CASE(function_with_parameters_returns_value)
     BOOST_TEST(outcome.integerValue == 30);
 }
 
+BOOST_AUTO_TEST_CASE(reserved_stack_slots_count_locals_and_pending_call_arguments)
+{
+    LanguageTestFixture fixture;
+    fixture.addFunction("main",
+        "fun add v1:int v2:int\n"
+        "    return v1\n"
+        "end\n"
+        "a = 1\n"
+        "b = 2\n"
+        "c = 3\n"
+        "return add 10 20"
+    );
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+    auto& runtime = fixture.getRuntime();
+    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    // The call pushes its receiver before the arguments.
+    BOOST_TEST(main->getReservedStackSlots() == 6);
+}
+
+BOOST_AUTO_TEST_CASE(script_frames_fault_before_running_when_reserved_slots_exceed_the_stack)
+{
+    std::string source;
+    for (auto index = 0; index < 16; ++index) {
+        source += "v" + std::to_string(index) + " = " + std::to_string(index) + "\n";
+    }
+    source += "return v0";
+
+    LanguageTestFixture fixture;
+    fixture.addFunction("main", source);
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+
+    auto& runtime = fixture.getRuntime();
+    const auto functionId = runtime.getFunctionId("main");
+
+    VirtualMachine constrained(&runtime, 8);
+    BOOST_CHECK_THROW(constrained.executeFunction(functionId), VirtualMachineException);
+
+    VirtualMachine roomy(&runtime);
+    BOOST_CHECK_NO_THROW(roomy.executeFunction(functionId));
+}
+
 BOOST_AUTO_TEST_CASE(function_can_be_called_before_its_declaration)
 {
     const auto outcome = runSource(

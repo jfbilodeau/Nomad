@@ -119,7 +119,9 @@ void Scene::setVariableValue(VariableId variableId, const RuntimeValue& value) {
 }
 
 void Scene::getVariableValue(VariableId variableId, RuntimeValue& value) const {
-    m_variables.getVariableValue(variableId, value);
+    if (const auto* variableValue = m_variables.getVariableValue(variableId)) {
+        value = *variableValue;
+    }
 }
 
 void Scene::addEntity(std::unique_ptr<Entity> entity) {
@@ -626,7 +628,6 @@ NomadInteger Scene::getMaskAtEntity(const Entity* entity) const {
         return 0;
     }
 
-    // return getMaskAtEntity(entity, entity->getLocation());
     const auto layer = entity->getLayer();
 
     const auto bodyShape = entity->getBodyShape();

@@ -27,39 +27,45 @@ void registerKeyValueType(Runtime* runtime) {
             const auto* classType = static_cast<const KeyValueType*>(type);
             const auto* keyType = classType->getTypeArguments()[0];
             const auto* valueType = classType->getTypeArguments()[1];
-            const auto constructorId = runtime->addConstructor(id, {
-                .parameters = {
-                    {keyType->getId(), "key", NomadDoc("The key to store.")},
-                    {valueType->getId(), "value", NomadDoc("The value to store.")}
-                },
-                .function = [keyType, valueType](VirtualMachine* machine) {
-                    const auto& key = machine->getParameter(0);
-                    const auto& value = machine->getParameter(1);
-                    machine->getResult().setObjectValue(new KeyValueObject(keyType, valueType, key, value));
-                },
-                .documentation = NomadDoc("Creates a pair with read-only key and value properties.")
-            });
-            const auto keyId = runtime->addProperty(id, {
-                .valueType = keyType,
-                .name = "key",
-                .getter = [keyType](VirtualMachine* machine, RuntimeValue& result) {
-                    const auto* pair = machine->getThisAs<KeyValueObject>();
-                    const auto& key = pair->getKey();
-                    RuntimeValue keyCopy;
-                    keyType->assignValue(key, keyCopy);
-                    result = keyCopy;
-                },
-                .setter = {},
-                .documentation = NomadDoc("The read-only key. Object keys share their referenced object.")
-            });
-            const auto valueId = runtime->addProperty(id, {
+            const auto constructorId = runtime->registerNativeClassConstructor(
+                id,
+                {
+                    .parameters = {
+                        {keyType->getId(), "key", NomadDoc("The key to store.")},
+                        {valueType->getId(), "value", NomadDoc("The value to store.")}
+                    },
+                    .function = [keyType, valueType](VirtualMachine* machine) {
+                        const auto& key = machine->getParameter(0);
+                        const auto& value = machine->getParameter(1);
+                        machine->getResult().setObjectValue(new KeyValueObject(keyType, valueType, key, value));
+                    },
+                    .documentation = NomadDoc("Creates a pair with read-only key and value properties.")
+                }
+            );
+            const auto keyId = runtime->registerNativeClassProperty(
+                id, 
+                {
+                    .valueType = keyType,
+                    .name = "key",
+                    .getter = [keyType](VirtualMachine* machine, RuntimeValue& result) {
+                        const auto* pair = machine->getThisAs<KeyValueObject>();
+                        const auto& key = pair->getKey();
+                        RuntimeValue keyCopy;
+                        keyType->assignValue(&key, &keyCopy);
+                        result = keyCopy;
+                    },
+                    .setter = {},
+                    .documentation = NomadDoc("The read-only key. Object keys share their referenced object.")
+                }
+            );
+            const auto valueId = runtime->registerNativeClassProperty(id, {
                 .valueType = valueType,
                 .name = "value",
                 .getter = [valueType](VirtualMachine* machine, RuntimeValue& result) {
                     const auto* pair = machine->getThisAs<KeyValueObject>();
                     const auto& value = pair->getValue();
                     RuntimeValue valueCopy;
-                    valueType->assignValue(value, valueCopy);
+                    valueType->assignValue(&value, &valueCopy);
                     result = valueCopy;
                 },
                 .setter = {},
@@ -72,11 +78,13 @@ void registerKeyValueType(Runtime* runtime) {
     )) {
         throw NomadException("Failed to register KeyValue");
     }
-    if (!runtime->registerMemberTemplate("KeyValue", "key", MemberType::Property) ||
-        !runtime->registerMemberTemplate("KeyValue", "value", MemberType::Property)) {
+    if (
+        !runtime->registerMemberTemplate("KeyValue", "key", MemberType::Property) ||
+        !runtime->registerMemberTemplate("KeyValue", "value", MemberType::Property)
+    ) {
         throw NomadException("Failed to register KeyValue member signatures");
     }
-    if (!runtime->registerConstructorTemplate(
+    if (!runtime->getTypeManager().registerConstructorTemplate(
         "KeyValue",
         {
             defTemplateParameter("key", TypeParameterIndex{0}, NomadDoc("The key to store.")),

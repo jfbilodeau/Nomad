@@ -12,7 +12,7 @@ SimpleVariableContext::SimpleVariableContext() = default;
 SimpleVariableContext::~SimpleVariableContext() {
     for (NomadIndex index = 0; index < m_values.size(); ++index) {
         if (const auto type = m_variables.getVariableType(VariableId{toNomadId(index)})) {
-            type->freeValue(m_values[index]);
+            type->freeValue(&m_values[index]);
         }
     }
 }
@@ -76,7 +76,7 @@ void SimpleVariableContext::setValue(const VariableId variableId, const RuntimeV
         return;
     }
 
-    type->assignValue(value, m_values[toNomadIndex(variableId.id)]);
+    type->assignValue(&value, &m_values[toNomadIndex(variableId.id)]);
 }
 
 void SimpleVariableContext::getValue(const VariableId variableId, RuntimeValue& value) {

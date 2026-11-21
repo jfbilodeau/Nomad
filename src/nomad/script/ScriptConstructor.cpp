@@ -10,13 +10,14 @@
 namespace nomad {
 
 ScriptConstructor::ScriptConstructor(
+    const CallableId id,
     const Type* classType,
     std::vector<Parameter> parameters,
     NomadString path,
     NomadString source
 ):
     ScriptCallable(
-        CallableId{}, 
+        id, 
         std::move(path), 
         std::move(source), 
         classType->getTypeName(),

@@ -7,6 +7,7 @@
 namespace nomad {
 
 ScriptMethod::ScriptMethod(
+    const CallableId id,
     NomadString name,
     const Type* classType,
     std::vector<Parameter> parameters,
@@ -15,8 +16,14 @@ ScriptMethod::ScriptMethod(
     NomadString source
 ):
     ScriptCallable(
-        CallableId{}, std::move(path), std::move(source), std::move(name), classType,
-        std::move(parameters), returnType, NomadString{}
+        id, 
+        std::move(path), 
+        std::move(source), 
+        std::move(name), 
+        classType,
+        std::move(parameters), 
+        returnType, 
+        NomadString{}
     )
 {
 }

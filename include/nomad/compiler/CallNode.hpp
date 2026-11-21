@@ -9,7 +9,7 @@
 
 namespace nomad {
 
-class TypedValue;
+class InterpreterValue;
 struct EventDefinition;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -32,14 +32,10 @@ public:
 
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
     void compile(Compiler* compiler, ScriptCallableBase* function) const;
-    // Evaluates arguments in order. The entries of values share the storage owned by evaluatedArguments.
-    // Stops at the first argument that reports an error through the context->
-    void evaluate(
-        InterpreterContext& context,
-        std::vector<TypedValue>& evaluatedArguments,
-        std::vector<RuntimeValue>& values
-    ) const;
+    // Evaluates right-to-left, retaining values in logical parameter order.
+    [[nodiscard]] std::vector<InterpreterValue> evaluate(InterpreterContext& context) const;
 
+    // Number of stack slots used by explicit arguments; excludes an optional receiver.
     [[nodiscard]]
     NomadIndex getArgumentCount() const;
 
@@ -106,11 +102,12 @@ public:
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_name;
     const Function* m_function = nullptr;
+    VariableId m_destination = VariableId::INVALID;
 };
 
 

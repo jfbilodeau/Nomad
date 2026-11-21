@@ -6,11 +6,64 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
-#include <nomad/script/Interpreter.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <utility>
+
 using namespace nomad;
+
+BOOST_AUTO_TEST_CASE(block_discovery_preserves_builtin_statement_forms) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    const auto checkBlockCount = [&](const NomadString& source, const NomadIndex expected) {
+        BOOST_TEST_CONTEXT(source) {
+            CompilerContext context(compiler.get());
+            Tokenizer tokens(&context, "blocks.nomad", source);
+            (void)tokens.nextLine();
+            BOOST_TEST(parser::countBlockOpenings(compiler.get(), &tokens) == expected);
+            BOOST_TEST(!context.hasError());
+        }
+    };
+    checkBlockCount("", 0);
+    checkBlockCount("while true", 1);
+    checkBlockCount("until false", 1);
+    checkBlockCount("do", 1);
+    checkBlockCount("for index in range 1 2", 1);
+    checkBlockCount("hub Model", 1);
+    checkBlockCount("class Point", 1);
+    checkBlockCount("struct Point", 1);
+    checkBlockCount("enum Color", 1);
+    checkBlockCount("open hub Model", 1);
+    checkBlockCount("open class Point", 1);
+    checkBlockCount("open struct Point", 0);
+    checkBlockCount("open", 0);
+    checkBlockCount("open \"class\"", 0);
+    checkBlockCount("fun process", 1);
+    checkBlockCount("callback = factory fun value", 1);
+    checkBlockCount("invoke fun first fun second", 2);
+    checkBlockCount("if predicate fun value", 2);
+    checkBlockCount("if true", 1);
+    checkBlockCount("if true break", 0);
+    checkBlockCount("if false continue", 0);
+    checkBlockCount("if \"break\" == \"continue\"", 1);
+    checkBlockCount("if $\"break {value} continue\" == value", 1);
+    checkBlockCount("if true # continue fun", 1);
+    checkBlockCount("else if true", 0);
+    checkBlockCount("invoke then value", 0);
+    checkBlockCount("end", 0);
+    checkBlockCount("end while true", 0);
+    checkBlockCount("end until false", 0);
+    checkBlockCount("end fun", 0);
+    checkBlockCount("value = \"fun\"", 0);
+    checkBlockCount("value = $\"fun {value} struct if\"", 0);
+    checkBlockCount("\"fun\"", 0);
+    checkBlockCount("# fun while class", 0);
+}
 
 BOOST_AUTO_TEST_CASE(parser_reports_expression_errors_without_throwing)
 {
@@ -39,6 +92,54 @@ BOOST_AUTO_TEST_CASE(parser_reports_unknown_statement)
     BOOST_TEST(statement == nullptr);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
     BOOST_TEST(context.getFirstError()->message == "Unknown statement, native function or function name: 'missing'");
+}
+
+BOOST_AUTO_TEST_CASE(statement_expression_parser_checks_syntax_without_resolving_or_evaluating_it)
+{
+    Runtime runtime;
+    auto calls = 0;
+    const auto valueId = runtime.registerNativeFunction("input.value", [&](VirtualMachine* machine) {
+        ++calls;
+        machine->setIntegerResult(17);
+    }, {}, runtime.getIntegerType(), "");
+    const auto voidId = runtime.registerNativeFunction("input.void", [&](VirtualMachine*) {
+        ++calls;
+    }, {}, runtime.getVoidType(), "");
+    BOOST_REQUIRE(valueId.isValid() && voidId.isValid());
+    const auto bodyId = runtime.registerScriptFunction("expressionBody", "console:parse", "");
+    BOOST_REQUIRE(bodyId.isValid());
+    auto* function = runtime.getScriptFunction(bodyId);
+    const std::pair<NomadString, bool> cases[]{
+        {"1 + 2", true},
+        {"missing", true},
+        {"input.value", true},
+        {"input.void", true},
+        {"1 +", false},
+        {"1 + 2 3", false},
+        {"value = input.value", false}
+    };
+    for (const auto& [source, expectedSuccess] : cases) {
+        BOOST_TEST_CONTEXT(source) {
+            auto compiler = runtime.createCompiler();
+            CompilerContext context(compiler.get());
+            Tokenizer tokens(&context, "console:parse", source);
+            BOOST_REQUIRE(tokens.nextLine());
+            const auto expression = parser::parseStatementExpression(&context, function, &tokens);
+            BOOST_TEST((expression != nullptr) == expectedSuccess);
+            BOOST_TEST(context.hasError() == !expectedSuccess);
+            BOOST_TEST(calls == 0);
+        }
+
+    }
+
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    CompilerContext otherContext(compiler.get());
+    Tokenizer tokens(&otherContext, "console:other", "1 + 2");
+    BOOST_CHECK_THROW(
+        static_cast<void>(parser::parseStatementExpression(&context, function, &tokens)),
+        NomadBug
+    );
 }
 
 BOOST_AUTO_TEST_CASE(parser_recovers_after_errors_inside_blocks)
@@ -102,7 +203,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_reports_parse_errors_with_location)
 
     BOOST_TEST(!compiled);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
-    const auto* error = context.getFirstError();
+    const auto error = context.getFirstError();
     BOOST_TEST(error->message == "Expected ')'");
     BOOST_TEST(error->sourceName == "broken.nomad");
     BOOST_TEST(error->line == 2);
@@ -112,18 +213,19 @@ BOOST_AUTO_TEST_CASE(interpreter_context_reports_parse_errors)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
 
-    BOOST_TEST(!Interpreter{}.execute("score = (1 + 2", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Expected ')'");
+    BOOST_TEST(!context.getInterpreter().execute("score = (1 + 2", context));
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Expected ')'");
     BOOST_TEST(context.getVariableValue("score") == nullptr);
 
-    BOOST_TEST(!Interpreter{}.execute("1 +", context));
-    BOOST_REQUIRE(context.getError() != nullptr);
-    BOOST_TEST(*context.getError() == "Unexpected end of line");
+    BOOST_TEST(!context.getInterpreter().execute("1 +", context));
+    BOOST_REQUIRE(context.getFirstError().has_value());
+    BOOST_TEST(context.getFirstError()->message == "Unexpected end of line");
 
-    BOOST_TEST(Interpreter{}.execute("score = 3", context));
+    BOOST_TEST(context.getInterpreter().execute("score = 3", context));
     BOOST_TEST(!context.hasError());
 }
 
@@ -148,8 +250,8 @@ BOOST_AUTO_TEST_CASE(compiler_context_reports_at_tokenizer_position)
     BOOST_REQUIRE(tokens.nextLine());
     BOOST_REQUIRE(tokens.nextLine());
     (void)tokens.next();
-    context.reportWarning("Warning at tokenizer", &tokens);
-    context.reportError("Error at tokenizer", &tokens);
+    context.addWarning("Warning at tokenizer", &tokens);
+    context.addError("Error at tokenizer", &tokens);
 
     BOOST_REQUIRE_EQUAL(context.getDiagnostics().size(), 2);
     for (const auto& diagnostic : context.getDiagnostics()) {

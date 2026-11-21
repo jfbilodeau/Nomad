@@ -6,6 +6,7 @@
 
 #include <nomad/script/Documentation.hpp>
 
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -29,6 +30,7 @@ struct Parameter {
     NomadDocField;
 
     [[nodiscard]] NomadString getTypeName() const;
+    [[nodiscard]] NomadIndex getStackValueCount() const;
 };
 
 Parameter defParameter(const NomadString& name, const Type* type, NomadDocArg);
@@ -41,6 +43,13 @@ struct TemplateParameter {
     NomadString name;
     std::variant<const Type*, TypeParameterIndex> type;
     NomadDocField;
+};
+
+struct CallStorageLayout {
+    NomadIndex argumentSlotCount;
+    std::optional<NomadIndex> receiverOffset;
+    std::optional<NomadIndex> returnOffset;
+    NomadIndex stackSlotCount;
 };
 
 TemplateParameter defTemplateParameter(
@@ -74,18 +83,24 @@ public:
     [[nodiscard]] CallableSource getSource() const;
     [[nodiscard]] const std::vector<Parameter>& getParameters() const;
     [[nodiscard]] NomadIndex getParameterCount() const;
+    [[nodiscard]] NomadIndex getParameterOffset(NomadId parameterId) const;
+    [[nodiscard]] NomadIndex getParameterStorageSize() const;
+    // Compiler metadata only; explicit parameter layout excludes hidden storage pointers.
+    [[nodiscard]] CallStorageLayout getCallStorageLayout() const;
+    // Use resolved call-site widths for specialized arguments such as event dispatch.
+    [[nodiscard]] CallStorageLayout getCallStorageLayout(NomadIndex argumentSlotCount) const;
     // The type of the value the callable yields; void when it yields nothing.
     [[nodiscard]] const Type* getReturnType() const;
     // Method: the receiver's type. Constructor: the declaring class, which may differ from the constructed type
     // for native factories (e.g. `Array` creating `Array1<int>`). Null for functions.
     [[nodiscard]] const Type* getClassType() const;
     [[nodiscard]] const NomadString& getDoc() const;
-    [[nodiscard]] CallableId registerWithRuntime(Runtime& runtime);
     [[nodiscard]] virtual ScriptCallableBase* asScriptCallable();
     [[nodiscard]] virtual const ScriptCallableBase* asScriptCallable() const;
 
 protected:
     Callable(
+        CallableId id,
         CallableType type,
         CallableSource source,
         NomadString name,
@@ -95,12 +110,11 @@ protected:
         NomadString doc
     );
 
-    void setId(CallableId id);
     void setReturnType(const Type* returnType);
     [[nodiscard]] std::vector<Parameter>& getEditableParameters();
 
 private:
-    CallableId m_id = CallableId{};
+    const CallableId m_id;
     NomadString m_name;
     CallableType m_type;
     CallableSource m_source;
@@ -119,6 +133,7 @@ public:
 
 protected:
     Function(
+        CallableId id,
         const CallableSource source,
         NomadString name,
         std::vector<Parameter> parameters,
@@ -135,6 +150,7 @@ public:
 
 protected:
     Method(
+        CallableId id,
         const CallableSource source,
         NomadString name,
         const Type* classType,
@@ -154,6 +170,7 @@ public:
 
 protected:
     Constructor(
+        CallableId id,
         const CallableSource source,
         NomadString name,
         const Type* classType,

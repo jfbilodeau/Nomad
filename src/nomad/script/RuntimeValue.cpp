@@ -137,7 +137,7 @@ void RuntimeValue::moveObjectValue(RuntimeValue& other) {
     other.m_objectValue = nullptr;
 }
 
-void RuntimeValue::freeObjectValue() {
+void RuntimeValue::freeObjectValue() noexcept {
     releaseRef(m_objectValue);
     m_objectValue = nullptr;
 }

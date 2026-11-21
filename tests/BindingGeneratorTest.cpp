@@ -147,6 +147,54 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_initializers_without_executing_them) {
     BOOST_TEST(!generateModuleBindings(fixture.getOptions()).fresh);
 }
 
+BOOST_AUTO_TEST_CASE(struct_declarations_are_rejected_without_writing_scalar_wrappers) {
+    for (const auto* fields : {"", "number = 1\n", "number = 1\ntext = \"value\"\n"}) {
+        const BindingTestFixture fixture;
+        fixture.setScript(NomadString{"struct UnsupportedValue\n"} + fields +
+            "end\nclass Settings\nactive = true\nend\n");
+        BOOST_CHECK_EXCEPTION(
+            (void)generateModuleBindings(fixture.getOptions()),
+            NomadException,
+            [](const NomadException& exception) {
+                return NomadString{exception.what()}.find("unsupported declaration type 'UnsupportedValue'") !=
+                    NomadString::npos;
+            }
+        );
+        BOOST_TEST(!std::filesystem::exists(fixture.getDirectory() / "generated"));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(dependency_struct_fields_are_rejected_without_overwriting_existing_bindings) {
+    for (const auto* fields : {"", "number = 1\n", "number = 1\ntext = \"value\"\n"}) {
+        const BindingTestFixture fixture;
+        fixture.write("module.toml",
+            "schema = 1\n[module]\nname = 'test-module'\n[nomad]\nmodules = ['dependency']\n");
+        fixture.write(NomadPath("sdk") / "modules" / "dependency" / "module.toml",
+            "schema = 1\n[module]\nname = 'dependency'\n");
+        fixture.write(NomadPath("sdk") / "modules" / "dependency" / "scripts" / "types.nomad",
+            NomadString{"hub dependency\nstruct Value\n"} + fields + "end\nend\n");
+        fixture.setScript("class Settings\nactive = true\nend\n");
+        auto options = fixture.getOptions();
+        options.sdkDirectory = fixture.getDirectory() / "sdk";
+        const auto generated = generateModuleBindings(options);
+        const auto expected = renderModuleBindings(analyzeModuleBindings(options));
+        BOOST_REQUIRE(!generated.fresh);
+        BOOST_REQUIRE(!expected.empty());
+        fixture.setScript("class Settings\nvalue = new dependency.Value\nend\n");
+        BOOST_CHECK_EXCEPTION(
+            (void)generateModuleBindings(options),
+            NomadException,
+            [](const NomadException& exception) {
+                return NomadString{exception.what()}.find("unsupported stored field 'Settings.value'") !=
+                    NomadString::npos;
+            }
+        );
+        for (const auto& output : expected) {
+            BOOST_TEST(fixture.read(NomadPath("generated") / output.path) == output.content);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(cpp_keywords_flattened_names_and_accessor_collisions_are_rejected) {
     const BindingTestFixture fixture;
     for (const auto& script : {

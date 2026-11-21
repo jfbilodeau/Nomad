@@ -12,6 +12,8 @@
 
 #include <nomad/system/Path.hpp>
 
+#include <boost/scope_exit.hpp>
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -320,13 +322,14 @@ void ModuleHostImpl::prepareCompilation(const std::function<void()>& compileScri
         }
         compileScripts();
     };
-    try {
+    {
+        BOOST_SCOPE_EXIT_ALL(=) {
+            coordinator->context.compileScripts = nullptr;
+        };
+
         coordinator->callbacks.prepareCompilation();
-    } catch (...) {
-        coordinator->context.compileScripts = {};
-        throw;
     }
-    coordinator->context.compileScripts = {};
+
     if (!invoked.load()) {
         throw ModuleException("Compilation coordinator did not compile scripts");
     }

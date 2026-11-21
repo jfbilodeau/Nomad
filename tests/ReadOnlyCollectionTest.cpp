@@ -7,7 +7,8 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -30,15 +31,15 @@ bool compile(Runtime& runtime, const NomadString& source) {
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"main", {"main.nomad", source}}}, {}});
     const auto compiled = compiler->compileFunctions(&context);
-    if (!compiled && context.getFirstError() != nullptr) {
+    if (!compiled && context.getFirstError().has_value()) {
         BOOST_TEST_MESSAGE(formatDiagnostic(*context.getFirstError()));
     }
     return compiled;
 }
 
-void execute(Runtime& runtime, const NomadString& source) {
+void execute(Runtime& runtime, VirtualMachine& machine, const NomadString& source) {
     BOOST_REQUIRE(compile(runtime, source));
-    runtime.executeFunction(runtime.getFunctionId("main"));
+    machine.executeFunction(runtime.getFunctionId("main"));
 }
 
 void reject(const NomadString& setup, const NomadString& expression) {
@@ -47,11 +48,12 @@ void reject(const NomadString& setup, const NomadString& expression) {
         registerCollections(runtime);
         BOOST_TEST(!compile(runtime, setup + "\n" + expression));
         auto machine = runtime.createVirtualMachine();
-        InterpreterContext context(*machine);
+        const Interpreter contextEvaluator(*machine);
+        InterpreterContext context(contextEvaluator);
         if (!setup.empty()) {
-            BOOST_REQUIRE(Interpreter{}.execute(setup, context));
+            BOOST_REQUIRE(context.getInterpreter().execute(setup, context));
         }
-        BOOST_TEST(!Interpreter{}.execute(expression, context));
+        BOOST_TEST(!context.getInterpreter().execute(expression, context));
         BOOST_TEST(context.hasError());
     }
 }
@@ -66,16 +68,16 @@ BOOST_AUTO_TEST_CASE(collection_iterable_factories_belong_to_their_specialized_t
     const auto* integerType = runtime.getIntegerType();
     for (const auto* name : {"Array1", "ReadOnlyArray1", "List", "ReadOnlyList"}) {
         BOOST_TEST_CONTEXT(name) {
-            const auto* type = runtime.getParameterizedType(name, {integerType});
+            const auto* type = runtime.getTypeManager().getParameterizedType(name, {integerType});
             BOOST_REQUIRE(type != nullptr);
             const auto* classType = type->asClassType();
             BOOST_REQUIRE(classType != nullptr);
             const auto owned = classType->getIterableInfo();
-            const auto forwarded = runtime.getIterableInfo(type);
+            const auto forwarded = runtime.getTypeManager().getIterableInfo(type);
             BOOST_REQUIRE(owned.has_value());
             BOOST_REQUIRE(forwarded.has_value());
             BOOST_TEST(owned->valueType == integerType);
-            BOOST_TEST(owned->iteratorType == runtime.getIteratorType(integerType));
+            BOOST_TEST(owned->iteratorType == runtime.getTypeManager().getIteratorType(integerType));
             BOOST_TEST(forwarded->factoryId == owned->factoryId);
             const auto* factory = runtime.getMethod(owned->factoryId);
             BOOST_REQUIRE(factory != nullptr);
@@ -91,8 +93,9 @@ BOOST_AUTO_TEST_CASE(list_snapshots_copy_containers_share_nested_values_and_rele
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         registerCollections(runtime);
-        execute(runtime,
+        execute(runtime, *virtualMachine,
             "items = new List<string>\n"
             "items.append \"first\"\nitems.append \"second\"\n"
             "snapshot = items.toReadOnly\n"
@@ -109,10 +112,10 @@ BOOST_AUTO_TEST_CASE(list_snapshots_copy_containers_share_nested_values_and_rele
             "for emptyValue in empty\nassert false\nend\n"
             "fun count values:ReadOnlyList<string>\nreturn values.count\nend\n"
             "assert (count snapshot) == 2\n");
-        const auto* type = runtime.getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
+        const auto* type = runtime.getTypeManager().getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST(runtime.getConstructors(type).empty());
-        const auto* mutableType = runtime.getParameterizedType("List", {runtime.getIntegerType()});
+        const auto* mutableType = runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()});
         BOOST_TEST(!type->acceptsArgument(mutableType));
         BOOST_TEST(!mutableType->acceptsArgument(type));
     }
@@ -132,15 +135,16 @@ BOOST_AUTO_TEST_CASE(list_mutators_and_constructors_are_unavailable_in_both_exec
 
 BOOST_AUTO_TEST_CASE(native_lists_can_be_exposed_directly_as_read_only) {
     Runtime runtime;
+    auto virtualMachine = runtime.createVirtualMachine();
     registerCollections(runtime);
-    const auto* type = runtime.getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
+    const auto* type = runtime.getTypeManager().getParameterizedType("ReadOnlyList", {runtime.getIntegerType()});
     auto list = std::make_unique<ListObject>(runtime.getIntegerType());
     (void)list->append(RuntimeValue(NomadInteger{42}));
     RuntimeValue value;
     value.setObjectValue(list.get());
     BOOST_REQUIRE(runtime.registerConstant("snapshot", value, type).isValid());
     list.release()->releaseRef();
-    execute(runtime, "assert snapshot.count == 1\nassert snapshot[0] == 42");
+    execute(runtime, *virtualMachine, "assert snapshot.count == 1\nassert snapshot[0] == 42");
 }
 
 BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
@@ -149,8 +153,9 @@ BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         registerCollections(runtime);
-        execute(runtime,
+        execute(runtime, *virtualMachine,
             "items = new Map<string string>\nitems[\"key\"] = \"value\"\n"
             "snapshot = items.toReadOnly\nitems[\"key\"] = \"changed\"\nitems.clear\n"
             "assert snapshot.count == 1\nassert snapshot.contains \"key\"\n"
@@ -167,7 +172,7 @@ BOOST_AUTO_TEST_CASE(map_snapshots_preserve_readers_and_shallow_copy_entries) {
             "defaults = new Array<ReadOnlyMap<string int>> 1\nempty = defaults[0]\n"
             "assert empty.count == 0\nassert empty[\"missing\"] == 0\nassert empty.count == 0\n"
             "emptyCopy = (new Map<string int>).toReadOnly\nassert emptyCopy.count == 0\n");
-        const auto* type = runtime.getParameterizedType("ReadOnlyMap", {runtime.getStringType(), runtime.getIntegerType()});
+        const auto* type = runtime.getTypeManager().getParameterizedType("ReadOnlyMap", {runtime.getStringType(), runtime.getIntegerType()});
         BOOST_REQUIRE(type != nullptr);
         BOOST_TEST(runtime.getConstructors(type).empty());
     }
@@ -187,8 +192,9 @@ BOOST_AUTO_TEST_CASE(array_snapshots_preserve_rank_dimensions_and_shallow_values
     const auto before = NomadObject::getLiveObjectCount();
     {
         Runtime runtime;
+        auto virtualMachine = runtime.createVirtualMachine();
         registerCollections(runtime);
-        execute(runtime,
+        execute(runtime, *virtualMachine,
             "line = new Array<string> 2\nline[0] = \"first\"\nline[1] = \"second\"\n"
             "lineCopy = line.toReadOnly\nline[0] = \"changed\"\n"
             "assert lineCopy.count == 2\nassert lineCopy[0] == \"first\"\n"
@@ -208,7 +214,7 @@ BOOST_AUTO_TEST_CASE(array_snapshots_preserve_rank_dimensions_and_shallow_values
             "assert emptyLineCopy[0] == 0\nassert emptyGridCopy[0 0] == 0\nassert emptyVolumeCopy[0 0 0] == 0\n"
             "defaults = new Array<ReadOnlyArray3<int>> 1\nassert defaults[0].count == 0\n");
         for (const auto* family : {"ReadOnlyArray1", "ReadOnlyArray2", "ReadOnlyArray3"}) {
-            const auto* type = runtime.getParameterizedType(family, {runtime.getIntegerType()});
+            const auto* type = runtime.getTypeManager().getParameterizedType(family, {runtime.getIntegerType()});
             BOOST_REQUIRE(type != nullptr);
             BOOST_TEST(runtime.getConstructors(type).empty());
         }

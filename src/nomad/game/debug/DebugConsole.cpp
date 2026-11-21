@@ -10,10 +10,11 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
@@ -197,7 +198,7 @@ NomadString valueToDisplayString(const Type* type, const RuntimeValue& value) {
         return "<null>";
     }
 
-    auto displayValue = type->toString(value);
+    auto displayValue = type->toString(&value);
     if (type->getTypeName() == FLOAT_TYPE_NAME) {
         const auto floatValue = value.getFloatValue();
         if (std::isfinite(floatValue) && std::trunc(floatValue) == floatValue) {
@@ -318,7 +319,8 @@ DebugConsole::DebugConsole(Game* game, SDL_Window* window, SDL_Renderer* rendere
     m_window(window),
     m_renderer(renderer),
     m_interpreterVirtualMachine(game->getRuntime()->createVirtualMachine()),
-    m_interpreterContext(*m_interpreterVirtualMachine),
+    m_interpreter(*m_interpreterVirtualMachine),
+    m_interpreterContext(m_interpreter),
     m_inspectionVirtualMachine(game->getRuntime()->createVirtualMachine())
 {
     IMGUI_CHECKVERSION();
@@ -1244,7 +1246,7 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
         });
 
         if (type != nullptr && type->isString()) {
-            type->freeValue(value);
+            type->freeValue(&value);
         }
     }
 }
@@ -1313,7 +1315,7 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
             runtime->getVariableContext(row.contextId)->setValue(row.variableId, value);
         }
 
-        row.type->freeValue(value);
+        row.type->freeValue(&value);
         return applied;
     }
     case VariableRow::Source::Dynamic:
@@ -1323,12 +1325,12 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
         // `Interpreter` copies the value, so the temporary is released here.
         const auto name = row.name.substr(std::strlen("console."));
         m_interpreterContext.setVariable(name, row.type, value);
-        row.type->freeValue(value);
+        row.type->freeValue(&value);
         return true;
     }
     }
 
-    row.type->freeValue(value);
+    row.type->freeValue(&value);
     return false;
 }
 
@@ -1663,14 +1665,15 @@ void DebugConsole::executeNativeFunction() {
     m_consoleEntries.push_back({false, "> " + nativeFunction});
 
     ExecutionContextGuard contextGuard(m_game, getSelectedScene(), getSelectedEntity());
-    if (!Interpreter{}.execute(nativeFunction, m_interpreterContext)) {
-        const auto* error = m_interpreterContext.getError();
-        m_consoleEntries.push_back({true, error != nullptr ? *error : "NativeFunction failed"});
+    if (!m_interpreter.execute(nativeFunction, m_interpreterContext)) {
+        const auto error = m_interpreterContext.getFirstError();
+        const auto& errorMessage = error.has_value() ? error->message : "Unknown error";
+        m_consoleEntries.push_back({true, errorMessage});
     } else if (const auto* result = m_interpreterContext.getResult(); result != nullptr) {
         if (!result->getType()->isVoid()) {
             m_consoleEntries.push_back({
                 false,
-                result->getType()->toString(result->getValue())
+                result->getType()->toString(result->getStorage().data())
             });
         }
     }

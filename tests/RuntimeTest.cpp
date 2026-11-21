@@ -6,6 +6,7 @@
 #include "nomad/game/EntityVariableContext.hpp"
 #include "nomad/game/Scene.hpp"
 #include "nomad/script/Documentation.hpp"
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Property.hpp>
 #include "nomad/script/Runtime.hpp"
@@ -22,8 +23,8 @@ BOOST_AUTO_TEST_CASE(runtime_type_descriptors_report_their_owning_runtime) {
     BOOST_REQUIRE(runtime.createEnum("AssociatedEnum", {{"Ready", 1}}).isValid());
     BOOST_REQUIRE(runtime.registerOpaqueIdType("AssociatedHandle", "") != nullptr);
     BOOST_REQUIRE(runtime.registerEvent("AssociatedEvent", {}).isValid());
-    BOOST_REQUIRE(runtime.getCallbackType({runtime.getIntegerType()}, runtime.getBooleanType()) != nullptr);
-    BOOST_REQUIRE(runtime.getIteratorType(runtime.getIntegerType()) != nullptr);
+    BOOST_REQUIRE(runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getBooleanType()) != nullptr);
+    BOOST_REQUIRE(runtime.getTypeManager().getIteratorType(runtime.getIntegerType()) != nullptr);
 
     std::vector<const Type*> types;
     runtime.getTypes(types);
@@ -164,8 +165,8 @@ BOOST_AUTO_TEST_CASE(runtime_type_ids_survive_nested_creation_and_failed_constru
         BOOST_TEST(type->getId() != failedId);
         BOOST_TEST(runtime.getType(type->getId()).value() == type);
     }
-    BOOST_REQUIRE(runtime.getCallbackType({}, runtime.getVoidType()) != nullptr);
-    BOOST_REQUIRE(runtime.getIteratorType(runtime.getIntegerType()) != nullptr);
+    BOOST_REQUIRE(runtime.getTypeManager().getCallbackType({}, runtime.getVoidType()) != nullptr);
+    BOOST_REQUIRE(runtime.getTypeManager().getIteratorType(runtime.getIntegerType()) != nullptr);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_rejects_descriptors_with_forged_registered_ids) {
@@ -177,8 +178,8 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_descriptors_with_forged_registered_ids) {
     ClassType impostor(&runtime, id, "ActualOwner", ClassMode::Closed);
     ClassType foreign(&other, id, "ActualOwner", ClassMode::Closed);
     for (auto* candidate : {&impostor, &foreign}) {
-        BOOST_TEST(candidate->registerProperty(runtime,
-            std::make_unique<Property>(candidate, "value", runtime.getIntegerType())).isInvalid());
+        BOOST_TEST(runtime.getTypeManager().registerProperty(candidate,
+            std::make_unique<Property>(runtime.getTypeManager().getNextPropertyId(), candidate, "value", runtime.getIntegerType())).isInvalid());
         BOOST_TEST(candidate->getProperties().empty());
     }
     BOOST_TEST(runtime.getType(id).value() == actual);
@@ -210,25 +211,25 @@ BOOST_AUTO_TEST_CASE(runtime_parameterized_factories_preserve_reservations_and_r
             BOOST_TEST(owner->getType(id).value()->getId() == id);
         }
     ));
-    BOOST_TEST(runtime.getParameterizedType("IdentityBox", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("IdentityBox", {runtime.getIntegerType()}) == nullptr);
     const auto rejectedId = reservedId;
     BOOST_TEST(!runtime.getType(rejectedId).has_value());
     BOOST_TEST(initializerCalls == 0);
     validId = true;
-    const auto* type = runtime.getParameterizedType("IdentityBox", {runtime.getIntegerType()});
+    const auto* type = runtime.getTypeManager().getParameterizedType("IdentityBox", {runtime.getIntegerType()});
     BOOST_REQUIRE(type != nullptr);
     BOOST_TEST(type->getId() == reservedId);
     BOOST_TEST(type->getId() != rejectedId);
     BOOST_TEST(type->getId() != nestedId);
-    BOOST_TEST(runtime.getParameterizedType("IdentityBox", {runtime.getIntegerType()}) == type);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("IdentityBox", {runtime.getIntegerType()}) == type);
     BOOST_TEST(initializerCalls == 1);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_callback_signatures_have_distinct_stable_type_ids) {
     Runtime runtime;
-    const auto* voidCallback = runtime.getCallbackType({}, runtime.getVoidType());
-    const auto* booleanCallback = runtime.getCallbackType({}, runtime.getBooleanType());
-    const auto* parameterCallback = runtime.getCallbackType(
+    const auto* voidCallback = runtime.getTypeManager().getCallbackType({}, runtime.getVoidType());
+    const auto* booleanCallback = runtime.getTypeManager().getCallbackType({}, runtime.getBooleanType());
+    const auto* parameterCallback = runtime.getTypeManager().getCallbackType(
         {runtime.getIntegerType()}, runtime.getVoidType()
     );
     BOOST_TEST(voidCallback->getTypeName() == booleanCallback->getTypeName());
@@ -238,9 +239,9 @@ BOOST_AUTO_TEST_CASE(runtime_callback_signatures_have_distinct_stable_type_ids) 
     BOOST_TEST(runtime.getType(voidCallback->getId()).value() == voidCallback);
     BOOST_TEST(runtime.getType(booleanCallback->getId()).value() == booleanCallback);
     BOOST_TEST(runtime.getType(parameterCallback->getId()).value() == parameterCallback);
-    BOOST_TEST(runtime.getCallbackType({}, runtime.getVoidType()) == voidCallback);
-    BOOST_TEST(runtime.getCallbackType({}, runtime.getBooleanType()) == booleanCallback);
-    BOOST_TEST(runtime.getCallbackType({runtime.getIntegerType()}, runtime.getVoidType()) == parameterCallback);
+    BOOST_TEST(runtime.getTypeManager().getCallbackType({}, runtime.getVoidType()) == voidCallback);
+    BOOST_TEST(runtime.getTypeManager().getCallbackType({}, runtime.getBooleanType()) == booleanCallback);
+    BOOST_TEST(runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getVoidType()) == parameterCallback);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_parameterized_callbacks_receive_the_owner_and_registered_specialization_id) {
@@ -269,16 +270,16 @@ BOOST_AUTO_TEST_CASE(runtime_parameterized_callbacks_receive_the_owner_and_regis
             BOOST_REQUIRE(type.has_value());
             BOOST_TEST((*type)->getRuntime() == owningRuntime);
             BOOST_TEST(owningRuntime->getTypeByName("AssociatedBox<int>") == *type);
-            BOOST_REQUIRE(owningRuntime->registerProperty(id, "value", runtime.getIntegerType()).isValid());
+            BOOST_REQUIRE(owningRuntime->getTypeManager().registerScriptClassProperty(id, "value", runtime.getIntegerType()).isValid());
         }
     ));
 
-    const auto* type = runtime.getParameterizedType("AssociatedBox", {runtime.getIntegerType()});
+    const auto* type = runtime.getTypeManager().getParameterizedType("AssociatedBox", {runtime.getIntegerType()});
     BOOST_REQUIRE(type != nullptr);
     BOOST_TEST(type->getRuntime() == &runtime);
     BOOST_TEST(initializedId == runtime.getTypeId("AssociatedBox<int>"));
     BOOST_TEST(static_cast<const ClassType*>(type)->getProperty("value") != nullptr);
-    BOOST_TEST(runtime.getParameterizedType("AssociatedBox", {runtime.getIntegerType()}) == type);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("AssociatedBox", {runtime.getIntegerType()}) == type);
     BOOST_TEST(factoryCalls == 1);
     BOOST_TEST(initializerCalls == 1);
 }
@@ -300,8 +301,8 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_foreign_parameterized_descriptors_without_i
 
     std::vector<const Type*> originalTypes;
     runtime.getTypes(originalTypes);
-    BOOST_TEST(runtime.getParameterizedType("ForeignBox", {runtime.getIntegerType()}) == nullptr);
-    BOOST_TEST(runtime.getParameterizedType("ForeignBox", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("ForeignBox", {runtime.getIntegerType()}) == nullptr);
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("ForeignBox", {runtime.getIntegerType()}) == nullptr);
     BOOST_TEST(factoryCalls == 2);
     BOOST_TEST(initializerCalls == 0);
     BOOST_TEST(runtime.getTypeId("ForeignBox<int>").isInvalid());
@@ -379,23 +380,23 @@ BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_in
 
     BOOST_TEST(unparsed->getSourceStartLine() == NOMAD_INVALID_INDEX);
     BOOST_TEST(unparsed->getSourceEndLine() == NOMAD_INVALID_INDEX);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == nullptr);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", NOMAD_INVALID_INDEX) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 1) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", NOMAD_INVALID_INDEX) == nullptr);
 
     auto* outer = runtime.getScriptFunction(outerId);
     auto* inner = runtime.getScriptFunction(innerId);
     outer->setSourceLineRange(1, 4);
     inner->setSourceLineRange(2, 3);
     inner->setParentId(outerId);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 1) == outer);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 3) == inner);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 4) == outer);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 5) == nullptr);
-    BOOST_TEST(runtime.getFunctionAtLine("other.nomad", 2) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 1) == outer);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 2) == inner);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 3) == inner);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 4) == outer);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 5) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtLine("other.nomad", 2) == nullptr);
 
     inner->setSourceLineRange(1, 4);
-    BOOST_TEST(runtime.getFunctionAtLine("source.nomad", 2) == inner);
+    BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 2) == inner);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_creates_class_types_with_explicit_modes_and_owned_documentation) {
@@ -424,7 +425,8 @@ BOOST_AUTO_TEST_CASE(runtime_creates_class_types_with_explicit_modes_and_owned_d
     BOOST_TEST((opened->getStorage() == TypeStorage::Object));
     BOOST_TEST(runtime.getTypeId("OpenedObject") == openedId);
     BOOST_TEST(runtime.getTypeByName("ClosedObject") == closed);
-    BOOST_TEST(opened->toString(RuntimeValue{}) == "OpenedObject");
+    const RuntimeValue objectValue;
+    BOOST_TEST(opened->toString(&objectValue) == "OpenedObject");
 
     for (auto index = 0; index < 64; ++index) {
         BOOST_REQUIRE(runtime.registerClass("AdditionalObject" + std::to_string(index), ClassMode::Closed).isValid());
@@ -474,8 +476,8 @@ BOOST_AUTO_TEST_CASE(runtime_creates_object_hub_members_and_rejects_conflicting_
     const auto constantId = runtime.registerConstant(
         "example.answer", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
     );
-    const auto functionId = runtime.registerNativeFunction(
-        "example.read", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    const auto functionId = runtime.registerHubNativeFunction(
+        hubId, "read", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
     BOOST_REQUIRE(variableId.isValid());
     BOOST_REQUIRE(constantId.isValid());
@@ -535,8 +537,10 @@ BOOST_AUTO_TEST_CASE(runtime_creates_strongly_typed_enums_with_explicit_values)
     BOOST_TEST(bodyType->getValueCount() == 3U);
     BOOST_TEST(bodyType->getValue(0).name == "static");
     BOOST_TEST(bodyType->getValue(0).value == 3);
-    BOOST_TEST(bodyType->toString(RuntimeValue{NomadInteger{7}}) == "dynamic");
-    BOOST_TEST(bodyType->toString(RuntimeValue{NomadInteger{99}}) == "<invalid body value>");
+    const RuntimeValue dynamicValue{NomadInteger{7}};
+    const RuntimeValue invalidValue{NomadInteger{99}};
+    BOOST_TEST(bodyType->toString(&dynamicValue) == "dynamic");
+    BOOST_TEST(bodyType->toString(&invalidValue) == "<invalid body value>");
 
     NomadInteger value = 0;
     BOOST_TEST(bodyType->getValueByName("kinematic", value));
@@ -642,7 +646,8 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_enum_definitions_without_partial_re
 
 BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishing_values) {
     Runtime runtime;
-    BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
+    const auto hubId = runtime.registerHub("example", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
     const auto constantId = runtime.registerConstant(
         "example.State", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
     );
@@ -652,8 +657,8 @@ BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishi
     );
     BOOST_REQUIRE(valueId.isValid());
     BOOST_REQUIRE(runtime.registerHub("example.HubConflict.Reserved", HubMode::Opened).isValid());
-    const auto functionId = runtime.registerNativeFunction(
-        "example.FunctionConflict.Reserved", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
+    const auto functionId = runtime.registerHubNativeFunction(
+        hubId, "FunctionConflict.Reserved", [](VirtualMachine*) {}, {}, runtime.getVoidType(), ""
     );
     BOOST_REQUIRE(functionId.isValid());
     std::vector<const Type*> originalTypes;
@@ -697,10 +702,10 @@ BOOST_AUTO_TEST_CASE(runtime_registers_nominal_opaque_id_types)
     RuntimeValue source;
     source.setIdValue(42);
     RuntimeValue destination;
-    soundType->copyValue(source, destination);
+    soundType->copyValue(&source, &destination);
 
     BOOST_TEST(destination.getIdValue() == 42);
-    BOOST_TEST(soundType->toString(destination) == "sound(42)");
+    BOOST_TEST(soundType->toString(&destination) == "sound(42)");
 }
 
 BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_opaque_id_types)
@@ -739,7 +744,7 @@ BOOST_AUTO_TEST_CASE(documentation_lists_native_factories_under_the_constructed_
     BOOST_REQUIRE(ownerId.isValid());
     BOOST_REQUIRE(resultId.isValid());
     auto callbackCalls = 0;
-    BOOST_REQUIRE(runtime.addConstructor(ownerId, resultId, {
+    BOOST_REQUIRE(runtime.registerNativeClassConstructor(ownerId, resultId, {
         .parameters = {},
         .function = [&](VirtualMachine*) { ++callbackCalls; },
         .documentation = "Creates a result."

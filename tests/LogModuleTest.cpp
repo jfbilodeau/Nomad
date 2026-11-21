@@ -65,6 +65,7 @@ BOOST_AUTO_TEST_CASE(no_modules_prints_exact_text_independently_of_logging) {
     const TestDirectory directory("core-print");
     const auto host = ModuleHost::create({}, directory.getPath(), {}, {}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     BOOST_REQUIRE(runtime.getNativeFunctionId("print").isValid());
     const auto compiled = host->compileSources({{{"main", {"print.nomad",
         "print \"plain text\"\nprint \"\"\nprint $\"value: {6 * 7}\"\n"
@@ -76,7 +77,7 @@ BOOST_AUTO_TEST_CASE(no_modules_prints_exact_text_independently_of_logging) {
     const boost::io::ios_rdbuf_saver restoreOutput(std::cout);
     std::cout.rdbuf(output.rdbuf());
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(output.str() == "plain text\n\nvalue: 42\n");
     log::flush();
     BOOST_TEST(sink.getEntries().empty());
@@ -279,6 +280,7 @@ BOOST_AUTO_TEST_CASE(module_is_independent_and_script_functions_preserve_locatio
     BOOST_TEST(modules.front().name == "log");
     const auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Application);
     auto& runtime = *host->getRuntime();
+    auto virtualMachine = runtime.createVirtualMachine();
     BOOST_TEST(runtime.isHub("log"));
     const auto* infoMember = runtime.getHub(runtime.getHubId("log"))->getMember("info");
     BOOST_REQUIRE(infoMember != nullptr);
@@ -301,7 +303,7 @@ BOOST_AUTO_TEST_CASE(module_is_independent_and_script_functions_preserve_locatio
     RegisteredMemorySink sink;
     log::setLogLevel(LogLevel::Debug);
     RuntimeValue result;
-    runtime.executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
     BOOST_REQUIRE_EQUAL(sink.getEntries().size(), 5U);
     const std::array levels{LogLevel::Debug, LogLevel::Info, LogLevel::Warning, LogLevel::Error, LogLevel::Critical};
@@ -322,8 +324,9 @@ BOOST_AUTO_TEST_CASE(open_hub_can_be_extended_and_fatal_is_not_callable) {
         "open hub log\nfun answer\nreturn 42\nend\nend\nreturn log.answer"
     }}}, {}});
     BOOST_REQUIRE(compiled.succeeded());
+    auto virtualMachine = host->getRuntime()->createVirtualMachine();
     RuntimeValue result;
-    host->getRuntime()->executeFunction(host->getRuntime()->getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(host->getRuntime()->getFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
     const auto rejected = host->compileSources({{{"invalid", {"fatal.nomad", "log.fatal \"not available\""}}}, {}});
     BOOST_TEST(!rejected.succeeded());
