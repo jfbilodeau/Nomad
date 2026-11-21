@@ -221,18 +221,16 @@ PropertyId TypeManager::registerScriptProperty(
         log::error("Cannot register property '" + name + "': conflicting definition");
         return PropertyId::INVALID;
     }
-    const auto nativeMember = m_runtime.getNativeMemberId(owner, name);
-    const auto hasNativeMember = m_runtime.getMemberType(nativeMember) != MemberType::Unknown;
-    if (hasNativeMember) {
-        log::error("Cannot register property '" + name + "': the type already has a member with that name");
-        return PropertyId::INVALID;
-    }
-    return registerProperty(owner, std::make_unique<Property>(
-        getNextPropertyId(), 
-        owner, 
-        name, 
-        valueType
-    ));
+
+    return registerProperty(
+        owner,
+        std::make_unique<Property>(
+            getNextPropertyId(),
+            owner,
+            name,
+            valueType
+        )
+    );
 }
 
 PropertyId TypeManager::registerProperty(

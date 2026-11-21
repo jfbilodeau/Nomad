@@ -1488,7 +1488,10 @@ owner category, invalid or unused IDs, and invalid value types with a logged
 error. Field names are stored as supplied; identifier syntax is validated by
 the compiler, not by these registration operations. These declarations create storage metadata,
 not native accessor callbacks. Names already used by native properties or
-methods are rejected. Register stored fields through TypeManager's explicit
+native/script methods are rejected by the declaring type's member catalog,
+including methods not indexed for Runtime native-member lookup. Method-name
+collisions use the catalog's property-duplicate diagnostic. Register stored fields
+through TypeManager's explicit
 class or struct operation; the owner category is selected by the host.
 
 `Runtime::getProperty(id)` returns metadata for native or script properties;

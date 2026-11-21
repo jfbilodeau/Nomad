@@ -7,6 +7,7 @@
 
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/Hub.hpp>
+#include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/StructType.hpp>
@@ -426,9 +427,48 @@ BOOST_AUTO_TEST_CASE(script_fields_reject_native_and_script_member_collisions) {
     });
     const auto scriptMethod = runtime.registerScriptClassMethod(classId, "scriptMethod", {}, "", "");
     BOOST_REQUIRE(nativeProperty.isValid() && nativeMethod.isValid() && scriptMethod.isValid());
-    for (const auto* name : {"nativeProperty", "nativeMethod", "scriptMethod"}) {
+    const auto unindexedMethod = runtime.registerMethod(
+        manager.getMutableCompositeType(classId),
+        std::make_unique<NativeMethod>(
+            runtime.getNextCallableId(),
+            "unindexedMethod",
+            owner,
+            [](VirtualMachine*) {},
+            std::vector<Parameter>{},
+            runtime.getVoidType(),
+            ""
+        )
+    );
+    BOOST_REQUIRE(unindexedMethod.isValid());
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    const auto nextPropertyId = manager.getNextPropertyId();
+    for (const auto* name : {"nativeProperty", "nativeMethod", "scriptMethod", "unindexedMethod"}) {
+        sink->clear();
         BOOST_TEST(manager.registerScriptClassProperty(classId, name, runtime.getIntegerType()).isInvalid());
+        BOOST_TEST(manager.getNextPropertyId() == nextPropertyId);
+        logger.flush();
+        BOOST_REQUIRE(sink->getEntries().size() == 1U);
+        BOOST_TEST((sink->getEntries().front().level == LogLevel::Error));
+        if (NomadStringView{name} != "nativeProperty") {
+            BOOST_TEST(sink->getEntries().front().message.find(
+                "Cannot register property: invalid owner, value type, or duplicate definition"
+            ) != NomadString::npos);
+        }
     }
+
     BOOST_TEST(owner->getPropertyCount() == 1U);
     BOOST_TEST(owner->getFieldStorageSize() == 0U);
     BOOST_TEST(runtime.getNativeProperty(nativeProperty) != nullptr);
