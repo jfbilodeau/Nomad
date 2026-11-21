@@ -65,11 +65,125 @@ private:
 
 BOOST_AUTO_TEST_SUITE(type_manager)
 
+BOOST_AUTO_TEST_CASE(catalog_only_class_names_are_opaque_and_never_join_hubs) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("opaque", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto constantId = runtime.registerHubConstant(
+        hubId, "taken", RuntimeValue{NomadInteger{42}}, runtime.getIntegerType()
+    );
+    BOOST_REQUIRE(constantId.isValid());
+    for (const auto* name : {"", "$special-purpose", "opaque", "opaque.taken", "opaque.private", "with spaces"}) {
+        const auto id = manager.registerClass(name, ClassMode::Closed);
+        BOOST_TEST(id.isValid());
+        if (id.isValid()) {
+            BOOST_TEST(manager.getType(id).value()->getTypeName() == name);
+            BOOST_TEST(manager.registerClass(name, ClassMode::Closed).isInvalid());
+        }
+    }
+
+    const auto* hub = runtime.getHub(hubId);
+    BOOST_TEST(hub->getMember("private") == nullptr);
+    BOOST_REQUIRE(runtime.registerHub("unrelated", HubMode::Opened).isValid());
+    BOOST_TEST(hub->getMember("private") == nullptr);
+    BOOST_REQUIRE(hub->getMember("taken") != nullptr);
+    BOOST_TEST(std::get<ConstantId>(*hub->getMember("taken")) == constantId);
+}
+
+BOOST_AUTO_TEST_CASE(catalog_only_declarations_do_not_publish_enum_values_or_type_families) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("catalogOnly", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto enumId = manager.createEnum("catalogOnly.State", {{"Ready", 1}});
+    BOOST_REQUIRE(enumId.isValid());
+    const auto* type = manager.getType(enumId).value()->asEnum();
+    BOOST_REQUIRE(type != nullptr);
+    BOOST_TEST(runtime.getConstantId("catalogOnly.State.Ready").isInvalid());
+    BOOST_TEST(runtime.getBinaryOperatorResultType(BinaryOperator::EqualEqual, type, type) == nullptr);
+    const auto* opaqueId = manager.registerOpaqueIdType("catalogOnly.Token", "");
+    BOOST_REQUIRE(opaqueId != nullptr);
+    BOOST_REQUIRE(manager.registerParameterizedType(
+        "catalogOnly.Box",
+        1,
+        [](Runtime* owner, const TypeId id, const std::vector<const Type*>& arguments) {
+
+            return std::make_unique<ClassType>(owner, id, "catalogOnly.Box<int>", ClassMode::Closed, arguments);
+        }
+    ));
+    BOOST_REQUIRE(manager.getParameterizedType("catalogOnly.Box", {runtime.getIntegerType()}) != nullptr);
+    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor(
+        "catalogOnly.Make",
+        1,
+        [](const NomadString&, const std::vector<const Type*>&) {}
+    ));
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+    BOOST_REQUIRE(runtime.registerHub("anotherHub", HubMode::Opened).isValid());
+    BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+}
+
+BOOST_AUTO_TEST_CASE(catalog_only_creation_paths_accept_empty_type_and_family_names) {
+    {
+        Runtime runtime;
+        BOOST_REQUIRE(runtime.getTypeManager().registerStruct("").isValid());
+        BOOST_TEST(runtime.getTypeManager().getTypeByName("")->isStruct());
+    }
+
+    {
+        Runtime runtime;
+        BOOST_REQUIRE(runtime.getTypeManager().createEnum("", {{"Ready", 1}}).isValid());
+        BOOST_TEST(runtime.getTypeManager().getTypeByName("")->asEnum() != nullptr);
+        BOOST_TEST(runtime.getConstantId(".Ready").isInvalid());
+    }
+
+    {
+        Runtime runtime;
+        BOOST_REQUIRE(runtime.getTypeManager().registerOpaqueIdType("", "") != nullptr);
+    }
+
+    {
+        Runtime runtime;
+        auto& manager = runtime.getTypeManager();
+        BOOST_REQUIRE(manager.registerParameterizedType(
+            "",
+            1,
+            [](Runtime* owner, const TypeId id, const std::vector<const Type*>& arguments) {
+
+                return std::make_unique<ClassType>(owner, id, "", ClassMode::Closed, arguments);
+            }
+        ));
+        const auto* type = manager.getParameterizedType("", {runtime.getIntegerType()});
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST(type->getTypeName().empty());
+        BOOST_TEST(manager.getParameterizedType("", {runtime.getIntegerType()}) == type);
+    }
+
+    {
+        Runtime runtime;
+        auto& manager = runtime.getTypeManager();
+        BOOST_REQUIRE(manager.registerNativeParameterizedConstructor(
+            "",
+            1,
+            [&](const NomadString& name, const std::vector<const Type*>&) {
+                const auto id = manager.registerClass(name, ClassMode::Closed);
+                BOOST_REQUIRE(id.isValid());
+                BOOST_REQUIRE(runtime.registerNativeClassConstructor(id, {
+                    .parameters = {},
+                    .function = [](VirtualMachine*) {},
+                    .documentation = ""
+                }).isValid());
+            }
+        ));
+        BOOST_TEST(manager.getParameterizedConstructorName("", {runtime.getIntegerType()}) == "<int>");
+    }
+}
+
 BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    const auto ownerId = manager.registerClass("PropertyOwner", ClassMode::Closed);
-    const auto otherId = manager.registerClass("OtherPropertyOwner", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("PropertyOwner", ClassMode::Closed);
+    const auto otherId = runtime.registerClass("OtherPropertyOwner", ClassMode::Closed);
     auto* owner = manager.getMutableCompositeType(ownerId);
     auto* other = manager.getMutableCompositeType(otherId);
     BOOST_REQUIRE(owner != nullptr && other != nullptr);
@@ -120,13 +234,13 @@ BOOST_AUTO_TEST_CASE(runtime_composes_the_catalog_and_preserves_lookup_identity)
     BOOST_TEST(!manager.getType(TypeId::INVALID).has_value());
     BOOST_TEST(manager.getTypeByName("Missing") == nullptr);
     BOOST_TEST(manager.getTypeId("Missing").isInvalid());
-    const auto classId = manager.registerClass("CatalogClass", ClassMode::Closed);
-    const auto structId = manager.registerStruct("CatalogStruct");
+    const auto classId = runtime.registerClass("CatalogClass", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("CatalogStruct");
     BOOST_REQUIRE(classId.isValid() && structId.isValid());
     const auto* originalClass = manager.getTypeByName("CatalogClass");
     const auto* originalStruct = manager.getTypeByName("CatalogStruct");
     for (auto index = NomadIndex{0}; index < 64; ++index) {
-        BOOST_REQUIRE(runtime.getTypeManager().registerStruct("Additional" + std::to_string(index)).isValid());
+        BOOST_REQUIRE(runtime.registerStruct("Additional" + std::to_string(index)).isValid());
     }
     BOOST_TEST(manager.getTypeByName("CatalogClass") == originalClass);
     BOOST_TEST(manager.getTypeByName("CatalogStruct") == originalStruct);
@@ -141,7 +255,7 @@ BOOST_AUTO_TEST_CASE(runtime_composes_the_catalog_and_preserves_lookup_identity)
     BOOST_TEST(managerTypes.size() == runtimeTypes.size() * 2);
 }
 
-BOOST_AUTO_TEST_CASE(reserved_ids_are_absent_until_cataloged_and_invalid_publication_throws) {
+BOOST_AUTO_TEST_CASE(reserved_ids_are_absent_until_registered_and_invalid_descriptors_are_rejected) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     const auto previousCount = manager.getTypeCount();
@@ -151,31 +265,36 @@ BOOST_AUTO_TEST_CASE(reserved_ids_are_absent_until_cataloged_and_invalid_publica
     std::vector<const Type*> types;
     manager.getTypes(types);
     BOOST_TEST(types.size() == previousCount);
-    BOOST_CHECK_THROW(manager.catalogType(nullptr), NomadException);
-    BOOST_CHECK_THROW(manager.catalogType(std::make_unique<ClassType>(
+    BOOST_TEST(manager.registerType(nullptr).isInvalid());
+    BOOST_TEST(manager.registerType(std::make_unique<ClassType>(
         &runtime, TypeId::INVALID, "Invalid", ClassMode::Closed
-    )), NomadException);
+    )).isInvalid());
     Runtime other;
-    BOOST_CHECK_THROW(manager.catalogType(std::make_unique<ClassType>(
+    BOOST_TEST(manager.registerType(std::make_unique<ClassType>(
         &other, id, "Foreign", ClassMode::Closed
-    )), NomadException);
+    )).isInvalid());
     auto descriptor = std::make_unique<ClassType>(&runtime, id, "CatalogOnly", ClassMode::Closed);
     const auto* original = descriptor.get();
-    manager.catalogType(std::move(descriptor));
+    BOOST_REQUIRE(manager.registerType(std::move(descriptor)).isValid());
     BOOST_REQUIRE(manager.getType(id).has_value());
     BOOST_TEST(*manager.getType(id) == original);
     BOOST_TEST(runtime.getTypeByName("CatalogOnly") == original);
-    BOOST_CHECK_THROW(manager.catalogType(std::make_unique<ClassType>(
+    BOOST_TEST(manager.registerType(std::make_unique<ClassType>(
         &runtime, id, "Replacement", ClassMode::Closed
-    )), NomadException);
+    )).isInvalid());
     BOOST_TEST(*manager.getType(id) == original);
+    const auto duplicateId = manager.reserveTypeId();
+    BOOST_TEST(manager.registerType(std::make_unique<ClassType>(
+        &runtime, duplicateId, "CatalogOnly", ClassMode::Closed
+    )).isInvalid());
+    BOOST_TEST(!manager.getType(duplicateId).has_value());
 }
 
 BOOST_AUTO_TEST_CASE(manager_finalizes_nested_composites_and_validates_mutable_owner_access) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    const auto innerId = runtime.getTypeManager().registerStruct("Inner");
-    const auto outerId = runtime.getTypeManager().registerStruct("Outer");
+    const auto innerId = runtime.registerStruct("Inner");
+    const auto outerId = runtime.registerStruct("Outer");
     const auto* inner = manager.getTypeByName("Inner")->asStructType();
     const auto* outer = manager.getTypeByName("Outer")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(innerId, "value", runtime.getIntegerType()).isValid());
@@ -189,7 +308,7 @@ BOOST_AUTO_TEST_CASE(manager_finalizes_nested_composites_and_validates_mutable_o
     BOOST_TEST(manager.getMutableCompositeType(TypeId::INVALID) == nullptr);
     BOOST_CHECK_THROW(manager.finalizeCompositeFieldLayout(TypeId::INVALID), NomadException);
     BOOST_CHECK_THROW(manager.finalizeCompositeFieldLayout(runtime.getIntegerType()->getId()), NomadException);
-    const auto classId = runtime.getTypeManager().registerClass("Class", ClassMode::Closed);
+    const auto classId = runtime.registerClass("Class", ClassMode::Closed);
     const auto* classType = manager.getTypeByName("Class")->asClassType();
     BOOST_TEST(manager.getMutableClassType(classType) == classType);
     Runtime other;
@@ -204,7 +323,7 @@ BOOST_AUTO_TEST_CASE(type_descriptors_outlive_runtime_owned_value_cleanup) {
     NomadIndex released = 0;
     {
         Runtime runtime;
-        const auto id = runtime.getTypeManager().registerClass<LifetimeType>(
+        const auto id = runtime.registerClass<LifetimeType>(
             "Lifetime", ClassMode::Closed, destroyed, released
         );
         BOOST_REQUIRE(id.isValid());
@@ -226,8 +345,8 @@ BOOST_AUTO_TEST_CASE(script_property_apis_enforce_owner_categories_and_value_con
     Runtime runtime;
     Runtime other;
     auto& manager = runtime.getTypeManager();
-    const auto classId = runtime.getTypeManager().registerClass("Fields", ClassMode::Closed);
-    const auto structId = runtime.getTypeManager().registerStruct("Record");
+    const auto classId = runtime.registerClass("Fields", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("Record");
     BOOST_REQUIRE(classId.isValid() && structId.isValid());
     BOOST_TEST(manager.registerScriptClassProperty(structId, "wrong", runtime.getIntegerType()).isInvalid());
     BOOST_TEST(manager.registerScriptStructProperty(classId, "wrong", runtime.getIntegerType()).isInvalid());
@@ -274,8 +393,8 @@ BOOST_AUTO_TEST_CASE(script_property_apis_enforce_owner_categories_and_value_con
 BOOST_AUTO_TEST_CASE(script_field_registration_does_not_validate_identifier_syntax) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    const auto classId = runtime.getTypeManager().registerClass("Fields", ClassMode::Closed);
-    const auto structId = runtime.getTypeManager().registerStruct("Record");
+    const auto classId = runtime.registerClass("Fields", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("Record");
     for (const auto* name : {"", "invalid.name", "1field", "bad name", "field@hidden", "not-a-field"}) {
         const auto classField = manager.registerScriptClassProperty(classId, name, runtime.getIntegerType());
         const auto structField = manager.registerScriptStructProperty(structId, name, runtime.getIntegerType());
@@ -290,7 +409,7 @@ BOOST_AUTO_TEST_CASE(script_field_registration_does_not_validate_identifier_synt
 BOOST_AUTO_TEST_CASE(script_fields_reject_native_and_script_member_collisions) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    const auto classId = runtime.getTypeManager().registerClass("Members", ClassMode::Opened);
+    const auto classId = runtime.registerClass("Members", ClassMode::Opened);
     BOOST_REQUIRE(classId.isValid());
     const auto* owner = manager.getTypeByName("Members")->asClassType();
     const auto nativeProperty = runtime.registerNativeClassProperty(classId, {
@@ -327,7 +446,7 @@ BOOST_AUTO_TEST_CASE(script_fields_reject_native_and_script_member_collisions) {
 BOOST_AUTO_TEST_CASE(native_member_registration_does_not_validate_identifier_syntax) {
     for (const auto* name : {"", "invalid.name", "1member", "bad name", "member@hidden"}) {
         Runtime methodRuntime;
-        const auto methodOwner = methodRuntime.getTypeManager().registerClass("Methods", ClassMode::Closed);
+        const auto methodOwner = methodRuntime.registerClass("Methods", ClassMode::Closed);
         const auto methodId = methodRuntime.registerNativeClassMethod(methodOwner, {
             .name = name,
             .parameters = {},
@@ -338,7 +457,7 @@ BOOST_AUTO_TEST_CASE(native_member_registration_does_not_validate_identifier_syn
         BOOST_REQUIRE(methodId.isValid());
         BOOST_TEST(methodRuntime.getNativeMethod(methodId)->getName() == name);
         Runtime propertyRuntime;
-        const auto propertyOwner = propertyRuntime.getTypeManager().registerClass("Properties", ClassMode::Closed);
+        const auto propertyOwner = propertyRuntime.registerClass("Properties", ClassMode::Closed);
         const auto propertyId = propertyRuntime.registerNativeClassProperty(propertyOwner, {
             .valueType = propertyRuntime.getIntegerType(),
             .name = name,
@@ -352,9 +471,9 @@ BOOST_AUTO_TEST_CASE(native_member_registration_does_not_validate_identifier_syn
 BOOST_AUTO_TEST_CASE(explicit_script_fields_support_nested_and_empty_struct_storage) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    const auto emptyId = runtime.getTypeManager().registerStruct("Empty");
-    const auto pointId = runtime.getTypeManager().registerStruct("Point");
-    const auto classId = runtime.getTypeManager().registerClass("Player", ClassMode::Closed);
+    const auto emptyId = runtime.registerStruct("Empty");
+    const auto pointId = runtime.registerStruct("Point");
+    const auto classId = runtime.registerClass("Player", ClassMode::Closed);
     const auto* empty = manager.getTypeByName("Empty");
     const auto* point = manager.getTypeByName("Point");
     const auto x = manager.registerScriptStructProperty(pointId, "x", runtime.getFloatType());
@@ -378,8 +497,8 @@ BOOST_AUTO_TEST_CASE(explicit_script_fields_support_nested_and_empty_struct_stor
 BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_or_running_callbacks) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    const auto ownerId = runtime.getTypeManager().registerClass("CallableOwner", ClassMode::Closed);
-    const auto createdId = runtime.getTypeManager().registerClass("Created", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("CallableOwner", ClassMode::Closed);
+    const auto createdId = runtime.registerClass("Created", ClassMode::Closed);
     const auto* owner = manager.getTypeByName("CallableOwner")->asClassType();
     BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "value", runtime.getIntegerType()).isValid());
     manager.finalizeCompositeFieldLayout(ownerId);
@@ -439,8 +558,8 @@ BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_o
 BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_constructor_definitions) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    const auto ownerId = runtime.getTypeManager().registerClass("ConstructorOwner", ClassMode::Closed);
-    const auto structId = runtime.getTypeManager().registerStruct("NotAClass");
+    const auto ownerId = runtime.registerClass("ConstructorOwner", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("NotAClass");
     NativeConstructorDefinition definition{
         .parameters = {},
         .function = [](VirtualMachine*) {},
@@ -479,7 +598,7 @@ BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_cons
 BOOST_AUTO_TEST_CASE(class_registration_preflight_returns_invalid_ids_without_logging) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
-    BOOST_REQUIRE(manager.registerClass("Existing", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerClass("Existing", ClassMode::Closed).isValid());
     BOOST_REQUIRE(runtime.registerHub("Reserved", HubMode::Opened).isValid());
     const auto typeCount = manager.getTypeCount();
     auto& logger = log::getLogger();
@@ -496,10 +615,10 @@ BOOST_AUTO_TEST_CASE(class_registration_preflight_returns_invalid_ids_without_lo
     logger.setLogLevel(LogLevel::Debug);
     auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
     BOOST_REQUIRE(sink != nullptr);
-    BOOST_TEST(manager.registerClass("", ClassMode::Closed).isInvalid());
-    BOOST_TEST(manager.registerClass("InvalidMode", static_cast<ClassMode>(0)).isInvalid());
-    BOOST_TEST(manager.registerClass("Existing", ClassMode::Closed).isInvalid());
-    BOOST_TEST(manager.registerClass("Reserved", ClassMode::Closed).isInvalid());
+    BOOST_TEST(runtime.registerClass("", ClassMode::Closed).isInvalid());
+    BOOST_TEST(runtime.registerClass("InvalidMode", static_cast<ClassMode>(0)).isInvalid());
+    BOOST_TEST(runtime.registerClass("Existing", ClassMode::Closed).isInvalid());
+    BOOST_TEST(runtime.registerClass("Reserved", ClassMode::Closed).isInvalid());
     BOOST_TEST(manager.getTypeCount() == typeCount);
     logger.flush();
     BOOST_TEST(sink->getEntries().empty());
@@ -528,7 +647,7 @@ BOOST_AUTO_TEST_CASE(class_publication_conflicts_return_invalid_ids_without_logg
         logger.setLogLevel(LogLevel::Debug);
         auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
         BOOST_REQUIRE(sink != nullptr);
-        const auto id = manager.registerClass<nomad::test::ReentrantRegistrationType>(
+        const auto id = runtime.registerClass<nomad::test::ReentrantRegistrationType>(
             name,
             ClassMode::Closed,
             [&](Runtime* owner, const TypeId candidateId, const NomadString& registeredName) {
@@ -538,7 +657,7 @@ BOOST_AUTO_TEST_CASE(class_publication_conflicts_return_invalid_ids_without_logg
                     conflictingHubId = owner->registerHub(registeredName, HubMode::Opened);
                     BOOST_REQUIRE(conflictingHubId.isValid());
                 } else {
-                    conflictingTypeId = owner->getTypeManager().registerClass(registeredName, ClassMode::Closed);
+                    conflictingTypeId = owner->registerClass(registeredName, ClassMode::Closed);
                     BOOST_REQUIRE(conflictingTypeId.isValid());
                 }
             },
@@ -561,13 +680,13 @@ BOOST_AUTO_TEST_CASE(class_publication_conflicts_return_invalid_ids_without_logg
     }
 }
 
-BOOST_AUTO_TEST_CASE(manager_type_registration_publishes_hub_members_and_rejects_conflicts) {
+BOOST_AUTO_TEST_CASE(runtime_type_registration_publishes_hub_members_and_rejects_conflicts) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     const auto hubId = runtime.registerHub("types", HubMode::Closed);
     BOOST_REQUIRE(hubId.isValid());
-    const auto classId = manager.registerClass("types.Player", ClassMode::Opened, "Player documentation.");
-    const auto structId = manager.registerStruct("types.Point", "Point documentation.");
+    const auto classId = runtime.registerClass("types.Player", ClassMode::Opened, "Player documentation.");
+    const auto structId = runtime.registerStruct("types.Point", "Point documentation.");
     BOOST_REQUIRE(classId.isValid() && structId.isValid());
     const auto* classType = manager.getTypeByName("types.Player");
     const auto* structType = manager.getTypeByName("types.Point");
@@ -584,16 +703,16 @@ BOOST_AUTO_TEST_CASE(manager_type_registration_publishes_hub_members_and_rejects
     const auto count = manager.getTypeCount();
     for (const auto* name : {"", "int", "types", "types.Player", "types.Point",
         "types.constant", "types.variable", "types.function"}) {
-        BOOST_TEST(manager.registerClass(name, ClassMode::Closed).isInvalid());
-        BOOST_TEST(manager.registerStruct(name).isInvalid());
+        BOOST_TEST(runtime.registerClass(name, ClassMode::Closed).isInvalid());
+        BOOST_TEST(runtime.registerStruct(name).isInvalid());
     }
-    BOOST_TEST(manager.registerClass("types.Invalid", static_cast<ClassMode>(0)).isInvalid());
+    BOOST_TEST(runtime.registerClass("types.Invalid", static_cast<ClassMode>(0)).isInvalid());
     BOOST_TEST(manager.getTypeCount() == count);
-    BOOST_TEST(runtime.getTypeManager().registerClass("types.Player", ClassMode::Opened).isInvalid());
-    BOOST_TEST(runtime.getTypeManager().registerStruct("types.Point").isInvalid());
+    BOOST_TEST(runtime.registerClass("types.Player", ClassMode::Opened).isInvalid());
+    BOOST_TEST(runtime.registerStruct("types.Point").isInvalid());
     BOOST_TEST(runtime.getTypeByName("types.Player") == classType);
     BOOST_TEST(runtime.getTypeByName("types.Point") == structType);
-    const auto lateId = manager.registerStruct("late.Record");
+    const auto lateId = runtime.registerStruct("late.Record");
     BOOST_REQUIRE(lateId.isValid());
     const auto* late = manager.getTypeByName("late.Record");
     const auto lateHub = runtime.registerHub("late", HubMode::Opened);
@@ -608,28 +727,28 @@ BOOST_AUTO_TEST_CASE(full_type_registration_validates_reservations_and_namespace
     const auto hubId = runtime.registerHub("catalog", HubMode::Opened);
     BOOST_REQUIRE(hubId.isValid());
     const auto id = manager.reserveTypeId();
-    BOOST_CHECK_THROW(manager.registerType(nullptr), NomadException);
-    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
-        &other, id, "catalog.Foreign", ClassMode::Closed)), NomadException);
-    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
-        &runtime, TypeId::INVALID, "catalog.Invalid", ClassMode::Closed)), NomadException);
+    BOOST_TEST(runtime.registerType(nullptr).isInvalid());
+    BOOST_TEST(runtime.registerType(std::make_unique<ClassType>(
+        &other, id, "catalog.Foreign", ClassMode::Closed)).isInvalid());
+    BOOST_TEST(runtime.registerType(std::make_unique<ClassType>(
+        &runtime, TypeId::INVALID, "catalog.Invalid", ClassMode::Closed)).isInvalid());
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     auto type = std::make_unique<ClassType>(&runtime, id, "catalog.Registered", ClassMode::Closed);
     const auto* original = type.get();
-    manager.registerType(std::move(type));
+    BOOST_REQUIRE(runtime.registerType(std::move(type)).isValid());
     BOOST_TEST(*manager.getType(id) == original);
     BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Registered")) == original);
-    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
-        &runtime, id, "catalog.Replacement", ClassMode::Closed)), NomadException);
+    BOOST_TEST(runtime.registerType(std::make_unique<ClassType>(
+        &runtime, id, "catalog.Replacement", ClassMode::Closed)).isInvalid());
     BOOST_TEST(runtime.getHub(hubId)->getMember("Replacement") == nullptr);
     BOOST_CHECK_THROW(runtime.publishTypeNamespace(*original), NomadException);
     const auto unusedId = manager.reserveTypeId();
-    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
-        &runtime, unusedId, "catalog.Registered", ClassMode::Closed)), NomadException);
+    BOOST_TEST(runtime.registerType(std::make_unique<ClassType>(
+        &runtime, unusedId, "catalog.Registered", ClassMode::Closed)).isInvalid());
     BOOST_TEST(!manager.getType(unusedId).has_value());
     BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Registered")) == original);
-    BOOST_CHECK_THROW(manager.registerType(std::make_unique<ClassType>(
-        &runtime, unusedId, "catalog", ClassMode::Closed)), NomadException);
+    BOOST_TEST(runtime.registerType(std::make_unique<ClassType>(
+        &runtime, unusedId, "catalog", ClassMode::Closed)).isInvalid());
     BOOST_TEST(!manager.getType(unusedId).has_value());
     BOOST_TEST(!runtime.canRegisterTypeName("catalog"));
     BOOST_TEST(!runtime.canRegisterTypeName("catalog.Registered"));
@@ -643,7 +762,7 @@ BOOST_AUTO_TEST_CASE(parameterized_families_keep_templates_namespace_and_special
     BOOST_REQUIRE(hubId.isValid());
     auto factoryCalls = 0;
     auto initializerCalls = 0;
-    BOOST_REQUIRE(manager.registerParameterizedType("families.Box", 1,
+    BOOST_REQUIRE(runtime.registerParameterizedType("families.Box", 1,
         [&](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
             ++factoryCalls;
             BOOST_TEST(owner == &runtime);
@@ -655,6 +774,11 @@ BOOST_AUTO_TEST_CASE(parameterized_families_keep_templates_namespace_and_special
             ++initializerCalls;
             BOOST_TEST(owner == &runtime);
             BOOST_TEST(manager.getType(id).has_value());
+            const auto* type = manager.getType(id).value();
+            const auto name = type->getTypeName().substr(NomadString{"families."}.size());
+            const auto* member = runtime.getHub(hubId)->getMember(name);
+            BOOST_REQUIRE(member != nullptr);
+            BOOST_TEST(std::get<const Type*>(*member) == type);
         }
     ));
     BOOST_TEST(manager.getParameterizedTypeArgumentCount("families.Box").value() == 1U);
@@ -695,16 +819,56 @@ BOOST_AUTO_TEST_CASE(parameterized_families_keep_templates_namespace_and_special
     const auto lateFactory = [](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<ClassType>(owner, id, "late.Box<int>", ClassMode::Closed, arguments);
     };
-    BOOST_REQUIRE(manager.registerParameterizedType("late.Box", 1, lateFactory));
+    BOOST_REQUIRE(runtime.registerParameterizedType("late.Box", 1, lateFactory));
     const auto lateHub = runtime.registerHub("late", HubMode::Opened);
     BOOST_REQUIRE(lateHub.isValid());
     BOOST_TEST(std::get<HubTypeFamily>(*runtime.getHub(lateHub)->getMember("Box")).argumentCount == 1U);
 }
 
+BOOST_AUTO_TEST_CASE(public_family_namespace_conflicts_reject_the_descriptor_before_initialization) {
+    auto destroyed = false;
+    Runtime runtime;
+    const auto hubId = runtime.registerHub("families", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    TypeId reservedId;
+    ConstantId conflictId;
+    auto initializerCalls = 0;
+    BOOST_REQUIRE(runtime.registerParameterizedType(
+        "families.Box",
+        1,
+        [&](Runtime* owner, const TypeId id, const std::vector<const Type*>&) {
+            reservedId = id;
+
+            return std::make_unique<nomad::test::ReentrantRegistrationType>(
+                owner,
+                id,
+                "families.Box<int>",
+                ClassMode::Closed,
+                [&](Runtime* active, TypeId, const NomadString&) {
+                    conflictId = active->registerHubConstant(
+                        hubId, "Box<int>", RuntimeValue{NomadInteger{42}}, active->getIntegerType()
+                    );
+                    BOOST_REQUIRE(conflictId.isValid());
+                },
+                destroyed
+            );
+        },
+        [&](Runtime*, TypeId) { ++initializerCalls; }
+    ));
+    BOOST_TEST(runtime.getTypeManager().getParameterizedType("families.Box", {runtime.getIntegerType()}) == nullptr);
+    BOOST_REQUIRE(reservedId.isValid());
+    BOOST_TEST(!runtime.getType(reservedId).has_value());
+    BOOST_TEST(destroyed);
+    BOOST_TEST(initializerCalls == 0);
+    const auto* member = runtime.getHub(hubId)->getMember("Box<int>");
+    BOOST_REQUIRE(member != nullptr);
+    BOOST_TEST(std::get<ConstantId>(*member) == conflictId);
+}
+
 BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_owner_category_checks) {
     Runtime runtime;
-    const auto structId = runtime.getTypeManager().registerStruct("MethodStruct");
-    const auto classId = runtime.getTypeManager().registerClass("MethodClass", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("MethodStruct");
+    const auto classId = runtime.registerClass("MethodClass", ClassMode::Closed);
     const auto* type = runtime.getTypeByName("MethodStruct");
     const auto definition = NativeMethodDefinition{
         .name = "structMethod",
@@ -748,9 +912,9 @@ BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_ow
 
 BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destination_metadata) {
     Runtime runtime;
-    const auto structId = runtime.getTypeManager().registerStruct("ConstructedStruct");
-    const auto emptyId = runtime.getTypeManager().registerStruct("ConstructedEmpty");
-    const auto classId = runtime.getTypeManager().registerClass("ConstructorClass", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("ConstructedStruct");
+    const auto emptyId = runtime.registerStruct("ConstructedEmpty");
+    const auto classId = runtime.registerClass("ConstructorClass", ClassMode::Closed);
     const auto* type = runtime.getTypeByName("ConstructedStruct");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(structId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(structId, "text", runtime.getStringType()).isValid());
@@ -844,11 +1008,11 @@ BOOST_AUTO_TEST_CASE(parameterized_callbacks_can_grow_family_catalog_and_initial
     };
     auto factoryCalls = 0;
     auto initializerCalls = 0;
-    BOOST_REQUIRE(manager.registerParameterizedType("Growing", 1,
+    BOOST_REQUIRE(runtime.registerParameterizedType("Growing", 1,
         [&](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
             ++factoryCalls;
             for (auto index = 0; index < 64; ++index) {
-                BOOST_REQUIRE(manager.registerParameterizedType(
+                BOOST_REQUIRE(runtime.registerParameterizedType(
                     "FactoryFamily" + std::to_string(index), 1, additionalFactory));
             }
             return std::make_unique<ClassType>(owner, id, "Growing<int>", ClassMode::Closed, arguments);
@@ -856,7 +1020,7 @@ BOOST_AUTO_TEST_CASE(parameterized_callbacks_can_grow_family_catalog_and_initial
         [&](Runtime*, TypeId id) {
             ++initializerCalls;
             for (auto index = 0; index < 64; ++index) {
-                BOOST_REQUIRE(manager.registerParameterizedType(
+                BOOST_REQUIRE(runtime.registerParameterizedType(
                     "InitializerFamily" + std::to_string(index), 1, additionalFactory));
             }
             BOOST_REQUIRE(runtime.registerNativeClassMethod(id, {
@@ -877,12 +1041,12 @@ BOOST_AUTO_TEST_CASE(parameterized_callbacks_can_grow_family_catalog_and_initial
     BOOST_TEST(manager.getParameterizedTypeArgumentCount("InitializerFamily63").value() == 1U);
 }
 
-BOOST_AUTO_TEST_CASE(manager_enum_creation_preserves_constants_and_equality_operations) {
+BOOST_AUTO_TEST_CASE(runtime_enum_creation_preserves_constants_and_equality_operations) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     const auto hubId = runtime.registerHub("values", HubMode::Closed);
     BOOST_REQUIRE(hubId.isValid());
-    const auto id = manager.createEnum("values.Level", {{"Low", 3}, {"High", 9}}, "Levels.");
+    const auto id = runtime.createEnum("values.Level", {{"Low", 3}, {"High", 9}}, "Levels.");
     BOOST_REQUIRE(id.isValid());
     const auto* type = manager.getTypeByName("values.Level")->asEnum();
     BOOST_REQUIRE(type != nullptr);
@@ -903,40 +1067,40 @@ BOOST_AUTO_TEST_CASE(manager_enum_creation_preserves_constants_and_equality_oper
     BOOST_REQUIRE(runtime.foldBinary(BinaryOperator::BangEqual, type, low, type, RuntimeValue(NomadInteger{9}), result));
     BOOST_TEST(result.getBooleanValue());
     const auto count = manager.getTypeCount();
-    BOOST_TEST(runtime.getTypeManager().createEnum("values.Level", {{"Replacement", 1}}).isInvalid());
+    BOOST_TEST(runtime.createEnum("values.Level", {{"Replacement", 1}}).isInvalid());
     for (const auto& definitions : std::vector<std::vector<EnumValueDefinition>>{
         {}, {{"", 1}}, {{"Same", 1}, {"Same", 2}}, {{"First", 1}, {"Second", 1}}
     }) {
-        BOOST_TEST(manager.createEnum("values.Invalid", definitions).isInvalid());
+        BOOST_TEST(runtime.createEnum("values.Invalid", definitions).isInvalid());
     }
     BOOST_TEST(manager.getTypeCount() == count);
     BOOST_TEST(runtime.getConstantId("values.Invalid.First").isInvalid());
     BOOST_REQUIRE(runtime.registerConstant("values.Blocked.Reserved",
         RuntimeValue(NomadInteger{42}), runtime.getIntegerType()).isValid());
-    BOOST_TEST(manager.createEnum("values.Blocked", {{"First", 1}, {"Reserved", 2}}).isInvalid());
+    BOOST_TEST(runtime.createEnum("values.Blocked", {{"First", 1}, {"Reserved", 2}}).isInvalid());
     BOOST_TEST(manager.getTypeByName("values.Blocked") == nullptr);
     BOOST_TEST(runtime.getConstantId("values.Blocked.First").isInvalid());
     BOOST_CHECK_THROW(runtime.registerEnumOperators(nullptr), NomadException);
     Runtime other;
-    const auto otherId = other.getTypeManager().createEnum("Foreign", {{"One", 1}});
+    const auto otherId = other.createEnum("Foreign", {{"One", 1}});
     BOOST_REQUIRE(otherId.isValid());
     BOOST_CHECK_THROW(runtime.registerEnumOperators(other.getTypeByName("Foreign")->asEnum()), NomadException);
 }
 
-BOOST_AUTO_TEST_CASE(manager_opaque_ids_and_callback_signatures_preserve_identity) {
+BOOST_AUTO_TEST_CASE(runtime_opaque_ids_and_callback_signatures_preserve_identity) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     const auto hubId = runtime.registerHub("handles", HubMode::Closed);
     BOOST_REQUIRE(hubId.isValid());
-    const auto* handle = manager.registerOpaqueIdType("handles.Token", "Opaque token.");
+    const auto* handle = runtime.registerOpaqueIdType("handles.Token", "Opaque token.");
     BOOST_REQUIRE(handle != nullptr);
     BOOST_TEST(handle->getRuntime() == &runtime);
     BOOST_TEST(handle->getDocumentation() == "Opaque token.");
     BOOST_TEST(std::get<const Type*>(*runtime.getHub(hubId)->getMember("Token")) == handle);
-    BOOST_TEST(runtime.getTypeManager().registerOpaqueIdType("handles.Token", "") == nullptr);
-    BOOST_TEST(manager.registerOpaqueIdType("", "") == nullptr);
-    BOOST_TEST(manager.registerOpaqueIdType("handles", "") == nullptr);
-    BOOST_TEST(manager.registerOpaqueIdType("int", "") == nullptr);
+    BOOST_TEST(runtime.registerOpaqueIdType("handles.Token", "") == nullptr);
+    BOOST_TEST(runtime.registerOpaqueIdType("", "") == nullptr);
+    BOOST_TEST(runtime.registerOpaqueIdType("handles", "") == nullptr);
+    BOOST_TEST(runtime.registerOpaqueIdType("int", "") == nullptr);
     const auto* first = manager.getCallbackType({}, runtime.getVoidType());
     const auto* second = manager.getCallbackType({}, runtime.getBooleanType());
     const auto* third = manager.getCallbackType({runtime.getIntegerType()}, runtime.getVoidType());
@@ -962,17 +1126,17 @@ BOOST_AUTO_TEST_CASE(constructor_families_publish_names_and_cache_across_catalog
     const auto hubId = runtime.registerHub("constructors", HubMode::Closed);
     BOOST_REQUIRE(hubId.isValid());
     auto calls = 0;
-    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor("constructors.Create", 1,
+    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor("constructors.Create", 1,
         [&](const NomadString& name, const std::vector<const Type*>& arguments) {
             ++calls;
             if (calls == 1) {
                 for (auto index = 0; index < 64; ++index) {
-                    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor(
+                    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor(
                         "AdditionalConstructor" + std::to_string(index), 1,
                         [](const NomadString&, const std::vector<const Type*>&) {}));
                 }
             }
-            const auto ownerId = manager.registerClass(name, ClassMode::Closed);
+            const auto ownerId = runtime.registerClass(name, ClassMode::Closed);
             BOOST_REQUIRE(ownerId.isValid());
             BOOST_REQUIRE(runtime.registerNativeClassConstructor(ownerId, {
                 .parameters = {{arguments.front()->getId(), "value", ""}},
@@ -1003,14 +1167,14 @@ BOOST_AUTO_TEST_CASE(constructor_families_publish_names_and_cache_across_catalog
     BOOST_TEST(names.front() == "existing");
     const auto containsFamily = std::ranges::find(names, "constructors.Create") != names.end();
     BOOST_TEST(containsFamily);
-    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor("late.Create", 1,
+    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor("late.Create", 1,
         [](const NomadString&, const std::vector<const Type*>&) {}));
     const auto lateHub = runtime.registerHub("late", HubMode::Opened);
     BOOST_REQUIRE(lateHub.isValid());
     BOOST_TEST(std::get<HubTypeFamily>(*runtime.getHub(lateHub)->getMember("Create")).argumentCount == 1U);
-    BOOST_TEST(!manager.registerNativeParameterizedConstructor("late.Create", 1,
+    BOOST_TEST(!runtime.registerNativeParameterizedConstructor("late.Create", 1,
         [](const NomadString&, const std::vector<const Type*>&) {}));
-    BOOST_TEST(!manager.registerParameterizedType("late.Create", 1,
+    BOOST_TEST(!runtime.registerParameterizedType("late.Create", 1,
         [](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
             return std::make_unique<ClassType>(owner, id, "late.Create<int>", ClassMode::Closed, arguments);
         }));
@@ -1020,14 +1184,14 @@ BOOST_AUTO_TEST_CASE(constructor_family_initialization_retries_failures_and_acce
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     auto attempts = 0;
-    BOOST_REQUIRE(manager.registerNativeParameterizedConstructor("Retry", 1,
+    BOOST_REQUIRE(runtime.registerNativeParameterizedConstructor("Retry", 1,
         [&](const NomadString& name, const std::vector<const Type*>&) {
             ++attempts;
             if (attempts == 1) {
                 return;
             }
             if (attempts == 2) {
-                const auto ownerId = manager.registerClass(name, ClassMode::Closed);
+                const auto ownerId = runtime.registerClass(name, ClassMode::Closed);
                 BOOST_REQUIRE(ownerId.isValid());
                 BOOST_REQUIRE(runtime.registerScriptClassConstructor(ownerId, {}, "test.nomad", "").isValid());
                 throw NomadException("Initialization failed");
@@ -1053,8 +1217,8 @@ BOOST_AUTO_TEST_CASE(runtime_indexers_and_iterables_preserve_catalogs_and_regist
     Runtime runtime;
     Runtime other;
     auto& manager = runtime.getTypeManager();
-    const auto ownerId = manager.registerClass("ManagedSequence", ClassMode::Closed);
-    const auto structId = manager.registerStruct("NotASequence");
+    const auto ownerId = runtime.registerClass("ManagedSequence", ClassMode::Closed);
+    const auto structId = runtime.registerStruct("NotASequence");
     BOOST_REQUIRE(ownerId.isValid());
     BOOST_REQUIRE(structId.isValid());
     const auto* owner = manager.getTypeByName("ManagedSequence")->asClassType();

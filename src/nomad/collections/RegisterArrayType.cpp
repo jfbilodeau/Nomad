@@ -31,7 +31,7 @@ void registerArrayFamily(
     const std::function<void(const Type*, bool)>& registerMembers,
     const bool writable
 ) {
-    if (!runtime->getTypeManager().registerParameterizedType(
+    if (!runtime->registerParameterizedType(
         family,
         1,
         std::move(factory),
@@ -267,11 +267,11 @@ void registerArrayType(Runtime* runtime) {
             }
         }
     );
-    if (!runtime->getTypeManager().registerNativeParameterizedConstructor(
+    if (!runtime->registerNativeParameterizedConstructor(
         "Array", 1,
         [runtime](const NomadString& name, const std::vector<const nomad::Type*>& arguments) {
             // One class per specialization (e.g. `Array<int>`); each rank constructor builds a different array type.
-            const auto id = runtime->getTypeManager().registerClass(name, nomad::ClassMode::Closed);
+            const auto id = runtime->registerClass(name, nomad::ClassMode::Closed);
             if (id.isInvalid()) {
                 throw nomad::NomadException("Failed to create Array constructor type");
             }

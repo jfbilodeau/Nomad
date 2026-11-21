@@ -991,7 +991,7 @@ bool preParseEnumStatement(
         }
     }
 
-    if (runtime->getTypeManager().createEnum(enumName, values).isInvalid()) {
+    if (runtime->createEnum(enumName, values).isInvalid()) {
         context->addError("Failed to register enum '" + enumName + "'", tokens);
         return false;
     }

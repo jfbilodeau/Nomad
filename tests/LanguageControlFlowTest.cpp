@@ -104,7 +104,7 @@ BOOST_AUTO_TEST_CASE(iterator_types_are_specialized_and_interned)
 BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
 {
     Runtime runtime;
-    const auto id = runtime.getTypeManager().registerClass("DefinitionSequence", ClassMode::Closed);
+    const auto id = runtime.registerClass("DefinitionSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     const auto* type = runtime.getType(id).value()->asClassType();
     const auto* valueType = runtime.getIntegerType();
@@ -157,7 +157,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
 BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_a_factory)
 {
     Runtime runtime;
-    const auto id = runtime.getTypeManager().registerClass("InvalidDefinitionSequence", ClassMode::Closed);
+    const auto id = runtime.registerClass("InvalidDefinitionSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     const auto* type = runtime.getType(id).value()->asClassType();
     const auto* integer = runtime.getIntegerType();
@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
 BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_class_type_associations)
 {
     Runtime runtime;
-    const auto id = runtime.getTypeManager().registerClass("ConflictingSequence", ClassMode::Closed);
+    const auto id = runtime.registerClass("ConflictingSequence", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     const auto* type = runtime.getType(id).value()->asClassType();
     const auto* integer = runtime.getIntegerType();
@@ -255,7 +255,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_supports_compiled_and_interpreted_loops)
     };
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto id = runtime.getTypeManager().registerClass("LoopDefinition", ClassMode::Closed);
+    const auto id = runtime.registerClass("LoopDefinition", ClassMode::Closed);
     BOOST_REQUIRE(id.isValid());
     BOOST_REQUIRE(runtime.registerNativeClassConstructor(id, {
         {}, [](VirtualMachine* machine) { machine->getResult().setObjectValue(new NomadObject); }, ""
@@ -305,7 +305,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
 {
     Runtime runtime;
     Runtime other;
-    const auto descriptorId = runtime.getTypeManager().registerClass("SequenceMetadata", ClassMode::Closed);
+    const auto descriptorId = runtime.registerClass("SequenceMetadata", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     auto* type = const_cast<ClassType*>(runtime.getType(descriptorId).value()->asClassType());
     const auto* integer = runtime.getIntegerType();
@@ -385,7 +385,7 @@ BOOST_AUTO_TEST_CASE(iterable_metadata_belongs_to_the_registered_class_type)
     snapshot->valueType = runtime.getStringType();
     snapshot->factoryId = CallableId::INVALID;
     for (auto index = 0; index < 32; ++index) {
-        const auto additionalId = runtime.getTypeManager().registerClass("AdditionalSequence" + std::to_string(index), ClassMode::Closed);
+        const auto additionalId = runtime.registerClass("AdditionalSequence" + std::to_string(index), ClassMode::Closed);
         BOOST_REQUIRE(additionalId.isValid());
         const auto* additionalType = runtime.getType(additionalId).value()->asClassType();
         runtime.registerNativeClassIterable(additionalId, {
@@ -488,7 +488,7 @@ BOOST_AUTO_TEST_CASE(for_uses_registered_iteration_not_collection_names)
 
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto typeId = runtime.getTypeManager().registerClass("Sequence", ClassMode::Closed);
+    const auto typeId = runtime.registerClass("Sequence", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     auto* sourceType = const_cast<ClassType*>(runtime.getType(typeId).value()->asClassType());
     BOOST_REQUIRE(runtime.registerNativeClassConstructor(sourceType->getId(), {

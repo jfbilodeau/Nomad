@@ -158,7 +158,7 @@ BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wi
     auto virtualMachine = runtime.createVirtualMachine();
     auto compiler = runtime.createCompiler();
     ClassType* padding = nullptr;
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
         "Padding", ClassMode::Closed, padding, NomadIndex{3}
     ).isValid());
     const auto id = runtime.registerScriptFunction("offsetExecution", "offsets.nomad", "");
@@ -204,8 +204,8 @@ BOOST_AUTO_TEST_CASE(physical_local_bytecode_and_host_reads_use_offsets_after_wi
 
 BOOST_AUTO_TEST_CASE(local_layout_metadata_is_shared_across_script_callable_categories) {
     Runtime runtime;
-    const auto emptyId = runtime.getTypeManager().registerStruct("EmptyLocal");
-    const auto pointId = runtime.getTypeManager().registerStruct("PointLocal");
+    const auto emptyId = runtime.registerStruct("EmptyLocal");
+    const auto pointId = runtime.registerStruct("PointLocal");
     const auto* empty = runtime.getTypeByName("EmptyLocal")->asStructType();
     const auto* point = runtime.getTypeByName("PointLocal")->asStructType();
     for (const auto* name : {"x", "y", "z"}) {
@@ -213,7 +213,7 @@ BOOST_AUTO_TEST_CASE(local_layout_metadata_is_shared_across_script_callable_cate
     }
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(pointId);
-    const auto ownerId = runtime.getTypeManager().registerClass("LocalOwner", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("LocalOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("LocalOwner")->asClassType();
     BOOST_REQUIRE(ownerId.isValid());
     ScriptFunction function(CallableId{}, "locals", "locals.nomad", "");
@@ -260,14 +260,14 @@ BOOST_AUTO_TEST_CASE(local_layout_metadata_reports_unresolved_sizes_and_overflow
     BOOST_CHECK_THROW((void)function.getVariableStorageSize(), NomadException);
     function.setVariableType(inferred, runtime.getFloatType());
     BOOST_TEST(function.getVariableStorageSize() == 2U);
-    const auto structId = runtime.getTypeManager().registerStruct("PendingLocal");
+    const auto structId = runtime.registerStruct("PendingLocal");
     function.setVariableType(inferred, runtime.getTypeByName("PendingLocal"));
     BOOST_CHECK_THROW((void)function.getVariableOffset(following), NomadException);
     runtime.getTypeManager().finalizeCompositeFieldLayout(structId);
     BOOST_TEST(function.getVariableOffset(following) == 0U);
     ClassType* maximumType = nullptr;
     const auto maximum = std::numeric_limits<NomadIndex>::max();
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
         "MaximumLocal", ClassMode::Closed, maximumType, maximum
     ).isValid());
     function.setVariableType(inferred, maximumType);
@@ -309,10 +309,10 @@ BOOST_AUTO_TEST_CASE(parameter_layout_preserves_logical_positions_across_callabl
     Runtime runtime;
     ClassType* emptyType = nullptr;
     ClassType* pointType = nullptr;
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
         "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
     ).isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
         "PointWidth", ClassMode::Closed, pointType, NomadIndex{3}
     ).isValid());
     const auto parameters = std::vector<Parameter>{
@@ -352,8 +352,8 @@ BOOST_AUTO_TEST_CASE(parameter_layout_preserves_logical_positions_across_callabl
 
 BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_parameters) {
     Runtime runtime;
-    const auto pointId = runtime.getTypeManager().registerStruct("HiddenPoint");
-    const auto emptyId = runtime.getTypeManager().registerStruct("HiddenEmpty");
+    const auto pointId = runtime.registerStruct("HiddenPoint");
+    const auto emptyId = runtime.registerStruct("HiddenEmpty");
     const auto* point = runtime.getTypeByName("HiddenPoint");
     const auto* empty = runtime.getTypeByName("HiddenEmpty");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(pointId, "number", runtime.getIntegerType()).isValid());
@@ -410,7 +410,7 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_requires_resolved_sizes_and_return_types
     Runtime runtime;
     ScriptFunction function(CallableId{}, "unresolved", "layout.nomad", "");
     BOOST_CHECK_THROW((void)function.getCallStorageLayout(), NomadException);
-    const auto pointId = runtime.getTypeManager().registerStruct("UnfinalizedReturn");
+    const auto pointId = runtime.registerStruct("UnfinalizedReturn");
     BOOST_REQUIRE(pointId.isValid());
     function.setReturnType(runtime.getTypeByName("UnfinalizedReturn"));
     BOOST_CHECK_THROW((void)function.getCallStorageLayout(), NomadException);
@@ -490,10 +490,10 @@ BOOST_AUTO_TEST_CASE(parameter_layout_checks_overflow_and_supports_zero_width_si
     const auto maximumSize = std::numeric_limits<NomadIndex>::max();
     ClassType* maximumType = nullptr;
     ClassType* emptyType = nullptr;
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
         "MaximumWidth", ClassMode::Closed, maximumType, maximumSize
     ).isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
         "EmptyWidth", ClassMode::Closed, emptyType, NomadIndex{0}
     ).isValid());
     ScriptFunction function(CallableId{}, "layout", "layout.nomad", "");
@@ -532,7 +532,7 @@ BOOST_AUTO_TEST_CASE(parameter_layout_rejects_invalid_logical_positions)
 BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_function)
 {
     Runtime runtime;
-    const auto typeId = runtime.getTypeManager().registerClass("ScriptOwner", ClassMode::Closed);
+    const auto typeId = runtime.registerClass("ScriptOwner", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* owner = runtime.getTypeByName("ScriptOwner");
     const auto parameters = std::vector<Parameter>{defParameter("value", runtime.getIntegerType(), "")};
@@ -586,7 +586,7 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
 {
     Runtime runtime;
     ClassType* type = nullptr;
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass<ScriptCallableTestType>(
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
         "Point", ClassMode::Closed, type
     ).isValid());
     BOOST_REQUIRE(type != nullptr);
@@ -1255,7 +1255,7 @@ class ResolutionObject final : public NomadObject {
 };
 
 const ClassType* registerResolutionType(Runtime& runtime, const NomadString& name) {
-    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>(name, ClassMode::Closed, std::vector<const Type*>{}, "A test object."
+    const auto descriptorId = runtime.registerClass<ClassType>(name, ClassMode::Closed, std::vector<const Type*>{}, "A test object."
     );
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
@@ -1393,7 +1393,7 @@ BOOST_AUTO_TEST_CASE(type_owned_constructor_factory_is_released_once)
         };
 
         Runtime runtime;
-        const auto ownerId = runtime.getTypeManager().registerClass<ConstructorOwner>(
+        const auto ownerId = runtime.registerClass<ConstructorOwner>(
             "LifetimeOwner", ClassMode::Closed, destructions, aliveAtTypeDestruction
         );
         BOOST_REQUIRE(ownerId.isValid());
@@ -1516,7 +1516,7 @@ BOOST_AUTO_TEST_CASE(type_owned_method_callback_is_released_once)
         };
 
         Runtime runtime;
-        const auto ownerId = runtime.getTypeManager().registerClass<MethodOwner>(
+        const auto ownerId = runtime.registerClass<MethodOwner>(
             "MethodLifetimeOwner", ClassMode::Closed, destructions, aliveAtTypeDestruction
         );
         BOOST_REQUIRE(ownerId.isValid());

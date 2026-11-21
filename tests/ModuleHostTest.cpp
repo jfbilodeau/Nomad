@@ -2896,7 +2896,7 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
             TestDirectory directory("nomad_host_bad_construction");
             const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
             auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
-            BOOST_REQUIRE(host->getRuntime()->getTypeManager().registerClass(
+            BOOST_REQUIRE(host->getRuntime()->registerClass(
                 "Unconstructible", ClassMode::Closed
             ).isValid());
             auto compiler = host->getRuntime()->createCompiler();
@@ -2911,7 +2911,7 @@ BOOST_AUTO_TEST_CASE(compiler_rejects_invalid_object_construction) {
 BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
-    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("Broken", ClassMode::Closed);
+    const auto descriptorId = runtime.registerClass<ClassType>("Broken", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
     BOOST_REQUIRE(runtime.registerNativeClassConstructor(type->getId(), {
@@ -2946,7 +2946,7 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collection
         const auto modules = resolveModules(getSdkDirectory() / "modules", {"collections"});
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
         auto& runtime = *host->getRuntime();
-        BOOST_REQUIRE(runtime.getTypeManager().registerParameterizedType("Pair", 2, [](Runtime* owningRuntime, TypeId id, const auto& arguments) {
+        BOOST_REQUIRE(runtime.registerParameterizedType("Pair", 2, [](Runtime* owningRuntime, TypeId id, const auto& arguments) {
             return std::make_unique<ClassType>(owningRuntime, id, "Pair<" + arguments[0]->getTypeName() + " " + arguments[1]->getTypeName() + ">",
                 ClassMode::Closed,
                 arguments
@@ -3067,7 +3067,7 @@ BOOST_AUTO_TEST_CASE(collections_interns_list_specializations) {
     Runtime other;
     BOOST_TEST(runtime.getTypeManager().getParameterizedType("List", {other.getIntegerType()}) == nullptr);
     BOOST_TEST(runtime.getTypeManager().getParameterizedType("Missing", {}) == nullptr);
-    BOOST_TEST(!runtime.getTypeManager().registerParameterizedType("List", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
+    BOOST_TEST(!runtime.registerParameterizedType("List", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
         return std::make_unique<ClassType>(owningRuntime, id, "Duplicate", ClassMode::Closed);
     }));
 }
@@ -3134,7 +3134,7 @@ BOOST_AUTO_TEST_CASE(collections_native_returns_do_not_allocate_unused_list_defa
 BOOST_AUTO_TEST_CASE(parameterized_types_validate_factories_and_cache_by_arguments) {
     Runtime runtime;
     NomadIndex calls = 0;
-    BOOST_TEST(runtime.getTypeManager().registerParameterizedType("Example", 1, [&calls](Runtime* owningRuntime, TypeId id, const auto& arguments) {
+    BOOST_TEST(runtime.registerParameterizedType("Example", 1, [&calls](Runtime* owningRuntime, TypeId id, const auto& arguments) {
         ++calls;
         return std::make_unique<ClassType>(owningRuntime, id, "Example<" + arguments[0]->getTypeName() + ">", ClassMode::Closed, arguments);
     }));
@@ -3142,13 +3142,13 @@ BOOST_AUTO_TEST_CASE(parameterized_types_validate_factories_and_cache_by_argumen
     BOOST_REQUIRE(first != nullptr);
     BOOST_TEST(first == runtime.getTypeManager().getParameterizedType("Example", {runtime.getIntegerType()}));
     BOOST_TEST(calls == 1u);
-    BOOST_TEST(!runtime.getTypeManager().registerParameterizedType("Empty", 1, {}));
-    BOOST_TEST(!runtime.getTypeManager().registerParameterizedType("", 1, {}));
-    BOOST_TEST(runtime.getTypeManager().registerParameterizedType("Broken", 1, [](Runtime*, TypeId, const auto&) {
+    BOOST_TEST(!runtime.registerParameterizedType("Empty", 1, {}));
+    BOOST_TEST(!runtime.registerParameterizedType("", 1, {}));
+    BOOST_TEST(runtime.registerParameterizedType("Broken", 1, [](Runtime*, TypeId, const auto&) {
         return std::unique_ptr<Type>{};
     }));
     BOOST_TEST(runtime.getTypeManager().getParameterizedType("Broken", {runtime.getIntegerType()}) == nullptr);
-    BOOST_TEST(runtime.getTypeManager().registerParameterizedType("Collision", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
+    BOOST_TEST(runtime.registerParameterizedType("Collision", 1, [](Runtime* owningRuntime, TypeId id, const auto&) {
         return std::make_unique<ClassType>(owningRuntime, id, "int", ClassMode::Closed);
     }));
     BOOST_TEST(runtime.getTypeManager().getParameterizedType("Collision", {runtime.getIntegerType()}) == nullptr);

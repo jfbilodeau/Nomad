@@ -29,6 +29,7 @@ public:
     TypeManager& operator=(TypeManager&&) = delete;
 
     [[nodiscard]] Runtime& getRuntime() const;
+    // Catalog-only registration: names are opaque and namespace members are not published.
     [[nodiscard]] TypeId registerClass(
         NomadString name,
         ClassMode mode,
@@ -45,14 +46,19 @@ public:
         }
 
         const auto id = reserveTypeId();
+        if (id.isInvalid()) {
+            return TypeId::INVALID;
+        }
+
         auto type = std::make_unique<Descriptor>(
             &m_runtime, id, name, mode, std::forward<Arguments>(arguments)...
         );
 
-        return publishClass(id, name, mode, std::move(type));
+        return registerClassDescriptor(id, name, mode, std::move(type));
     }
     [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
-    void registerType(std::unique_ptr<Type> type);
+    // Invalid ownership, IDs, or duplicate nominal names return INVALID without logging.
+    [[nodiscard]] TypeId registerType(std::unique_ptr<Type> type);
     [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
     [[nodiscard]] TypeId createEnum(
         NomadString name,
@@ -135,9 +141,8 @@ public:
     [[nodiscard]] Property* getMutableProperty(PropertyId id);
     [[nodiscard]] std::vector<const Property*> getProperties() const;
 
-    // Low-level catalog operations do not publish namespace members.
+    // Reserves an unused catalog slot; invalid when the type ID space is exhausted.
     [[nodiscard]] TypeId reserveTypeId();
-    void catalogType(std::unique_ptr<Type> type);
 
 private:
     struct ParameterizedConstructorRegistration {
@@ -163,7 +168,7 @@ private:
 
     [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
     [[nodiscard]] bool hasConstructor(const NomadString& name) const;
-    [[nodiscard]] TypeId publishClass(
+    [[nodiscard]] TypeId registerClassDescriptor(
         TypeId id,
         const NomadString& name,
         ClassMode mode,

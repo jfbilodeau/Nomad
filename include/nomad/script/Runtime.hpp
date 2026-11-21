@@ -131,7 +131,7 @@ public:
         if (!qualifiedName) {
             return TypeId::INVALID;
         }
-        return m_typeManager.registerClass<Descriptor>(*qualifiedName, mode, std::forward<Arguments>(arguments)...);
+        return registerClass<Descriptor>(*qualifiedName, mode, std::forward<Arguments>(arguments)...);
     }
     [[nodiscard]] ConstantId registerHubConstant(
         HubId hubId,
@@ -215,6 +215,55 @@ public:
     void initializeScripts();
 
     // Types
+    // Public declarations coordinate catalog registration and namespace publication.
+    [[nodiscard]] TypeId registerClass(
+        NomadString name,
+        ClassMode mode,
+        NomadString documentation = {}
+    );
+    template<std::derived_from<ClassType> Descriptor, typename... Arguments>
+    [[nodiscard]] TypeId registerClass(
+        NomadString name,
+        ClassMode mode,
+        Arguments&&... arguments
+    ) {
+        if (!canRegisterClass(name, mode)) {
+            return TypeId::INVALID;
+        }
+
+        const auto id = m_typeManager.reserveTypeId();
+        if (id.isInvalid()) {
+            return TypeId::INVALID;
+        }
+
+        auto type = std::make_unique<Descriptor>(
+            this, id, name, mode, std::forward<Arguments>(arguments)...
+        );
+
+        return publishClass(id, name, mode, std::move(type));
+    }
+    [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
+    [[nodiscard]] TypeId registerType(std::unique_ptr<Type> type);
+    [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
+    [[nodiscard]] TypeId createEnum(
+        NomadString name,
+        std::vector<EnumValueDefinition> values,
+        NomadString documentation = {}
+    );
+    using ParameterizedConstructorInitializer = TypeManager::ParameterizedConstructorInitializer;
+    bool registerNativeParameterizedConstructor(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedConstructorInitializer initializer
+    );
+    using ParameterizedTypeFactory = TypeManager::ParameterizedTypeFactory;
+    using ParameterizedTypeInitializer = TypeManager::ParameterizedTypeInitializer;
+    bool registerParameterizedType(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedTypeFactory factory,
+        ParameterizedTypeInitializer initializer = {}
+    );
     [[nodiscard]] TypeId getTypeId(const NomadString& typeName) const;
     [[nodiscard]] TypeManager& getTypeManager();
     [[nodiscard]] const TypeManager& getTypeManager() const;
@@ -642,6 +691,11 @@ private:
         std::unique_ptr<FormatString> formatString;
     };
 
+    struct TypeFamilyNamespace {
+        NomadString name;
+        NomadIndex argumentCount;
+    };
+
     enum class ScriptInitializationState {
         Pending = 1,
         Running,
@@ -700,6 +754,14 @@ private:
     ) const;
     // Type and member validation
     [[nodiscard]] bool ownsType(const Type* type) const;
+    [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
+    [[nodiscard]] bool canPublishTypeNamespace(const Type& type) const;
+    [[nodiscard]] TypeId publishClass(
+        TypeId id,
+        const NomadString& name,
+        ClassMode mode,
+        std::unique_ptr<ClassType> type
+    );
     // Hub registration
     [[nodiscard]] std::optional<NomadString> qualifyHubMemberName(HubId hubId, const NomadString& name) const;
     void addHubMember(
@@ -722,6 +784,8 @@ private:
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
     TypeManager m_typeManager;
+    std::vector<const Type*> m_namespaceTypes;
+    std::vector<TypeFamilyNamespace> m_namespaceTypeFamilies;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<std::unique_ptr<Function>> m_functions;

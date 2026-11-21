@@ -25,15 +25,26 @@ Runtime& TypeManager::getRuntime() const {
     return m_runtime;
 }
 
-void TypeManager::registerType(std::unique_ptr<Type> type) {
+TypeId TypeManager::registerType(std::unique_ptr<Type> type) {
     const auto belongsToRuntime = type != nullptr && type->getRuntime() == &m_runtime;
     const auto hasReservedId = belongsToRuntime && !isIdOutOfRange(type->getId().id, m_types.size());
     const auto hasUnusedId = hasReservedId && !getType(type->getId()).has_value();
     if (!hasUnusedId) {
-        throw NomadException("Cannot register a type without a matching runtime and reserved ID");
+        return TypeId::INVALID;
     }
-    m_runtime.publishTypeNamespace(*type);
-    catalogType(std::move(type));
+
+    if (
+        type->asCallback() == nullptr &&
+        type->asEvent() == nullptr &&
+        getTypeId(type->getTypeName()).isValid()
+    ) {
+        return TypeId::INVALID;
+    }
+
+    const auto id = type->getId();
+    m_types[toNomadIndex(id.id)] = std::move(type);
+
+    return id;
 }
 
 TypeId TypeManager::registerClass(
@@ -47,26 +58,14 @@ TypeId TypeManager::registerClass(
 }
 
 bool TypeManager::canRegisterClass(const NomadString& name, const ClassMode mode) const {
-    if (name.empty()) {
-        return false;
-    }
-
     if (mode != ClassMode::Opened && mode != ClassMode::Closed) {
         return false;
     }
 
-    if (getTypeId(name).isValid()) {
-        return false;
-    }
-
-    if (!m_runtime.canRegisterTypeName(name)) {
-        return false;
-    }
-
-    return true;
+    return getTypeId(name).isInvalid();
 }
 
-TypeId TypeManager::publishClass(
+TypeId TypeManager::registerClassDescriptor(
     const TypeId id,
     const NomadString& name,
     const ClassMode mode,
@@ -81,37 +80,31 @@ TypeId TypeManager::publishClass(
         return TypeId::INVALID;
     }
 
-    registerType(std::move(type));
-
-    return id;
+    return registerType(std::move(type));
 }
 
 TypeId TypeManager::registerStruct(NomadString name, NomadString documentation) {
-    const auto hasAvailableName = !name.empty() && getTypeId(name).isInvalid();
-    const auto canRegisterName = hasAvailableName && m_runtime.canRegisterTypeName(name);
-    if (!canRegisterName) {
-        log::error("Cannot register struct '" + name + "': invalid or reserved type name");
+    if (getTypeId(name).isValid()) {
         return TypeId::INVALID;
     }
+
     const auto id = reserveTypeId();
-    registerType(std::make_unique<StructType>(&m_runtime, id, std::move(name), std::move(documentation)));
-    return id;
+    if (id.isInvalid()) {
+        return TypeId::INVALID;
+    }
+
+    return registerType(std::make_unique<StructType>(&m_runtime, id, std::move(name), std::move(documentation)));
 }
 
 TypeId TypeManager::reserveTypeId() {
+    if (m_types.size() >= toNomadIndex(NOMAD_ID_MAX)) {
+        return TypeId::INVALID;
+    }
+
     const auto id = TypeId{toNomadId(m_types.size())};
     m_types.push_back(nullptr);
-    return id;
-}
 
-void TypeManager::catalogType(std::unique_ptr<Type> type) {
-    const auto belongsToRuntime = type != nullptr && type->getRuntime() == &m_runtime;
-    const auto hasReservedId = belongsToRuntime && !isIdOutOfRange(type->getId().id, m_types.size());
-    const auto hasUnusedId = hasReservedId && m_types[toNomadIndex(type->getId().id)] == nullptr;
-    if (!hasUnusedId) {
-        throw NomadException("Cannot register a type without a matching runtime and reserved ID");
-    }
-    m_types[toNomadIndex(type->getId().id)] = std::move(type);
+    return id;
 }
 
 TypeId TypeManager::getTypeId(const NomadString& name) const {
@@ -339,8 +332,7 @@ bool TypeManager::registerNativeParameterizedConstructor(
     const NomadIndex argumentCount,
     ParameterizedConstructorInitializer initializer
 ) {
-    const auto hasAvailableName = !name.empty() && m_runtime.canRegisterTypeName(name) &&
-        getTypeByName(name) == nullptr;
+    const auto hasAvailableName = getTypeByName(name) == nullptr;
     const auto isConstructorFamily = getParameterizedConstructorArgumentCount(name).has_value();
     const auto isTypeFamily = getParameterizedTypeArgumentCount(name).has_value();
     const auto hasExistingConstructor = hasConstructor(name);
@@ -350,7 +342,7 @@ bool TypeManager::registerNativeParameterizedConstructor(
         return false;
     }
     m_parameterizedConstructors.push_back({name, argumentCount, std::move(initializer)});
-    m_runtime.publishTypeFamilyNamespace(name, argumentCount);
+
     return true;
 }
 
@@ -418,8 +410,7 @@ bool TypeManager::registerParameterizedType(
     ParameterizedTypeFactory factory,
     ParameterizedTypeInitializer initializer
 ) {
-    const auto hasAvailableName = !name.empty() && m_runtime.canRegisterTypeName(name) &&
-        getTypeByName(name) == nullptr;
+    const auto hasAvailableName = getTypeByName(name) == nullptr;
     const auto isConstructorFamily = hasAvailableName &&
         getParameterizedConstructorArgumentCount(name).has_value();
     const auto isTypeFamily = getParameterizedTypeArgumentCount(name).has_value();
@@ -428,7 +419,7 @@ bool TypeManager::registerParameterizedType(
         return false;
     }
     m_parameterizedTypes.push_back({name, argumentCount, std::move(factory), std::move(initializer), std::nullopt, {}});
-    m_runtime.publishTypeFamilyNamespace(name, argumentCount);
+
     return true;
 }
 
@@ -589,16 +580,27 @@ const Type* TypeManager::getParameterizedType(
     const auto factory = registration->factory;
     const auto initializer = registration->initializer;
     const auto id = reserveTypeId();
+    if (id.isInvalid()) {
+        return nullptr;
+    }
+
     auto type = factory(&m_runtime, id, arguments);
     const auto matchesIdentity = type != nullptr && type->getRuntime() == &m_runtime && type->getId() == id;
-    const auto hasAvailableName = matchesIdentity && !type->getTypeName().empty() &&
-        getTypeByName(type->getTypeName()) == nullptr;
+    const auto hasAvailableName = matchesIdentity &&
+        (
+            type->asCallback() != nullptr ||
+            type->asEvent() != nullptr ||
+            getTypeByName(type->getTypeName()) == nullptr
+        );
     if (!hasAvailableName) {
         log::error("Factory for '" + name + "' returned an invalid or duplicate type");
         return nullptr;
     }
     const auto* result = type.get();
-    registerType(std::move(type));
+    if (registerType(std::move(type)).isInvalid()) {
+        return nullptr;
+    }
+
     if (initializer) {
         initializer(&m_runtime, id);
     }
@@ -663,22 +665,21 @@ std::optional<MemberSignature> TypeManager::getMemberTemplateSignature(const Nom
 }
 
 const OpaqueIdType* TypeManager::registerOpaqueIdType(const NomadString& name, const NomadString& doc) {
-    const auto isReservedByHub = m_runtime.isHub(name) || m_runtime.isHubVariable(name);
-    if (isReservedByHub) {
-        log::error("Cannot register type '" + name + "': name is reserved by a hub declaration");
-        return nullptr;
-    }
-    if (name.empty()) {
-        log::error("Cannot register an opaque ID type with an empty name");
-        return nullptr;
-    }
     if (getTypeByName(name) != nullptr) {
-        log::error("Type with name '" + name + "' already registered");
         return nullptr;
     }
-    auto type = std::make_unique<OpaqueIdType>(&m_runtime, reserveTypeId(), name, doc);
+
+    const auto id = reserveTypeId();
+    if (id.isInvalid()) {
+        return nullptr;
+    }
+
+    auto type = std::make_unique<OpaqueIdType>(&m_runtime, id, name, doc);
     const auto* result = type.get();
-    registerType(std::move(type));
+    if (registerType(std::move(type)).isInvalid()) {
+        return nullptr;
+    }
+
     return result;
 }
 
@@ -687,16 +688,7 @@ TypeId TypeManager::createEnum(
     std::vector<EnumValueDefinition> values,
     NomadString documentation
 ) {
-    if (!m_runtime.canRegisterTypeName(name)) {
-        log::error("Cannot create enum '" + name + "': name is reserved by a hub declaration");
-        return TypeId::INVALID;
-    }
-    if (name.empty()) {
-        log::error("Cannot create an enum with an empty name");
-        return TypeId::INVALID;
-    }
     if (getTypeByName(name) != nullptr) {
-        log::error("Type with name '" + name + "' already registered");
         return TypeId::INVALID;
     }
     if (values.empty()) {
@@ -705,17 +697,8 @@ TypeId TypeManager::createEnum(
     }
     for (auto index = NomadIndex{0}; index < values.size(); ++index) {
         const auto& definition = values[index];
-        const auto constantName = name + "." + definition.name;
         if (definition.name.empty()) {
             log::error("Cannot create an unnamed value in enum '" + name + "'");
-            return TypeId::INVALID;
-        }
-        if (!m_runtime.canRegisterTypeName(constantName)) {
-            log::error("Cannot create enum '" + name + "': value '" + constantName + "' is reserved by a hub");
-            return TypeId::INVALID;
-        }
-        if (m_runtime.getConstantId(constantName).isValid()) {
-            log::error("Constant with name '" + constantName + "' already registered");
             return TypeId::INVALID;
         }
         for (auto previousIndex = NomadIndex{0}; previousIndex < index; ++previousIndex) {
@@ -731,20 +714,13 @@ TypeId TypeManager::createEnum(
         }
     }
     const auto id = reserveTypeId();
-    auto type = std::make_unique<EnumType>(&m_runtime, id, name, std::move(values), std::move(documentation));
-    const auto* result = type.get();
-    registerType(std::move(type));
-    for (auto index = NomadIndex{0}; index < result->getValueCount(); ++index) {
-        const auto& definition = result->getValue(index);
-        const auto constantId = m_runtime.registerConstant(
-            name + "." + definition.name, RuntimeValue(definition.value), result
-        );
-        if (constantId.isInvalid()) {
-            throw NomadException("Failed to register value '" + definition.name + "' in enum '" + name + "'");
-        }
+    if (id.isInvalid()) {
+        return TypeId::INVALID;
     }
-    m_runtime.registerEnumOperators(result);
-    return id;
+
+    return registerType(std::make_unique<EnumType>(
+        &m_runtime, id, std::move(name), std::move(values), std::move(documentation)
+    ));
 }
 
 const Type* TypeManager::getCallbackType(
@@ -770,9 +746,16 @@ const Type* TypeManager::getCallbackType(
         }
     }
     const auto id = reserveTypeId();
+    if (id.isInvalid()) {
+        return nullptr;
+    }
+
     auto type = std::make_unique<FunctionType>(&m_runtime, id, parameterTypes, returnType);
     const auto* result = type.get();
-    registerType(std::move(type));
+    if (registerType(std::move(type)).isInvalid()) {
+        return nullptr;
+    }
+
     return result;
 }
 

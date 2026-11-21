@@ -179,7 +179,7 @@ BOOST_AUTO_TEST_CASE(duplicate_classes_are_rejected_even_when_open)
         }
     }
     LanguageTestFixture fixture;
-    BOOST_REQUIRE(fixture.getRuntime().getTypeManager().registerClass("Point", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(fixture.getRuntime().registerClass("Point", ClassMode::Closed).isValid());
     fixture.addFunction("main", "class Point\nend");
     BOOST_TEST(!fixture.compile());
 }
@@ -216,7 +216,7 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
     fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass("Point", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerClass("Point", ClassMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     std::unique_ptr<Statement> statement;
@@ -338,7 +338,7 @@ BOOST_AUTO_TEST_CASE(member_overloads_register_distinct_parameter_types_on_the_c
     fixture.addFunction("main", "return");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    BOOST_REQUIRE(runtime.getTypeManager().registerClass("Point", ClassMode::Closed).isValid());
+    BOOST_REQUIRE(runtime.registerClass("Point", ClassMode::Closed).isValid());
     auto* compiler = &fixture.getCompiler();
     CompilerContext context(compiler);
     Tokenizer tokens(&context, "overloads.nomad",
@@ -720,7 +720,7 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     registerCallbackTestFunctions(runtime);
-    const auto otherId = runtime.getTypeManager().registerClass("Other", ClassMode::Closed);
+    const auto otherId = runtime.registerClass("Other", ClassMode::Closed);
     BOOST_REQUIRE(otherId.isValid());
     BOOST_REQUIRE(runtime.registerNativeClassProperty(otherId, {
         .valueType = runtime.getFloatType(),
@@ -957,7 +957,7 @@ BOOST_AUTO_TEST_CASE(external_fields_work_on_native_open_types_and_preserve_nati
 {
     LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto id = runtime.getTypeManager().registerClass("Host", ClassMode::Opened);
+    const auto id = runtime.registerClass("Host", ClassMode::Opened);
     BOOST_REQUIRE(id.isValid());
     BOOST_REQUIRE(runtime.registerNativeClassProperty(id, {
         .valueType = runtime.getIntegerType(),
@@ -1017,7 +1017,7 @@ BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
     for (const auto sourceParameter : {false, true}) {
         LanguageTestFixture fixture;
         auto& runtime = fixture.getRuntime();
-        const auto id = runtime.getTypeManager().registerClass("Other", ClassMode::Closed);
+        const auto id = runtime.registerClass("Other", ClassMode::Closed);
         BOOST_REQUIRE(id.isValid());
         BOOST_REQUIRE(runtime.registerNativeClassMethod(id, {
             .name = "extra",

@@ -335,7 +335,7 @@ BOOST_AUTO_TEST_CASE(RuntimeValueGuardAcceptsClearedAndZeroSlotStorage) {
 
     BOOST_TEST(cleared.getObjectValue() == nullptr);
     BOOST_TEST(type.freeCalls == 1U);
-    const auto emptyId = runtime.getTypeManager().registerStruct("GuardEmpty");
+    const auto emptyId = runtime.registerStruct("GuardEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto* empty = runtime.getTypeByName("GuardEmpty");
     RuntimeValue neighbor{NomadInteger{37}};

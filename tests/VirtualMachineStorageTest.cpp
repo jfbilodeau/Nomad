@@ -235,7 +235,7 @@ BOOST_AUTO_TEST_CASE(host_execution_releases_results_on_discard_and_copy_failure
     auto failCopyAt = NomadIndex{0};
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto typeId = runtime.getTypeManager().registerClass<nomad::test::FailingArgumentCopyType>(
+    const auto typeId = runtime.registerClass<nomad::test::FailingArgumentCopyType>(
         "ExecutionResult",
         ClassMode::Closed,
         copyCount,
@@ -375,7 +375,7 @@ BOOST_AUTO_TEST_CASE(native_calls_and_reentry_preserve_enclosing_script_storage)
 
 BOOST_AUTO_TEST_CASE(native_method_and_function_frames_restore_nested_receivers_and_parameters) {
     Runtime runtime;
-    const auto ownerId = runtime.getTypeManager().registerClass("GuardedNativeFrame", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("GuardedNativeFrame", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value();
     RuntimeValue receiver;
     const RuntimeValueGuard receiverGuard(*owner, &receiver);
@@ -456,7 +456,7 @@ BOOST_AUTO_TEST_CASE(native_method_and_function_frames_restore_nested_receivers_
 
 BOOST_AUTO_TEST_CASE(native_indexer_frames_restore_enclosing_receivers_and_parameters) {
     Runtime runtime;
-    const auto ownerId = runtime.getTypeManager().registerClass("GuardedNativeIndexer", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("GuardedNativeIndexer", ClassMode::Closed);
     const auto* owner = runtime.getType(ownerId).value();
     RuntimeValue enclosingReceiver;
     const RuntimeValueGuard enclosingGuard(*owner, &enclosingReceiver);
@@ -522,12 +522,12 @@ BOOST_AUTO_TEST_CASE(host_indexer_arguments_release_every_partial_copy_and_callb
     auto copyCount = NomadIndex{0};
     auto failCopyAt = NomadIndex{0};
     Runtime runtime;
-    const auto argumentId = runtime.getTypeManager().registerClass<nomad::test::FailingArgumentCopyType>(
+    const auto argumentId = runtime.registerClass<nomad::test::FailingArgumentCopyType>(
         "IndexerArgument", ClassMode::Closed, copyCount, failCopyAt
     );
     BOOST_REQUIRE(argumentId.isValid());
     const auto* argumentType = runtime.getType(argumentId).value();
-    const auto ownerId = runtime.getTypeManager().registerClass("ArgumentIndexer", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("ArgumentIndexer", ClassMode::Closed);
     BOOST_REQUIRE(ownerId.isValid());
     const auto* owner = runtime.getType(ownerId).value();
     RuntimeValue receiver;
@@ -619,7 +619,7 @@ BOOST_AUTO_TEST_CASE(host_indexer_arguments_release_every_partial_copy_and_callb
 
 BOOST_AUTO_TEST_CASE(indexer_opcodes_release_arguments_and_only_discard_failed_read_results) {
     Runtime runtime;
-    const auto ownerId = runtime.getTypeManager().registerClass("OpcodeIndexer", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("OpcodeIndexer", ClassMode::Closed);
     BOOST_REQUIRE(ownerId.isValid());
     const auto* owner = runtime.getType(ownerId).value();
     RuntimeValue receiver;
@@ -1372,7 +1372,7 @@ BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_own
     const auto before = RuntimeValue::getLiveStringCount();
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
-    const auto typeId = runtime.getTypeManager().registerStruct("CallStorage");
+    const auto typeId = runtime.registerStruct("CallStorage");
     const auto* type = runtime.getTypeByName("CallStorage")->asStructType();
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "label", runtime.getStringType()).isValid());
@@ -1562,7 +1562,7 @@ BOOST_AUTO_TEST_CASE(prepared_script_execution_guards_do_not_allocate) {
 
 BOOST_AUTO_TEST_CASE(indexer_argument_guards_do_not_allocate) {
     Runtime runtime;
-    const auto ownerId = runtime.getTypeManager().registerClass("AllocationIndexer", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("AllocationIndexer", ClassMode::Closed);
     BOOST_REQUIRE(ownerId.isValid());
     const auto* owner = runtime.getType(ownerId).value();
     RuntimeValue receiver;
@@ -1678,7 +1678,7 @@ BOOST_AUTO_TEST_CASE(allocation_hook_restoration_runs_before_failure_escapes) {
 
 BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocating) {
     Runtime runtime;
-    const auto typeId = runtime.getTypeManager().registerStruct("AllocationFreeStruct");
+    const auto typeId = runtime.registerStruct("AllocationFreeStruct");
     const auto* type = runtime.getTypeByName("AllocationFreeStruct");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
@@ -1740,7 +1740,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocat
 BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto nativeTypeId = runtime.getTypeManager().registerClass("CountedNative", ClassMode::Closed);
+    const auto nativeTypeId = runtime.registerClass("CountedNative", ClassMode::Closed);
     const auto* nativeType = runtime.getTypeByName("CountedNative")->asClassType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(nativeTypeId);
     const auto nativeId = runtime.registerNativeClassConstructor(nativeTypeId, {

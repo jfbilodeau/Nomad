@@ -36,6 +36,7 @@ public:
     EventType(Runtime* runtime, TypeId id, const EventDefinition* declaration);
 
     [[nodiscard]] NomadString getTypeName() const override;
+    [[nodiscard]] const EventType* asEvent() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue* value, NomadString& string) const override;
     [[nodiscard]] bool sameType(const Type* other) const override;

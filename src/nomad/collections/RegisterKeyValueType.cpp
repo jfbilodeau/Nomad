@@ -11,7 +11,7 @@
 namespace nomad {
 
 void registerKeyValueType(Runtime* runtime) {
-    if (!runtime->getTypeManager().registerParameterizedType(
+    if (!runtime->registerParameterizedType(
         "KeyValue",
         2,
         [](Runtime* owningRuntime, TypeId id, const std::vector<const Type*>& arguments) {

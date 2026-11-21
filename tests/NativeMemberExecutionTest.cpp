@@ -32,7 +32,7 @@ public:
 };
 
 const ClassType* registerTestObject(Runtime& runtime) {
-    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("TestObject", ClassMode::Closed);
+    const auto descriptorId = runtime.registerClass<ClassType>("TestObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
     BOOST_REQUIRE(runtime.registerNativeClassConstructor(type->getId(), {
@@ -224,7 +224,7 @@ BOOST_AUTO_TEST_CASE(typed_receiver_requires_an_active_method) {
 
 BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) {
     Runtime runtime;
-    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("TestObject", ClassMode::Closed);
+    const auto descriptorId = runtime.registerClass<ClassType>("TestObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
     auto* instance = new TestObject;
@@ -262,7 +262,7 @@ BOOST_AUTO_TEST_CASE(object_method_borrows_instance_without_receiver_writeback) 
 
 BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_catalog) {
     Runtime runtime;
-    const auto descriptorId = runtime.getTypeManager().registerClass<ClassType>("CatalogObject", ClassMode::Closed);
+    const auto descriptorId = runtime.registerClass<ClassType>("CatalogObject", ClassMode::Closed);
     BOOST_REQUIRE(descriptorId.isValid());
     const auto* type = runtime.getType(descriptorId).value()->asClassType();
     const auto first = runtime.registerNativeFunction(
@@ -1175,7 +1175,7 @@ BOOST_AUTO_TEST_CASE(host_method_validation_precedes_stack_changes_and_execution
     BOOST_REQUIRE(increment.isResolved());
     const auto functionId = runtime.registerNativeFunction("notAMethod", [](VirtualMachine*) {},
         {}, runtime.getVoidType(), "");
-    const auto emptyId = runtime.getTypeManager().registerStruct("HostMethodEmpty");
+    const auto emptyId = runtime.registerStruct("HostMethodEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     auto unsupportedCalls = 0;
     const auto structMethodId = runtime.registerNativeStructMethod(emptyId, {
@@ -1321,7 +1321,7 @@ BOOST_AUTO_TEST_CASE(host_method_reentry_and_failure_restore_receivers_arguments
 BOOST_AUTO_TEST_CASE(typed_native_calls_restore_caller_state_on_stop_and_exceptions) {
     Runtime runtime;
     const auto* type = registerTestObject(runtime);
-    const auto emptyId = runtime.getTypeManager().registerStruct("NativeControlEmpty");
+    const auto emptyId = runtime.registerStruct("NativeControlEmpty");
     BOOST_REQUIRE(emptyId.isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto* emptyType = runtime.getTypeByName("NativeControlEmpty");

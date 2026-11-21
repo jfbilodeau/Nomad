@@ -618,7 +618,7 @@ BOOST_AUTO_TEST_CASE(generates_struct_fields_and_logical_signatures_without_exec
         "fun consume value:model.Container empty:model.Empty\nreturn value\nend\n"
         "probe\nreturn 0");
     Runtime runtime;
-    const auto hostType = runtime.getTypeManager().registerStruct("HostDocumented", "A host-registered struct.");
+    const auto hostType = runtime.registerStruct("HostDocumented", "A host-registered struct.");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(hostType, "hostNumber", runtime.getIntegerType()).isValid());
     auto callbackCalls = 0;
     runtime.registerNativeFunction("probe", [&](VirtualMachine*) { ++callbackCalls; },

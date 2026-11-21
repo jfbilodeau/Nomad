@@ -17,6 +17,11 @@ NomadString EventType::getTypeName() const {
     return EVENT_TYPE_NAME;
 }
 
+const EventType* EventType::asEvent() const {
+
+    return this;
+}
+
 void EventType::copyValue(const RuntimeValue *sourceValue, RuntimeValue *destinationValue) const {
     destinationValue->setIdValue(sourceValue->getIdValue());
 }

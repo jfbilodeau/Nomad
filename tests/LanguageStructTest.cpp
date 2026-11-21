@@ -1009,7 +1009,7 @@ BOOST_AUTO_TEST_CASE(struct_declarations_have_specialized_ast_members_and_source
     auto compiler = runtime.createCompiler();
     BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
         *compiler, CompilationTarget::Analysis).succeeded());
-    BOOST_REQUIRE(runtime.getTypeManager().registerStruct("Point").isValid());
+    BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
     auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
     CompilerContext context(compiler.get());
     std::unique_ptr<Statement> statement;
@@ -1079,7 +1079,7 @@ BOOST_AUTO_TEST_CASE(struct_member_scanning_balances_blocks_callbacks_and_loop_c
     ).isValid());
     BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
         *compiler, CompilationTarget::Analysis).succeeded());
-    BOOST_REQUIRE(runtime.getTypeManager().registerStruct("Point").isValid());
+    BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
     auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
     CompilerContext context(compiler.get());
     Tokenizer tokens(&context, "blocks.nomad",

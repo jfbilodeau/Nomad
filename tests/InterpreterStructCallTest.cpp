@@ -97,11 +97,11 @@ BOOST_AUTO_TEST_SUITE(interpreter_struct_calls)
 
 BOOST_AUTO_TEST_CASE(call_frame_results_borrow_writable_complete_storage_and_preserve_owned_snapshots) {
     Runtime runtime;
-    const auto valueId = runtime.getTypeManager().registerStruct("FrameResult");
+    const auto valueId = runtime.registerStruct("FrameResult");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
-    const auto emptyId = runtime.getTypeManager().registerStruct("FrameEmpty");
+    const auto emptyId = runtime.registerStruct("FrameEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto* valueType = runtime.getType(valueId).value();
     const auto* emptyType = runtime.getType(emptyId).value();
@@ -283,8 +283,8 @@ BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownersh
 BOOST_AUTO_TEST_CASE(native_aggregate_calls_use_physical_offsets_and_allow_nested_interpreter_reentry) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto valueId = runtime.getTypeManager().registerStruct("NativeCallValue");
-    const auto emptyId = runtime.getTypeManager().registerStruct("NativeCallEmpty");
+    const auto valueId = runtime.registerStruct("NativeCallValue");
+    const auto emptyId = runtime.registerStruct("NativeCallEmpty");
     const auto* valueType = runtime.getTypeByName("NativeCallValue");
     const auto* emptyType = runtime.getTypeByName("NativeCallEmpty");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
@@ -403,7 +403,7 @@ BOOST_AUTO_TEST_CASE(shared_argument_evaluation_matches_compiled_right_to_left_o
     }, {defParameter("first", runtime.getIntegerType(), ""), defParameter("second", runtime.getIntegerType(), "")},
         runtime.getIntegerType(), "");
     BOOST_REQUIRE(noteId.isValid() && pairId.isValid());
-    const auto boxId = runtime.getTypeManager().registerClass("CallOrderBox", ClassMode::Closed);
+    const auto boxId = runtime.registerClass("CallOrderBox", ClassMode::Closed);
     const auto* boxType = runtime.getTypeByName("CallOrderBox");
     const auto makeBoxId = runtime.registerNativeFunction("makeCallOrderBox", [&](VirtualMachine* active) {
         order.push_back(0);
@@ -567,8 +567,8 @@ BOOST_AUTO_TEST_CASE(raw_storage_push_checks_full_width_before_mutating_the_stac
 BOOST_AUTO_TEST_CASE(partial_call_copies_and_initialization_failures_release_owned_storage) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>("FailingCallField", ClassMode::Closed, field);
-    const auto valueId = runtime.getTypeManager().registerStruct("FailingCallValue");
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>("FailingCallField", ClassMode::Closed, field);
+    const auto valueId = runtime.registerStruct("FailingCallValue");
     const auto* valueType = runtime.getTypeByName("FailingCallValue");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
@@ -718,7 +718,7 @@ BOOST_AUTO_TEST_CASE(host_script_calls_and_construction_return_independent_value
 
 BOOST_AUTO_TEST_CASE(host_native_calls_and_factories_preserve_values_frames_and_registered_result_types) {
     Runtime runtime;
-    const auto valueId = runtime.getTypeManager().registerStruct("HostValue");
+    const auto valueId = runtime.registerStruct("HostValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
@@ -744,8 +744,8 @@ BOOST_AUTO_TEST_CASE(host_native_calls_and_factories_preserve_values_frames_and_
         destination[0] = result.getValue();
         active->getParameterStorage(0, 2)[0].setIntegerValue(99);
     }, {defParameter("value", valueType, "")}, valueType, "");
-    const auto ownerId = runtime.getTypeManager().registerClass<ClassType>("HostFactory", ClassMode::Closed);
-    const auto createdId = runtime.getTypeManager().registerClass<ClassType>("HostCreated", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass<ClassType>("HostFactory", ClassMode::Closed);
+    const auto createdId = runtime.registerClass<ClassType>("HostCreated", ClassMode::Closed);
     const auto factoryId = runtime.registerNativeClassConstructor(ownerId, createdId, {
         .parameters = {},
         .function = [&](VirtualMachine* active) {
@@ -785,7 +785,7 @@ BOOST_AUTO_TEST_CASE(host_call_validation_rejects_bad_metadata_and_arguments_bef
         ++calls;
         active->setIntegerResult(active->getIntegerParameter(0));
     }, {defParameter("number", runtime.getIntegerType(), "")}, runtime.getIntegerType(), "");
-    const auto emptyId = runtime.getTypeManager().registerStruct("HostCheckedEmpty");
+    const auto emptyId = runtime.registerStruct("HostCheckedEmpty");
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
     const auto constructorId = runtime.registerNativeStructConstructor(emptyId, {
         .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
@@ -945,7 +945,7 @@ BOOST_AUTO_TEST_CASE(ordinary_scalar_copy_failures_release_arguments_and_result_
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>(
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
         "PreparedScalarReference",
         ClassMode::Closed,
         field
@@ -1007,8 +1007,8 @@ BOOST_AUTO_TEST_CASE(ordinary_scalar_copy_failures_release_arguments_and_result_
 BOOST_AUTO_TEST_CASE(host_method_copy_failures_release_arguments_results_and_receiver_stack_references) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>("FailingMethodField", ClassMode::Closed, field);
-    const auto ownerId = runtime.getTypeManager().registerClass<ClassType>("FailingMethodOwner", ClassMode::Closed);
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>("FailingMethodField", ClassMode::Closed, field);
+    const auto ownerId = runtime.registerClass<ClassType>("FailingMethodOwner", ClassMode::Closed);
     BOOST_REQUIRE(fieldId.isValid() && ownerId.isValid());
     const auto* owner = runtime.getType(ownerId).value()->asClassType();
     const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
@@ -1069,16 +1069,16 @@ BOOST_AUTO_TEST_CASE(host_method_copy_failures_release_arguments_results_and_rec
 
 BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_receiver_and_argument_bindings) {
     Runtime runtime;
-    const auto emptyId = runtime.getTypeManager().registerStruct("NativeObjectMethodEmpty");
-    const auto valueId = runtime.getTypeManager().registerStruct("NativeObjectMethodValue");
+    const auto emptyId = runtime.registerStruct("NativeObjectMethodEmpty");
+    const auto valueId = runtime.registerStruct("NativeObjectMethodValue");
     const auto* type = runtime.getTypeByName("NativeObjectMethodValue");
     const auto* emptyType = runtime.getTypeByName("NativeObjectMethodEmpty");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
-    const auto singleId = runtime.getTypeManager().registerStruct("NativeObjectMethodSingle");
+    const auto singleId = runtime.registerStruct("NativeObjectMethodSingle");
     const auto* singleType = runtime.getTypeByName("NativeObjectMethodSingle");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(singleId, "number", runtime.getIntegerType()).isValid());
-    const auto ownerId = runtime.getTypeManager().registerClass("NativeAggregateOwner", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("NativeAggregateOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("NativeAggregateOwner")->asClassType();
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
     runtime.getTypeManager().finalizeCompositeFieldLayout(emptyId);
@@ -1200,14 +1200,14 @@ BOOST_AUTO_TEST_CASE(native_object_methods_use_aggregate_storage_and_preserve_re
 BOOST_AUTO_TEST_CASE(aggregate_object_method_failures_release_partial_arguments_and_results) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>("ObjectAggregateCopyField", ClassMode::Closed, field);
-    const auto valueId = runtime.getTypeManager().registerStruct("ObjectAggregateCopyValue");
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>("ObjectAggregateCopyField", ClassMode::Closed, field);
+    const auto valueId = runtime.registerStruct("ObjectAggregateCopyValue");
     const auto* type = runtime.getTypeByName("ObjectAggregateCopyValue");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "second", field).isValid());
     runtime.getTypeManager().finalizeCompositeFieldLayout(valueId);
-    const auto ownerId = runtime.getTypeManager().registerClass("ObjectAggregateCopyOwner", ClassMode::Closed);
+    const auto ownerId = runtime.registerClass("ObjectAggregateCopyOwner", ClassMode::Closed);
     const auto* owner = runtime.getTypeByName("ObjectAggregateCopyOwner")->asClassType();
     const auto constructorId = runtime.registerNativeClassConstructor(ownerId, {
         .parameters = {},
@@ -1297,12 +1297,12 @@ BOOST_AUTO_TEST_CASE(closure_arguments_and_captures_are_copied_once_directly_int
     auto& runtime = fixture.getRuntime();
     auto* virtualMachine = &fixture.getVirtualMachine();
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>(
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
         "DirectClosureField",
         ClassMode::Closed,
         field
     );
-    const auto valueId = runtime.getTypeManager().registerStruct("DirectClosurePair");
+    const auto valueId = runtime.registerStruct("DirectClosurePair");
     const auto* type = runtime.getTypeByName("DirectClosurePair");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
@@ -1464,12 +1464,12 @@ BOOST_AUTO_TEST_CASE(compiled_formatting_reuses_direct_frame_captures_and_cleans
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>(
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
         "FormattingCopyField",
         ClassMode::Closed,
         field
     );
-    const auto valueId = runtime.getTypeManager().registerStruct("FormattingCopyPair");
+    const auto valueId = runtime.registerStruct("FormattingCopyPair");
     const auto* type = runtime.getTypeByName("FormattingCopyPair");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
@@ -1531,12 +1531,12 @@ BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_r
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>(
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
         "ClosureInvocationField",
         ClassMode::Closed,
         field
     );
-    const auto valueId = runtime.getTypeManager().registerStruct("ClosureInvocationValue");
+    const auto valueId = runtime.registerStruct("ClosureInvocationValue");
     const auto* type = runtime.getTypeByName("ClosureInvocationValue");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
@@ -1630,12 +1630,12 @@ BOOST_AUTO_TEST_CASE(typed_closure_call_failures_release_capture_arguments_and_r
 BOOST_AUTO_TEST_CASE(frame_and_closure_capture_copy_failures_release_completed_and_partial_slots) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>(
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>(
         "ClosureCopyField",
         ClassMode::Closed,
         field
     );
-    const auto valueId = runtime.getTypeManager().registerStruct("ClosureCopyValue");
+    const auto valueId = runtime.registerStruct("ClosureCopyValue");
     const auto* type = runtime.getTypeByName("ClosureCopyValue");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
@@ -1764,8 +1764,8 @@ BOOST_AUTO_TEST_CASE(frame_and_closure_capture_copy_failures_release_completed_a
 BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_every_owned_snapshot) {
     Runtime runtime;
     FailingCallCopyType* field = nullptr;
-    const auto fieldId = runtime.getTypeManager().registerClass<FailingCallCopyType>("StructMethodCopyField", ClassMode::Closed, field);
-    const auto valueId = runtime.getTypeManager().registerStruct("StructMethodCopyValue");
+    const auto fieldId = runtime.registerClass<FailingCallCopyType>("StructMethodCopyField", ClassMode::Closed, field);
+    const auto valueId = runtime.registerStruct("StructMethodCopyValue");
     const auto* type = runtime.getTypeByName("StructMethodCopyValue");
     BOOST_REQUIRE(fieldId.isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "first", field).isValid());
@@ -1860,7 +1860,7 @@ BOOST_AUTO_TEST_CASE(struct_method_copy_failures_and_stack_overflow_release_ever
 BOOST_AUTO_TEST_CASE(ineligible_tail_return_initializers_keep_partial_results_separate_from_inspected_locals) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto valueId = runtime.getTypeManager().registerStruct("NrvoInspectionValue");
+    const auto valueId = runtime.registerStruct("NrvoInspectionValue");
     const auto* type = runtime.getTypeByName("NrvoInspectionValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());
@@ -1912,7 +1912,7 @@ BOOST_AUTO_TEST_CASE(ineligible_tail_return_initializers_keep_partial_results_se
 BOOST_AUTO_TEST_CASE(named_return_frame_views_expose_and_mutate_the_actual_initializer_destination) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
-    const auto valueId = runtime.getTypeManager().registerStruct("ReturnBackedValue");
+    const auto valueId = runtime.registerStruct("ReturnBackedValue");
     const auto* type = runtime.getTypeByName("ReturnBackedValue");
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "number", runtime.getIntegerType()).isValid());
     BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(valueId, "text", runtime.getStringType()).isValid());

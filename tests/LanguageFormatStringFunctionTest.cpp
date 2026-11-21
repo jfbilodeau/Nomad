@@ -145,9 +145,9 @@ BOOST_AUTO_TEST_CASE(compiled_and_dynamic_converters_receive_complete_storage_no
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
     const auto wideId = manager.reserveTypeId();
-    manager.registerType(std::make_unique<WideFormatType>(&runtime, wideId));
+    BOOST_REQUIRE(manager.registerType(std::make_unique<WideFormatType>(&runtime, wideId)).isValid());
     const auto emptyId = manager.reserveTypeId();
-    manager.registerType(std::make_unique<EmptyFormatType>(&runtime, emptyId));
+    BOOST_REQUIRE(manager.registerType(std::make_unique<EmptyFormatType>(&runtime, emptyId)).isValid());
     const auto* wide = runtime.getType(wideId).value();
     const auto* empty = runtime.getType(emptyId).value();
     auto rawGetterCalls = 0;
@@ -259,7 +259,7 @@ BOOST_AUTO_TEST_CASE(compiled_format_restores_execution_state_before_conversion_
     const auto typeId = manager.reserveTypeId();
     auto type = std::make_unique<ObservedFormatType>(&runtime, typeId, "ObservedFormatValue", ClassMode::Closed);
     auto* descriptor = type.get();
-    manager.registerType(std::move(type));
+    BOOST_REQUIRE(manager.registerType(std::move(type)).isValid());
     const auto makeValue = runtime.registerNativeFunction("makeObservedFormat", [](VirtualMachine* active) {
         active->setStringResult("owned format state result");
     }, {}, descriptor, "");
@@ -367,7 +367,7 @@ BOOST_AUTO_TEST_CASE(conversion_failures_release_owned_dynamic_getter_values_in_
     };
 
     Runtime runtime;
-    const auto typeId = runtime.getTypeManager().registerClass<ThrowingFormatType>("ThrowingFormatValue", ClassMode::Closed);
+    const auto typeId = runtime.registerClass<ThrowingFormatType>("ThrowingFormatValue", ClassMode::Closed);
     BOOST_REQUIRE(typeId.isValid());
     const auto* type = runtime.getType(typeId).value();
     const auto variableId = runtime.registerDynamicVariable(

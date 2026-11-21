@@ -24,7 +24,7 @@ void registerMapFamily(
     TypeManager::ParameterizedTypeFactory factory,
     const bool writable
 ) {
-    if (!runtime->getTypeManager().registerParameterizedType(
+    if (!runtime->registerParameterizedType(
         name,
         2,
         std::move(factory),

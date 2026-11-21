@@ -511,10 +511,11 @@ nested, class-owned, and temporary roots. Interpreted method calls borrow named,
 nested, object-owned, and temporary struct receivers. Host snapshot-based
 struct-method calls return explicit updated receiver/result values.
 
-Register class and struct types with
-`TypeManager::registerClass` and `registerStruct`. Enum, opaque-ID, and callback
-creation also belong to TypeManager. Callable
-IDs belong to Runtime; property IDs belong to TypeManager.
+Use `Runtime::registerClass`, `registerStruct`, `createEnum`, and
+`registerOpaqueIdType` when declaring public APIs. They coordinate type
+registration and namespace publication. TypeManager owns the type catalog,
+allocates type/property IDs, and provides catalog-only creation APIs with the
+same names. Callable IDs belong to Runtime.
 `TypeManager::getProperty(id)` and `Runtime::getProperty(id)` return the same
 borrowed property descriptor, or `nullptr` for an invalid or unregistered ID.
 For custom member descriptors, construct them with the ID from
@@ -525,29 +526,33 @@ or `TypeManager::registerProperty(owner, property)`. IDs are fixed at constructi
 and cannot be changed. These calls transfer descriptor ownership to the declaring
 type and return an invalid ID on rejection without publishing a catalog entry.
 
-`TypeManager::reserveTypeId()` and `catalogType()`
-are low-level catalog operations: they do not register namespace members or
-check namespace collisions. `catalogType()` requires a non-null descriptor
-owned by the same runtime and an unused reserved ID, otherwise it throws
-`NomadException`. An unused reserved ID is absent from lookup and enumeration.
+TypeManager treats type and family names as opaque strings, including empty or
+internal-purpose names. Its creation APIs do not publish namespace members,
+enum constants, or enum operators. Catalog-only declarations are not adopted
+when hubs are registered later.
 
-`TypeManager::registerType(descriptor)` publishes a completed descriptor in its
-namespace and transfers ownership to the manager. It requires a non-null
-descriptor owned by the same runtime with an unused reserved ID; invalid
-ownership, reservations, or hub collisions throw `NomadException`.
-Callback descriptors are not published as hub type members; event descriptors
-retain their event namespace entry. Prefer the class/struct creation APIs for
-ordinary registration.
+`TypeManager::reserveTypeId()` reserves an unused catalog slot, or returns
+`TypeId::INVALID` when the ID space is exhausted. An unused ID is absent from
+lookup and enumeration. `TypeManager::registerType(descriptor)` transfers
+descriptor ownership into that slot and returns its ID. Null descriptors,
+foreign ownership, invalid/used IDs, and duplicate nominal type names return
+`TypeId::INVALID` without logging. Callback and event descriptors retain their
+non-nominal identity rules and may share display names. The former `catalogType`
+entry point is removed; use `registerType` and check its returned ID.
 
-Runtime maintains hub indexes through `canRegisterTypeName(name)` and
-`publishTypeNamespace(type)`. The former checks hub-name and member collisions,
-not identifier syntax or catalog duplication, and does not log. Registration
-entry points report namespace rejections themselves, without a second generic
-member-conflict log. The latter requires a same-runtime
-descriptor with an unused reserved ID and publishes a borrowed namespace entry;
-it does not take ownership. It is a low-level coordination operation: the
-descriptor must immediately be cataloged and remain alive for the runtime's
-lifetime. Ordinary hosts should use manager registration instead.
+`Runtime::registerType(descriptor)` performs the same catalog registration plus
+namespace publication, returning an invalid ID on rejection. It accepts a
+fully constructed descriptor with a reserved ID; it does not run constructors
+or initializers. Callback and event metadata are not published as nominal
+hub types; events use their separately registered declarations.
+
+`Runtime::canRegisterTypeName(name)` checks hub-name/member collisions without
+checking source syntax or catalog duplication, and does not log.
+`publishTypeNamespace(type)` is the low-level explicit publication operation:
+the descriptor must already be registered in the receiving runtime's catalog.
+Invalid identity, duplicate publication, and namespace conflicts throw
+`NomadException`. It borrows the descriptor rather than taking ownership.
+Ordinary hosts should use Runtime's creation/registration APIs instead.
 
 `TypeManager::finalizeCompositeFieldLayout(id)` finalizes class or struct
 stored-field layouts, including nested inline structs. Invalid IDs and
@@ -602,16 +607,19 @@ opcode-table fields. Types deriving directly from `Type` also implement
 
 ### Class registration
 
-`TypeManager::registerClass(name, mode, documentation = {})` registers a class
-type and returns its `TypeId`. The mode is required:
+`Runtime::registerClass(name, mode, documentation = {})` declares a public class
+type and returns its `TypeId`. `TypeManager::registerClass` creates only a
+catalog entry, without interpreting the name or publishing it to a hub.
+The mode is required for both:
 `ClassMode::Opened` permits external script member declarations, while
 `ClassMode::Closed` prevents them. Neither mode makes existing properties
 immutable or prevents the type's own declarations. Native and script objects
 use the same `ClassType` descriptor; `isOpen()` reports its mode.
 
 The runtime owns the descriptor and its name and documentation. Use
-`getType(id)` to retrieve a borrowed descriptor. Empty names, invalid modes,
-already-registered type names, and conflicting hub declarations return
+`getType(id)` to retrieve a borrowed descriptor. Public class registration
+rejects empty names, invalid modes, already-registered type names, and conflicting
+hub declarations with
 `TypeId::INVALID` without logging. The compiler, interpreter, or host caller
 decides how to report a rejected registration. Duplicate creation is rejected even when the mode
 and documentation are identical, without replacing the existing type.
@@ -622,7 +630,7 @@ which must outlive the descriptor. `Type::getId()` returns the immutable,
 runtime-local ID. Use it when passing an existing descriptor to an ID-based API;
 name lookup does not distinguish callback signatures.
 
-`TypeManager::registerClass<Descriptor>(name, mode, arguments...)` creates specialized
+`Runtime::registerClass<Descriptor>(name, mode, arguments...)` creates specialized
 `ClassType` subclasses. It calls
 `Descriptor(Runtime*, TypeId, name, mode, arguments...)`, forwarding additional arguments.
 Invalid registration requests are rejected before calling the descriptor constructor.
@@ -639,30 +647,35 @@ converted into invalid IDs.
 
 The ID is reserved before construction and is not resolvable through `getType()`
 until the descriptor is registered. Constructors may create other types without
-changing the reserved ID. Failed creation leaves an unused ID; IDs are never
+changing the reserved ID. Rejected descriptors and failed construction leave
+their reserved IDs unused; IDs are never
 reassigned, and `getTypes()` lists only registered descriptors. Construct
 standalone, unregistered descriptors with `TypeId::INVALID`. Registration is
 managed by the runtime-owned manager's creation APIs. Runtime's class creation
-overloads remain compatibility wrappers.
+APIs additionally coordinate namespace publication. The TypeManager variants
+accept opaque names and check only mode, nominal uniqueness, and matching
+descriptor/catalog identity.
 
 Type creation does not register constructors or finalize a script field layout.
 
 ### Enum creation
 
-`TypeManager::createEnum(name, values, documentation = {})` creates an enum and
+`Runtime::createEnum(name, values, documentation = {})` declares an enum and
 returns its `TypeId`. Each `EnumValueDefinition` supplies a member name and an
 explicit integer value. The runtime owns the resulting type and copies or moves
 the supplied names, values, and documentation.
 
-Access it through `runtime.getTypeManager()`. Enum constants and equality operators are registered in Runtime
-with their existing IDs and calling conventions.
+Enum constants and equality operators are registered with their existing IDs
+and calling conventions. `TypeManager::createEnum` creates only the descriptor;
+it validates enum value definitions but does not publish constants or operators.
 `Runtime::registerEnumOperators(type)` registers enum equality/inequality for
 an already registered same-runtime enum. Invalid ownership throws
 `NomadException`; duplicate operators are rejected. Ordinary hosts should use
-manager enum creation rather than register operators separately.
+Runtime enum creation rather than register operators separately.
 
-`TypeManager::registerOpaqueIdType(name, documentation)` creates a borrowed
-opaque-ID descriptor with the existing name and namespace rules.
+`Runtime::registerOpaqueIdType(name, documentation)` declares an opaque-ID type
+and returns a borrowed descriptor. Its TypeManager counterpart creates only a
+catalog entry with an opaque name.
 `TypeManager::getCallbackType(parameterTypes, returnType)` interns callback descriptors by
 their exact parameter and return-type pointers. Matching signatures reuse a
 descriptor; different signatures have distinct IDs even when their type names
@@ -1559,7 +1572,7 @@ source `init` body. Classes without a source `init` have a parameterless constru
 
 `StructType` is declared in `<nomad/script/StructType.hpp>` and derives from
 `CompositeType`, not `ClassType`. Register a closed descriptor with
-`TypeManager::registerStruct(name, documentation = {})`, add stored fields with
+`Runtime::registerStruct(name, documentation = {})`, add stored fields with
 `runtime.getTypeManager().registerScriptStructProperty(ownerId, name, valueType)`,
 then call `runtime.getTypeManager().finalizeCompositeFieldLayout(ownerId)`.
 Invalid or reserved names are logged and registration returns `TypeId::INVALID`.
@@ -3297,16 +3310,19 @@ been removed.
 
 ## Parameterized types
 
-`TypeManager::registerParameterizedType(name, argumentCount, factory, initializer = {})`
-registers a type family. The factory has the signature
+`Runtime::registerParameterizedType(name, argumentCount, factory, initializer = {})`
+declares a public type family. Its TypeManager counterpart registers only the
+catalog family, without namespace publication. The factory has the signature
 `std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)`. It receives
 the owning runtime, reserved specialization ID, and resolved type arguments.
 It returns a fully constructed, unregistered descriptor carrying that runtime
 and ID. It must not register the
 returned descriptor itself, including through `registerClass`.
 
-The runtime-owned manager validates and registers the descriptor, then calls the optional
-initializer with `(Runtime*, TypeId)`. The ID identifies the registered
+The runtime-owned manager validates and registers the descriptor. Runtime
+publishes a public specialization before calling its optional initializer with
+`(Runtime*, TypeId)`. A catalog-only family performs no automatic publication.
+The ID identifies the registered
 specialization and can be used to retrieve it and add its members. The manager
 caches the specialization after initialization succeeds.
 `getParameterizedType(name, arguments)` creates a specialization on first use
@@ -3317,22 +3333,29 @@ return null.
 `getParameterizedTypeArgumentCount(name)` returns the registered family's arity,
 or an empty optional if the family is not registered.
 
-Access these APIs and their factory/initializer type aliases through TypeManager.
-Constructor-inference and member-template registration also belong to TypeManager.
-Factory and initializer callbacks retain their `Runtime*` parameters; use
-`runtime->getTypeManager()` inside them. `getParameterizedTypeNames(names)` appends family
+Public registration and its factory/initializer aliases are available on Runtime.
+Family lookup, specialization caches, constructor-inference, and member-template
+registration remain on TypeManager. Factory and initializer callbacks retain
+their `Runtime*` parameters; register executable members through that runtime.
+`getParameterizedTypeNames(names)` appends family
 names in registration order without clearing existing entries.
 `getMemberTemplateSignature(name)` returns family template metadata only;
 `Runtime::getMemberSignature(name)` continues to combine it with native members.
 
+If a factory produces a specialization whose namespace conflicts with a public
+declaration, Runtime rejects it before catalog registration or initialization.
+Declarations made by the factory remain registered. Exceptions thrown by the
+factory or initializer propagate unchanged.
+
 Runtime's low-level `publishTypeFamilyNamespace(name, argumentCount)` publishes
 a registered manager-owned family into hub indexes. Missing families, mismatched
-arity, and namespace collisions throw `NomadException`. Families registered
-before their hub are included when that hub is created.
+arity, duplicate publication, and namespace collisions throw `NomadException`.
+Public families declared before their hub are included when that hub is created;
+catalog-only families are not adopted.
 `Runtime::canRegisterMemberSignature` checks a proposed member against the
 shared parser signature without registering it; an incompatible proposal
-returns false and an error description. Ordinary hosts should use the manager
-registration APIs.
+returns false and an error description. Ordinary hosts should use Runtime's
+public family registration APIs.
 
 Requesting a specialization creates a descriptor, not an object. The compiler resolves parameterized
 annotations in script parameters, function parameters, and event declarations
@@ -3520,7 +3543,7 @@ type, not its result type.
 Scripts invoke constructors with `new` and the type's name:
 
 ```cpp
-const auto typeId = runtime.getTypeManager().registerClass("Example", nomad::ClassMode::Closed);
+const auto typeId = runtime.registerClass("Example", nomad::ClassMode::Closed);
 const auto registeredType = runtime.getType(typeId);
 if (!registeredType) {
     throw nomad::NomadException("Failed to create Example type");
@@ -3569,14 +3592,15 @@ Validate value restrictions inside the callback: construction runs at evaluation
 time in both compiled scripts and the interpreter.
 
 For a constructor with type arguments, use
-`TypeManager::registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
+`Runtime::registerNativeParameterizedConstructor(name, argumentCount, initializer)`. Its
 initializer receives the specialized name and resolved type arguments; it registers
-a type with that name and its constructors with `Runtime::registerNativeClassConstructor`.
+a public type with `Runtime::registerClass` and its constructors with
+`Runtime::registerNativeClassConstructor`.
 Specializations are reused on subsequent requests through
 `TypeManager::getParameterizedConstructorName(name, arguments)`. The manager owns
-the family registrations and specialization cache. Existing Runtime registration
-and lookup methods remain compatibility wrappers. `getParameterizedConstructorNames`
-appends registered family names to the supplied vector.
+the family registrations and specialization cache. The TypeManager registration
+variant is catalog-only and does not publish a family namespace entry.
+`getParameterizedConstructorNames` appends registered family names to the supplied vector.
 
 ## Deferred native function signatures
 

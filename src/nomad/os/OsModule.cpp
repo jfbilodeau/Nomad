@@ -142,10 +142,10 @@ void registerOs(ModuleContext* context) {
     if (runtime->registerHub("os", HubMode::Closed).isInvalid()) {
         throw NomadException("Failed to register os hub");
     }
-    const auto platformTypeId = runtime->getTypeManager().createEnum("os.Platform", {
+    const auto platformTypeId = runtime->createEnum("os.Platform", {
         {"Windows", 1}, {"Linux", 2}, {"MacOS", 3}
     });
-    const auto architectureTypeId = runtime->getTypeManager().createEnum("os.Architecture", {
+    const auto architectureTypeId = runtime->createEnum("os.Architecture", {
         {"X86", 1}, {"X64", 2}, {"Arm32", 3}, {"Arm64", 4}
     });
     const auto platformType = runtime->getType(platformTypeId);

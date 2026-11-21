@@ -198,7 +198,7 @@ bool preDeclareStruct(
         return false;
     }
     if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown ||
-        context->getRuntime()->getTypeManager().registerStruct(name).isInvalid()) {
+        context->getRuntime()->registerStruct(name).isInvalid()) {
         context->addError("Cannot declare struct '" + name + "': identifier is already declared or invalid", tokens);
         return false;
     }
