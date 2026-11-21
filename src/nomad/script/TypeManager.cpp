@@ -145,6 +145,38 @@ NomadIndex TypeManager::getTypeCount() const {
     return m_types.size();
 }
 
+ParameterShape TypeManager::getParameterShape(const Type* type) const {
+    if (type == nullptr) {
+        return ParameterShape::Value;
+    }
+
+    if (type == getTypeByName(FILE_NAME_TYPE_NAME)) {
+        return ParameterShape::SourceFile;
+    }
+
+    if (type == getTypeByName(FUNCTION_NAME_TYPE_NAME)) {
+        return ParameterShape::SourceFunction;
+    }
+
+    if (type == getTypeByName(FUNCTION_LINE_NUMBER_TYPE_NAME)) {
+        return ParameterShape::SourceLine;
+    }
+
+    if (type == getTypeByName(EVENT_DISPATCH_TYPE_NAME)) {
+        return ParameterShape::EventDispatch;
+    }
+
+    if (type == getTypeByName(EVENT_CALLBACK_TYPE_NAME)) {
+        return ParameterShape::EventCallback;
+    }
+
+    if (type->asCallback() != nullptr) {
+        return ParameterShape::Callback;
+    }
+
+    return ParameterShape::Value;
+}
+
 bool TypeManager::ownsType(const Type* type) const {
     const auto belongsToRuntime = type != nullptr && type->getRuntime() == &m_runtime;
     if (!belongsToRuntime) {
@@ -532,7 +564,7 @@ ConstructorInferenceResult TypeManager::inferConstructorTypeArguments(
             }
         } else {
             const auto* parameterType = std::get<const Type*>(parameter.type);
-            const auto shape = m_runtime.getParameterShape(parameterType);
+            const auto shape = getParameterShape(parameterType);
             const auto isSourceParameter = shape == ParameterShape::SourceFile ||
                 shape == ParameterShape::SourceFunction || shape == ParameterShape::SourceLine;
             if (argumentType == nullptr && isSourceParameter) {

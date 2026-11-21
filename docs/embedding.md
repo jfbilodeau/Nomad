@@ -465,6 +465,13 @@ clearing its existing entries. `getTypeCount()` counts all reserved IDs,
 including IDs that do not yet have a descriptor. `ownsType(type)` checks both
 runtime ownership and catalog identity.
 
+`TypeManager::getParameterShape(type)` classifies catalog source/event types,
+callback types, and ordinary value parameters. A null type has ordinary value
+shape. The query does not register types or validate names.
+`Runtime::getParameterShape` exposes the same classification. Constructor
+inference permits omitted arguments for the hidden source shapes (`$file`,
+`$function`, and `$line`).
+
 The existing Runtime lookup methods remain available with the same behavior.
 Finalize layouts through `runtime.getTypeManager().finalizeCompositeFieldLayout(id)`.
 Declare stored fields with

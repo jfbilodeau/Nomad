@@ -121,6 +121,7 @@ public:
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
     void getTypes(std::vector<const Type*>& types) const;
     [[nodiscard]] NomadIndex getTypeCount() const;
+    [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
     [[nodiscard]] bool ownsType(const Type* type) const;
     [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
     [[nodiscard]] CompositeType* getMutableCompositeType(TypeId id);

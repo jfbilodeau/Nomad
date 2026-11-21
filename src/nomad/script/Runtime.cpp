@@ -1741,32 +1741,8 @@ NomadIndex Runtime::getCallableOverloadCount(const NomadString& name) const {
 }
 
 ParameterShape Runtime::getParameterShape(const Type* type) const {
-    // Mirrors the order in which `parseCallableArguments` tests parameter types.
-    if (type == getFileNameType()) {
-        return ParameterShape::SourceFile;
-    }
 
-    if (type == getFunctionNameType()) {
-        return ParameterShape::SourceFunction;
-    }
-
-    if (type == getLineNumberType()) {
-        return ParameterShape::SourceLine;
-    }
-
-    if (type == getEventDispatchType()) {
-        return ParameterShape::EventDispatch;
-    }
-
-    if (type == getEventCallbackType()) {
-        return ParameterShape::EventCallback;
-    }
-
-    if (type != nullptr && type->asCallback() != nullptr) {
-        return ParameterShape::Callback;
-    }
-
-    return ParameterShape::Value;
+    return m_typeManager.getParameterShape(type);
 }
 
 bool Runtime::canOverloadCallable(
