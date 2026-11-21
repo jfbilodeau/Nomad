@@ -180,6 +180,98 @@ BOOST_AUTO_TEST_CASE(catalog_only_creation_paths_accept_empty_type_and_family_na
     }
 }
 
+BOOST_AUTO_TEST_CASE(catalog_only_member_templates_do_not_change_runtime_signatures) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto factory = [](Runtime* owner, const TypeId id, const std::vector<const Type*>& arguments) {
+
+        return std::make_unique<ClassType>(owner, id, "CatalogTemplate<int>", ClassMode::Closed, arguments);
+    };
+    BOOST_REQUIRE(manager.registerParameterizedType("CatalogFirst", 1, factory));
+    BOOST_REQUIRE(manager.registerParameterizedType("CatalogSecond", 1, factory));
+    BOOST_REQUIRE(manager.registerMemberTemplate("CatalogFirst", "catalogMember", {MemberType::Property, {}}));
+    BOOST_TEST(!runtime.getMemberSignature("catalogMember").has_value());
+    BOOST_TEST(manager.registerMemberTemplate(
+        "CatalogSecond",
+        "catalogMember",
+        {MemberType::Method, {defParameter("value", nullptr, "")}}
+    ));
+    BOOST_TEST(!runtime.getMemberSignature("catalogMember").has_value());
+    const auto first = manager.getMemberTemplateSignature("CatalogFirst", "catalogMember");
+    const auto second = manager.getMemberTemplateSignature("CatalogSecond", "catalogMember");
+    BOOST_REQUIRE(first.has_value() && second.has_value());
+    BOOST_TEST((first->type == MemberType::Property));
+    BOOST_TEST((second->type == MemberType::Method));
+    BOOST_REQUIRE(second->parameters.size() == 1U);
+    BOOST_REQUIRE(runtime.registerParameterizedType("Public", 1, factory));
+    BOOST_REQUIRE(runtime.registerMemberTemplate(
+        "Public", "catalogMember", MemberType::Method,
+        {defTemplateParameter("publicValue", TypeParameterIndex{0}, "")}
+    ));
+    BOOST_REQUIRE(runtime.getMemberSignature("catalogMember").has_value());
+    BOOST_REQUIRE(runtime.getMemberSignature("catalogMember")->parameters.size() == 1U);
+    BOOST_TEST(runtime.getMemberSignature("catalogMember")->parameters.front().name == "publicValue");
+}
+
+BOOST_AUTO_TEST_CASE(public_template_signature_precedence_survives_family_catalog_growth) {
+    Runtime runtime;
+    const auto factory = [](Runtime* owner, const TypeId id, const std::vector<const Type*>& arguments) {
+
+        return std::make_unique<ClassType>(owner, id, "SignatureOrder<int>", ClassMode::Closed, arguments);
+    };
+    BOOST_REQUIRE(runtime.registerParameterizedType("First", 1, factory));
+    BOOST_REQUIRE(runtime.registerParameterizedType("Second", 1, factory));
+    BOOST_REQUIRE(runtime.registerMemberTemplate(
+        "Second", "orderedMember", MemberType::Method,
+        {defTemplateParameter("laterFamily", TypeParameterIndex{0}, "")}
+    ));
+    BOOST_REQUIRE(runtime.registerMemberTemplate(
+        "First", "orderedMember", MemberType::Method,
+        {defTemplateParameter("earlierFamily", runtime.getIntegerType(), "")}
+    ));
+    for (auto index = 0; index < 64; ++index) {
+        BOOST_REQUIRE(runtime.registerParameterizedType("Additional" + std::to_string(index), 1, factory));
+    }
+
+    const auto signature = runtime.getMemberSignature("orderedMember");
+    BOOST_REQUIRE(signature.has_value());
+    BOOST_REQUIRE(signature->parameters.size() == 1U);
+    BOOST_TEST(signature->parameters.front().name == "earlierFamily");
+    BOOST_TEST(signature->parameters.front().type == runtime.getIntegerType());
+}
+
+BOOST_AUTO_TEST_CASE(catalog_member_templates_reject_invalid_local_metadata_without_publication) {
+    Runtime runtime;
+    Runtime other;
+    auto& manager = runtime.getTypeManager();
+    BOOST_REQUIRE(manager.registerParameterizedType(
+        "Catalog",
+        1,
+        [](Runtime* owner, const TypeId id, const std::vector<const Type*>& arguments) {
+
+            return std::make_unique<ClassType>(owner, id, "Catalog<int>", ClassMode::Closed, arguments);
+        }
+    ));
+    for (const auto& signature : std::vector<MemberSignature>{
+        {MemberType::Unknown, {}},
+        {MemberType::Property, {defParameter("value", nullptr, "")}},
+        {MemberType::Method, {defParameter("value", other.getIntegerType(), "")}},
+        {MemberType::Method, {defParameter("", nullptr, "")}}
+    }) {
+        BOOST_TEST(!manager.registerMemberTemplate("Catalog", "candidate", signature));
+        BOOST_TEST(!manager.getMemberTemplateSignature("Catalog", "candidate").has_value());
+        BOOST_TEST(!runtime.getMemberSignature("candidate").has_value());
+    }
+
+    BOOST_REQUIRE(manager.registerMemberTemplate("Catalog", "candidate", {MemberType::Property, {}}));
+    BOOST_TEST(!manager.registerMemberTemplate("Catalog", "candidate", {MemberType::Method, {}}));
+    const auto signature = manager.getMemberTemplateSignature("Catalog", "candidate");
+    BOOST_REQUIRE(signature.has_value());
+    BOOST_TEST((signature->type == MemberType::Property));
+    BOOST_TEST(!manager.getMemberTemplateSignature("Missing", "candidate").has_value());
+    BOOST_TEST(!runtime.getMemberSignature("candidate").has_value());
+}
+
 BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
@@ -830,8 +922,8 @@ BOOST_AUTO_TEST_CASE(parameterized_families_keep_templates_namespace_and_special
     const auto inferred = manager.inferConstructorTypeArguments("families.Box", {runtime.getIntegerType()});
     BOOST_REQUIRE(inferred.isResolved());
     BOOST_TEST(inferred.typeArguments.front() == runtime.getIntegerType());
-    BOOST_REQUIRE(manager.registerMemberTemplate("families.Box", "managedValue", MemberType::Property));
-    BOOST_TEST(manager.getMemberTemplateSignature("managedValue").has_value());
+    BOOST_REQUIRE(runtime.registerMemberTemplate("families.Box", "managedValue", MemberType::Property));
+    BOOST_TEST(manager.getMemberTemplateSignature("families.Box", "managedValue").has_value());
     BOOST_TEST(runtime.getMemberSignature("managedValue").has_value());
     const auto* integerBox = manager.getParameterizedType("families.Box", {runtime.getIntegerType()});
     BOOST_REQUIRE(integerBox != nullptr);
@@ -853,9 +945,9 @@ BOOST_AUTO_TEST_CASE(parameterized_families_keep_templates_namespace_and_special
     BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("Missing", 1), NomadException);
     BOOST_TEST(manager.getParameterizedType("families.Box", {}) == nullptr);
     BOOST_TEST(!manager.registerConstructorTemplate("families.Box", {}));
-    BOOST_TEST(!manager.registerMemberTemplate("families.Box", "managedValue", MemberType::Property));
-    BOOST_TEST(!manager.registerMemberTemplate("Missing", "absent", MemberType::Property));
-    BOOST_TEST(!manager.getMemberTemplateSignature("absent").has_value());
+    BOOST_TEST(!runtime.registerMemberTemplate("families.Box", "managedValue", MemberType::Property));
+    BOOST_TEST(!runtime.registerMemberTemplate("Missing", "absent", MemberType::Property));
+    BOOST_TEST(!manager.getMemberTemplateSignature("Missing", "absent").has_value());
     const auto lateFactory = [](Runtime* owner, TypeId id, const std::vector<const Type*>& arguments) {
         return std::make_unique<ClassType>(owner, id, "late.Box<int>", ClassMode::Closed, arguments);
     };

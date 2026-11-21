@@ -292,6 +292,13 @@ public:
     [[nodiscard]] std::vector<const NativeConstructor*> getConstructors(const Type* classType) const;
 
     // Member declarations
+    // Publishes compatible family parsing signatures without creating a specialization.
+    bool registerMemberTemplate(
+        const NomadString& family,
+        const NomadString& name,
+        MemberType type,
+        const std::vector<TemplateParameter>& parameters = {}
+    );
     [[nodiscard]] std::optional<MemberSignature> getMemberSignature(const NomadString& name) const;
 
     // Member registration
@@ -696,6 +703,11 @@ private:
         NomadIndex argumentCount;
     };
 
+    struct MemberTemplateSignatureRegistration {
+        NomadIndex familyIndex;
+        NomadString familyName;
+    };
+
     enum class ScriptInitializationState {
         Pending = 1,
         Running,
@@ -805,6 +817,7 @@ private:
     ScriptInitialization m_scriptInitialization;
     std::vector<const NativeIndexerInfo*> m_nativeIndexers;
     std::unordered_map<NomadString, std::vector<MemberReference>> m_nativeMembersByName;
+    std::unordered_map<NomadString, MemberTemplateSignatureRegistration> m_memberTemplateSignatures;
     bool m_debug = false;
     std::vector<std::function<void(Compiler*)>> m_compilerSetups;
 };

@@ -609,8 +609,7 @@ const Type* TypeManager::getParameterizedType(
 bool TypeManager::registerMemberTemplate(
     const NomadString& family,
     const NomadString& name,
-    const MemberType type,
-    const std::vector<TemplateParameter>& parameters
+    MemberSignature signature
 ) {
     const auto registration = std::ranges::find(m_parameterizedTypes, family, &ParameterizedTypeRegistration::name);
     if (registration == m_parameterizedTypes.end()) {
@@ -621,45 +620,52 @@ bool TypeManager::registerMemberTemplate(
         log::error("Cannot register member template '" + name + "': duplicate definition for '" + family + "'");
         return false;
     }
-    std::vector<Parameter> parserParameters;
-    for (const auto& parameter : parameters) {
-        const Type* parameterType = nullptr;
-        if (const auto* index = std::get_if<TypeParameterIndex>(&parameter.type)) {
-            if (index->index >= registration->argumentCount) {
-                log::error("Cannot register member template '" + name + "': type argument index is out of range");
-                return false;
-            }
-        } else {
-            parameterType = std::get<const Type*>(parameter.type);
-            const auto hasValidType = ownsType(parameterType) && !parameterType->isVoid();
-            if (!hasValidType) {
-                log::error("Cannot register member template '" + name + "': parameter types must be registered and non-void");
-                return false;
-            }
-        }
-        if (parameter.name.empty()) {
-            log::error("Cannot register member template '" + name + "': parameter name is empty");
-            return false;
-        }
-        parserParameters.push_back(defParameter(parameter.name, parameterType, parameter.doc));
-    }
-    NomadString error;
-    if (!m_runtime.canRegisterMemberSignature(name, type, parserParameters, error)) {
-        log::error("Cannot register member template '" + name + "': " + error);
+    if (signature.type != MemberType::Property && signature.type != MemberType::Method) {
+        log::error("Cannot register member template '" + name + "': member must be a property or method");
+
         return false;
     }
-    registration->memberTemplates.emplace(name, MemberSignature{type, std::move(parserParameters)});
+
+    if (signature.type == MemberType::Property && !signature.parameters.empty()) {
+        log::error("Cannot register member template '" + name + "': properties cannot take parameters");
+
+        return false;
+    }
+
+    for (const auto& parameter : signature.parameters) {
+        if (parameter.type != nullptr && (!ownsType(parameter.type) || parameter.type->isVoid())) {
+            log::error("Cannot register member template '" + name + "': parameter types must be registered and non-void");
+
+            return false;
+        }
+
+        if (parameter.name.empty()) {
+            log::error("Cannot register member template '" + name + "': parameter name is empty");
+
+            return false;
+        }
+    }
+
+    registration->memberTemplates.emplace(name, std::move(signature));
+
     return true;
 }
 
-std::optional<MemberSignature> TypeManager::getMemberTemplateSignature(const NomadString& name) const {
-    for (const auto& registration : m_parameterizedTypes) {
-        const auto member = registration.memberTemplates.find(name);
-        if (member != registration.memberTemplates.end()) {
-            return member->second;
-        }
+std::optional<MemberSignature> TypeManager::getMemberTemplateSignature(
+    const NomadString& family,
+    const NomadString& name
+) const {
+    const auto registration = std::ranges::find(m_parameterizedTypes, family, &ParameterizedTypeRegistration::name);
+    if (registration == m_parameterizedTypes.end()) {
+        return std::nullopt;
     }
-    return std::nullopt;
+
+    const auto member = registration->memberTemplates.find(name);
+    if (member == registration->memberTemplates.end()) {
+        return std::nullopt;
+    }
+
+    return member->second;
 }
 
 const OpaqueIdType* TypeManager::registerOpaqueIdType(const NomadString& name, const NomadString& doc) {

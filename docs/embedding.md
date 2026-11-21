@@ -3338,12 +3338,15 @@ or an empty optional if the family is not registered.
 
 Public registration and its factory/initializer aliases are available on Runtime.
 Family lookup, specialization caches, constructor-inference, and member-template
-registration remain on TypeManager. Factory and initializer callbacks retain
+catalog metadata remain on TypeManager. Public member-template registration uses
+Runtime. Factory and initializer callbacks retain
 their `Runtime*` parameters; register executable members through that runtime.
 `getParameterizedTypeNames(names)` appends family
 names in registration order without clearing existing entries.
-`getMemberTemplateSignature(name)` returns family template metadata only;
-`Runtime::getMemberSignature(name)` continues to combine it with native members.
+`TypeManager::getMemberTemplateSignature(family, name)` returns a family-specific
+metadata snapshot, or an empty optional when absent.
+`Runtime::getMemberSignature(name)` combines explicitly registered public template
+signatures with native members; catalog-only templates do not affect that lookup.
 
 If a factory produces a specialization whose namespace conflicts with a public
 declaration, Runtime rejects it before catalog registration or initialization.
@@ -3975,8 +3978,8 @@ constructors. This lets scripts access members before any concrete specializatio
 has been created:
 
 ```cpp
-if (!runtime.getTypeManager().registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
-    !runtime.getTypeManager().registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
+if (!runtime.registerMemberTemplate("KeyValue", "key", nomad::MemberType::Property) ||
+    !runtime.registerMemberTemplate("KeyValue", "value", nomad::MemberType::Property)) {
     throw nomad::NomadException("Failed to register KeyValue member signatures");
 }
 ```
@@ -3986,7 +3989,7 @@ declaration takes no parameters. For methods, supply `TemplateParameter` entries
 using concrete types or `TypeParameterIndex`:
 
 ```cpp
-if (!runtime.getTypeManager().registerMemberTemplate(
+if (!runtime.registerMemberTemplate(
     "Box", "store", nomad::MemberType::Method,
     {nomad::defTemplateParameter("value", nomad::TypeParameterIndex{0}, "")}
 )) {
@@ -4003,17 +4006,31 @@ Member declarations are source-independent. Hosts register them today; a future
 script-type declaration pass can use the same API before parsing member bodies.
 This API does not add execution support for script-defined types.
 
-All members sharing a name must agree on parameter count and parser-dependent
+Public members sharing a name must agree on parameter count and parser-dependent
 parameter types, including callbacks and hidden source parameters. A property and
 a zero-parameter method have the same parsing shape, as with concrete members.
 Generic method parameters parse as ordinary value expressions.
 Incompatible declarations and concrete registrations are rejected with a logged
 error. Duplicate declarations within a family are also rejected.
 
-`getMemberSignature(name)` returns a copy of the parsing signature, whether
-declared by a family or provided by a concrete member. Generic parameter types are
-represented by null pointers in this parsing signature. Existing member-ID and
-overload queries continue to return only concrete members.
+`Runtime::getMemberSignature(name)` returns a copy of the public parsing signature.
+Public templates take precedence over concrete-member fallback. If several
+families publish the same name, the earliest registered family supplies the
+signature, regardless of template-registration order. Generic parameter types
+are represented by null pointers. Existing member-ID and overload queries
+continue to return only concrete members.
+
+`TypeManager::registerMemberTemplate(family, name, MemberSignature)` is catalog-only.
+It checks the family, duplicates, member kind, property arity, parameter names,
+and concrete type ownership, but not global compatibility. A null parameter
+type represents a generic value. Different catalog families may store
+incompatible signatures without changing Runtime's public parser lookup.
+Use the Runtime entry point above for script-visible parsing declarations.
+
+The family-specific `getMemberTemplateSignature(family, name)` returns an owned
+snapshot that remains valid as the family catalog grows; referenced types remain
+borrowed from the runtime. The former one-name catalog lookup and template-definition
+registration signature are removed, not forwarding aliases.
 
 ## Native object properties
 

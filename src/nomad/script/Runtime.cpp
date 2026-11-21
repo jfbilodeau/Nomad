@@ -85,8 +85,8 @@ Runtime::Runtime():
                 throw NomadException("Failed to register iterator members");
             }
         }
-    ) || !m_typeManager.registerMemberTemplate("Iterator", "moveNext", MemberType::Method) ||
-        !m_typeManager.registerMemberTemplate("Iterator", "current", MemberType::Property)) {
+    ) || !registerMemberTemplate("Iterator", "moveNext", MemberType::Method) ||
+        !registerMemberTemplate("Iterator", "current", MemberType::Property)) {
         throw NomadException("Failed to register iterator type");
     }
 
@@ -1979,6 +1979,76 @@ bool Runtime::canRegisterNativeMember(const Type* classType, const NomadString& 
     return canRegisterMemberSignature(name, type, parameters, error);
 }
 
+bool Runtime::registerMemberTemplate(
+    const NomadString& family,
+    const NomadString& name,
+    const MemberType type,
+    const std::vector<TemplateParameter>& parameters
+) {
+    const auto argumentCount = m_typeManager.getParameterizedTypeArgumentCount(family);
+    if (!argumentCount) {
+        log::error("Cannot register member template '" + name + "': a registered parameterized type is required");
+
+        return false;
+    }
+
+    if (m_typeManager.getMemberTemplateSignature(family, name).has_value()) {
+        log::error("Cannot register member template '" + name + "': duplicate definition for '" + family + "'");
+
+        return false;
+    }
+
+    std::vector<Parameter> parserParameters;
+    for (const auto& parameter : parameters) {
+        const Type* parameterType = nullptr;
+        if (const auto* index = std::get_if<TypeParameterIndex>(&parameter.type)) {
+            if (index->index >= *argumentCount) {
+                log::error("Cannot register member template '" + name + "': type argument index is out of range");
+
+                return false;
+            }
+        } else {
+            parameterType = std::get<const Type*>(parameter.type);
+            if (!ownsType(parameterType) || parameterType->isVoid()) {
+                log::error("Cannot register member template '" + name + "': parameter types must be registered and non-void");
+
+                return false;
+            }
+        }
+
+        if (parameter.name.empty()) {
+            log::error("Cannot register member template '" + name + "': parameter name is empty");
+
+            return false;
+        }
+
+        parserParameters.push_back(defParameter(parameter.name, parameterType, parameter.doc));
+    }
+
+    NomadString error;
+    if (!canRegisterMemberSignature(name, type, parserParameters, error)) {
+        log::error("Cannot register member template '" + name + "': " + error);
+
+        return false;
+    }
+
+    std::vector<NomadString> families;
+    m_typeManager.getParameterizedTypeNames(families);
+    const auto familyIndex = static_cast<NomadIndex>(std::ranges::find(families, family) - families.begin());
+    if (!m_typeManager.registerMemberTemplate(family, name, {type, std::move(parserParameters)})) {
+        return false;
+    }
+
+    const auto [entry, inserted] = m_memberTemplateSignatures.try_emplace(
+        name, MemberTemplateSignatureRegistration{familyIndex, family}
+    );
+    if (!inserted && familyIndex < entry->second.familyIndex) {
+        entry->second = {familyIndex, family};
+    }
+
+    return true;
+}
+
 bool Runtime::canRegisterMemberSignature(
     const NomadString& name,
     const MemberType type,
@@ -2020,7 +2090,13 @@ bool Runtime::canRegisterMemberSignature(
 }
 
 std::optional<MemberSignature> Runtime::getMemberSignature(const NomadString& name) const {
-    if (const auto signature = m_typeManager.getMemberTemplateSignature(name)) {
+    const auto templateSignature = m_memberTemplateSignatures.find(name);
+    if (templateSignature != m_memberTemplateSignatures.end()) {
+        const auto signature = m_typeManager.getMemberTemplateSignature(templateSignature->second.familyName, name);
+        if (!signature) {
+            throw NomadBug("Invalid member template signature registration");
+        }
+
         return signature;
     }
     const auto overloads = m_nativeMembersByName.find(name);

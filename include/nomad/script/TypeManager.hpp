@@ -6,6 +6,7 @@
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/Member.hpp>
 #include <nomad/script/NativeMember.hpp>
 #include <nomad/script/Property.hpp>
 #include <nomad/script/Type.hpp>
@@ -104,13 +105,17 @@ public:
         const NomadString& name,
         const std::vector<const Type*>& argumentTypes
     ) const;
+    // Catalog-only signature registration; nullptr parameter types represent generic values.
     bool registerMemberTemplate(
         const NomadString& family,
         const NomadString& name,
-        MemberType type,
-        const std::vector<TemplateParameter>& parameters = {}
+        MemberSignature signature
     );
-    [[nodiscard]] std::optional<MemberSignature> getMemberTemplateSignature(const NomadString& name) const;
+    // Returns a family-specific metadata snapshot; no Runtime parser signature is published.
+    [[nodiscard]] std::optional<MemberSignature> getMemberTemplateSignature(
+        const NomadString& family,
+        const NomadString& name
+    ) const;
     [[nodiscard]] TypeId getTypeId(const NomadString& name) const;
     [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
     [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;

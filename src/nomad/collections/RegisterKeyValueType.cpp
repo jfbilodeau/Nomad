@@ -72,8 +72,8 @@ void registerKeyValueType(Runtime* runtime) {
     )) {
         throw NomadException("Failed to register KeyValue");
     }
-    if (!runtime->getTypeManager().registerMemberTemplate("KeyValue", "key", MemberType::Property) ||
-        !runtime->getTypeManager().registerMemberTemplate("KeyValue", "value", MemberType::Property)) {
+    if (!runtime->registerMemberTemplate("KeyValue", "key", MemberType::Property) ||
+        !runtime->registerMemberTemplate("KeyValue", "value", MemberType::Property)) {
         throw NomadException("Failed to register KeyValue member signatures");
     }
     if (!runtime->getTypeManager().registerConstructorTemplate(

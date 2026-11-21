@@ -79,8 +79,8 @@ BOOST_AUTO_TEST_CASE(parses_family_members_before_specialization_and_resolves_co
     BOOST_REQUIRE(runtime.getTypeManager().registerConstructorTemplate("Box", {
         defTemplateParameter("value", TypeParameterIndex{0}, "")
     }));
-    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Box", "declaredProperty", MemberType::Property));
-    BOOST_REQUIRE(runtime.getTypeManager().registerMemberTemplate("Box", "declaredMethod", MemberType::Method, {
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredProperty", MemberType::Property));
+    BOOST_REQUIRE(runtime.registerMemberTemplate("Box", "declaredMethod", MemberType::Method, {
         defTemplateParameter("value", TypeParameterIndex{0}, ""),
         defTemplateParameter("line", runtime.getLineNumberType(), "")
     }));
