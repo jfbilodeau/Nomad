@@ -796,7 +796,9 @@ must not grow while functions execute.
 entry only when both its text and owning `CallableId` match.
 `getFormatStringId(text, functionId)` returns `FormatStringId::INVALID` when
 absent. `getFormatString(id)` returns a borrowed format string, or `nullptr`
-for an invalid or unregistered ID.
+for an invalid or unregistered ID. A mutable runtime returns `FormatString*`
+for compilation; a const runtime returns `const FormatString*` for inspection
+and execution without exposing metadata mutation.
 
 Both ID types are declared in `<nomad/script/Runtime.hpp>`, belong to the runtime
 that issued them, and remain stable as registrations are added. They do not
@@ -2070,6 +2072,10 @@ an instruction or operand; its end address is excluded.
 `getScriptCallableByStartAddress(address)` requires an exact compiled start
 address. These lookups return `nullptr` when no callable matches.
 Function-only ID lookups and enumeration still exclude methods and constructors.
+`getFunctions` clears the supplied vector and lists registered script functions
+in catalog order. Mutable runtimes accept `std::vector<ScriptFunction*>`;
+const runtimes accept `std::vector<const ScriptFunction*>`. Both views borrow
+the same descriptors and exclude native functions, methods, and constructors.
 The former `getFunctionAtInstructionIndex` and `VirtualMachine::getCurrentScript`
 APIs are removed. Use general script-callable navigation and
 `VirtualMachine::getCurrentCallable` for current frame metadata. If a function-only

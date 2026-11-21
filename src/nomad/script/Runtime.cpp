@@ -3023,7 +3023,17 @@ FormatStringId Runtime::registerFormatString(const NomadString& formatString, Ca
     return id;
 }
 
-FormatString* Runtime::getFormatString(const FormatStringId id) const {
+FormatString* Runtime::getFormatString(const FormatStringId id) {
+    const auto formatStringIndex = toNomadIndex(id.id);
+
+    if (formatStringIndex >= m_formatStrings.size()) {
+        return nullptr;
+    }
+
+    return m_formatStrings[formatStringIndex].formatString.get();
+}
+
+const FormatString* Runtime::getFormatString(const FormatStringId id) const {
     const auto formatStringIndex = toNomadIndex(id.id);
 
     if (formatStringIndex >= m_formatStrings.size()) {
@@ -3478,13 +3488,24 @@ NomadIndex Runtime::getFunctionCount() const {
     }));
 }
 
-void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) const {
+void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) {
     functions.clear();
     functions.reserve(getFunctionCount());
 
     for (auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
             functions.push_back(static_cast<ScriptFunction*>(callable));
+        }
+    }
+}
+
+void Runtime::getFunctions(std::vector<const ScriptFunction*>& functions) const {
+    functions.clear();
+    functions.reserve(getFunctionCount());
+
+    for (const auto* callable : m_callables) {
+        if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
+            functions.push_back(static_cast<const ScriptFunction*>(callable));
         }
     }
 }

@@ -44,6 +44,14 @@ static_assert(!std::is_copy_constructible_v<ScriptMethod>);
 static_assert(!std::is_copy_constructible_v<ScriptConstructor>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getScriptCallable(CallableId{})), const ScriptCallableBase*>);
 static_assert(std::is_same_v<decltype(std::declval<Runtime&>().getScriptCallable(CallableId{})), ScriptCallableBase*>);
+
+template<typename RuntimeType>
+concept CanEnumerateMutableScriptFunctions = requires(RuntimeType& runtime, std::vector<ScriptFunction*>& functions) {
+    runtime.getFunctions(functions);
+};
+
+static_assert(CanEnumerateMutableScriptFunctions<Runtime>);
+static_assert(!CanEnumerateMutableScriptFunctions<const Runtime>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getFunction(CallableId{0})), const Function*>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getMethod(CallableId{0})), const Method*>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getConstructor(CallableId{0})), const Constructor*>);
@@ -625,6 +633,9 @@ BOOST_AUTO_TEST_CASE(script_member_descriptors_are_type_owned_with_shared_compil
     std::vector<ScriptFunction*> functions;
     runtime.getFunctions(functions);
     BOOST_TEST(functions.empty());
+    std::vector<const ScriptFunction*> readOnlyFunctions{nullptr};
+    std::as_const(runtime).getFunctions(readOnlyFunctions);
+    BOOST_TEST(readOnlyFunctions.empty());
 
     for (const auto id : {methodId, constructorId}) {
         auto* script = runtime.getScriptCallable(id);
@@ -877,6 +888,10 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     runtime.getFunctions(scripts);
     BOOST_REQUIRE(scripts.size() == 1U);
     BOOST_TEST(scripts.front() == script);
+    std::vector<const ScriptFunction*> readOnlyScripts{nullptr};
+    std::as_const(runtime).getFunctions(readOnlyScripts);
+    BOOST_REQUIRE(readOnlyScripts.size() == scripts.size());
+    BOOST_TEST(readOnlyScripts.front() == scripts.front());
 }
 
 BOOST_AUTO_TEST_CASE(duplicate_native_function_name_is_rejected)

@@ -39,7 +39,15 @@ static_assert(!std::is_convertible_v<FormatStringId, NomadId>);
 static_assert(!std::is_convertible_v<NomadId, DynamicVariableId>);
 static_assert(!std::is_convertible_v<DynamicVariableId, NomadId>);
 static_assert(!std::is_invocable_v<decltype(&Runtime::getString), Runtime&, FormatStringId>);
-static_assert(!std::is_invocable_v<decltype(&Runtime::getFormatString), Runtime&, StringId>);
+static_assert(!std::is_invocable_v<
+    decltype(static_cast<FormatString* (Runtime::*)(FormatStringId)>(&Runtime::getFormatString)),
+    Runtime&,
+    StringId
+>);
+static_assert(std::is_same_v<
+    decltype(std::declval<const Runtime&>().getFormatString(FormatStringId{})),
+    const FormatString*
+>);
 static_assert(!std::is_invocable_v<decltype(&Runtime::getDynamicVariableType), Runtime&, ConstantId>);
 static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadDynamicVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
@@ -321,6 +329,7 @@ BOOST_AUTO_TEST_CASE(string_ids_deduplicate_and_keep_borrowed_objects_stable)
 BOOST_AUTO_TEST_CASE(format_string_ids_preserve_text_and_callable_identity)
 {
     Runtime runtime;
+    const Runtime& readOnlyRuntime = runtime;
     const auto firstOwner = runtime.registerNativeFunction("first", [](VirtualMachine*) {},
         {}, runtime.getVoidType(), NomadDoc("First owner"));
     const auto secondOwner = runtime.registerNativeFunction("second", [](VirtualMachine*) {},
@@ -331,6 +340,8 @@ BOOST_AUTO_TEST_CASE(format_string_ids_preserve_text_and_callable_identity)
     BOOST_TEST(runtime.getFormatStringId("missing", firstOwner) == FormatStringId::INVALID);
     BOOST_TEST(runtime.getFormatString(FormatStringId::INVALID) == nullptr);
     BOOST_TEST(runtime.getFormatString(FormatStringId{999999}) == nullptr);
+    BOOST_TEST(readOnlyRuntime.getFormatString(FormatStringId::INVALID) == nullptr);
+    BOOST_TEST(readOnlyRuntime.getFormatString(FormatStringId{999999}) == nullptr);
 
     const auto first = runtime.registerFormatString("value", firstOwner);
     const auto second = runtime.registerFormatString("value", secondOwner);
@@ -339,6 +350,7 @@ BOOST_AUTO_TEST_CASE(format_string_ids_preserve_text_and_callable_identity)
     BOOST_TEST(first != second);
     const auto* original = runtime.getFormatString(first);
     BOOST_REQUIRE(original != nullptr);
+    BOOST_TEST(readOnlyRuntime.getFormatString(first) == original);
     BOOST_TEST(original->getFunctionId() == firstOwner);
     BOOST_TEST(runtime.registerFormatString("value", firstOwner) == first);
 
@@ -348,6 +360,7 @@ BOOST_AUTO_TEST_CASE(format_string_ids_preserve_text_and_callable_identity)
     BOOST_TEST(runtime.getFormatStringId("value", firstOwner) == first);
     BOOST_TEST(runtime.getFormatStringId("value", secondOwner) == second);
     BOOST_TEST(runtime.getFormatString(first) == original);
+    BOOST_TEST(readOnlyRuntime.getFormatString(first) == original);
     BOOST_TEST(original->getFormatString() == "value");
 }
 

@@ -575,7 +575,8 @@ public:
 
     // Format strings
     FormatStringId registerFormatString(const NomadString& formatString, CallableId functionId);
-    [[nodiscard]] FormatString* getFormatString(FormatStringId id) const;
+    [[nodiscard]] FormatString* getFormatString(FormatStringId id);
+    [[nodiscard]] const FormatString* getFormatString(FormatStringId id) const;
     [[nodiscard]] FormatStringId getFormatStringId(const NomadString& formatString, CallableId functionId) const;
 
     // Dynamic variables
@@ -658,7 +659,8 @@ public:
     [[nodiscard]] const ScriptCallableBase* getScriptCallable(CallableId callableId) const;
     [[nodiscard]] std::optional<NomadString> getFunctionName(CallableId functionId) const;
     [[nodiscard]] NomadIndex getFunctionCount() const;
-    void getFunctions(std::vector<ScriptFunction*>& functions) const;
+    void getFunctions(std::vector<ScriptFunction*>& functions);
+    void getFunctions(std::vector<const ScriptFunction*>& functions) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableAtLine(
         const NomadString& sourceName,
         NomadIndex line

@@ -375,7 +375,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
         nativeFunctionId = runtime->getNextNativeFunctionId(nativeFunctionId);
     }
 
-    std::vector<ScriptFunction*> scriptFunctions;
+    std::vector<const ScriptFunction*> scriptFunctions;
 
     runtime->getFunctions(scriptFunctions);
 
