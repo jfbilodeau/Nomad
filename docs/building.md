@@ -8,6 +8,9 @@ Building Nomad requires:
 
 Dependencies are pinned and downloaded by CMake during configuration.
 
+CI temporarily uses CMake 4.4.5, which is also recommended for local builds.
+CMake 4.5.0 cannot configure the bundled Boost.Locale release.
+
 ## Windows
 
 ```console

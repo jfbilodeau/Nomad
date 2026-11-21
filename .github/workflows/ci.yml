@@ -75,8 +75,16 @@ jobs:
             libxss-dev \
             libxtst-dev
 
+      # Temporary pin for the bundled Boost.Locale build's CMake 4.5 incompatibility.
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '4.4.5'
+
       - name: Configure
-        run: cmake --preset ci
+        run: |
+          cmake --version
+          cmake --preset ci
 
       - name: Build
         run: cmake --build --preset ci --parallel
@@ -127,6 +135,11 @@ jobs:
           - name: Ubuntu
             os: ubuntu-latest
     steps:
+      - name: Set up CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '4.4.5'
+
       - name: Download tested Release package
         uses: actions/download-artifact@v4
         with:
