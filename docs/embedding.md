@@ -2069,8 +2069,11 @@ when compilation reports an error. Unknown source ranges do not match.
 an instruction or operand; its end address is excluded.
 `getScriptCallableByStartAddress(address)` requires an exact compiled start
 address. These lookups return `nullptr` when no callable matches.
-The existing function-only lookup and enumeration APIs still exclude methods
-and constructors.
+Function-only ID lookups and enumeration still exclude methods and constructors.
+The former `getFunctionAtInstructionIndex` and `VirtualMachine::getCurrentScript`
+APIs are removed. Use general script-callable navigation and
+`VirtualMachine::getCurrentCallable` for current frame metadata. If a function-only
+view is needed, pass the resolved callable's ID to `getScriptFunction`.
 
 Include `<nomad/script/InstructionDump.hpp>` and use
 `dumpInstructions(runtime, output)` to include every compiled script callable.

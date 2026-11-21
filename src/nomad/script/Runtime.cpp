@@ -3489,20 +3489,6 @@ void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) const {
     }
 }
 
-ScriptFunction * Runtime::getFunctionAtInstructionIndex(const NomadIndex instructionIndex) const {
-    for (auto* callable : m_callables) {
-        if (callable->getType() != CallableType::Function || callable->getSource() != CallableSource::Script) {
-            continue;
-        }
-        auto* function = static_cast<ScriptFunction*>(callable);
-        if (instructionIndex >= function->getFunctionStart() && instructionIndex < function->getFunctionEnd()) {
-            return function;
-        }
-    }
-
-    return nullptr;
-}
-
 const ScriptCallableBase* Runtime::getScriptCallableAtLine(
     const NomadString& sourceName,
     const NomadIndex line

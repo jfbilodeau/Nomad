@@ -870,8 +870,8 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     BOOST_TEST(script->getFunctionLength() == 10U);
     BOOST_TEST(runtime.getScriptCallableAtLine("source.nomad", 3) == script);
     BOOST_TEST(runtime.getScriptCallableByStartAddress(10) == script);
-    BOOST_TEST(runtime.getFunctionAtInstructionIndex(19) == script);
-    BOOST_TEST(runtime.getFunctionAtInstructionIndex(20) == nullptr);
+    BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(19) == script);
+    BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(20) == nullptr);
 
     std::vector<ScriptFunction*> scripts{nullptr};
     runtime.getFunctions(scripts);

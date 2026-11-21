@@ -115,8 +115,6 @@ public:
     void stop(const RuntimeValue& result);
     [[noreturn]] void fault(const NomadString& faultMessage) const;
 
-    [[nodiscard]]
-    const ScriptFunction* getCurrentScript() const;
     [[nodiscard]] const ScriptCallableBase* getCurrentCallable() const;
     [[nodiscard]] NomadIndex getParameterIndex() const { return m_parameterIndex; }
     [[nodiscard]] NomadIndex getVariableIndex() const { return m_variableIndex; }

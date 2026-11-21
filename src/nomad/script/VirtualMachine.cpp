@@ -497,10 +497,6 @@ void VirtualMachine::fault(const NomadString& faultMessage) const {
     throw VirtualMachineException(faultMessage);
 }
 
-const ScriptFunction* VirtualMachine::getCurrentScript() const {
-    return m_runtime->getFunctionAtInstructionIndex(m_instructionIndex);
-}
-
 const ScriptCallableBase* VirtualMachine::getCurrentCallable() const {
     return m_runtime->getScriptCallableAtInstructionIndex(m_instructionIndex);
 }
