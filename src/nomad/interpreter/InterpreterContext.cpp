@@ -42,6 +42,344 @@ void validateValueStorage(const Type* type, const std::span<const RuntimeValue> 
 
 } // namespace
 
+// --- Lifecycle ---
+
+InterpreterContext::InterpreterContext(const Interpreter& interpreter):
+    m_interpreter(interpreter),
+    m_function(std::make_unique<ScriptFunction>(
+        CallableId::INVALID,
+        CONSOLE_SOURCE_NAME,
+        CONSOLE_SOURCE_NAME, 
+        ""
+    )
+) {
+}
+
+InterpreterContext::~InterpreterContext() = default;
+
+InterpreterContext::InterpreterContext(
+    const Interpreter& interpreter,
+    const ScriptCallableBase& function
+):
+    m_interpreter(interpreter)
+{
+    auto& virtualMachine = interpreter.getVirtualMachine();
+    if (virtualMachine.getCurrentCallable() != &function || function.getFunctionStart() == NOMAD_INVALID_INDEX) {
+        throw NomadBug("Frame interpretation requires an active compiled script callable");
+    }
+    m_frameCallable = &function;
+    m_parameterIndex = virtualMachine.getParameterIndex();
+    m_variableIndex = virtualMachine.getVariableIndex();
+    m_frameVariableCount = function.getVariableCount();
+
+    if (virtualMachine.getRuntime()->getConstructor(function.getId()) != nullptr) {
+        m_function = std::make_unique<ScriptConstructor>(
+            CallableId{}, 
+            function.getClassType(), 
+            std::vector<Parameter>{}, 
+            function.getPath(), 
+            ""
+        );
+    } else if (function.getClassType() != nullptr) {
+        m_function = std::make_unique<ScriptMethod>(
+            CallableId{}, 
+            function.getName(), 
+            function.getClassType(),
+            std::vector<Parameter>{},
+            function.getReturnType(),
+            function.getPath(), 
+            ""
+        );
+    } else {
+        m_function = std::make_unique<ScriptFunction>(
+            function.getId(),
+            function.getName(),
+            function.getPath(), 
+            ""
+        );
+    }
+
+    m_function->setHub(function.getHub());
+    m_function->setParentId(function.getParentId());
+
+    for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
+        const auto id = VariableId{toNomadId(index)};
+        m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
+    }
+
+    for (NomadIndex index = 0; index < function.getParameterCount(); ++index) {
+        const auto id = toNomadId(index);
+        m_function->addParameter(
+            function.getParameterName(id),
+            function.getParameterType(id),
+            function.getParameters()[index].doc
+        );
+    }
+
+    m_variables.resize(m_frameVariableCount);
+
+    if (const auto* type = function.getClassType()) {
+        if (const auto* owner = type->asStructType()) {
+            RuntimeValue* storage = nullptr;
+            const auto layout = function.getCallStorageLayout();
+            if (layout.receiverOffset.has_value()) {
+                storage = virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1)[0].getStorageAddress();
+            }
+            m_receiver = interpreter.createStructReceiver(*owner, storage);
+        } else {
+            m_receiver = interpreter.createObjectReceiver(*type->asClassType(), virtualMachine.getScriptReceiver());
+        }
+    }
+}
+
+// --- Core Accessors ---
+
+const Interpreter& InterpreterContext::getInterpreter() const {
+    return m_interpreter;
+}
+
+VirtualMachine* InterpreterContext::getVirtualMachine() const {
+    return &m_interpreter.getVirtualMachine();
+}
+
+Runtime* InterpreterContext::getRuntime() const {
+    return getVirtualMachine()->getRuntime();
+}
+
+const ScriptFunction* InterpreterContext::getFunction() const {
+    return dynamic_cast<const ScriptFunction*>(m_function.get());
+}
+
+ScriptCallableBase* InterpreterContext::getCallable() {
+    validateFrame();
+    return m_function.get();
+}
+
+const ScriptCallableBase* InterpreterContext::getCallable() const {
+    validateFrame();
+    return m_function.get();
+}
+
+bool InterpreterContext::isFrameBacked() const {
+    return m_frameCallable != nullptr;
+}
+
+bool InterpreterContext::isFrameVariable(const VariableId variableId) const {
+    return isIdInRange(variableId.id, m_frameVariableCount);
+}
+
+// --- Loop Control ---
+
+LoopControl InterpreterContext::getLoopControl() const {
+    return m_loopControl;
+}
+
+void InterpreterContext::setLoopControl(LoopControl control) {
+    m_loopControl = control;
+}
+
+// --- Parameters ---
+
+void InterpreterContext::setParameter(const NomadId parameterId, const RuntimeValue& value) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter assignment");
+    }
+    setParameter(parameterId, getScalarStorage(m_function->getParameterType(parameterId), value));
+}
+
+void InterpreterContext::setParameter(
+    const NomadId parameterId,
+    const std::span<const RuntimeValue> storage
+) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter assignment");
+    }
+    validateFrame();
+    const auto* type = m_frameCallable->getParameterType(parameterId);
+    validateValueStorage(type, storage);
+    auto scratch = type->getSize() > 1 ? std::make_unique<RuntimeValue[]>(type->getSize()) : nullptr;
+    const auto destination = getVirtualMachine()->getEnclosingParameterStorage(
+        m_frameCallable->getParameterOffset(parameterId), type->getSize());
+    type->assignValue(storage.data(), destination.data(), scratch.get());
+}
+
+std::span<const RuntimeValue> InterpreterContext::getParameterStorage(const NomadId parameterId) const {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter access");
+    }
+
+    validateFrame();
+    const auto& machine = *getVirtualMachine();
+
+    return machine.getEnclosingParameterStorage(
+        m_frameCallable->getParameterOffset(parameterId),
+        m_frameCallable->getParameterType(parameterId)->getSize()
+    );
+}
+
+std::span<RuntimeValue> InterpreterContext::getMutableParameterStorage(const NomadId parameterId) {
+    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
+        throw NomadBug("Invalid frame-backed parameter access");
+    }
+    validateFrame();
+    return getVirtualMachine()->getEnclosingParameterStorage(m_frameCallable->getParameterOffset(parameterId),
+        m_frameCallable->getParameterType(parameterId)->getSize());
+}
+
+// --- Receiver ---
+
+InterpreterReceiver* InterpreterContext::getReceiver() {
+    validateFrame();
+    return m_receiver.get();
+}
+
+const InterpreterReceiver* InterpreterContext::getReceiver() const {
+    validateFrame();
+    return m_receiver.get();
+}
+
+std::span<RuntimeValue> InterpreterContext::getMutableReceiverStorage() {
+    if (!isFrameBacked() || m_frameCallable->getClassType() == nullptr ||
+        !m_frameCallable->getClassType()->isStruct()) {
+        throw NomadBug("Struct receiver storage requires an active struct callable frame");
+    }
+    validateFrame();
+    const auto size = m_frameCallable->getClassType()->getSize();
+    if (size == 0) {
+        return {};
+    }
+    const auto layout = m_frameCallable->getCallStorageLayout();
+    if (!layout.receiverOffset.has_value()) {
+        throw NomadBug("Nonempty struct callable has no receiver storage pointer");
+    }
+    const auto pointer = getVirtualMachine()->getEnclosingParameterStorage(*layout.receiverOffset, 1);
+    return {pointer[0].getStorageAddress(), size};
+}
+
+void InterpreterContext::setReceiverProperty(
+    const PropertyId propertyId,
+    const InterpreterValue& value
+) {
+    const auto guard = beginEvaluation();
+    auto* receiver = getReceiver();
+    if (receiver == nullptr) {
+        throw NomadBug("Receiver property assignment requires an active composite frame");
+    }
+    receiver->setProperty(propertyId, value);
+}
+
+void InterpreterContext::setReceiverProperty(
+    const NomadStringView propertyPath,
+    const InterpreterValue& value
+) {
+    const auto guard = beginEvaluation();
+    auto* receiver = getReceiver();
+    if (receiver == nullptr) {
+        throw NomadBug("Receiver property assignment requires an active composite frame");
+    }
+    receiver->setProperty(propertyPath, value);
+}
+
+// --- Result ---
+
+void InterpreterContext::setResult(const Type* type, const RuntimeValue& value) {
+    setResult(type, getScalarStorage(type, value));
+}
+
+void InterpreterContext::setResult(const Type* type, const std::span<const RuntimeValue> storage) {
+    InterpreterValue replacement(type, storage);
+    m_result = std::move(replacement);
+}
+
+void InterpreterContext::setResult(const InterpreterValue& value) {
+    InterpreterValue replacement(value);
+    m_result = std::move(replacement);
+}
+
+void InterpreterContext::setResult(InterpreterValue&& value) {
+    m_result = std::move(value);
+}
+
+void InterpreterContext::setVoidResult() {
+    setResult(getRuntime()->getVoidType(), RuntimeValue{});
+}
+
+void InterpreterContext::clearResult() {
+    m_result.reset();
+}
+
+const InterpreterValue* InterpreterContext::getResult() const {
+    return m_result ? &*m_result : nullptr;
+}
+
+// --- Diagnostics ---
+
+void InterpreterContext::resetEvaluation() {
+    clearDiagnostics();
+    clearResult();
+    setLoopControl(LoopControl::None);
+}
+
+void InterpreterContext::addError(const NomadString& error) {
+    addDiagnostic({CompilerDiagnosticSeverity::Error, error, m_function->getPath(),
+        NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
+}
+
+void InterpreterContext::reportInputError(const SourceText& source, const NomadString& message) {
+    addDiagnostic({
+        CompilerDiagnosticSeverity::Error,
+        message,
+        source.sourceName,
+        NOMAD_INVALID_INDEX,
+        NOMAD_INVALID_INDEX
+    });
+}
+
+void InterpreterContext::addDiagnostic(const CompilerDiagnostic& diagnostic) {
+    m_diagnostics.push_back(diagnostic);
+}
+
+void InterpreterContext::copyCompilerDiagnostic(
+    const std::span<const CompilerDiagnostic> diagnostics,
+    const NomadString& sourceName
+) {
+    for (auto diagnostic : diagnostics) {
+        diagnostic.sourceName = sourceName;
+        addDiagnostic(diagnostic);
+    }
+
+}
+
+std::span<const CompilerDiagnostic> InterpreterContext::getDiagnostics() const {
+    return m_diagnostics;
+}
+
+void InterpreterContext::clearDiagnostics() {
+    m_diagnostics.clear();
+}
+
+NomadBoolean InterpreterContext::hasError() const {
+    return std::ranges::any_of(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
+        return diagnostic.severity == CompilerDiagnosticSeverity::Error;
+    });
+}
+
+NomadBoolean InterpreterContext::hasWarning() const {
+    return std::ranges::any_of(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
+        return diagnostic.severity == CompilerDiagnosticSeverity::Warning;
+    });
+}
+
+std::optional<CompilerDiagnostic> InterpreterContext::getFirstError() const {
+    const auto error = std::ranges::find_if(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
+        return diagnostic.severity == CompilerDiagnosticSeverity::Error;
+    });
+
+    return error != m_diagnostics.end() ? std::optional<CompilerDiagnostic>(*error) : std::nullopt;
+}
+
+// --- Variables ---
+
 void InterpreterContext::setVariable(
     const NomadString& name,
     const Type* type,
@@ -116,41 +454,6 @@ void InterpreterContext::setVariable(
     m_variables[index] = std::move(replacement);
 }
 
-void InterpreterContext::clearVariableValue(const NomadString& name) {
-    const auto variableId = m_function->getVariableId(name);
-    if (variableId.isValid() && !isFrameVariable(variableId) &&
-        toNomadIndex(variableId.id) < m_variables.size()) {
-        auto& storage = m_variables[toNomadIndex(variableId.id)];
-        if (m_evaluationDepth != 0 && storage != nullptr) {
-            m_retiredStorage.push_back(std::move(storage));
-        } else {
-            storage.reset();
-        }
-    }
-}
-
-InterpreterEvaluationGuard::InterpreterEvaluationGuard(InterpreterContext& context) noexcept:
-    m_context(context)
-{}
-
-InterpreterEvaluationGuard::~InterpreterEvaluationGuard() {
-    m_context.endEvaluation();
-}
-
-InterpreterEvaluationGuard InterpreterContext::beginEvaluation() {
-    ++m_evaluationDepth;
-    return InterpreterEvaluationGuard(*this);
-}
-
-void InterpreterContext::endEvaluation() {
-    if (m_evaluationDepth == 0) {
-        throw NomadBug("Interpreter evaluation exits must match their entries");
-    }
-    if (--m_evaluationDepth == 0) {
-        m_retiredStorage.clear();
-    }
-}
-
 void InterpreterContext::setVariableProperty(
     const NomadString& name,
     const PropertyId propertyId,
@@ -171,18 +474,17 @@ void InterpreterContext::setVariableProperty(
     m_interpreter.setProperty(*type, storage, propertyPath, value);
 }
 
-std::pair<const StructType*, std::span<RuntimeValue>> InterpreterContext::resolveVariablePropertyStorage(
-    const NomadString& name
-) {
-    const auto* type = getVariableType(name);
-    if (type == nullptr || !type->isStruct()) {
-        throw std::invalid_argument("Stored property assignment requires an assigned struct variable");
+void InterpreterContext::clearVariableValue(const NomadString& name) {
+    const auto variableId = m_function->getVariableId(name);
+    if (variableId.isValid() && !isFrameVariable(variableId) &&
+        toNomadIndex(variableId.id) < m_variables.size()) {
+        auto& storage = m_variables[toNomadIndex(variableId.id)];
+        if (m_evaluationDepth != 0 && storage != nullptr) {
+            m_retiredStorage.push_back(std::move(storage));
+        } else {
+            storage.reset();
+        }
     }
-    const auto parameterId = getCallable()->getParameterId(name);
-    const auto storage = parameterId != NOMAD_INVALID_ID ? getMutableParameterStorage(parameterId) :
-        getMutableVariableStorageById(getCallable()->getVariableId(name));
-
-    return {type->asStructType(), storage};
 }
 
 const Type* InterpreterContext::getVariableType(const NomadString& name) const {
@@ -289,101 +591,31 @@ std::vector<InterpreterVariableInfo> InterpreterContext::listVariables() const {
     return variables;
 }
 
-InterpreterContext::InterpreterContext(const Interpreter& interpreter):
-    m_interpreter(interpreter),
-    m_function(std::make_unique<ScriptFunction>(
-        CallableId::INVALID,
-        CONSOLE_SOURCE_NAME,
-        CONSOLE_SOURCE_NAME, 
-        ""
-    )
-) {
+// --- Evaluation ---
+
+InterpreterEvaluationGuard::InterpreterEvaluationGuard(InterpreterContext& context) noexcept:
+    m_context(context)
+{}
+
+InterpreterEvaluationGuard::~InterpreterEvaluationGuard() {
+    m_context.endEvaluation();
 }
 
-InterpreterContext::~InterpreterContext() = default;
+InterpreterEvaluationGuard InterpreterContext::beginEvaluation() {
+    ++m_evaluationDepth;
+    return InterpreterEvaluationGuard(*this);
+}
 
-InterpreterContext::InterpreterContext(
-    const Interpreter& interpreter,
-    const ScriptCallableBase& function
-):
-    m_interpreter(interpreter)
-{
-    auto& virtualMachine = interpreter.getVirtualMachine();
-    if (virtualMachine.getCurrentCallable() != &function || function.getFunctionStart() == NOMAD_INVALID_INDEX) {
-        throw NomadBug("Frame interpretation requires an active compiled script callable");
+void InterpreterContext::endEvaluation() {
+    if (m_evaluationDepth == 0) {
+        throw NomadBug("Interpreter evaluation exits must match their entries");
     }
-    m_frameCallable = &function;
-    m_parameterIndex = virtualMachine.getParameterIndex();
-    m_variableIndex = virtualMachine.getVariableIndex();
-    m_frameVariableCount = function.getVariableCount();
-
-    if (virtualMachine.getRuntime()->getConstructor(function.getId()) != nullptr) {
-        m_function = std::make_unique<ScriptConstructor>(
-            CallableId{}, 
-            function.getClassType(), 
-            std::vector<Parameter>{}, 
-            function.getPath(), 
-            ""
-        );
-    } else if (function.getClassType() != nullptr) {
-        m_function = std::make_unique<ScriptMethod>(
-            CallableId{}, 
-            function.getName(), 
-            function.getClassType(),
-            std::vector<Parameter>{},
-            function.getReturnType(),
-            function.getPath(), 
-            ""
-        );
-    } else {
-        m_function = std::make_unique<ScriptFunction>(
-            function.getId(),
-            function.getName(),
-            function.getPath(), 
-            ""
-        );
-    }
-
-    m_function->setHub(function.getHub());
-    m_function->setParentId(function.getParentId());
-
-    for (NomadIndex index = 0; index < m_frameVariableCount; ++index) {
-        const auto id = VariableId{toNomadId(index)};
-        m_function->registerVariable(function.getVariableName(id), function.getVariableType(id));
-    }
-
-    for (NomadIndex index = 0; index < function.getParameterCount(); ++index) {
-        const auto id = toNomadId(index);
-        m_function->addParameter(
-            function.getParameterName(id),
-            function.getParameterType(id),
-            function.getParameters()[index].doc
-        );
-    }
-
-    m_variables.resize(m_frameVariableCount);
-
-    if (const auto* type = function.getClassType()) {
-        if (const auto* owner = type->asStructType()) {
-            RuntimeValue* storage = nullptr;
-            const auto layout = function.getCallStorageLayout();
-            if (layout.receiverOffset.has_value()) {
-                storage = virtualMachine.getEnclosingParameterStorage(*layout.receiverOffset, 1)[0].getStorageAddress();
-            }
-            m_receiver = interpreter.createStructReceiver(*owner, storage);
-        } else {
-            m_receiver = interpreter.createObjectReceiver(*type->asClassType(), virtualMachine.getScriptReceiver());
-        }
+    if (--m_evaluationDepth == 0) {
+        m_retiredStorage.clear();
     }
 }
 
-bool InterpreterContext::isFrameBacked() const {
-    return m_frameCallable != nullptr;
-}
-
-bool InterpreterContext::isFrameVariable(const VariableId variableId) const {
-    return isIdInRange(variableId.id, m_frameVariableCount);
-}
+// --- Private ---
 
 void InterpreterContext::validateFrame() const {
     if (isFrameBacked() &&
@@ -394,222 +626,18 @@ void InterpreterContext::validateFrame() const {
     }
 }
 
-const ScriptFunction* InterpreterContext::getFunction() const {
-    return dynamic_cast<const ScriptFunction*>(m_function.get());
-}
-
-ScriptCallableBase* InterpreterContext::getCallable() {
-    validateFrame();
-    return m_function.get();
-}
-
-const ScriptCallableBase* InterpreterContext::getCallable() const {
-    validateFrame();
-    return m_function.get();
-}
-
-Runtime* InterpreterContext::getRuntime() const {
-    return getVirtualMachine()->getRuntime();
-}
-
-const Interpreter& InterpreterContext::getInterpreter() const {
-    return m_interpreter;
-}
-
-VirtualMachine* InterpreterContext::getVirtualMachine() const {
-    return &m_interpreter.getVirtualMachine();
-}
-
-void InterpreterContext::setResult(const Type* type, const RuntimeValue& value) {
-    setResult(type, getScalarStorage(type, value));
-}
-
-void InterpreterContext::setResult(const Type* type, const std::span<const RuntimeValue> storage) {
-    InterpreterValue replacement(type, storage);
-    m_result = std::move(replacement);
-}
-
-void InterpreterContext::setResult(const InterpreterValue& value) {
-    InterpreterValue replacement(value);
-    m_result = std::move(replacement);
-}
-
-void InterpreterContext::setResult(InterpreterValue&& value) {
-    m_result = std::move(value);
-}
-
-void InterpreterContext::clearResult() {
-    m_result.reset();
-}
-
-void InterpreterContext::setVoidResult() {
-    setResult(getRuntime()->getVoidType(), RuntimeValue{});
-}
-
-const InterpreterValue* InterpreterContext::getResult() const {
-    return m_result ? &*m_result : nullptr;
-}
-
-void InterpreterContext::resetEvaluation() {
-    clearDiagnostics();
-    clearResult();
-    setLoopControl(LoopControl::None);
-}
-
-void InterpreterContext::addError(const NomadString& error) {
-    addDiagnostic({CompilerDiagnosticSeverity::Error, error, m_function->getPath(),
-        NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
-}
-
-void InterpreterContext::reportInputError(const SourceText& source, const NomadString& message) {
-    addDiagnostic({
-        CompilerDiagnosticSeverity::Error,
-        message,
-        source.sourceName,
-        NOMAD_INVALID_INDEX,
-        NOMAD_INVALID_INDEX
-    });
-}
-
-void InterpreterContext::clearDiagnostics() {
-    m_diagnostics.clear();
-}
-
-void InterpreterContext::addDiagnostic(const CompilerDiagnostic& diagnostic) {
-    m_diagnostics.push_back(diagnostic);
-}
-
-void InterpreterContext::copyCompilerDiagnostic(
-    const std::span<const CompilerDiagnostic> diagnostics,
-    const NomadString& sourceName
+std::pair<const StructType*, std::span<RuntimeValue>> InterpreterContext::resolveVariablePropertyStorage(
+    const NomadString& name
 ) {
-    for (auto diagnostic : diagnostics) {
-        diagnostic.sourceName = sourceName;
-        addDiagnostic(diagnostic);
+    const auto* type = getVariableType(name);
+    if (type == nullptr || !type->isStruct()) {
+        throw std::invalid_argument("Stored property assignment requires an assigned struct variable");
     }
+    const auto parameterId = getCallable()->getParameterId(name);
+    const auto storage = parameterId != NOMAD_INVALID_ID ? getMutableParameterStorage(parameterId) :
+        getMutableVariableStorageById(getCallable()->getVariableId(name));
 
-}
-
-std::span<const CompilerDiagnostic> InterpreterContext::getDiagnostics() const {
-    return m_diagnostics;
-}
-
-NomadBoolean InterpreterContext::hasError() const {
-    return std::ranges::any_of(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
-        return diagnostic.severity == CompilerDiagnosticSeverity::Error;
-    });
-}
-
-NomadBoolean InterpreterContext::hasWarning() const {
-    return std::ranges::any_of(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
-        return diagnostic.severity == CompilerDiagnosticSeverity::Warning;
-    });
-}
-
-std::optional<CompilerDiagnostic> InterpreterContext::getFirstError() const {
-    const auto error = std::ranges::find_if(m_diagnostics, [](const CompilerDiagnostic& diagnostic) {
-        return diagnostic.severity == CompilerDiagnosticSeverity::Error;
-    });
-
-    return error != m_diagnostics.end() ? std::optional<CompilerDiagnostic>(*error) : std::nullopt;
-}
-
-void InterpreterContext::setParameter(const NomadId parameterId, const RuntimeValue& value) {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
-        throw NomadBug("Invalid frame-backed parameter assignment");
-    }
-    setParameter(parameterId, getScalarStorage(m_function->getParameterType(parameterId), value));
-}
-
-std::span<const RuntimeValue> InterpreterContext::getParameterStorage(const NomadId parameterId) const {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
-        throw NomadBug("Invalid frame-backed parameter access");
-    }
-
-    validateFrame();
-    const auto& machine = *getVirtualMachine();
-
-    return machine.getEnclosingParameterStorage(
-        m_frameCallable->getParameterOffset(parameterId),
-        m_frameCallable->getParameterType(parameterId)->getSize()
-    );
-}
-
-std::span<RuntimeValue> InterpreterContext::getMutableParameterStorage(const NomadId parameterId) {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
-        throw NomadBug("Invalid frame-backed parameter access");
-    }
-    validateFrame();
-    return getVirtualMachine()->getEnclosingParameterStorage(m_frameCallable->getParameterOffset(parameterId),
-        m_frameCallable->getParameterType(parameterId)->getSize());
-}
-
-std::span<RuntimeValue> InterpreterContext::getMutableReceiverStorage() {
-    if (!isFrameBacked() || m_frameCallable->getClassType() == nullptr ||
-        !m_frameCallable->getClassType()->isStruct()) {
-        throw NomadBug("Struct receiver storage requires an active struct callable frame");
-    }
-    validateFrame();
-    const auto size = m_frameCallable->getClassType()->getSize();
-    if (size == 0) {
-        return {};
-    }
-    const auto layout = m_frameCallable->getCallStorageLayout();
-    if (!layout.receiverOffset.has_value()) {
-        throw NomadBug("Nonempty struct callable has no receiver storage pointer");
-    }
-    const auto pointer = getVirtualMachine()->getEnclosingParameterStorage(*layout.receiverOffset, 1);
-    return {pointer[0].getStorageAddress(), size};
-}
-
-InterpreterReceiver* InterpreterContext::getReceiver() {
-    validateFrame();
-    return m_receiver.get();
-}
-
-const InterpreterReceiver* InterpreterContext::getReceiver() const {
-    validateFrame();
-    return m_receiver.get();
-}
-
-void InterpreterContext::setReceiverProperty(
-    const PropertyId propertyId,
-    const InterpreterValue& value
-) {
-    const auto guard = beginEvaluation();
-    auto* receiver = getReceiver();
-    if (receiver == nullptr) {
-        throw NomadBug("Receiver property assignment requires an active composite frame");
-    }
-    receiver->setProperty(propertyId, value);
-}
-
-void InterpreterContext::setReceiverProperty(
-    const NomadStringView propertyPath,
-    const InterpreterValue& value
-) {
-    const auto guard = beginEvaluation();
-    auto* receiver = getReceiver();
-    if (receiver == nullptr) {
-        throw NomadBug("Receiver property assignment requires an active composite frame");
-    }
-    receiver->setProperty(propertyPath, value);
-}
-
-void InterpreterContext::setParameter(
-    const NomadId parameterId,
-    const std::span<const RuntimeValue> storage
-) {
-    if (!isFrameBacked() || !isIdInRange(parameterId, m_frameCallable->getParameterCount())) {
-        throw NomadBug("Invalid frame-backed parameter assignment");
-    }
-    validateFrame();
-    const auto* type = m_frameCallable->getParameterType(parameterId);
-    validateValueStorage(type, storage);
-    auto scratch = type->getSize() > 1 ? std::make_unique<RuntimeValue[]>(type->getSize()) : nullptr;
-    const auto destination = getVirtualMachine()->getEnclosingParameterStorage(
-        m_frameCallable->getParameterOffset(parameterId), type->getSize());
-    type->assignValue(storage.data(), destination.data(), scratch.get());
+    return {type->asStructType(), storage};
 }
 
 } // namespace nomad

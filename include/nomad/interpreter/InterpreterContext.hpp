@@ -61,8 +61,7 @@ enum class LoopControl {
 
 class InterpreterContext {
 public:
-    [[nodiscard]] LoopControl getLoopControl() const { return m_loopControl; }
-    void setLoopControl(LoopControl control) { m_loopControl = control; }
+    // --- Lifecycle ---
     // The caller owns the interpreter; it and its VM must outlive this context.
     explicit InterpreterContext(const Interpreter& interpreter);
     InterpreterContext(const Interpreter&& interpreter) = delete;
@@ -79,6 +78,7 @@ public:
     InterpreterContext& operator=(const InterpreterContext&) = delete;
     ~InterpreterContext();
 
+    // --- Core Accessors ---
     [[nodiscard]] const Interpreter& getInterpreter() const;
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] VirtualMachine* getVirtualMachine() const;
@@ -89,10 +89,18 @@ public:
     [[nodiscard]] const ScriptCallableBase* getCallable() const;
     [[nodiscard]] bool isFrameBacked() const;
     [[nodiscard]] bool isFrameVariable(VariableId variableId) const;
+
+    // --- Loop Control ---
+    [[nodiscard]] LoopControl getLoopControl() const;
+    void setLoopControl(LoopControl control);
+
+    // --- Parameters ---
     void setParameter(NomadId parameterId, const RuntimeValue& value);
     void setParameter(NomadId parameterId, std::span<const RuntimeValue> storage);
     [[nodiscard]] std::span<const RuntimeValue> getParameterStorage(NomadId parameterId) const;
     [[nodiscard]] std::span<RuntimeValue> getMutableParameterStorage(NomadId parameterId);
+
+    // --- Receiver ---
     // AST receiver access; null for contexts without a receiver. Wrappers borrow the active frame.
     [[nodiscard]] InterpreterReceiver* getReceiver();
     [[nodiscard]] const InterpreterReceiver* getReceiver() const;
@@ -101,6 +109,7 @@ public:
     void setReceiverProperty(PropertyId propertyId, const InterpreterValue& value);
     void setReceiverProperty(NomadStringView propertyPath, const InterpreterValue& value);
 
+    // --- Result ---
     void setResult(const Type* type, const RuntimeValue& value);
     void setResult(const Type* type, std::span<const RuntimeValue> storage);
     void setResult(const InterpreterValue& value);
@@ -109,6 +118,7 @@ public:
     void clearResult();
     [[nodiscard]] const InterpreterValue* getResult() const;
 
+    // --- Diagnostics ---
     // Clears diagnostics, result, and loop control without changing bindings or evaluation lifetime.
     void resetEvaluation();
     void addError(const NomadString& error);
@@ -126,6 +136,7 @@ public:
     // Returns an owned snapshot of the first error, or std::nullopt.
     [[nodiscard]] std::optional<CompilerDiagnostic> getFirstError() const;
 
+    // --- Variables ---
     void setVariable(const NomadString& name, const Type* type, const RuntimeValue& value);
     void setVariable(const NomadString& name, const Type* type, std::span<const RuntimeValue> storage);
     // Assigns the selected field in current storage, preserving unrelated RHS changes.
@@ -149,6 +160,8 @@ public:
     [[nodiscard]] std::span<const RuntimeValue> getVariableStorageById(VariableId variableId) const;
     [[nodiscard]] std::span<RuntimeValue> getMutableVariableStorageById(VariableId variableId);
     [[nodiscard]] std::vector<InterpreterVariableInfo> listVariables() const;
+
+    // --- Evaluation ---
     // Nested evaluations retain replaced storage until the outermost exit.
     [[nodiscard]] InterpreterEvaluationGuard beginEvaluation();
     void endEvaluation();
