@@ -7,7 +7,6 @@
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/EnumType.hpp>
-#include <nomad/script/Runtime.hpp>
 #include <nomad/script/StructType.hpp>
 
 #include <algorithm>
@@ -796,7 +795,12 @@ const Type* TypeManager::getCallbackType(
 }
 
 const Type* TypeManager::getPredicateType() {
-    return getCallbackType({}, m_runtime.getBooleanType());
+    const auto* booleanType = getTypeByName(BOOLEAN_TYPE_NAME);
+    if (booleanType == nullptr) {
+        throw NomadException("Predicate type requires a registered boolean type");
+    }
+
+    return getCallbackType({}, booleanType);
 }
 
 } // namespace nomad

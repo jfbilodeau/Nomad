@@ -686,7 +686,11 @@ catalog entry with an opaque name.
 `TypeManager::getCallbackType(parameterTypes, returnType)` interns callback descriptors by
 their exact parameter and return-type pointers. Matching signatures reuse a
 descriptor; different signatures have distinct IDs even when their type names
-match. `TypeManager::getPredicateType()` returns the parameterless boolean callback type.
+match. `TypeManager::getPredicateType()` returns the parameterless callback whose
+result is this catalog's boolean type. It reuses the same descriptor as
+`getCallbackType({}, booleanType)`. If the catalog has no boolean entry, it throws
+`NomadException` without logging or creating a callback; it does not borrow a
+return type from another catalog.
 
 Creation also registers typed constants named `EnumName.MemberName` and
 same-enum equality and inequality operators. Existing script enum syntax is

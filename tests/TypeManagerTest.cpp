@@ -1219,6 +1219,45 @@ BOOST_AUTO_TEST_CASE(runtime_enum_creation_preserves_constants_and_equality_oper
     BOOST_CHECK_THROW(runtime.registerEnumOperators(other.getTypeByName("Foreign")->asEnum()), NomadException);
 }
 
+BOOST_AUTO_TEST_CASE(predicate_type_requires_its_own_boolean_catalog_entry_without_logging) {
+    Runtime runtime;
+    TypeManager manager(runtime);
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    MemorySinkConfiguration sinkConfiguration;
+    sinkConfiguration.level = LogLevel::Debug;
+    const auto sinkId = logger.createMemorySink(sinkConfiguration);
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Debug);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    const auto initialCount = manager.getTypeCount();
+    BOOST_CHECK_THROW(static_cast<void>(manager.getPredicateType()), NomadException);
+    BOOST_TEST(manager.getTypeCount() == initialCount);
+    const auto booleanId = manager.registerType(
+        std::make_unique<BooleanType>(&runtime, manager.reserveTypeId())
+    );
+    BOOST_REQUIRE(booleanId.isValid());
+    const auto* booleanType = manager.getType(booleanId).value();
+    BOOST_TEST(booleanType != runtime.getBooleanType());
+    const auto* predicateType = manager.getPredicateType();
+    BOOST_REQUIRE(predicateType != nullptr);
+    BOOST_REQUIRE(predicateType->asCallback() != nullptr);
+    BOOST_TEST(predicateType->asCallback()->getReturnType() == booleanType);
+    BOOST_TEST(manager.ownsType(predicateType));
+    BOOST_TEST(manager.getCallbackType({}, booleanType) == predicateType);
+    const auto registeredCount = manager.getTypeCount();
+    BOOST_TEST(manager.getPredicateType() == predicateType);
+    BOOST_TEST(manager.getTypeCount() == registeredCount);
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
+}
+
 BOOST_AUTO_TEST_CASE(runtime_opaque_ids_and_callback_signatures_preserve_identity) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();
