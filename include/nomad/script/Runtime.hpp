@@ -631,6 +631,7 @@ public:
     [[nodiscard]] VariableContextId getContextId(const NomadString& name) const;
     ContextVariableId registerContextVariable(VariableContextId contextId, const NomadString& variableName, const Type* type);
     ContextVariableId registerOrUpdateContextVariable(const NomadString& variableName, const Type* type);
+    // Borrows a mutable context even from a const Runtime; its values and metadata are not frozen.
     [[nodiscard]] VariableContext* getVariableContext(VariableContextId contextId) const;
     // Throws NomadException for invalid or unregistered IDs without logging.
     [[nodiscard]] NomadString getContextName(VariableContextId id) const;
@@ -638,6 +639,7 @@ public:
     [[nodiscard]] VariableContextId getVariableContextIdByPrefix(const NomadString& variableName) const;
     [[nodiscard]] NomadString getContextVariableName(ContextVariableId contextVariableId) const;
     [[nodiscard]] const Type* getContextVariableType(ContextVariableId contextVariableId) const;
+    // Const context dispatch intentionally permits live value and read/write-tracking changes.
     void setContextVariableWritten(ContextVariableId contextVariableId, bool written) const;
     void setContextVariableRead(ContextVariableId contextVariableId, bool read) const;
     void setContextVariableValue(ContextVariableId contextVariableId, const RuntimeValue& value) const;

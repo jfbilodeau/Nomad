@@ -855,6 +855,14 @@ borrowed pointer, or `nullptr` for an invalid or unregistered ID.
 `getFirstVariableContextId` and `getNextVariableContextId` enumerate contexts
 in registration order, ending at `VariableContextId::INVALID`.
 
+Runtime's context APIs use shallow constness. `getVariableContext` intentionally
+returns a borrowed mutable `VariableContext*` even through a const Runtime.
+Context value and read/write-tracking APIs remain const-callable and may update
+the referenced context or live host state. The returned context also permits
+metadata changes through its own APIs; const Runtime does not freeze context
+contents or provide a read-only snapshot. This differs from the const format
+and script-function metadata views.
+
 `registerContextVariable(contextId, variableName, type)`,
 `registerOrUpdateContextVariable(variableName, type)`, and
 `getContextVariableId(variableName)` return a `ContextVariableId`, or
