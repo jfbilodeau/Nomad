@@ -44,6 +44,47 @@ double measureLookup(
     return elapsed / static_cast<double>(iterations);
 }
 
+template<typename Resolver>
+double measureResolution(
+    const char* name,
+    const Resolver& resolve,
+    const nomad::ResolveResult& expected,
+    const nomad::NomadIndex iterations
+) {
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        const auto result = resolve();
+        if (
+            result.status != expected.status ||
+            result.id != expected.id ||
+            result.candidates != expected.candidates ||
+            result.argumentTypes != expected.argumentTypes
+        ) {
+            throw std::runtime_error(std::format("Unexpected benchmark resolution for '{}'", name));
+        }
+    }
+
+    auto checksum = std::uint64_t{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        const auto result = resolve();
+        checksum += static_cast<std::uint64_t>(result.id.id + 1)
+            + static_cast<std::uint64_t>(result.status) + result.candidates.size();
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    const auto expectedChecksum = (
+        static_cast<std::uint64_t>(expected.id.id + 1)
+        + static_cast<std::uint64_t>(expected.status) + expected.candidates.size()
+    ) * iterations;
+    if (checksum != expectedChecksum) {
+        throw std::runtime_error(std::format("Benchmark resolution changed for '{}'", name));
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
 void printSamples(const char* name, std::vector<double> samples) {
     std::ranges::sort(samples);
     std::cout << ' ' << name << '=' << samples[samples.size() / 2]
@@ -138,12 +179,146 @@ void runBenchmark() {
     }
 }
 
+void runOwnerResolutionBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto catalogSizes = std::array<nomad::NomadIndex, 4>{0, 100, 1000, 5000};
+    constexpr auto labels = std::array{
+        "method_hit_us", "method_missing_us", "constructor_hit_us", "constructor_missing_us"
+    };
+    const auto methodName = nomad::NomadString{"benchmarkInspect"};
+    std::cout << "Owner-scoped resolution: one method and two constructors; misses use an empty owner.\n"
+        << "Only unrelated free-function count varies; complete resolution is microseconds per call.\n"
+        << std::flush;
+
+    for (const auto addedCount : catalogSizes) {
+        std::vector<nomad::NomadString> names;
+        names.reserve(addedCount);
+        for (auto index = nomad::NomadIndex{0}; index < addedCount; ++index) {
+            names.push_back(std::format("benchmark.owner.noise.{:06}", index));
+        }
+
+        const auto iterations = nomad::NomadIndex{2000000} / std::max(addedCount, nomad::NomadIndex{100});
+        std::array<std::vector<double>, 4> samples;
+        auto initialCount = nomad::NomadIndex{0};
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            nomad::Runtime runtime;
+            if (sample == 0) {
+                initialCount = runtime.getCallableCount();
+            } else if (runtime.getCallableCount() != initialCount) {
+                throw std::runtime_error("The owner-resolution baseline changed between samples");
+            }
+
+            const auto ownerId = runtime.registerClass("BenchmarkOwner", nomad::ClassMode::Closed);
+            const auto emptyOwnerId = runtime.registerClass("BenchmarkEmptyOwner", nomad::ClassMode::Closed);
+            if (ownerId.isInvalid() || emptyOwnerId.isInvalid()) {
+                throw std::runtime_error("Failed to register benchmark owners");
+            }
+
+            const auto* owner = runtime.getType(ownerId).value();
+            const auto* emptyOwner = runtime.getType(emptyOwnerId).value();
+            const auto* valueType = runtime.getIntegerType();
+            const auto parameters = std::vector{nomad::defParameter("value", valueType, "")};
+            auto callbackCalls = nomad::NomadIndex{0};
+            const nomad::NativeFunctionFn callback = [&](nomad::VirtualMachine*) { ++callbackCalls; };
+            const auto methodId = runtime.registerNativeClassMethod(ownerId, {
+                .name = methodName,
+                .parameters = {{valueType->getId(), "value", ""}},
+                .returnTypeId = valueType->getId(),
+                .function = callback
+            });
+            const auto emptyConstructorId = runtime.registerNativeClassConstructor(ownerId, {
+                .parameters = {},
+                .function = callback
+            });
+            const auto valueConstructorId = runtime.registerNativeClassConstructor(ownerId, {
+                .parameters = {{valueType->getId(), "value", ""}},
+                .function = callback
+            });
+            if (methodId.isInvalid() || emptyConstructorId.isInvalid() || valueConstructorId.isInvalid()) {
+                throw std::runtime_error("Failed to register benchmark owner members");
+            }
+
+            for (const auto& name : names) {
+                if (runtime.registerNativeFunction(name, callback, parameters, valueType, "").isInvalid()) {
+                    throw std::runtime_error("Failed to populate the unrelated callable catalog");
+                }
+            }
+
+            if (runtime.getCallableCount() != initialCount + addedCount + 3) {
+                throw std::runtime_error("Unexpected owner-resolution catalog size");
+            }
+
+            const auto argumentTypes = std::vector<const nomad::Type*>{valueType};
+            const auto methodResult = nomad::ResolveResult{
+                nomad::ResolveStatus::Resolved, methodId, {methodId}, argumentTypes
+            };
+            const auto constructorResult = nomad::ResolveResult{
+                nomad::ResolveStatus::Resolved,
+                valueConstructorId,
+                {emptyConstructorId, valueConstructorId},
+                argumentTypes
+            };
+            const auto missingResult = nomad::ResolveResult{
+                nomad::ResolveStatus::UnknownName, nomad::CallableId::INVALID, {}, argumentTypes
+            };
+            samples[0].push_back(measureResolution(
+                labels[0],
+                [&] {
+
+                    return runtime.resolveMethod(owner, methodName, argumentTypes);
+                },
+                methodResult,
+                iterations
+            ));
+            samples[1].push_back(measureResolution(
+                labels[1],
+                [&] {
+
+                    return runtime.resolveMethod(emptyOwner, methodName, argumentTypes);
+                },
+                missingResult,
+                iterations
+            ));
+            samples[2].push_back(measureResolution(
+                labels[2],
+                [&] {
+
+                    return runtime.resolveConstructor(owner, argumentTypes);
+                },
+                constructorResult,
+                iterations
+            ));
+            samples[3].push_back(measureResolution(
+                labels[3],
+                [&] {
+
+                    return runtime.resolveConstructor(emptyOwner, argumentTypes);
+                },
+                missingResult,
+                iterations
+            ));
+            if (callbackCalls != 0) {
+                throw std::runtime_error("Owner-resolution benchmark unexpectedly invoked a callable");
+            }
+        }
+
+        std::cout << "unrelated=" << addedCount << " total=" << initialCount + addedCount + 3
+            << " iterations=" << iterations;
+        for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+            printSamples(labels[query], samples[query]);
+        }
+
+        std::cout << std::endl;
+    }
+}
+
 } // namespace
 
 int main() {
     try {
         nomad::log::setLogLevel(nomad::LogLevel::Error);
         runBenchmark();
+        runOwnerResolutionBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

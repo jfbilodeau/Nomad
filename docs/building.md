@@ -101,6 +101,14 @@ functions to a fresh Runtime. It checks registration order and lookup results
 and reports five-sample medians with minimum/maximum values. Registration
 excludes Runtime construction and name/parameter preparation.
 
+An independent section measures complete method and constructor resolution on
+a fixed owner with one method and two constructor overloads, while adding
+0, 100, 1,000, or 5,000 unrelated free functions. Hit cases select the expected
+member; miss cases use a registered empty owner. The benchmark checks status,
+selected ID, candidate order, and argument types before timing, then verifies
+timed result checksums. These timings include resolution result allocation and
+overload matching, not just a name lookup.
+
 Run the same target, configuration, and workload before and after an optimization.
 Compare optimized Release results separately from Debug results; timing values
 are observations, not pass/fail thresholds.
