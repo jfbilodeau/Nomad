@@ -25,11 +25,11 @@
 
 namespace nomad {
 
-VirtualMachine::VirtualMachine(Runtime* runtime, NomadIndex stack_size):
+VirtualMachine::VirtualMachine(Runtime* runtime, NomadIndex stackSize):
     m_runtime(runtime),
     m_instructions(runtime->getInstructions())
 {
-    m_stack.resize(stack_size);
+    m_stack.resize(stackSize);
 }
 
 VirtualMachine::~VirtualMachine() = default;
@@ -588,8 +588,8 @@ void VirtualMachine::endNativeCall(const NativeCallFrame& frame) {
     m_parameterIndex = frame.parameterIndex;
 }
 
-void VirtualMachine::callNativeMethod(const CallableId memberId) {
-    const auto& method = m_runtime->getUncheckedNativeMethod(memberId);
+void VirtualMachine::callNativeMethod(const CallableId methodId) {
+    const auto& method = m_runtime->getUncheckedNativeMethod(methodId);
     const auto frame = beginNativeCall();
     BOOST_SCOPE_EXIT_ALL(&, this) {
         endNativeCall(frame);
@@ -622,11 +622,11 @@ void VirtualMachine::invokeNativeMember(const NativeFunctionFn& callback, const 
 }
 
 void VirtualMachine::getNativeProperty(
-    const PropertyId memberId,
+    const PropertyId propertyId,
     const RuntimeValue& receiver,
     RuntimeValue& result
 ) {
-    const auto info = m_runtime->getNativePropertyInfo(memberId);
+    const auto info = m_runtime->getNativePropertyInfo(propertyId);
     if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
         fault("Method-backed native properties require typed interpreter access");
     }
@@ -637,16 +637,16 @@ void VirtualMachine::getNativeProperty(
 }
 
 void VirtualMachine::getProperty(
-    const PropertyId memberId,
+    const PropertyId propertyId,
     const RuntimeValue& receiver,
     RuntimeValue& result
 ) {
-    const auto* property = m_runtime->getProperty(memberId);
+    const auto* property = m_runtime->getProperty(propertyId);
     if (property == nullptr) {
         fault("Invalid property getter");
     }
     if (property->asNativeProperty() != nullptr) {
-        getNativeProperty(memberId, receiver, result);
+        getNativeProperty(propertyId, receiver, result);
         return;
     }
     auto* instance = receiver.getObjectValue();
@@ -654,21 +654,21 @@ void VirtualMachine::getProperty(
     if (object == nullptr || object->getClassType() != property->getClassType()) {
         fault("Stored property receiver has no matching field storage");
     }
-    const auto index = property->getClassType()->getFieldIndex(memberId);
+    const auto index = property->getClassType()->getFieldIndex(propertyId);
     property->getValueType()->copyValue(&object->getField(index), &result);
 }
 
 void VirtualMachine::setProperty(
-    const PropertyId memberId,
+    const PropertyId propertyId,
     const RuntimeValue& receiver,
     const RuntimeValue& value
 ) {
-    const auto* property = m_runtime->getProperty(memberId);
+    const auto* property = m_runtime->getProperty(propertyId);
     if (property == nullptr) {
         fault("Invalid property setter");
     }
     if (property->asNativeProperty() != nullptr) {
-        setNativeProperty(memberId, receiver, value);
+        setNativeProperty(propertyId, receiver, value);
         return;
     }
     auto* instance = receiver.getObjectValue();
@@ -676,7 +676,7 @@ void VirtualMachine::setProperty(
     if (object == nullptr || object->getClassType() != property->getClassType()) {
         fault("Stored property receiver has no matching field storage");
     }
-    object->setField(property->getClassType()->getFieldIndex(memberId), value);
+    object->setField(property->getClassType()->getFieldIndex(propertyId), value);
 }
 
 RuntimeValue& VirtualMachine::getStoredProperty(const NomadIndex offset) {
@@ -700,11 +700,11 @@ RuntimeValue* VirtualMachine::getStoredPropertyAddress(
 }
 
 void VirtualMachine::setNativeProperty(
-    const PropertyId memberId,
+    const PropertyId propertyId,
     const RuntimeValue& receiver,
     const RuntimeValue& value
 ) {
-    const auto info = m_runtime->getNativePropertyInfo(memberId);
+    const auto info = m_runtime->getNativePropertyInfo(propertyId);
     if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
         fault("Method-backed native properties require typed interpreter access");
     }
@@ -1106,19 +1106,19 @@ NomadIndex VirtualMachine::nextIndex() {
 }
 
 NomadInteger VirtualMachine::nextInteger() {
-    const auto integer_value = m_instructions[m_instructionIndex].value.getIntegerValue();
+    const auto integerValue = m_instructions[m_instructionIndex].value.getIntegerValue();
 
     m_instructionIndex++;
 
-    return integer_value;
+    return integerValue;
 }
 
 NomadFloat VirtualMachine::nextFloat() {
-    const auto float_value = m_instructions[m_instructionIndex].value.getFloatValue();
+    const auto floatValue = m_instructions[m_instructionIndex].value.getFloatValue();
 
     m_instructionIndex++;
 
-    return float_value;
+    return floatValue;
 }
 
 void VirtualMachine::jump(NomadIndex index) {

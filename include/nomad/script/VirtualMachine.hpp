@@ -33,7 +33,7 @@ public:
 
 class VirtualMachine {
 public:
-    explicit VirtualMachine(Runtime* runtime, NomadIndex stack_size = 1024);
+    explicit VirtualMachine(Runtime* runtime, NomadIndex stackSize = 1024);
     VirtualMachine(const VirtualMachine& other) = delete;
     ~VirtualMachine();
 
@@ -125,13 +125,13 @@ public:
     void callScriptMethod(NomadIndex address, NomadIndex reservedStackSlots);
     void allocateScriptObject(TypeId typeId);
     void callNativeFunction(CallableId nativeFunctionId);
-    void callNativeMethod(CallableId memberId);
+    void callNativeMethod(CallableId methodId);
     void returnFunction(NomadIndex variableCount);
 
-    void getNativeProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
-    void setNativeProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
-    void getProperty(PropertyId memberId, const RuntimeValue& receiver, RuntimeValue& result);
-    void setProperty(PropertyId memberId, const RuntimeValue& receiver, const RuntimeValue& value);
+    void getNativeProperty(PropertyId propertyId, const RuntimeValue& receiver, RuntimeValue& result);
+    void setNativeProperty(PropertyId propertyId, const RuntimeValue& receiver, const RuntimeValue& value);
+    void getProperty(PropertyId propertyId, const RuntimeValue& receiver, RuntimeValue& result);
+    void setProperty(PropertyId propertyId, const RuntimeValue& receiver, const RuntimeValue& value);
     [[nodiscard]] RuntimeValue& getStoredProperty(NomadIndex offset);
     // The compiler supplies ordered, nonempty inclusive bounds; the owner remains retained by the caller.
     [[nodiscard]] RuntimeValue* getStoredPropertyAddress(
