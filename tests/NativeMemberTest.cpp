@@ -903,8 +903,11 @@ BOOST_AUTO_TEST_CASE(member_templates_validate_against_existing_concrete_members
     BOOST_REQUIRE(runtime.registerMemberTemplate("Family", "zeroArguments", MemberType::Property));
 }
 
-BOOST_AUTO_TEST_CASE(string_type_getter_returns_concrete_descriptor) {
-    static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getStringType()), const StringType*>);
+BOOST_AUTO_TEST_CASE(string_type_getter_returns_catalog_type_view) {
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Runtime&>().getStringType()),
+        const Type*
+    >);
 
     Runtime runtime;
     const auto* stringType = runtime.getStringType();
@@ -1576,7 +1579,8 @@ BOOST_AUTO_TEST_CASE(type_owned_indexers_validate_direct_registration_and_catalo
         BOOST_TEST(type->registerNativeIndexer(runtime, std::move(preassigned)).isInvalid());
     }
     auto wrongOwner = info;
-    wrongOwner.classType = runtime.getStringType();
+    wrongOwner.classType = runtime.getStringType()->asClassType();
+    BOOST_REQUIRE(wrongOwner.classType != nullptr);
     BOOST_TEST(type->registerNativeIndexer(runtime, std::move(wrongOwner)).isInvalid());
     ClassType unregistered(&runtime, TypeId::INVALID, "UnregisteredIndexer", ClassMode::Closed);
     auto unregisteredInfo = info;

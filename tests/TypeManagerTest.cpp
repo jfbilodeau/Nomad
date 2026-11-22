@@ -405,7 +405,9 @@ BOOST_AUTO_TEST_CASE(manager_finalizes_nested_composites_and_validates_mutable_o
     const auto* classType = manager.getTypeByName("Class")->asClassType();
     BOOST_TEST(manager.getMutableClassType(classType) == classType);
     Runtime other;
-    BOOST_TEST(manager.getMutableClassType(other.getStringType()) == nullptr);
+    const auto* foreignClassType = other.getStringType()->asClassType();
+    BOOST_REQUIRE(foreignClassType != nullptr);
+    BOOST_TEST(manager.getMutableClassType(foreignClassType) == nullptr);
     BOOST_TEST(manager.getMutableClassType(nullptr) == nullptr);
     runtime.getTypeManager().finalizeCompositeFieldLayout(classId);
     BOOST_TEST(classType->isFieldLayoutFinalized());

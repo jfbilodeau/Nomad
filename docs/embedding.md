@@ -460,6 +460,9 @@ registered. They do not implicitly convert to integers or other ID categories.
 Event parameter definitions use `TypeId` for their `typeId` field.
 
 `getTypeByName(name)` returns a borrowed descriptor or `nullptr`.
+All Runtime convenience type getters, including `getStringType()`, return
+borrowed `const Type*` views. Use the type-category queries above when accessing
+class-specific metadata.
 `getTypes(types)` appends registered descriptors to the supplied vector without
 clearing its existing entries. `getTypeCount()` counts all reserved IDs,
 including IDs that do not yet have a descriptor. `ownsType(type)` checks both

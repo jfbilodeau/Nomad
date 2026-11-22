@@ -57,8 +57,7 @@ Runtime::Runtime():
                 );
             },
             [](Runtime* runtime, const TypeId id) {
-                const auto* type = runtime->getType(id).value();
-                const auto* iteratorType = static_cast<const ClassType*>(type);
+                const auto* iteratorType = runtime->getType(id).value()->asClassType();
                 const auto* valueType = iteratorType->getTypeArguments()[0];
                 const auto advanceId = runtime->registerNativeClassMethod(
                     id, 
@@ -2545,8 +2544,8 @@ const Type* Runtime::getFloatType() const {
     return getTypeByName(FLOAT_TYPE_NAME);
 }
 
-const StringType* Runtime::getStringType() const {
-    return static_cast<const StringType*>(getTypeByName(STRING_TYPE_NAME));
+const Type* Runtime::getStringType() const {
+    return getTypeByName(STRING_TYPE_NAME);
 }
 
 const Type* Runtime::getFunctionType() const {
