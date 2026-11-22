@@ -109,6 +109,12 @@ selected ID, candidate order, and argument types before timing, then verifies
 timed result checksums. These timings include resolution result allocation and
 overload matching, not just a name lookup.
 
+A string section measures unique registration, repeated registration of the last
+interned string, and first/middle/last/missing `getStringId` lookups at 100, 1,000, and 5,000
+strings. An empty-text primer is registered outside timing. Checks cover ID order,
+text, stable object identity/reference counts, missing lookups, and timed result
+checksums. Debug builds also check live string-object counts after cleanup.
+
 Run the same target, configuration, and workload before and after an optimization.
 Compare optimized Release results separately from Debug results; timing values
 are observations, not pass/fail thresholds.
