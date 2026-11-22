@@ -236,8 +236,8 @@ BOOST_AUTO_TEST_CASE(custom_registered_blocks_preserve_function_source_boundarie
     }}}, {}});
     BOOST_REQUIRE_MESSAGE(compiler->compileFunctions(&context),
         (context.getFirstError() ? context.getFirstError()->message : "Compilation failed"));
-    BOOST_TEST(runtime.getFunctionId("outer").isValid());
-    BOOST_TEST(runtime.getFunctionId("sibling").isValid());
+    BOOST_TEST(runtime.getScriptFunctionId("outer").isValid());
+    BOOST_TEST(runtime.getScriptFunctionId("sibling").isValid());
 }
 
 BOOST_AUTO_TEST_CASE(statement_pre_parser_receives_both_phases_without_separate_callbacks)
@@ -418,7 +418,7 @@ BOOST_AUTO_TEST_CASE(nativeFunction_execution_accepts_named_compiled_callback_fu
     CompilerContext compileContext(compiler.get());
     compiler->registerSources(&compileContext, {{{"callbackFunction", {"callbackFunction.nomad",
         "params value:int\nreturn value"}}}, {}});
-    const auto callbackFunctionId = runtime.getFunctionId("callbackFunction");
+    const auto callbackFunctionId = runtime.getScriptFunctionId("callbackFunction");
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
     const auto* callbackType = runtime.getTypeManager().getCallbackType(
@@ -465,7 +465,7 @@ BOOST_AUTO_TEST_CASE(callback_argument_rejects_uncompiled_inline_callback_functi
     CompilerContext compilation(compiler.get());
     compiler->registerSources(&compilation, {{{"uncompiledCallback", {"uncompiledCallback.nomad",
         "params value:int\nreturn value"}}}, {}});
-    const auto callbackFunctionId = runtime.getFunctionId("uncompiledCallback");
+    const auto callbackFunctionId = runtime.getScriptFunctionId("uncompiledCallback");
     BOOST_REQUIRE(callbackFunctionId.isValid());
     const auto* callbackType = runtime.getTypeManager().getCallbackType(
         {runtime.getIntegerType()},

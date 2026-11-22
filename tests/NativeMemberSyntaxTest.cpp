@@ -314,7 +314,7 @@ BOOST_AUTO_TEST_CASE(context_assignment_takes_precedence_over_native_member_name
     BOOST_TEST(runtime.getContextVariableId("this.length").isValid());
 
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("test"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("test"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 23);
 }
 

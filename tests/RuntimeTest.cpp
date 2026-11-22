@@ -320,7 +320,7 @@ BOOST_AUTO_TEST_CASE(bare_runtime_has_core_string_natives_without_standard_nativ
     for (const auto* name : {"toFloat", "toInt", "log.info", "math.floor"}) {
         BOOST_TEST_CONTEXT(name) {
             BOOST_TEST(runtime.getNativeFunctionId(name).isInvalid());
-            BOOST_TEST(runtime.getCallableId(name).isInvalid());
+            BOOST_TEST(runtime.getFunctionId(name).isInvalid());
         }
     }
     BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(runtime.getStringType(), "length").value()) == MemberType::Property));
@@ -341,7 +341,7 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
         BOOST_TEST(runtime.getScriptFunctionCount() == 2U);
         BOOST_TEST(runtime.getScriptFunction(firstFunctionId) != nullptr);
         BOOST_TEST(runtime.getScriptFunction(secondFunctionId) != nullptr);
-        BOOST_TEST((runtime.getFunctionId("first") == firstFunctionId));
+        BOOST_TEST((runtime.getScriptFunctionId("first") == firstFunctionId));
         BOOST_TEST(runtime.getScriptFunctionName(secondFunctionId).value() == "second");
 
         std::vector<ScriptFunction*> functions;
@@ -506,7 +506,7 @@ BOOST_AUTO_TEST_CASE(runtime_creates_object_hub_members_and_rejects_conflicting_
     BOOST_TEST(runtime.getHubId("example") == hubId);
     BOOST_TEST(runtime.isHubVariable("example.current"));
     BOOST_TEST(runtime.getConstantId("example.answer") == constantId);
-    BOOST_TEST(runtime.getCallableId("example.read") == functionId);
+    BOOST_TEST(runtime.getFunctionId("example.read") == functionId);
 }
 
 BOOST_AUTO_TEST_CASE(runtime_creates_strongly_typed_enums_with_explicit_values)
@@ -680,7 +680,7 @@ BOOST_AUTO_TEST_CASE(runtime_enum_creation_rejects_hub_conflicts_before_publishi
     BOOST_TEST(runtime.getConstantId("example.State.Ready").isInvalid());
     BOOST_TEST(runtime.getConstantId("example.State") == constantId);
     BOOST_TEST(runtime.getConstantId("example.ConstantConflict.Reserved") == valueId);
-    BOOST_TEST(runtime.getCallableId("example.FunctionConflict.Reserved") == functionId);
+    BOOST_TEST(runtime.getFunctionId("example.FunctionConflict.Reserved") == functionId);
     BOOST_TEST(runtime.getHubId("example.HubConflict.Reserved").isValid());
 }
 

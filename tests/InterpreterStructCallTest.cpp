@@ -679,26 +679,26 @@ BOOST_AUTO_TEST_CASE(host_script_calls_and_construction_return_independent_value
             const std::array arguments{
                 outer, empty, InterpreterValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{41}})
             };
-            auto copy = Interpreter{*machine}.runFunction(runtime.getFunctionId("copyAggregate"), arguments);
+            auto copy = Interpreter{*machine}.runFunction(runtime.getScriptFunctionId("copyAggregate"), arguments);
             BOOST_TEST(copy.getType() == outerType);
             BOOST_TEST(copy.getStorage().data() != outer.getStorage().data());
             BOOST_TEST(copy.getStorage()[0].getIntegerValue() == 41);
             BOOST_TEST(outer.getStorage()[0].getIntegerValue() == 17);
             BOOST_TEST(arguments[0].getStorage()[0].getIntegerValue() == 17);
             BOOST_TEST(copy.getStorage()[2].getObjectValue() == outer.getStorage()[2].getObjectValue());
-            retainedText = Interpreter{*machine}.runFunction(runtime.getFunctionId("readAggregateText"), {&copy, 1});
+            retainedText = Interpreter{*machine}.runFunction(runtime.getScriptFunctionId("readAggregateText"), {&copy, 1});
             retainedObject = Interpreter{*machine}.construct(holderConstructor, {&outer, 1});
             retainedStruct = std::move(copy);
-            const auto emptyCopy = Interpreter{*machine}.runFunction(runtime.getFunctionId("copyCallEmpty"), {&empty, 1});
+            const auto emptyCopy = Interpreter{*machine}.runFunction(runtime.getScriptFunctionId("copyCallEmpty"), {&empty, 1});
             BOOST_TEST(emptyCopy.getType() == emptyType);
             BOOST_TEST(emptyCopy.getStorage().data() == nullptr);
             const std::array consumeArguments{
                 outer, empty, InterpreterValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}})
             };
-            const auto consumed = Interpreter{*machine}.runFunction(runtime.getFunctionId("consumeAggregate"), consumeArguments);
+            const auto consumed = Interpreter{*machine}.runFunction(runtime.getScriptFunctionId("consumeAggregate"), consumeArguments);
             BOOST_TEST(consumed.getType()->isVoid());
             BOOST_TEST(consumed.getStorage().data() == nullptr);
-            const auto scalar = Interpreter{*machine}.runFunction(runtime.getFunctionId("hostScalar"), {&arguments[2], 1});
+            const auto scalar = Interpreter{*machine}.runFunction(runtime.getScriptFunctionId("hostScalar"), {&arguments[2], 1});
             BOOST_TEST(scalar.getValue().getIntegerValue() == 42);
             BOOST_TEST(machine->getIntegerResult() == 41);
             BOOST_TEST(machine->getIntegerIntermediate() == 43);
@@ -871,7 +871,7 @@ BOOST_AUTO_TEST_CASE(host_function_and_closure_calls_reject_unfinished_compiled_
     fixture.addFunction("checkedBody", "recordCheckedBody\nreturn 17");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     runtime.initializeScripts();
-    const auto functionId = runtime.getFunctionId("checkedBody");
+    const auto functionId = runtime.getScriptFunctionId("checkedBody");
     auto* function = runtime.getScriptFunction(functionId);
     const Closure closure(function);
     const auto compiledEnd = function->getFunctionEnd();
@@ -907,7 +907,7 @@ BOOST_AUTO_TEST_CASE(ordinary_scalar_calls_use_the_prepared_frame_stack_boundary
     auto& runtime = fixture.getRuntime();
     fixture.addFunction("preparedScalarStack", "params value:int\nreturn value");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto functionId = runtime.getFunctionId("preparedScalarStack");
+    const auto functionId = runtime.getScriptFunctionId("preparedScalarStack");
     const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}});
     for (const auto stackSize : {5, 6}) {
         VirtualMachine machine(&runtime, stackSize);
@@ -966,7 +966,7 @@ BOOST_AUTO_TEST_CASE(ordinary_scalar_copy_failures_release_arguments_and_result_
         machine->setIntegerResult(41);
         machine->setIntegerIntermediate(43);
         const auto before = machine->captureExecutionState();
-        const auto functionId = runtime.getFunctionId("copyPreparedScalar");
+        const auto functionId = runtime.getScriptFunctionId("copyPreparedScalar");
         field->copyCount = 0;
         {
             const auto result = interpreter.runFunction(functionId, {&argument, 1});
@@ -1494,7 +1494,7 @@ BOOST_AUTO_TEST_CASE(compiled_formatting_reuses_direct_frame_captures_and_cleans
             machine->setIntegerIntermediate(43);
             field->copyCount = 0;
             {
-                const auto result = interpreter.runFunction(runtime.getFunctionId("renderCopyPair"), {&argument, 1});
+                const auto result = interpreter.runFunction(runtime.getScriptFunctionId("renderCopyPair"), {&argument, 1});
                 BOOST_TEST(result.getValue().getStringValue() == "FormattingCopyField");
                 BOOST_TEST(field->copyCount == 4U);
                 BOOST_TEST(field->copySources[2] == field->copyDestinations[0]);
@@ -1506,7 +1506,7 @@ BOOST_AUTO_TEST_CASE(compiled_formatting_reuses_direct_frame_captures_and_cleans
                 field->copyCount = 0;
                 field->failCopyAt = failure;
                 BOOST_CHECK_THROW(
-                    static_cast<void>(interpreter.runFunction(runtime.getFunctionId("renderCopyPair"), {&argument, 1})),
+                    static_cast<void>(interpreter.runFunction(runtime.getScriptFunctionId("renderCopyPair"), {&argument, 1})),
                     NomadException
                 );
                 BOOST_TEST(argument.getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
@@ -1721,7 +1721,7 @@ BOOST_AUTO_TEST_CASE(frame_and_closure_capture_copy_failures_release_completed_a
         "test.currentClosureCopy",
         [](VirtualMachine* active) {
             const auto* function = active->getRuntime()->getFunction(
-                active->getRuntime()->getCallableId("test.closureCopyProbe")
+                active->getRuntime()->getFunctionId("test.closureCopyProbe")
             )->asNativeFunction();
             function->getFn()(active);
         },
@@ -1940,7 +1940,7 @@ BOOST_AUTO_TEST_CASE(named_return_frame_views_expose_and_mutate_the_actual_initi
             "candidate.number = 91\ncandidate.text = \"frame mutation\"", frame));
         BOOST_TEST(destination[0].getIntegerValue() == 91);
         BOOST_TEST(destination[1].getStringValue() == "frame mutation");
-        const auto nested = interpreter.runFunction(runtime.getFunctionId("returnBackedNested"), {});
+        const auto nested = interpreter.runFunction(runtime.getScriptFunctionId("returnBackedNested"), {});
         BOOST_TEST(nested.getValue().getIntegerValue() == 42);
         BOOST_TEST(active->getFunctionVariableStorage(candidate).data() == destination);
         BOOST_TEST(active->getParameter(0).getStorageAddress() == destination);
@@ -1960,7 +1960,7 @@ BOOST_AUTO_TEST_CASE(named_return_frame_views_expose_and_mutate_the_actual_initi
         "value = returnBackedPair\n"
         "assert value.number == 91\nassert value.text == \"completed result\"\nreturn value.number");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("returnBackedPair"));
+    const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("returnBackedPair"));
     BOOST_REQUIRE(function != nullptr);
     BOOST_TEST(function->getVariableCount() == 3U);
     BOOST_TEST(function->getVariableStorageSize() == 0U);

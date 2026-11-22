@@ -1280,7 +1280,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_executes_compiled_value_returning_funct
     CompilerContext compileContext(compiler.get());
     compiler->registerSources(&compileContext, {{{"increment", {"increment.nomad",
         "params value:int\nreturn value + 1"}}}, {}});
-    const auto functionId = runtime.getFunctionId("increment");
+    const auto functionId = runtime.getScriptFunctionId("increment");
     BOOST_REQUIRE(functionId.isValid());
     BOOST_REQUIRE(compiler->compileFunctions(&compileContext));
 
@@ -1460,7 +1460,7 @@ BOOST_AUTO_TEST_CASE(interpreter_context_defines_variables_in_console_function)
     const auto* function = context.getFunction();
     BOOST_REQUIRE(function != nullptr);
     BOOST_TEST(function->getId().isInvalid());
-    BOOST_TEST(runtime.getFunctionId(function->getName()).isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId(function->getName()).isInvalid());
     BOOST_TEST(function->getVariableCount() == 2U);
     BOOST_TEST(function->getVariableId("first") == VariableId{0});
     BOOST_TEST(function->getVariableId("second") == VariableId{1});

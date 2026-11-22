@@ -853,7 +853,7 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_compile_as_native_method_calls_wit
         fixture.addFunction("main", NomadString{"params owner:PendingAccessorOwner argument:PendingAccessorValue\n"} +
             source + "\nreturn 0");
         BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-        const auto* function = runtime.getScriptFunction(runtime.getFunctionId("main"));
+        const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
         std::ostringstream dump;
         dumpInstructions(runtime, *function, dump);
         BOOST_TEST(dump.str().find(OpCodes::op_call_native_method) != NomadString::npos);

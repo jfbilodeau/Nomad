@@ -101,7 +101,7 @@ BOOST_AUTO_TEST_CASE(temporary_rooted_reads_preserve_nested_values_and_release_t
         "return number + point.number + method.number");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
-    const auto* readPoint = runtime.getScriptFunction(runtime.getFunctionId("readPoint"));
+    const auto* readPoint = runtime.getScriptFunction(runtime.getScriptFunctionId("readPoint"));
     BOOST_REQUIRE(readPoint != nullptr);
     BOOST_TEST(readPoint->getVariableCount() == 2U);
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(temporary_rooted_writes_and_methods_evaluate_the_root_once_
         "return result.number");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
-    const auto* forwarded = runtime.getScriptFunction(runtime.getFunctionId("forwarded"));
+    const auto* forwarded = runtime.getScriptFunction(runtime.getScriptFunctionId("forwarded"));
     BOOST_REQUIRE(forwarded != nullptr);
     BOOST_TEST(forwarded->getVariableCount() == 1U);
     BOOST_TEST(forwarded->getVariableName(VariableId{0}).starts_with("$propertyReceiver"));
@@ -219,7 +219,7 @@ BOOST_AUTO_TEST_CASE(empty_temporary_properties_preserve_root_and_method_side_ef
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     BOOST_TEST(runtime.getTypeByName("Outer")->getSize() == 0U);
-    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* main = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
     BOOST_REQUIRE(main != nullptr);
     BOOST_TEST(main->getVariableStorageSize() == 0U);
     const std::vector<NomadInteger> expectedCalls{1, 2, 1, 1, 3, 1, 1};
@@ -271,7 +271,7 @@ BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_sto
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
     for (const auto* name : {"build", "relay", "relayAgain", "fromParameter", "methodResult"}) {
-        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* wrapper = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         BOOST_TEST(wrapper->getVariableCount() == 0U);
         BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
@@ -282,7 +282,7 @@ BOOST_AUTO_TEST_CASE(free_function_return_forwarding_eliminates_intermediate_sto
         BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
     }
     for (const auto* name : {"identity"}) {
-        const auto* copying = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* copying = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(copying != nullptr);
         BOOST_TEST(copying->getVariableCount() == 1U);
         BOOST_TEST(copying->getVariableStorageSize() == 2U);
@@ -332,7 +332,7 @@ BOOST_AUTO_TEST_CASE(empty_free_function_return_forwarding_omits_storage_and_pre
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     for (const auto* name : {"leaf", "forward", "chain"}) {
-        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* wrapper = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         BOOST_TEST(wrapper->getVariableCount() == 0U);
         BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
@@ -396,7 +396,7 @@ BOOST_AUTO_TEST_CASE(construction_returns_preserve_initialization_order_early_re
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     for (const auto* name : {"make", "duplicate"}) {
-        const auto* callable = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* callable = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(callable != nullptr);
         BOOST_TEST(callable->getVariableCount() == 0U);
         BOOST_TEST(callable->getVariableStorageSize() == 0U);
@@ -471,7 +471,7 @@ BOOST_AUTO_TEST_CASE(method_return_forwarding_preserves_stored_borrowed_and_temp
     for (const auto* name : {
         "fromParameter", "fromLocal", "fromOwner", "fromClassTemporary", "fromTemporary", "fromChain"
     }) {
-        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* wrapper = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         for (auto index = NomadIndex{0}; index < wrapper->getVariableCount(); ++index) {
             BOOST_TEST(!wrapper->getVariableName(VariableId{toNomadId(index)}).starts_with("$return"));
@@ -481,11 +481,11 @@ BOOST_AUTO_TEST_CASE(method_return_forwarding_preserves_stored_borrowed_and_temp
         BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
         BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
     }
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromParameter"))->getVariableCount() == 0U);
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromOwner"))->getVariableCount() == 0U);
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromTemporary"))->getVariableCount() == 1U);
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("fromChain"))->getVariableCount() == 2U);
-    const auto* propertyCopy = runtime.getScriptFunction(runtime.getFunctionId("propertyCopy"));
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("fromParameter"))->getVariableCount() == 0U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("fromOwner"))->getVariableCount() == 0U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("fromTemporary"))->getVariableCount() == 1U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("fromChain"))->getVariableCount() == 2U);
+    const auto* propertyCopy = runtime.getScriptFunction(runtime.getScriptFunctionId("propertyCopy"));
     BOOST_TEST(propertyCopy->getVariableCount() == 1U);
     BOOST_TEST(propertyCopy->getVariableName(VariableId{0}).starts_with("$return"));
     const auto* payload = runtime.getTypeByName("Payload")->asStructType();
@@ -563,7 +563,7 @@ BOOST_AUTO_TEST_CASE(class_method_struct_results_support_local_and_forwarded_des
         "forwardClassReturn", "forwardTemporaryClassReturn", "forwardNestedClassReturn",
         "forwardClassEmpty", "forwardClassSingle"
     }) {
-        const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(function != nullptr);
         BOOST_TEST(function->getVariableCount() == 0U);
         std::ostringstream dump;
@@ -623,7 +623,7 @@ BOOST_AUTO_TEST_CASE(method_return_forwarding_handles_empty_receiver_and_result_
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     for (const auto* name : {"emptyBoth", "nonemptyResult", "emptyResult", "classOwnedEmpty"}) {
-        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* wrapper = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         BOOST_TEST(wrapper->getVariableCount() == 0U);
         BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
@@ -776,7 +776,7 @@ BOOST_AUTO_TEST_CASE(empty_temporary_receivers_preserve_construction_copy_and_me
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     BOOST_TEST(runtime.getTypeByName("Empty")->getSize() == 0U);
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("main"))->getVariableStorageSize() == 0U);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("main"))->getVariableStorageSize() == 0U);
     const std::vector<NomadInteger> expectedCalls{1, 4, 2, 1, 5, 1, 3, 6, 1, 3};
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
     const auto objectsBefore = NomadObject::getLiveObjectCount();
@@ -1010,7 +1010,7 @@ BOOST_AUTO_TEST_CASE(struct_declarations_have_specialized_ast_members_and_source
     BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
         *compiler, CompilationTarget::Analysis).succeeded());
     BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
-    auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
+    auto* function = runtime.getScriptCallable(runtime.getScriptFunctionId("main"));
     CompilerContext context(compiler.get());
     std::unique_ptr<Statement> statement;
     {
@@ -1080,7 +1080,7 @@ BOOST_AUTO_TEST_CASE(struct_member_scanning_balances_blocks_callbacks_and_loop_c
     BOOST_REQUIRE(compileSources({{{"main", {"main.nomad", "return"}}}, {}},
         *compiler, CompilationTarget::Analysis).succeeded());
     BOOST_REQUIRE(runtime.registerStruct("Point").isValid());
-    auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
+    auto* function = runtime.getScriptCallable(runtime.getScriptFunctionId("main"));
     CompilerContext context(compiler.get());
     Tokenizer tokens(&context, "blocks.nomad",
         "struct Point\n"
@@ -1148,7 +1148,7 @@ BOOST_AUTO_TEST_CASE(symbols_precede_cross_file_signatures_and_analysis_does_not
         BOOST_TEST(!type->isVoid());
         BOOST_TEST(type->getSize() == 0U);
         BOOST_TEST(type->isFieldLayoutFinalized());
-        const auto* identity = runtime.getScriptFunction(runtime.getFunctionId("identity"));
+        const auto* identity = runtime.getScriptFunction(runtime.getScriptFunctionId("identity"));
         BOOST_REQUIRE(identity != nullptr);
         BOOST_TEST(identity->getParameterType(0) == type);
         BOOST_TEST(identity->getReturnType() == type);
@@ -1214,8 +1214,8 @@ BOOST_AUTO_TEST_CASE(fields_methods_overloads_and_nested_layouts_resolve_after_i
     const auto* player = runtime.getTypeByName("Player")->asCompositeType();
     BOOST_TEST(player->getPropertyCount() == 2U);
     BOOST_TEST(player->getFieldStorageSize() == 4U);
-    const auto* printPoint = runtime.getScriptFunction(runtime.getFunctionId("printPoint"));
-    const auto* updatePoint = runtime.getScriptFunction(runtime.getFunctionId("updatePoint"));
+    const auto* printPoint = runtime.getScriptFunction(runtime.getScriptFunctionId("printPoint"));
+    const auto* updatePoint = runtime.getScriptFunction(runtime.getScriptFunctionId("updatePoint"));
     BOOST_REQUIRE(printPoint != nullptr && updatePoint != nullptr);
     BOOST_TEST(printPoint->getParameterCount() == 1U);
     BOOST_TEST(printPoint->getParameterStorageSize() == 3U);
@@ -1266,8 +1266,8 @@ BOOST_AUTO_TEST_CASE(original_layout_and_recursive_struct_frames_preserve_copies
     BOOST_TEST(point->getSize() == 3U);
     BOOST_TEST(player->getPropertyCount() == 2U);
     BOOST_TEST(player->getFieldStorageSize() == 4U);
-    const auto* printPoint = runtime.getScriptFunction(runtime.getFunctionId("printPoint"));
-    const auto* updatePoint = runtime.getScriptFunction(runtime.getFunctionId("updatePoint"));
+    const auto* printPoint = runtime.getScriptFunction(runtime.getScriptFunctionId("printPoint"));
+    const auto* updatePoint = runtime.getScriptFunction(runtime.getScriptFunctionId("updatePoint"));
     BOOST_REQUIRE(printPoint != nullptr);
     BOOST_REQUIRE(updatePoint != nullptr);
     BOOST_TEST(printPoint->getParameterCount() == 1U);

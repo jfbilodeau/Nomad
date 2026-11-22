@@ -109,9 +109,9 @@ BOOST_AUTO_TEST_CASE(module_script_declarations_are_available_without_running_th
         diagnostics += formatDiagnostic(diagnostic) + "\n";
     }
     BOOST_REQUIRE_MESSAGE(result.succeeded(), diagnostics);
-    BOOST_TEST(host->getRuntime()->getFunctionId("init").isValid());
-    BOOST_TEST(host->getRuntime()->getFunctionId("$fixture.init").isValid());
-    BOOST_TEST(host->getRuntime()->getFunctionId("moduleAnswer").isValid());
+    BOOST_TEST(host->getRuntime()->getScriptFunctionId("init").isValid());
+    BOOST_TEST(host->getRuntime()->getScriptFunctionId("$fixture.init").isValid());
+    BOOST_TEST(host->getRuntime()->getScriptFunctionId("moduleAnswer").isValid());
     BOOST_TEST(host->run() == 7);
 }
 
@@ -130,7 +130,7 @@ BOOST_AUTO_TEST_CASE(module_sources_join_explicit_snapshots_and_preserve_compile
     auto* compiler = host->getCompiler();
     CompilerContext context(compiler);
     compiler->registerSources(&context, batch);
-    const auto id = host->getRuntime()->getFunctionId("$fixture.nested.main");
+    const auto id = host->getRuntime()->getScriptFunctionId("$fixture.nested.main");
     BOOST_REQUIRE(id.isValid());
     const auto& script = compiler->getScript(compiler->getScriptId(id));
     BOOST_TEST(script.owner == "fixture");
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(module_discovery_is_shared_by_explicit_compilation_instruct
             {"main", {"editor:main", "return moduleAnswer"}}
         }, {}}, CompilationTarget::Analysis);
         BOOST_TEST(result.succeeded());
-        BOOST_TEST(host->getRuntime()->getFunctionId("$fixture.declarations").isValid());
+        BOOST_TEST(host->getRuntime()->getScriptFunctionId("$fixture.declarations").isValid());
     }
     {
         auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
@@ -568,7 +568,7 @@ BOOST_AUTO_TEST_CASE(range_overloads_are_reusable_iterables_in_compiler_and_inte
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 40);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
@@ -608,9 +608,9 @@ BOOST_AUTO_TEST_CASE(range_handles_integer_limits_and_rejects_zero_step_at_runti
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 4);
-    BOOST_CHECK_EXCEPTION(virtualMachine->executeFunction(runtime.getFunctionId("invalid"), {}, result),
+    BOOST_CHECK_EXCEPTION(virtualMachine->executeFunction(runtime.getScriptFunctionId("invalid"), {}, result),
         NomadException, [](const NomadException& error) {
             return NomadString(error.what()).find("Range step must not be zero") != NomadString::npos;
         });
@@ -657,7 +657,7 @@ BOOST_AUTO_TEST_CASE(range_arguments_are_evaluated_once_and_loop_controls_use_no
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 5);
     BOOST_TEST(calls == 3);
     calls = 0;
@@ -712,7 +712,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_run_in_compiler_and_interpreter) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 349);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
@@ -773,7 +773,7 @@ BOOST_AUTO_TEST_CASE(collection_iterators_keep_sources_and_obey_current_and_comp
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("earlyReturn"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("earlyReturn"), {}, result);
     BOOST_TEST(result.getStringValue() == "kept");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -808,7 +808,7 @@ BOOST_AUTO_TEST_CASE(collection_loops_allow_replacement_failed_removal_and_mutat
     BOOST_REQUIRE_MESSAGE(compiled,
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 11);
     auto machine = runtime.createVirtualMachine();
     const Interpreter contextEvaluator(*machine);
@@ -899,7 +899,7 @@ BOOST_AUTO_TEST_CASE(collection_loop_bindings_preserve_values_and_allow_reassign
     runtime.getStringType()->freeValue(&emptyString);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringValue() == "LASTbreak20 0 6 100");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -943,7 +943,7 @@ BOOST_AUTO_TEST_CASE(object_parameter_reassignment_preserves_caller_references_a
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 221);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -1011,7 +1011,7 @@ BOOST_AUTO_TEST_CASE(collections_key_values_construct_read_and_share_references)
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -1087,14 +1087,14 @@ BOOST_AUTO_TEST_CASE(collections_key_values_infer_constructor_types) {
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto* entryType = runtime.getTypeManager().getParameterizedType("KeyValue", {runtime.getStringType(), runtime.getIntegerType()});
     const auto* flagsType = runtime.getTypeManager().getParameterizedType("KeyValue", {runtime.getIntegerType(), runtime.getBooleanType()});
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeEntry"))->getReturnType() == entryType);
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("makeFlags"))->getReturnType() == flagsType);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("makeEntry"))->getReturnType() == entryType);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("makeFlags"))->getReturnType() == flagsType);
     RuntimeValue empty;
     runtime.getStringType()->initValue(&empty);
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -1221,7 +1221,7 @@ BOOST_AUTO_TEST_CASE(collections_constructs_arrays_from_nomad_and_interpreter) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(calls == "32");
     const auto* outer = result.asObject<Array1dObject>();
     BOOST_TEST(outer->getCount() == 2u);
@@ -1283,7 +1283,7 @@ BOOST_AUTO_TEST_CASE(array_dimension_values_fail_at_runtime_not_compilation) {
             BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
             const auto before = NomadObject::getLiveObjectCount();
             auto machine = runtime.createVirtualMachine();
-            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {}), NomadException);
+            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getScriptFunctionId("main")), {}), NomadException);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
             const Interpreter evaluationEvaluator(*machine);
             InterpreterContext evaluation(evaluationEvaluator);
@@ -1332,7 +1332,7 @@ BOOST_AUTO_TEST_CASE(array_constructor_overloads_return_rank_specific_types) {
     const auto compiled = compiler->compileScripts(&context, CompilationTarget::Executable);
     BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.asObject<Array2dObject>()->getCount() == 12u);
     result.freeObjectValue();
     BOOST_TEST(calls == "243765");
@@ -1442,7 +1442,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_construct_empty_typed_instances_and_defaul
         (compilation.getFirstError() ? formatDiagnostic(*compilation.getFirstError()) : "Compilation failed"));
     const auto compiledObjects = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 0);
     BOOST_TEST(NomadObject::getLiveObjectCount() == compiledObjects);
     {
@@ -1536,7 +1536,7 @@ BOOST_AUTO_TEST_CASE(collections_map_indexers_insert_replace_and_preserve_owned_
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "updated");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -1728,7 +1728,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
         ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -1865,7 +1865,7 @@ BOOST_AUTO_TEST_CASE(collections_maps_remove_and_clear_without_logging_and_prese
         ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -2160,7 +2160,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_store_typed_values_and_share_mutations) {
         (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 3);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 
@@ -2335,7 +2335,7 @@ BOOST_AUTO_TEST_CASE(collections_lists_mutate_order_return_indices_and_release_v
         ~LogCapture() { log::removeSink(sinkId); }
     } capture;
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -2387,7 +2387,7 @@ BOOST_AUTO_TEST_CASE(collections_list_insertion_bounds_fault_without_changing_li
             listType->initValue(&value);
             const auto before = NomadObject::getLiveObjectCount();
             auto machine = runtime.createVirtualMachine();
-            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getFunctionId("main")), {value}), NomadException);
+            BOOST_CHECK_THROW(machine->run(runtime.getScriptFunction(runtime.getScriptFunctionId("main")), {value}), NomadException);
             BOOST_TEST(value.asObject<ListObject>()->getCount() == 0u);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
             listType->freeValue(&value);
@@ -2449,7 +2449,7 @@ BOOST_AUTO_TEST_CASE(collections_indexers_read_replace_chain_and_preserve_evalua
         (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "updated:9");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -2504,7 +2504,7 @@ BOOST_AUTO_TEST_CASE(array1_indexers_read_replace_and_preserve_references) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 130);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -2570,7 +2570,7 @@ BOOST_AUTO_TEST_CASE(array2_indexers_read_write_chain_and_preserve_reference_sem
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "changed:46");
     runtime.getStringType()->freeValue(&result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -2694,7 +2694,7 @@ BOOST_AUTO_TEST_CASE(array3_indexers_work_in_compiled_scripts_and_interpreter) {
     runtime.getStringType()->freeValue(&empty);
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     {
         VirtualMachine machine(&runtime);
@@ -2853,18 +2853,18 @@ BOOST_AUTO_TEST_CASE(collections_constructs_distinct_reference_counted_lists) {
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue first;
     RuntimeValue second;
-    virtualMachine->executeFunction(runtime.getFunctionId("init"), {}, first);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("init"), {}, first);
     BOOST_REQUIRE(first.getObjectValue() != nullptr);
     BOOST_TEST(first.getObjectValue()->getReferenceCount() == 1u);
     BOOST_TEST(NomadObject::getLiveObjectCount() == before + 1);
-    virtualMachine->executeFunction(runtime.getFunctionId("init"), {}, second);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("init"), {}, second);
     BOOST_TEST(first.getObjectValue() != second.getObjectValue());
     BOOST_TEST(second.getObjectValue()->getReferenceCount() == 1u);
     RuntimeValue distinct;
-    virtualMachine->executeFunction(runtime.getFunctionId("distinct"), {}, distinct);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("distinct"), {}, distinct);
     BOOST_TEST(distinct.getBooleanValue());
     RuntimeValue postfix;
-    virtualMachine->executeFunction(runtime.getFunctionId("postfix"), {}, postfix);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("postfix"), {}, postfix);
     BOOST_TEST(postfix.getBooleanValue());
     listType->freeValue(&first);
     listType->freeValue(&second);
@@ -2926,7 +2926,7 @@ BOOST_AUTO_TEST_CASE(object_construction_reports_callback_failures) {
     BOOST_REQUIRE(compiler->compileScripts(&context, CompilationTarget::Executable));
     RuntimeValue result;
     BOOST_CHECK_EXCEPTION(
-        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result),
+        virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result),
         NomadException,
         [](const NomadException& exception) {
             return NomadString(exception.what()).find("returned null") != NomadString::npos;
@@ -2964,7 +2964,7 @@ BOOST_AUTO_TEST_CASE(compiler_resolves_parameterized_annotations_from_collection
             "return identity values"
         }}}, {}});
         BOOST_REQUIRE(compiler->compileScripts(&context, target));
-        const auto* function = runtime.getScriptFunction(runtime.getFunctionId("init"));
+        const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("init"));
         BOOST_REQUIRE(function != nullptr);
         BOOST_TEST(function->getParameterType(0) == runtime.getTypeManager().getParameterizedType("List", {runtime.getIntegerType()}));
         BOOST_TEST(function->getParameterType(1)->getTypeName() == "List<List<string>>");

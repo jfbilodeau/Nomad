@@ -243,7 +243,7 @@ std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* c
     if (context->getCompiler()->getReceiverType(function) != nullptr && name == "this") {
         return std::make_unique<IdentifierExpression>(parent, line, column, name);
     }
-    const auto functionId = context->getRuntime()->getCallableId(name);
+    const auto functionId = context->getRuntime()->getFunctionId(name);
     if (functionId.isValid()) {
         const auto* targetFunction = context->getRuntime()->getFunction(functionId);
         if (targetFunction->getParameterCount() != 0) {
@@ -523,7 +523,7 @@ std::unique_ptr<Statement> parseStatement(
     }
 
     const auto qualifiedName = statementName;
-    const auto functionId = context->getRuntime()->getCallableId(qualifiedName);
+    const auto functionId = context->getRuntime()->getFunctionId(qualifiedName);
 
     if (functionId.isValid()) {
         const auto callLine = tokens->getLineIndex();
@@ -608,7 +608,7 @@ CallableId parseCallbackParameter(
         return CallableId::INVALID;
     }
 
-    const auto funId = context->getRuntime()->getFunctionId(funName);
+    const auto funId = context->getRuntime()->getScriptFunctionId(funName);
 
     if (funId.isInvalid()) {
         context->addError("Unknown callback function name '" + funName + "'", tokens);
@@ -648,7 +648,7 @@ std::unique_ptr<Statement> parseFunctionCall(
         functionName
     );
 
-    const auto functionId = context->getRuntime()->getCallableId(functionName);
+    const auto functionId = context->getRuntime()->getFunctionId(functionName);
 
     if (functionId.isInvalid()) {
         context->addError("Unknown function name: '" + functionName + "'", tokens);
@@ -1072,7 +1072,7 @@ IdentifierType getIdentifierType(const Compiler* compiler, const NomadString& na
         return IdentifierType::Constant;
     }
 
-    if (compiler->getRuntime()->getFunctionId(name).isValid()) {
+    if (compiler->getRuntime()->getScriptFunctionId(name).isValid()) {
         return IdentifierType::ScriptFunction;
     }
 
@@ -1164,7 +1164,7 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
     if (!runtime->getContainingHub(variableName).empty() &&
         !runtime->isHubVariable(variableName) &&
         runtime->getConstantId(variableName).isInvalid() &&
-        runtime->getCallableId(variableName).isInvalid() &&
+        !runtime->functionExists(variableName) &&
         runtime->getDynamicVariableId(variableName).isInvalid() &&
         runtime->getTypeByName(variableName) == nullptr &&
         !hasValueReceiver) {
@@ -1298,7 +1298,7 @@ std::unique_ptr<Expression> parsePrimaryExpression(CompilerContext* context, Scr
                 parent, tokens->getLineIndex(), token.column, token.textValue
             );
         }
-        const auto functionId = context->getRuntime()->getCallableId(token.textValue);
+        const auto functionId = context->getRuntime()->getFunctionId(token.textValue);
 
         if (functionId.isValid()) {
             return parseFunctionCallExpression(context, function, tokens, parent, token.textValue);
@@ -1372,7 +1372,7 @@ std::unique_ptr<Expression> parseFunctionCallExpression(
         functionName
     );
 
-    const auto functionId = context->getRuntime()->getCallableId(functionName);
+    const auto functionId = context->getRuntime()->getFunctionId(functionName);
     const auto* targetFunction = context->getRuntime()->getFunction(functionId);
 
     if (targetFunction == nullptr) {
@@ -1457,7 +1457,7 @@ bool parseCallableArguments(
     auto* runtime = context->getRuntime();
     if (runtime->getFunction(callable.getId()) == &callable) {
         std::vector<CallableId> overloads;
-        runtime->getCallableOverloads(callable.getName(), overloads);
+        runtime->getFunctionIds(callable.getName(), overloads);
         for (const auto id : overloads) {
             const auto* candidate = runtime->getFunction(id);
             if (candidate->getParameterCount() != callable.getParameterCount()) {

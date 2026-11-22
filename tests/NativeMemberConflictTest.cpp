@@ -58,7 +58,7 @@ BOOST_AUTO_TEST_CASE(unrelated_qualified_identifier_does_not_conflict) {
         "name = \"J-F\"\n"
         "return name"
     }}}, {}});
-    const auto functionId = runtime.getFunctionId("test");
+    const auto functionId = runtime.getScriptFunctionId("test");
 
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 

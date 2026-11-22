@@ -748,7 +748,7 @@ Canvas* Game::getCanvas() const {
 }
 
 CallableId Game::getFunctionId(const NomadString& functionName) const {
-    return m_runtime->getFunctionId(functionName);
+    return m_runtime->getScriptFunctionId(functionName);
 }
 
 void Game::executeFunction(const CallableId functionId, Scene *scene, Entity *thisEntity, Entity *otherEntity) {
@@ -1576,7 +1576,7 @@ NomadString& Game::getText(const NomadString& key, NomadString& text) const {
 void Game::executeEntry() {
     log::info("Executing `" + m_options.entryFunction + "` entry function");
 
-    const auto initFunctionId = m_runtime->getFunctionId(m_options.entryFunction);
+    const auto initFunctionId = m_runtime->getScriptFunctionId(m_options.entryFunction);
 
     if (initFunctionId.isInvalid()) {
         raiseError("Configured entry function '" + m_options.entryFunction + "' was not found");

@@ -2533,7 +2533,7 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
         "empty = emptyReturn\nemptyReturn\n"
         "return (readPayload original) + (readPayload copy) + (readPayload (choose original true))");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* forward = runtime.getScriptFunction(runtime.getFunctionId("forward"));
+    const auto* forward = runtime.getScriptFunction(runtime.getScriptFunctionId("forward"));
     BOOST_REQUIRE(forward != nullptr);
     BOOST_TEST(forward->getParameterStorageSize() == 2U);
     BOOST_REQUIRE(forward->getCallStorageLayout().returnOffset.has_value());
@@ -2550,7 +2550,7 @@ BOOST_AUTO_TEST_CASE(compiled_struct_returns_support_nested_calls_assignments_ar
     BOOST_TEST(calls == 9);
     BOOST_TEST(emptyCalls == 6);
     VirtualMachine machine(&runtime);
-    const auto* identity = runtime.getScriptFunction(runtime.getFunctionId("identity"));
+    const auto* identity = runtime.getScriptFunction(runtime.getScriptFunctionId("identity"));
     BOOST_CHECK_THROW(machine.run(identity, {RuntimeValue{}}), VirtualMachineException);
     BOOST_TEST(calls == 9);
     const Interpreter interpreter(machine);
@@ -2638,7 +2638,7 @@ BOOST_AUTO_TEST_CASE(named_struct_returns_elide_only_fresh_adjacent_tail_pairs) 
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     for (const auto* name : {"namedConstruct", "namedForward", "namedMethod", "namedSingle", "namedParameterCopy"}) {
         BOOST_TEST_CONTEXT(name) {
-            const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+            const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
             BOOST_REQUIRE(function != nullptr);
             const auto candidate = function->getVariableId("candidate");
             BOOST_TEST(function->getNamedReturnVariable().id == candidate.id);
@@ -2656,7 +2656,7 @@ BOOST_AUTO_TEST_CASE(named_struct_returns_elide_only_fresh_adjacent_tail_pairs) 
             BOOST_TEST(dump.str().find(OpCodes::op_return + NomadString{"\n"}) != NomadString::npos);
         }
     }
-    const auto* neighbors = runtime.getScriptFunction(runtime.getFunctionId("namedNeighbors"));
+    const auto* neighbors = runtime.getScriptFunction(runtime.getScriptFunctionId("namedNeighbors"));
     BOOST_REQUIRE(neighbors != nullptr);
     BOOST_TEST(neighbors->getVariableStorageSize() == 3U);
     auto offset = NomadIndex{0};
@@ -2676,7 +2676,7 @@ BOOST_AUTO_TEST_CASE(named_struct_returns_elide_only_fresh_adjacent_tail_pairs) 
         "namedIntervening", "namedBranch", "namedLoop", "namedCopied", "namedSelfUse",
         "namedEarlierMutation", "namedFormatted", "namedCaptured", "namedEmpty"}) {
         BOOST_TEST_CONTEXT(name) {
-            const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+            const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
             BOOST_REQUIRE(function != nullptr);
             BOOST_TEST(function->getNamedReturnVariable().isInvalid());
         }
@@ -2736,7 +2736,7 @@ BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_orde
             const auto stored = owner->getFieldStorage(0);
             BOOST_TEST(destination != stored.data());
             BOOST_TEST(active->getEnclosingParameterStorage(1, 1)[0].getStorageAddress() == destination);
-            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("success"));
+            const auto* success = runtime.getScriptFunction(runtime.getScriptFunctionId("success"));
             active->run(success, {});
             BOOST_TEST(active->getIntegerResult() == 42);
             BOOST_TEST(active->getParameter(3).getStorageAddress() == destination);
@@ -2770,7 +2770,7 @@ BOOST_AUTO_TEST_CASE(forwarded_native_returns_preserve_destinations_reentry_orde
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     for (const auto* name : {"relay", "relayAgain", "namedRelay", "namedRelayAgain"}) {
-        const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* wrapper = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(wrapper != nullptr);
         BOOST_TEST(wrapper->getVariableCount() == (NomadStringView{name}.starts_with("named") ? 3U : 0U));
         BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
@@ -2845,7 +2845,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
             BOOST_TEST(destination != stored.data());
             BOOST_TEST(destination[0].getIntegerValue() == 0);
             BOOST_TEST(destination[1].getStringObject()->getString().empty());
-            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("constructionSuccess"));
+            const auto* success = runtime.getScriptFunction(runtime.getScriptFunctionId("constructionSuccess"));
             active->run(success, {});
             BOOST_TEST(active->getIntegerResult() == 42);
             BOOST_TEST(active->getParameter(3).getStorageAddress() == destination);
@@ -2882,7 +2882,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
         "return owner.payload.number");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
-    const auto* create = runtime.getScriptFunction(runtime.getFunctionId("create"));
+    const auto* create = runtime.getScriptFunction(runtime.getScriptFunctionId("create"));
     BOOST_REQUIRE(create != nullptr);
     BOOST_TEST(create->getVariableCount() == 0U);
     std::ostringstream dump;
@@ -2891,7 +2891,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
     BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
     BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
-    const auto* namedCreate = runtime.getScriptFunction(runtime.getFunctionId("namedCreate"));
+    const auto* namedCreate = runtime.getScriptFunction(runtime.getScriptFunctionId("namedCreate"));
     BOOST_REQUIRE(namedCreate != nullptr);
     BOOST_TEST(namedCreate->getNamedReturnVariable().isValid());
     BOOST_TEST(namedCreate->getVariableStorageSize() == 0U);
@@ -2900,7 +2900,7 @@ BOOST_AUTO_TEST_CASE(native_construction_returns_use_forwarded_storage_without_e
     BOOST_TEST(namedDump.str().find(OpCodes::op_create_native_struct) != NomadString::npos);
     BOOST_TEST(namedDump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
     BOOST_TEST(namedDump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
-    const auto* empty = runtime.getScriptFunction(runtime.getFunctionId("emptyConstruction"));
+    const auto* empty = runtime.getScriptFunction(runtime.getScriptFunctionId("emptyConstruction"));
     BOOST_REQUIRE(empty != nullptr);
     BOOST_TEST(empty->getVariableCount() == 0U);
     BOOST_TEST(!empty->getCallStorageLayout().returnOffset.has_value());
@@ -3135,7 +3135,7 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
         "assert owner.number == 5\nreturn numberBeforeReplacement + single.number + copy.number");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     for (const auto* name : {"readCompiledAccessor", "readSingleAccessor", "readEmptyAccessor"}) {
-        const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         BOOST_REQUIRE(function != nullptr);
         BOOST_TEST(function->getVariableCount() == 0U);
         std::ostringstream dump;
@@ -3146,7 +3146,7 @@ BOOST_AUTO_TEST_CASE(compiled_method_backed_properties_preserve_snapshots_setter
         BOOST_TEST((dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos) ==
             (NomadStringView{name} != "readEmptyAccessor"));
     }
-    const auto* writer = runtime.getScriptFunction(runtime.getFunctionId("writeCompiledAccessor"));
+    const auto* writer = runtime.getScriptFunction(runtime.getScriptFunctionId("writeCompiledAccessor"));
     BOOST_REQUIRE(writer != nullptr);
     BOOST_TEST(writer->getVariableCount() == 1U);
     BOOST_TEST(writer->getVariableStorageSize() == type->getSize());
@@ -3232,7 +3232,7 @@ BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_re
                 BOOST_TEST(active->getEnclosingParameterStorage(*layout.returnOffset, 1)[0].getStorageAddress() ==
                     destination);
             }
-            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("nativeClassReturnSuccess"));
+            const auto* success = runtime.getScriptFunction(runtime.getScriptFunctionId("nativeClassReturnSuccess"));
             active->run(success, {});
             BOOST_TEST(active->getIntegerResult() == 42);
             BOOST_TEST(active->getThis() == owner);
@@ -3284,7 +3284,7 @@ BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_re
         "single = forwardNativeClassSingle owner empty\nassert single.number == 31\n"
         "return saved.payload.number + copy.number + single.number");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardNativeClassReturn"));
+    const auto* wrapper = runtime.getScriptFunction(runtime.getScriptFunctionId("forwardNativeClassReturn"));
     BOOST_REQUIRE(wrapper != nullptr);
     BOOST_TEST(wrapper->getVariableCount() == 0U);
     std::ostringstream dump;
@@ -3293,13 +3293,13 @@ BOOST_AUTO_TEST_CASE(native_class_method_struct_returns_preserve_layout_order_re
     BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_address_push) != NomadString::npos);
     BOOST_TEST(dump.str().find(OpCodes::op_local_address_push) == NomadString::npos);
     BOOST_TEST(dump.str().find(OpCodes::op_storage_parameter_set) == NomadString::npos);
-    const auto* emptyWrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardNativeClassEmpty"));
+    const auto* emptyWrapper = runtime.getScriptFunction(runtime.getScriptFunctionId("forwardNativeClassEmpty"));
     BOOST_REQUIRE(emptyWrapper != nullptr);
     BOOST_TEST(emptyWrapper->getVariableCount() == 0U);
     std::ostringstream emptyDump;
     dumpInstructions(runtime, *emptyWrapper, emptyDump);
     BOOST_TEST(emptyDump.str().find(OpCodes::op_storage_parameter_address_push) == NomadString::npos);
-    const auto* singleWrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardNativeClassSingle"));
+    const auto* singleWrapper = runtime.getScriptFunction(runtime.getScriptFunctionId("forwardNativeClassSingle"));
     BOOST_REQUIRE(singleWrapper != nullptr);
     BOOST_TEST(singleWrapper->getVariableCount() == 0U);
     std::ostringstream singleDump;
@@ -3382,7 +3382,7 @@ BOOST_AUTO_TEST_CASE(native_method_return_forwarding_preserves_borrowed_storage_
             BOOST_TEST(receiver == owner->getFieldStorage(0).data());
             BOOST_TEST(receiver != destination);
             BOOST_TEST(active->getEnclosingParameterStorage(1, 1)[0].getStorageAddress() == destination);
-            const auto* success = runtime.getScriptFunction(runtime.getFunctionId("methodSuccess"));
+            const auto* success = runtime.getScriptFunction(runtime.getScriptFunctionId("methodSuccess"));
             active->run(success, {});
             BOOST_TEST(active->getIntegerResult() == 42);
             BOOST_TEST(active->getParameter(3).getStorageAddress() == receiver);
@@ -3404,7 +3404,7 @@ BOOST_AUTO_TEST_CASE(native_method_return_forwarding_preserves_borrowed_storage_
         "assert owner.payload.text == \"owned\"\nreturn owner.payload.number");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
-    const auto* wrapper = runtime.getScriptFunction(runtime.getFunctionId("forwardMethod"));
+    const auto* wrapper = runtime.getScriptFunction(runtime.getScriptFunctionId("forwardMethod"));
     BOOST_REQUIRE(wrapper != nullptr);
     BOOST_TEST(wrapper->getVariableCount() == 0U);
     BOOST_TEST(wrapper->getVariableStorageSize() == 0U);
@@ -3545,7 +3545,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_borrow_receivers_and_stage_owned_resu
         for (const auto id : {forwardId, wrappedId, emptyForwardId}) {
             auto* method = runtime.getScriptCallable(id);
             fixture.getCompiler().registerMemberCompilation(
-                id, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+                id, runtime.getScriptFunctionId("main"), CompilationCallableTarget::Function);
             auto body = std::make_unique<FunctionNode>(0, 0);
             Tokenizer tokens(context, method->getPath(), method->getSourceCode());
             while (tokens.nextLine()) {
@@ -3695,7 +3695,7 @@ BOOST_AUTO_TEST_CASE(source_struct_methods_accept_temporary_and_interpreter_rece
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
     BOOST_TEST(calls == 0);
-    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* main = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
     BOOST_TEST(main->getVariableCount() == 1U);
     BOOST_TEST(main->getVariableStorageSize() == 0U);
     const auto outcome = fixture.execute("main");
@@ -3846,7 +3846,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_share_nested_local_parameter_and_b
         for (const auto id : {leafMethod, pairMethod, prepareMethod}) {
             auto* method = runtime.getScriptCallable(id);
             fixture.getCompiler().registerMemberCompilation(
-                id, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+                id, runtime.getScriptFunctionId("main"), CompilationCallableTarget::Function);
             auto body = std::make_unique<FunctionNode>(0, 0);
             Tokenizer tokens(context, method->getPath(), method->getSourceCode());
             while (tokens.nextLine()) {
@@ -3867,7 +3867,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_share_nested_local_parameter_and_b
     }
     BOOST_TEST(emptyCalls == 9);
     BOOST_TEST(emptyTouches == 6);
-    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* main = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
     for (auto index = NomadIndex{0}; index < main->getVariableCount(); ++index) {
         BOOST_TEST(!main->getVariableName(VariableId{toNomadId(index)}).starts_with("$argument"));
     }
@@ -3965,7 +3965,7 @@ BOOST_AUTO_TEST_CASE(source_struct_properties_preserve_class_reference_semantics
         }
         auto* method = runtime.getScriptCallable(methodId);
         fixture.getCompiler().registerMemberCompilation(
-            methodId, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+            methodId, runtime.getScriptFunctionId("main"), CompilationCallableTarget::Function);
         auto body = std::make_unique<FunctionNode>(0, 0);
         Tokenizer tokens(context, method->getPath(), method->getSourceCode());
         while (tokens.nextLine()) {
@@ -4116,7 +4116,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
     ScriptObject* originalVictim = nullptr;
     auto replacements = 0;
     BOOST_REQUIRE(runtime.registerNativeFunction("replaceOwnedReceiver", [&](VirtualMachine* active) {
-        const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+        const auto* main = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
         auto& value = active->getLocalAddress(main->getVariableOffset(main->getVariableId("victim")))[0];
         originalVictim = static_cast<ScriptObject*>(value.getObjectValue());
         BOOST_TEST(originalVictim->getReferenceCount() == 2U);
@@ -4272,7 +4272,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
         for (const auto id : {pointMethod, outerMethod, ownerMethod}) {
             auto* method = runtime.getScriptCallable(id);
             fixture.getCompiler().registerMemberCompilation(
-                id, runtime.getFunctionId("main"), CompilationCallableTarget::Function);
+                id, runtime.getScriptFunctionId("main"), CompilationCallableTarget::Function);
             auto body = std::make_unique<FunctionNode>(0, 0);
             Tokenizer tokens(context, method->getPath(), method->getSourceCode());
             while (tokens.nextLine()) {
@@ -4303,7 +4303,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
     BOOST_TEST(orderedCalls == 3);
     BOOST_TEST(emptyCalls == 6);
     std::ostringstream dump;
-    dumpInstructions(runtime, *runtime.getScriptFunction(runtime.getFunctionId("onlyEmpty")), dump);
+    dumpInstructions(runtime, *runtime.getScriptFunction(runtime.getScriptFunctionId("onlyEmpty")), dump);
     BOOST_TEST(dump.str().find("op_stored_property_address_push") == NomadString::npos);
     BOOST_TEST(dump.str().find("op_object_free_stack") != NomadString::npos);
     auto sawOwnerAtTop = false;
@@ -4311,7 +4311,7 @@ BOOST_AUTO_TEST_CASE(source_object_owned_struct_values_and_methods_retain_evalua
     const auto addressOpcode = runtime.getInstructionId(OpCodes::op_stored_property_address_push);
     const auto& instructions = runtime.getInstructions();
     for (const auto* name : {"onlyOwnedScalar", "onlyOwnedStruct"}) {
-        const auto* function = runtime.getScriptFunction(runtime.getFunctionId(name));
+        const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId(name));
         for (auto position = function->getFunctionStart(); position < function->getFunctionEnd();) {
             const auto opcode = runtime.getInstructionId(instructions[position].fn);
             BOOST_REQUIRE(opcode.isValid());
@@ -4424,7 +4424,7 @@ BOOST_AUTO_TEST_CASE(native_temporary_property_paths_preserve_receiver_storage_a
         "return copy.number");
     const auto compiled = fixture.compile();
     BOOST_REQUIRE_MESSAGE(compiled, fixture.getDiagnostics());
-    const auto* forward = runtime.getScriptFunction(runtime.getFunctionId("forwardTemporary"));
+    const auto* forward = runtime.getScriptFunction(runtime.getScriptFunctionId("forwardTemporary"));
     BOOST_REQUIRE(forward != nullptr);
     BOOST_TEST(forward->getVariableCount() == 1U);
     BOOST_TEST(forward->getVariableStorageSize() == 3U);
@@ -4497,7 +4497,7 @@ BOOST_AUTO_TEST_CASE(registered_native_struct_constructors_create_nonempty_and_e
         fixture.addFunction("main", "value = new PendingConstruction");
         BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
         RuntimeValue result;
-        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
         BOOST_TEST(calls == 1);
     }
 }
@@ -4516,12 +4516,12 @@ BOOST_AUTO_TEST_CASE(registered_empty_script_struct_constructor_bodies_create_va
             return;
         }
         fixture.getCompiler().registerMemberCompilation(
-            constructorId, runtime.getFunctionId("main"), CompilationCallableTarget::Constructor);
+            constructorId, runtime.getScriptFunctionId("main"), CompilationCallableTarget::Constructor);
         fixture.getCompiler().setFunctionBody(constructorId, std::make_unique<FunctionNode>(0, 0));
     });
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
 }
 
 BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_preserves_copy_ownership) {
@@ -4626,7 +4626,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
         for (const auto id : {nativeInitializer, scriptInitializer}) {
             runtime.getScriptCallable(id)->setReturnType(runtime.getVoidType());
             fixture.getCompiler().registerMemberCompilation(
-                id, runtime.getFunctionId("main"), CompilationCallableTarget::PropertyInitializer);
+                id, runtime.getScriptFunctionId("main"), CompilationCallableTarget::PropertyInitializer);
             auto body = std::make_unique<FunctionNode>(0, 0);
             body->addStatement(std::make_unique<StructFieldInitializerStatement>(
                 id == nativeInitializer ? nativeDeclaration.get() : scriptDeclaration.get()));
@@ -4635,7 +4635,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
         for (const auto id : {scriptConstructor, emptyConstructor}) {
             auto* constructor = runtime.getScriptCallable(id);
             fixture.getCompiler().registerMemberCompilation(
-                id, runtime.getFunctionId("main"), CompilationCallableTarget::Constructor);
+                id, runtime.getScriptFunctionId("main"), CompilationCallableTarget::Constructor);
             auto body = std::make_unique<FunctionNode>(0, 0);
             Tokenizer tokens(context, constructor->getPath(), constructor->getSourceCode());
             while (tokens.nextLine()) {
@@ -4651,7 +4651,7 @@ BOOST_AUTO_TEST_CASE(struct_creation_initializes_properties_before_bodies_and_pr
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (auto index = 0; index < 3; ++index) {
         RuntimeValue result;
-        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
         BOOST_TEST(result.getIntegerValue() == 1);
         BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
         BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);

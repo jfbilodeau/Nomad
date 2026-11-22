@@ -381,7 +381,7 @@ IdentifierType Compiler::getIdentifierType(const NomadString& name, const Script
         return IdentifierType::Statement;
     }
 
-    const auto* callable = m_runtime->getFunction(m_runtime->getCallableId(name));
+    const auto* callable = m_runtime->getFunction(m_runtime->getFunctionId(name));
 
     if (callable != nullptr && callable->asNativeFunction() != nullptr) {
         return IdentifierType::NativeFunction;
@@ -456,7 +456,7 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCall
         return;
     }
 
-    const auto* callable = m_runtime->getFunction(m_runtime->getCallableId(name));
+    const auto* callable = m_runtime->getFunction(m_runtime->getFunctionId(name));
 
     if (callable != nullptr) {
         if (callable->asNativeFunction() != nullptr) {
@@ -2079,7 +2079,7 @@ CallableId Compiler::createFunction(
         throw NomadBug("Function creation requires this compiler's context");
     }
     const auto& source = getScript(scriptId).source;
-    const auto existingFunctionId = m_runtime->getFunctionId(functionName);
+    const auto existingFunctionId = m_runtime->getScriptFunctionId(functionName);
     if (existingFunctionId != CallableId{}) {
         const auto* existingFunction = m_runtime->getScriptCallable(existingFunctionId);
         context->addError(
@@ -2802,7 +2802,7 @@ NomadString Compiler::generateFunctionName(const NomadString& generatedName, con
     do {
         generatedFunctionName = FUNCTION_INTERNAL_NAME_PREFIX + generatedName + "_" + hostFunctionName + "_" + std::to_string(line) + "_" + std::to_string(index);
         ++index;
-    } while (m_runtime->getFunctionId(generatedFunctionName).isValid());
+    } while (m_runtime->getScriptFunctionId(generatedFunctionName).isValid());
 
     return generatedFunctionName;
 }

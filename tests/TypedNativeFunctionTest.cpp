@@ -245,7 +245,7 @@ BOOST_AUTO_TEST_CASE(invalid_registration_does_not_publish_a_callable) {
     BOOST_TEST(runtime.registerHubNativeFunction(hubId, "invalid", missing,
         {{"value", ""}}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.getCallableCount() == before);
-    BOOST_TEST(runtime.getFunctionId("invalid").isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId("invalid").isInvalid());
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     const auto qualified = runtime.registerHubNativeFunction(hubId, "child.invalid", callback,
         {{"value", ""}}, NomadDoc(""));

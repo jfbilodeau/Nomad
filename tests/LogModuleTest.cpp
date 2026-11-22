@@ -77,7 +77,7 @@ BOOST_AUTO_TEST_CASE(no_modules_prints_exact_text_independently_of_logging) {
     const boost::io::ios_rdbuf_saver restoreOutput(std::cout);
     std::cout.rdbuf(output.rdbuf());
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(output.str() == "plain text\n\nvalue: 42\n");
     log::flush();
     BOOST_TEST(sink.getEntries().empty());
@@ -303,7 +303,7 @@ BOOST_AUTO_TEST_CASE(module_is_independent_and_script_functions_preserve_locatio
     RegisteredMemorySink sink;
     log::setLogLevel(LogLevel::Debug);
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
     BOOST_REQUIRE_EQUAL(sink.getEntries().size(), 5U);
     const std::array levels{LogLevel::Debug, LogLevel::Info, LogLevel::Warning, LogLevel::Error, LogLevel::Critical};
@@ -326,7 +326,7 @@ BOOST_AUTO_TEST_CASE(open_hub_can_be_extended_and_fatal_is_not_callable) {
     BOOST_REQUIRE(compiled.succeeded());
     auto virtualMachine = host->getRuntime()->createVirtualMachine();
     RuntimeValue result;
-    virtualMachine->executeFunction(host->getRuntime()->getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(host->getRuntime()->getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
     const auto rejected = host->compileSources({{{"invalid", {"fatal.nomad", "log.fatal \"not available\""}}}, {}});
     BOOST_TEST(!rejected.succeeded());

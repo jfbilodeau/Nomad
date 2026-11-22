@@ -42,7 +42,7 @@ CallableId compileConstruction(Runtime& runtime, const NomadString& source, cons
     compiler->registerSources(&context, {{{name, {name + ".nomad", source}}}, {}});
     const auto compiled = compiler->compileFunctions(&context);
     BOOST_REQUIRE_MESSAGE(compiled, (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
-    return runtime.getFunctionId(name);
+    return runtime.getScriptFunctionId(name);
 }
 
 std::vector<NomadString> callSequence(const Runtime& runtime, const ScriptCallableBase* function) {
@@ -184,14 +184,14 @@ BOOST_AUTO_TEST_CASE(native_and_script_calls_share_argument_and_construction_byt
         std::pair{"callScript", "callNative"}, std::pair{"newScript", "newNative"},
         std::pair{"methodScript", "methodNative"}
     }) {
-        const auto* script = runtime.getScriptFunction(runtime.getFunctionId(names.first));
-        const auto* native = runtime.getScriptFunction(runtime.getFunctionId(names.second));
+        const auto* script = runtime.getScriptFunction(runtime.getScriptFunctionId(names.first));
+        const auto* native = runtime.getScriptFunction(runtime.getScriptFunctionId(names.second));
         BOOST_TEST(callSequence(runtime, script) == callSequence(runtime, native), boost::test_tools::per_element());
     }
     const auto before = NomadObject::getLiveObjectCount();
     for (const auto* name : {"callScript", "callNative", "newScript", "newNative", "methodScript", "methodNative"}) {
         RuntimeValue result;
-        virtualMachine->executeFunction(runtime.getFunctionId(name), {}, result);
+        virtualMachine->executeFunction(runtime.getScriptFunctionId(name), {}, result);
         BOOST_REQUIRE(result.getObjectValue() != nullptr);
         result.freeObjectValue();
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
@@ -278,7 +278,7 @@ BOOST_AUTO_TEST_CASE(script_returns_select_compact_opcodes_and_release_owned_loc
             }
             source += "return 23\nend\nreturn target";
             const auto id = compileConstruction(runtime, source);
-            const auto* target = runtime.getScriptFunction(runtime.getFunctionId("target"));
+            const auto* target = runtime.getScriptFunction(runtime.getScriptFunctionId("target"));
             BOOST_REQUIRE(target != nullptr);
             BOOST_TEST(target->getVariableCount() == localCount);
             const auto instructionId = runtime.getInstructionId(returnNames[localCount]);
@@ -406,7 +406,7 @@ BOOST_AUTO_TEST_CASE(receiver_captures_survive_native_reentry_and_outlive_the_co
         "saveCallback", [&](VirtualMachine* machine) {
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
             const auto callbackId = machine->getCallableIdParameter(0);
-            machine->run(runtime.getScriptFunction(runtime.getFunctionId("helper")), {});
+            machine->run(runtime.getScriptFunction(runtime.getScriptFunctionId("helper")), {});
             closure = machine->createClosure(&runtime, callbackId);
         }, {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
     ).isValid());
@@ -445,7 +445,7 @@ BOOST_AUTO_TEST_CASE(native_methods_capture_the_enclosing_receiver_not_the_bound
             BOOST_REQUIRE(nativeReceiver != nullptr);
             const auto callbackId = machine->getCallableIdParameter(0);
             BOOST_TEST(machine->peekStack(0).getIdValue() == callbackId.id);
-            machine->run(runtime.getScriptFunction(runtime.getFunctionId("helper")), {});
+            machine->run(runtime.getScriptFunction(runtime.getScriptFunctionId("helper")), {});
             BOOST_TEST(machine->getThis() == nativeReceiver);
             closure = machine->createClosure(&runtime, callbackId);
         }
@@ -475,7 +475,7 @@ BOOST_AUTO_TEST_CASE(host_arguments_remain_borrowed_while_script_parameter_slots
         "fun mutate number:int text:string item:Item\n"
         "number = number + 1\ntext = text.toUpper\nitem = new Item\nreturn text\nend"
     );
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("mutate"));
+    const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("mutate"));
     BOOST_TEST(function->getParameterCount() == 3u);
     BOOST_TEST(function->getVariableCount() == 0u);
     const auto* type = runtime.getTypeByName("Item")->asClassType();
@@ -507,7 +507,7 @@ BOOST_AUTO_TEST_CASE(script_callback_capture_survives_nested_native_calls_and_re
         "relay", [&](VirtualMachine* machine) {
             const auto callbackId = machine->getCallableIdParameter(0);
             BOOST_CHECK_THROW(static_cast<void>(machine->getThis()), VirtualMachineException);
-            machine->run(runtime.getScriptFunction(runtime.getFunctionId("helper")), {});
+            machine->run(runtime.getScriptFunction(runtime.getScriptFunctionId("helper")), {});
             BOOST_TEST(machine->getEnclosingParameter(0).getIntegerValue() == 24);
             closure = machine->createClosure(&runtime, callbackId);
         }, {defParameter("callback", callbackType, "")}, runtime.getVoidType(), ""
@@ -762,7 +762,7 @@ BOOST_AUTO_TEST_CASE(script_construction_resolves_hub_types_across_files_in_eith
             (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
         const auto before = NomadObject::getLiveObjectCount();
         RuntimeValue result;
-        virtualMachine->executeFunction(runtime.getFunctionId(reversed ? "z" : "a"), {}, result);
+        virtualMachine->executeFunction(runtime.getScriptFunctionId(reversed ? "z" : "a"), {}, result);
         BOOST_TEST(result.getIntegerValue() == 42);
         BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     }

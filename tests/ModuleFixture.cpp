@@ -170,7 +170,7 @@ NOMAD_MODULE_EXPORT void registerModule(nomad::ModuleContext* context, nomad::Mo
             const auto entry = state->context->configuration->getString("fixture.entry").value_or("init");
             if (!entry.empty()) {
                 auto machine = state->context->runtime->createVirtualMachine();
-                machine->executeFunction(state->context->runtime->getFunctionId(entry));
+                machine->executeFunction(state->context->runtime->getScriptFunctionId(entry));
             }
             return 0;
         };

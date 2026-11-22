@@ -251,8 +251,8 @@ BOOST_AUTO_TEST_CASE(hub_script_functions_share_the_runtime_callable_catalog)
         BOOST_TEST(script->getPath() == "answer.nomad");
         BOOST_TEST(script->getSourceCode() == "return 42");
         BOOST_TEST(script->getFunctionStart() == NOMAD_INVALID_INDEX);
-        BOOST_TEST(runtime.getFunctionId("example.child.answer") == id);
-        BOOST_TEST(runtime.getFunctionId("answer").isInvalid());
+        BOOST_TEST(runtime.getScriptFunctionId("example.child.answer") == id);
+        BOOST_TEST(runtime.getScriptFunctionId("answer").isInvalid());
         BOOST_TEST(runtime.getNativeFunction(id) == nullptr);
         BOOST_TEST(runtime.getCallable(id) == script);
         const auto* member = runtime.getHub(hubId)->getMember("answer");
@@ -363,7 +363,7 @@ BOOST_AUTO_TEST_CASE(hub_variable_ids_share_existing_storage_and_script_type_res
             "fun initialize\nexample.child.value = 40\nend\n"
             "example.child.value = example.child.value + 2\nreturn example.child.value");
         BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-        runtime.setScriptInitializer(runtime.getFunctionId("initialize"));
+        runtime.setScriptInitializer(runtime.getScriptFunctionId("initialize"));
         BOOST_TEST(runtime.getContextVariableType(id) == runtime.getIntegerType());
         BOOST_TEST(runtime.getContextVariableId("example.child.value") == id);
         BOOST_TEST(std::get<VariableId>(*runtime.getHub(hubId)->getMember("value")) == localId);
@@ -1392,22 +1392,22 @@ BOOST_AUTO_TEST_CASE(initialization_is_explicit_and_independent_of_compiler_life
             (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Compilation failed"));
     }
     BOOST_TEST(calls == 0);
-    virtualMachine->executeFunction(runtime.getFunctionId("noop"));
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("noop"));
     BOOST_TEST(virtualMachine->getIntegerResult() == 1);
     RuntimeValue secondResult{NomadInteger{19}};
-    secondVirtualMachine->executeFunction(runtime.getFunctionId("noop"), {}, secondResult);
+    secondVirtualMachine->executeFunction(runtime.getScriptFunctionId("noop"), {}, secondResult);
     BOOST_TEST(secondResult.getIntegerValue() == 1);
     auto machine = runtime.createVirtualMachine();
-    machine->run(runtime.getScriptFunction(runtime.getFunctionId("noop")), {});
+    machine->run(runtime.getScriptFunction(runtime.getScriptFunctionId("noop")), {});
     BOOST_TEST(machine->getIntegerResult() == 1);
     BOOST_TEST(calls == 0);
     runtime.initializeScripts();
     runtime.initializeScripts();
     BOOST_TEST(calls == 1);
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
-    secondVirtualMachine->executeFunction(runtime.getFunctionId("main"), {}, secondResult);
+    secondVirtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, secondResult);
     BOOST_TEST(secondResult.getIntegerValue() == 42);
     BOOST_TEST(calls == 1);
     const auto* hub = runtime.getHub(runtime.getHubId("example"));
@@ -1451,7 +1451,7 @@ BOOST_AUTO_TEST_CASE(static_values_are_installed_without_executable_assignments)
         "example.x = example.x + 1\nreturn example.x + example.y");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    const auto* initializer = runtime.getScriptFunction(runtime.getFunctionId("$init"));
+    const auto* initializer = runtime.getScriptFunction(runtime.getScriptFunctionId("$init"));
     BOOST_REQUIRE(initializer != nullptr);
     BOOST_TEST(initializer->getFunctionEnd() - initializer->getFunctionStart() == 1U);
     const auto start = initializer->getFunctionStart();
@@ -1607,7 +1607,7 @@ BOOST_AUTO_TEST_CASE(embedding_initializes_before_executing_functions)
     BOOST_REQUIRE(compiler->compileScripts(&context));
     compiler.reset();
     runtime.initializeScripts();
-    virtualMachine->executeFunction(runtime.getFunctionId("main"));
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"));
     RuntimeValue value;
     runtime.getContextVariableValue(runtime.getContextVariableId("example.value"), value);
     BOOST_TEST(value.getIntegerValue() == 43);

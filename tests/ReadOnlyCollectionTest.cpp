@@ -39,7 +39,7 @@ bool compile(Runtime& runtime, const NomadString& source) {
 
 void execute(Runtime& runtime, VirtualMachine& machine, const NomadString& source) {
     BOOST_REQUIRE(compile(runtime, source));
-    machine.executeFunction(runtime.getFunctionId("main"));
+    machine.executeFunction(runtime.getScriptFunctionId("main"));
 }
 
 void reject(const NomadString& setup, const NomadString& expression) {

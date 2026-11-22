@@ -63,7 +63,7 @@ struct ModuleGameFixture {
         CompilerContext context(compiler.get());
         compiler->registerSources(&context, {{{name, {name + ".nomad", source}}}, {}});
         BOOST_REQUIRE(compiler->compileFunctions(&context));
-        return runtime.getFunctionId(name);
+        return runtime.getScriptFunctionId(name);
     }
 };
 
@@ -93,7 +93,7 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
         "game.settings.save", "game.settings.load"
     }) {
         BOOST_TEST_CONTEXT(name) {
-            BOOST_TEST(runtime.getCallableId(name).isInvalid());
+            BOOST_TEST(runtime.getFunctionId(name).isInvalid());
         }
     }
 
@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     BOOST_REQUIRE(inventorySaveMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*inventorySaveMember));
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("game.inventory.save"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("game.inventory.save"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 
     const auto* settingsHub = runtime.getHub(runtime.getHubId("game.settings"));
@@ -148,7 +148,7 @@ BOOST_AUTO_TEST_CASE(game_native_api_is_registered_under_hubs)
     const auto* settingsSaveMember = settingsHub->getMember("save");
     BOOST_REQUIRE(settingsSaveMember != nullptr);
     BOOST_TEST(std::holds_alternative<HubFunctions>(*settingsSaveMember));
-    virtualMachine->executeFunction(runtime.getFunctionId("game.settings.save"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("game.settings.save"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 7);
 }
 
@@ -217,7 +217,7 @@ BOOST_AUTO_TEST_CASE(script_preparation_runs_host_compilation_on_a_worker)
 
     BOOST_TEST(compilationThread != mainThread);
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("prepared"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("prepared"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 17);
     BOOST_TEST(!entryExecuted);
 }

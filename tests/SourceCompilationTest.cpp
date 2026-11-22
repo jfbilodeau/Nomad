@@ -40,8 +40,8 @@ BOOST_AUTO_TEST_CASE(checks_named_in_memory_sources_without_reading_files)
     const auto result = compileSources(batch, *compiler);
 
     BOOST_REQUIRE(result.succeeded());
-    BOOST_TEST(runtime.getFunctionId("helpers.answer").isValid());
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("init"))->getPath() == "untitled:init");
+    BOOST_TEST(runtime.getScriptFunctionId("helpers.answer").isValid());
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("init"))->getPath() == "untitled:init");
 }
 
 BOOST_AUTO_TEST_CASE(checks_editor_text_instead_of_disk_contents)
@@ -88,8 +88,8 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
 
     auto compiler = runtime.createCompiler();
     BOOST_REQUIRE(compileSources(batch, *compiler).succeeded());
-    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
-    const auto* outer = runtime.getScriptFunction(runtime.getFunctionId("outer"));
+    const auto* main = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
+    const auto* outer = runtime.getScriptFunction(runtime.getScriptFunctionId("outer"));
     const auto* callback = runtime.getScriptCallableAtLine("editor:main", 4);
     BOOST_REQUIRE(callback != nullptr);
     BOOST_TEST(callback->getParentId() == outer->getId());
@@ -106,7 +106,7 @@ BOOST_AUTO_TEST_CASE(runtime_retains_function_source_ranges_after_compilation)
     BOOST_TEST(runtime.getScriptCallableAtLine("editor:main", 8) == nullptr);
     BOOST_TEST(runtime.getScriptCallableAtLine("editor:missing", 1) == nullptr);
     BOOST_TEST(runtime.getScriptCallableAtLine("editor:other", 1) ==
-        runtime.getScriptFunction(runtime.getFunctionId("other")));
+        runtime.getScriptFunction(runtime.getScriptFunctionId("other")));
 }
 
 BOOST_AUTO_TEST_CASE(runtime_looks_up_script_members_and_nested_callbacks_by_source_and_bytecode)
@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(runtime_looks_up_script_members_and_nested_callbacks_by_sou
         "return counter.read 1"}}}, {}};
     auto compiler = runtime.createCompiler();
     BOOST_REQUIRE(compileSources(batch, *compiler).succeeded());
-    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* main = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
     const auto* constructor = runtime.getScriptCallableAtLine("editor:members", 4);
     const auto* method = runtime.getScriptCallableAtLine("editor:members", 8);
     const auto* callback = runtime.getScriptCallableAtLine("editor:members", 10);
@@ -448,7 +448,7 @@ BOOST_AUTO_TEST_CASE(dumps_only_the_selected_function)
     Runtime runtime;
     auto compiler = runtime.createCompiler();
     BOOST_REQUIRE(compileSources(loadSourcePaths(std::vector{directory.getPath()}), *compiler).succeeded());
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("second"));
+    const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("second"));
     BOOST_REQUIRE(function != nullptr);
     std::ostringstream instructions;
     dumpInstructions(runtime, *function, instructions);
@@ -515,7 +515,7 @@ BOOST_AUTO_TEST_CASE(documentation_uses_the_configured_compiler_roots_hooks_and_
     std::ostringstream documentation;
     generateDocumentation(&runtime, documentation);
     BOOST_TEST(configured);
-    BOOST_TEST(runtime.getFunctionId("$sample.types").isValid());
+    BOOST_TEST(runtime.getScriptFunctionId("$sample.types").isValid());
     BOOST_TEST(runtime.getNativeFunction(id)->isSignatureResolved());
     BOOST_TEST(documentation.str().find("settings:Settings") != NomadString::npos);
 }

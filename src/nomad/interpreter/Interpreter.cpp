@@ -687,7 +687,7 @@ NomadBoolean Interpreter::execute(const SourceText& source, InterpreterContext& 
         const auto isStatement = firstToken.type == TokenType::Identifier &&
             compiler->isStatement(firstToken.textValue);
         const auto functionId = firstToken.type == TokenType::Identifier ?
-            runtime->getCallableId(firstToken.textValue) : CallableId{};
+            runtime->getFunctionId(firstToken.textValue) : CallableId{};
         const auto* function = runtime->getFunction(functionId);
         const auto isValueReturningCall =
             function != nullptr &&

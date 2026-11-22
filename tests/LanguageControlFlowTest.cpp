@@ -461,7 +461,7 @@ BOOST_AUTO_TEST_CASE(range_loops_lower_to_generic_calls_and_jumps)
     BOOST_TEST(runtime.getInstructionId("op_numeric_for_test").isInvalid());
     BOOST_TEST(runtime.getInstructionId("op_numeric_for_advance").isInvalid());
     std::ostringstream instructions;
-    dumpInstructions(runtime, *runtime.getScriptFunction(runtime.getFunctionId("main")), instructions);
+    dumpInstructions(runtime, *runtime.getScriptFunction(runtime.getScriptFunctionId("main")), instructions);
     const auto text = instructions.str();
     BOOST_TEST(text.find("op_jump_if_false") != NomadString::npos);
     BOOST_TEST(text.find("op_jump") != NomadString::npos);

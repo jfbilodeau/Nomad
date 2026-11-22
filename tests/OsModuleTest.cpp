@@ -179,7 +179,7 @@ BOOST_AUTO_TEST_CASE(analysis_exposes_exact_enum_types_without_host_data) {
         "assert os.argv.count == 0\n"
         "assert os.env.count == 0\n"));
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
 }
 
 BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_execution_modes) {
@@ -217,7 +217,7 @@ BOOST_AUTO_TEST_CASE(bindings_and_collection_contents_are_read_only_in_both_exec
         "assert os.argv[0] == \"original\"\n"
         "for argument in os.argv\nassert argument == \"original\"\nend\n"));
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
 }
 
 BOOST_AUTO_TEST_CASE(no_separator_means_no_application_arguments_and_packaging_has_no_runtime) {
@@ -269,7 +269,7 @@ BOOST_AUTO_TEST_CASE(snapshot_objects_are_released_with_the_runtime) {
         BOOST_REQUIRE(compile(*host->getRuntime(), "assert os.argv[0] == \"owned 日本語\""));
         auto virtualMachine = host->getRuntime()->createVirtualMachine();
         RuntimeValue result;
-        virtualMachine->executeFunction(host->getRuntime()->getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(host->getRuntime()->getScriptFunctionId("main"), {}, result);
     }
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
 }
@@ -293,7 +293,7 @@ BOOST_AUTO_TEST_CASE(collection_constants_survive_compiler_destruction_and_inter
     auto* arguments = argumentsValue.asObject<Array1dObject>();
     const auto references = arguments->getReferenceCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getObjectValue() == arguments);
     runtime.getConstantType(runtime.getConstantId("os.argv"))->freeValue(&result);
     BOOST_TEST(arguments->getReferenceCount() == references);

@@ -233,8 +233,8 @@ const Function* resolveFunctionCallArguments(
     NomadString& error
 ) {
     const auto* runtime = context->getRuntime();
-    if (runtime->getCallableOverloadCount(name) <= 1) {
-        const auto* selected = runtime->getFunction(runtime->getCallableId(name));
+    if (runtime->getFunctionOverloadCount(name) <= 1) {
+        const auto* selected = runtime->getFunction(runtime->getFunctionId(name));
         if (selected == nullptr) {
             error = "Unknown function '" + name + "'";
         }

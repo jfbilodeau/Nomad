@@ -89,7 +89,7 @@ BOOST_AUTO_TEST_CASE(creates_a_valid_minimal_project)
         session->loadSources(std::vector{destination / "res/scripts/main.nomad"})
     );
     BOOST_TEST(compilation.succeeded());
-    BOOST_TEST(session->getRuntime()->getFunctionId(gameOptions.entryFunction).isValid());
+    BOOST_TEST(session->getRuntime()->getScriptFunctionId(gameOptions.entryFunction).isValid());
 }
 
 BOOST_AUTO_TEST_CASE(can_omit_project_wrappers)

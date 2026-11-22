@@ -91,7 +91,7 @@ FunctionOutcome LanguageTestFixture::execute(const NomadString& functionName, co
         return outcome;
     }
 
-    const auto functionId = m_runtime.getFunctionId(functionName);
+    const auto functionId = m_runtime.getScriptFunctionId(functionName);
     const auto function = m_runtime.getScriptFunction(functionId);
 
     if (function == nullptr) {

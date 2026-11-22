@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(reserved_stack_slots_count_locals_and_pending_call_argument
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
 
     auto& runtime = fixture.getRuntime();
-    const auto* main = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* main = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
     // The call pushes its receiver before the arguments.
     BOOST_TEST(main->getReservedStackSlots() == 6);
 }
@@ -59,7 +59,7 @@ BOOST_AUTO_TEST_CASE(script_frames_fault_before_running_when_reserved_slots_exce
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
 
     auto& runtime = fixture.getRuntime();
-    const auto functionId = runtime.getFunctionId("main");
+    const auto functionId = runtime.getScriptFunctionId("main");
 
     VirtualMachine constrained(&runtime, 8);
     BOOST_CHECK_THROW(constrained.executeFunction(functionId), VirtualMachineException);
@@ -167,7 +167,7 @@ BOOST_AUTO_TEST_CASE(void_functions)
     BOOST_TEST(!outcome.fault.has_value());
     BOOST_TEST(outcome.integerValue == 3);
 
-    BOOST_TEST(fixture.getRuntime().getFunction(fixture.getRuntime().getFunctionId("noReturn"))->getReturnType()->isVoid());
+    BOOST_TEST(fixture.getRuntime().getFunction(fixture.getRuntime().getScriptFunctionId("noReturn"))->getReturnType()->isVoid());
 }
 
 BOOST_AUTO_TEST_CASE(void_function_cannot_be_used_as_value)

@@ -605,7 +605,7 @@ BOOST_AUTO_TEST_CASE(native_creation_definitions_own_their_inputs_without_regist
     BOOST_TEST(!indexer.setter);
     indexer.getter(nullptr);
     BOOST_TEST(methodCalls == 2);
-    BOOST_TEST(runtime.getCallableId("answer").isInvalid());
+    BOOST_TEST(runtime.getFunctionId("answer").isInvalid());
     BOOST_TEST(runtime.getNativeIndexers().size() == originalIndexerCount);
 }
 

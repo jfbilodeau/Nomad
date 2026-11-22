@@ -125,7 +125,7 @@ BOOST_AUTO_TEST_CASE(returning_a_temporary_receiver_retains_it_and_releases_fina
     const auto before = NomadObject::getLiveObjectCount();
     for (auto attempt = 0; attempt < 2; ++attempt) {
         RuntimeValue result;
-        virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+        virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
         auto* object = result.asObject<ScriptObject>();
         BOOST_REQUIRE(object != nullptr);
         BOOST_TEST(object->getReferenceCount() == 1u);
@@ -233,7 +233,7 @@ BOOST_AUTO_TEST_CASE(method_callbacks_and_format_expressions_capture_the_method_
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "value 8 number 5");
     result.freeObjectValue();
     BOOST_REQUIRE(closure != nullptr);
@@ -267,7 +267,7 @@ BOOST_AUTO_TEST_CASE(dynamic_formatting_reads_constructor_method_and_captured_re
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto before = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(result.getStringObject()->getString() == "method 3 8 5");
     result.freeObjectValue();
     BOOST_REQUIRE(closure != nullptr);

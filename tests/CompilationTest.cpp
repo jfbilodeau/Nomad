@@ -48,7 +48,7 @@ BOOST_AUTO_TEST_CASE(instruction_dump_formats_existing_code_without_compiling_or
     BOOST_REQUIRE(compileSources({{{"main", {"editor:main",
         "fun extra\nreturn 1\nend\nprobe\nreturn 42"}}}, {}}, *compiler).succeeded());
     const auto instructionCount = runtime.getInstructions().size();
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("main"));
+    const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
     BOOST_REQUIRE(function != nullptr);
 
     std::ostringstream all;
@@ -91,7 +91,7 @@ BOOST_AUTO_TEST_CASE(instruction_dump_keeps_struct_signatures_logical_without_ex
     BOOST_REQUIRE_MESSAGE(result.succeeded(),
         (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
     const auto instructionCount = runtime.getInstructions().size();
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("makeDump"));
+    const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("makeDump"));
     BOOST_REQUIRE(function != nullptr);
     BOOST_TEST(function->getVariableStorageSize() == 0U);
     BOOST_TEST(function->getParameterCount() == 2U);
@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(configured_compilation_preserves_targets_hooks_diagnostics_
         BOOST_TEST(result.diagnostics[0].message == "Loading warning");
         BOOST_TEST(result.diagnostics[1].message == "Hook warning");
         BOOST_TEST(calls == 0);
-        const auto* function = runtime.getScriptFunction(runtime.getFunctionId("main"));
+        const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("main"));
         BOOST_REQUIRE(function != nullptr);
         BOOST_TEST(function->getReturnType() == runtime.getIntegerType());
         if (target == CompilationTarget::Analysis) {

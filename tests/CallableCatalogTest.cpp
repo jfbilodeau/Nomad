@@ -557,7 +557,7 @@ BOOST_AUTO_TEST_CASE(script_registration_binds_receiver_without_exposing_a_free_
         BOOST_TEST(callable->getClassType() == owner);
         BOOST_TEST(runtime.getFunction(id) == nullptr);
     }
-    BOOST_TEST(runtime.getFunctionId("move").isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId("move").isInvalid());
     BOOST_TEST(runtime.registerScriptClassMethod(typeId, "move", parameters, "owner.nomad", "").isInvalid());
     BOOST_TEST(runtime.registerScriptClassConstructor(typeId, parameters, "owner.nomad", "").isInvalid());
     BOOST_TEST(runtime.registerScriptClassMethod(runtime.getIntegerType()->getId(), "move", {}, "", "").isInvalid());
@@ -690,10 +690,11 @@ BOOST_AUTO_TEST_CASE(unknown_name_resolves_to_invalid_callable)
 {
     const Runtime runtime;
 
-    const auto callable = runtime.getCallableId("missing");
+    const auto callable = runtime.getFunctionId("missing");
 
     BOOST_TEST(callable.isInvalid());
-    BOOST_TEST(runtime.getCallableOverloadCount("missing") == NomadIndex{0});
+    BOOST_TEST(!runtime.functionExists("missing"));
+    BOOST_TEST(runtime.getFunctionOverloadCount("missing") == NomadIndex{0});
 }
 
 BOOST_AUTO_TEST_CASE(native_function_is_registered_in_catalog)
@@ -708,7 +709,7 @@ BOOST_AUTO_TEST_CASE(native_function_is_registered_in_catalog)
 
     BOOST_REQUIRE(nativeFunctionId.isValid());
 
-    const auto callable = runtime.getCallableId("test.greet");
+    const auto callable = runtime.getFunctionId("test.greet");
 
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST((runtime.getFunction(callable)->asNativeFunction() != nullptr));
@@ -728,7 +729,7 @@ BOOST_AUTO_TEST_CASE(function_is_registered_in_catalog)
 
     BOOST_REQUIRE(functionId.isValid());
 
-    const auto callable = runtime.getCallableId("entities.player");
+    const auto callable = runtime.getFunctionId("entities.player");
 
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST((runtime.getFunction(callable)->asScriptFunction() != nullptr));
@@ -743,7 +744,7 @@ BOOST_AUTO_TEST_CASE(function_signature_is_read_live)
     Runtime runtime;
 
     const auto functionId = runtime.registerScriptFunction("compute", "compute.nomad", "return 1");
-    const auto callable = runtime.getCallableId("compute");
+    const auto callable = runtime.getFunctionId("compute");
 
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST(runtime.getCallable(callable)->getReturnType() == nullptr);
@@ -802,17 +803,23 @@ BOOST_AUTO_TEST_CASE(script_function_joins_function_table)
     BOOST_TEST(resolved.id == scriptId);
 }
 
-BOOST_AUTO_TEST_CASE(catalog_separates_native_functions_from_functions)
+BOOST_AUTO_TEST_CASE(catalog_separates_native_functions_from_script_functions)
 {
     Runtime runtime;
 
-    registerVoidNativeFunction(runtime, "native.only");
-    runtime.registerScriptFunction("function.only", "function.nomad", "return 1");
+    const auto nativeId = registerVoidNativeFunction(runtime, "native.only");
+    const auto scriptId = runtime.registerScriptFunction("function.only", "function.nomad", "return 1");
+    BOOST_REQUIRE(nativeId.isValid());
+    BOOST_REQUIRE(scriptId.isValid());
 
-    BOOST_TEST(runtime.getNativeFunctionId("native.only").isValid());
-    BOOST_TEST(runtime.getFunctionId("native.only").isInvalid());
+    BOOST_TEST(runtime.functionExists("native.only"));
+    BOOST_TEST(runtime.getFunctionId("native.only") == nativeId);
+    BOOST_TEST(runtime.getNativeFunctionId("native.only") == nativeId);
+    BOOST_TEST(runtime.getScriptFunctionId("native.only").isInvalid());
 
-    BOOST_TEST(runtime.getFunctionId("function.only").isValid());
+    BOOST_TEST(runtime.functionExists("function.only"));
+    BOOST_TEST(runtime.getFunctionId("function.only") == scriptId);
+    BOOST_TEST(runtime.getScriptFunctionId("function.only") == scriptId);
     BOOST_TEST(runtime.getNativeFunctionId("function.only").isInvalid());
 }
 
@@ -901,7 +908,7 @@ BOOST_AUTO_TEST_CASE(duplicate_native_function_name_is_rejected)
     BOOST_REQUIRE(registerVoidNativeFunction(runtime, "duplicate").isValid());
 
     BOOST_TEST(registerVoidNativeFunction(runtime, "duplicate").isInvalid());
-    BOOST_TEST(runtime.getCallableOverloadCount("duplicate") == NomadIndex{1});
+    BOOST_TEST(runtime.getFunctionOverloadCount("duplicate") == NomadIndex{1});
 }
 
 BOOST_AUTO_TEST_CASE(duplicate_function_name_is_rejected)
@@ -911,7 +918,7 @@ BOOST_AUTO_TEST_CASE(duplicate_function_name_is_rejected)
     BOOST_REQUIRE(runtime.registerScriptFunction("duplicate", "duplicate.nomad", "return 1").isValid());
 
     BOOST_TEST(runtime.registerScriptFunction("duplicate", "other.nomad", "return 2").isInvalid());
-    BOOST_TEST(runtime.getCallableOverloadCount("duplicate") == NomadIndex{1});
+    BOOST_TEST(runtime.getFunctionOverloadCount("duplicate") == NomadIndex{1});
 }
 
 // A function may not shadow a native function, and vice versa: one name means one callable.
@@ -924,7 +931,7 @@ BOOST_AUTO_TEST_CASE(function_cannot_shadow_native_function)
 
     BOOST_TEST(runtime.registerScriptFunction("print", "print.nomad", "return 1").isInvalid());
 
-    const auto callable = runtime.getCallableId("print");
+    const auto callable = runtime.getFunctionId("print");
 
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST((runtime.getFunction(callable)->asNativeFunction() != nullptr));
@@ -938,7 +945,7 @@ BOOST_AUTO_TEST_CASE(native_function_cannot_shadow_function)
 
     BOOST_TEST(registerVoidNativeFunction(runtime, "entities.player").isInvalid());
 
-    const auto callable = runtime.getCallableId("entities.player");
+    const auto callable = runtime.getFunctionId("entities.player");
 
     BOOST_REQUIRE(callable.isValid());
     BOOST_TEST((runtime.getFunction(callable)->asScriptFunction() != nullptr));
@@ -951,13 +958,13 @@ BOOST_AUTO_TEST_CASE(overloads_are_reported_for_a_registered_name)
     const auto nativeFunctionId = registerVoidNativeFunction(runtime, "test.single");
 
     std::vector<CallableId> overloads;
-    runtime.getCallableOverloads("test.single", overloads);
+    runtime.getFunctionIds("test.single", overloads);
 
     BOOST_REQUIRE(overloads.size() == 1);
     BOOST_TEST(overloads[0] == nativeFunctionId);
     BOOST_TEST((runtime.getFunction(overloads[0])->asNativeFunction() != nullptr));
 
-    runtime.getCallableOverloads("missing", overloads);
+    runtime.getFunctionIds("missing", overloads);
     BOOST_TEST(overloads.empty());
 }
 
@@ -983,8 +990,12 @@ BOOST_AUTO_TEST_CASE(native_functions_can_be_overloaded_on_parameter_type)
 
     BOOST_REQUIRE(fromFloat.isValid());
     BOOST_REQUIRE(fromString.isValid());
-    BOOST_TEST(runtime.getCallableOverloadCount("test.convert") == NomadIndex{2});
-
+    BOOST_TEST(runtime.getFunctionOverloadCount("test.convert") == NomadIndex{2});
+    BOOST_TEST(runtime.functionExists("test.convert"));
+    BOOST_TEST(runtime.getFunctionId("test.convert") == fromFloat);
+    std::vector<CallableId> functionIds{CallableId::INVALID};
+    runtime.getFunctionIds("test.convert", functionIds);
+    BOOST_TEST(functionIds == std::vector<CallableId>({fromFloat, fromString}));
 
     const auto selectedFloat = runtime.resolveFunction("test.convert", {runtime.getFloatType()});
     BOOST_REQUIRE(selectedFloat.isResolved());
@@ -1063,7 +1074,7 @@ BOOST_AUTO_TEST_CASE(overloads_can_have_different_parameter_counts)
         ).isValid()
     );
 
-    BOOST_TEST(runtime.getCallableOverloadCount("test.convert") == NomadIndex{2});
+    BOOST_TEST(runtime.getFunctionOverloadCount("test.convert") == NomadIndex{2});
 }
 
 BOOST_AUTO_TEST_CASE(different_arity_overloads_reject_source_parameters_in_either_registration_order)
@@ -1081,7 +1092,7 @@ BOOST_AUTO_TEST_CASE(different_arity_overloads_reject_source_parameters_in_eithe
         const auto& second = sourceFirst ? valueParameters : sourceParameters;
         BOOST_REQUIRE(registerNativeFunction(runtime, "test.source", first, runtime.getIntegerType()).isValid());
         BOOST_TEST(registerNativeFunction(runtime, "test.source", second, runtime.getIntegerType()).isInvalid());
-        BOOST_TEST(runtime.getCallableOverloadCount("test.source") == NomadIndex{1});
+        BOOST_TEST(runtime.getFunctionOverloadCount("test.source") == NomadIndex{1});
     }
 }
 
@@ -1107,7 +1118,7 @@ BOOST_AUTO_TEST_CASE(overload_mixing_void_and_value_returns_is_rejected)
         ).isInvalid()
     );
 
-    BOOST_TEST(runtime.getCallableOverloadCount("test.convert") == NomadIndex{1});
+    BOOST_TEST(runtime.getFunctionOverloadCount("test.convert") == NomadIndex{1});
 }
 
 // A callback is parsed differently from an expression, so it cannot be part of an overload set.
@@ -1133,7 +1144,7 @@ BOOST_AUTO_TEST_CASE(overload_with_a_callback_parameter_is_rejected)
         ).isInvalid()
     );
 
-    BOOST_TEST(runtime.getCallableOverloadCount("test.run") == NomadIndex{1});
+    BOOST_TEST(runtime.getFunctionOverloadCount("test.run") == NomadIndex{1});
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -1330,6 +1341,13 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
     BOOST_TEST(runtime.getFunction(functionResult.id) != nullptr);
     BOOST_TEST(runtime.getFunction(methodResult.id) == nullptr);
     BOOST_TEST(runtime.getFunction(constructorResult.id) == nullptr);
+    BOOST_TEST(!runtime.functionExists("size"));
+    BOOST_TEST(!runtime.functionExists("Thing"));
+    BOOST_TEST(runtime.getFunctionId("size").isInvalid());
+    BOOST_TEST(runtime.getFunctionId("Thing").isInvalid());
+    std::vector<CallableId> functionIds{method, constructor};
+    runtime.getFunctionIds("size", functionIds);
+    BOOST_TEST(functionIds.empty());
 
     BOOST_TEST(runtime.getCallable(functionResult.id)->getType() == CallableType::Function);
     BOOST_TEST(runtime.getCallable(methodResult.id)->getType() == CallableType::Method);
@@ -1337,6 +1355,42 @@ BOOST_AUTO_TEST_CASE(registered_callables_share_one_id_space)
     BOOST_TEST(runtime.getCallable(functionResult.id) == runtime.getNativeFunction(functionResult.id));
     BOOST_TEST(runtime.getCallable(methodResult.id) == runtime.getNativeMethod(methodResult.id));
     BOOST_TEST(runtime.getCallable(CallableId::INVALID) == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(function_name_queries_ignore_same_named_methods_in_either_registration_order) {
+    for (const auto methodFirst : {false, true}) {
+        Runtime runtime;
+        const auto* owner = registerResolutionType(runtime, "FunctionNameOwner");
+        const auto registerMethod = [&] {
+
+            return runtime.registerNativeClassMethod(owner->getId(), {
+                .name = "sharedName",
+                .parameters = {},
+                .returnTypeId = runtime.getIntegerType()->getId(),
+                .function = [](VirtualMachine*) {}
+            });
+        };
+
+        auto methodId = CallableId::INVALID;
+        if (methodFirst) {
+            methodId = registerMethod();
+        }
+
+        const auto functionId = registerNativeFunction(runtime, "sharedName", {}, runtime.getIntegerType());
+        if (!methodFirst) {
+            methodId = registerMethod();
+        }
+
+        BOOST_REQUIRE(methodId.isValid());
+        BOOST_REQUIRE(functionId.isValid());
+        BOOST_TEST(runtime.functionExists("sharedName"));
+        BOOST_TEST(runtime.getFunctionId("sharedName") == functionId);
+        BOOST_TEST(runtime.getNativeFunctionId("sharedName") == functionId);
+        BOOST_TEST(runtime.getScriptFunctionId("sharedName").isInvalid());
+        std::vector<CallableId> functionIds{methodId};
+        runtime.getFunctionIds("sharedName", functionIds);
+        BOOST_TEST(functionIds == std::vector<CallableId>({functionId}));
+    }
 }
 
 BOOST_AUTO_TEST_CASE(constructors_belong_to_the_declaring_type)
@@ -1464,7 +1518,7 @@ BOOST_AUTO_TEST_CASE(methods_belong_to_the_receiver_type)
     BOOST_TEST(runtime.resolveMethod(type, "update", {runtime.getIntegerType()}).id == callableId);
     BOOST_TEST(runtime.resolveMethod(otherType, "update", {runtime.getFloatType()}).id ==
         runtime.getNativeMemberMethod(overloadId)->getId());
-    BOOST_TEST(runtime.getCallableId("update").isInvalid());
+    BOOST_TEST(runtime.getFunctionId("update").isInvalid());
 
     BOOST_TEST(runtime.registerNativeClassMethod(type->getId(), {
         .name = "update",

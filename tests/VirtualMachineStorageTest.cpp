@@ -191,8 +191,8 @@ BOOST_AUTO_TEST_CASE(factory_virtual_machines_keep_results_and_return_ownership_
         BOOST_REQUIRE(compiler->compileFunctions(&context));
     }
 
-    const auto increment = runtime.getFunctionId("increment");
-    const auto echo = runtime.getFunctionId("echo");
+    const auto increment = runtime.getScriptFunctionId("increment");
+    const auto echo = runtime.getScriptFunctionId("echo");
     secondMachine->setIntegerResult(19);
     RuntimeValue firstInteger;
     firstMachine->executeFunction(increment, {RuntimeValue{NomadInteger{41}}}, firstInteger);
@@ -214,7 +214,7 @@ BOOST_AUTO_TEST_CASE(factory_virtual_machines_keep_results_and_return_ownership_
     BOOST_TEST(secondResult.getObjectValue() == argument.getObjectValue());
     BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 3U);
     firstMachine->executeFunction(increment, {RuntimeValue{NomadInteger{8}}});
-    firstMachine->executeFunction(runtime.getFunctionId("main"));
+    firstMachine->executeFunction(runtime.getScriptFunctionId("main"));
     firstMachine.reset();
     argument.freeObjectValue();
     BOOST_TEST(firstResult.getStringValue() == "owned argument");
@@ -253,7 +253,7 @@ BOOST_AUTO_TEST_CASE(host_execution_releases_results_on_discard_and_copy_failure
     fixture.addFunction("returnExecutionResult", "return makeExecutionResult");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     runtime.initializeScripts();
-    const auto functionId = runtime.getFunctionId("returnExecutionResult");
+    const auto functionId = runtime.getScriptFunctionId("returnExecutionResult");
     const Closure closure(runtime.getScriptFunction(functionId));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     for (const auto useClosure : {false, true}) {
@@ -1004,7 +1004,7 @@ BOOST_AUTO_TEST_CASE(prepared_and_raw_calls_complete_and_release_owned_arguments
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     runtime.initializeScripts();
     BOOST_TEST(!runtime.getInstructionId("op_yield").isValid());
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("completeOwnedFrame"));
+    const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("completeOwnedFrame"));
     RuntimeValue argument{NomadString{"owned synchronous argument"}};
     const RuntimeValueGuard argumentOwner(*runtime.getStringType(), &argument);
     for (const auto prepared : {false, true}) {
@@ -1045,7 +1045,7 @@ BOOST_AUTO_TEST_CASE(script_run_failure_after_stop_restores_state_and_releases_o
     fixture.addFunction("failOwnedFrame", "params text:string\nstopThenFailFrame\nreturn 0");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     runtime.initializeScripts();
-    const auto* function = runtime.getScriptFunction(runtime.getFunctionId("failOwnedFrame"));
+    const auto* function = runtime.getScriptFunction(runtime.getScriptFunctionId("failOwnedFrame"));
     RuntimeValue argument{NomadString{"owned failure argument"}};
     const RuntimeValueGuard argumentOwner(*runtime.getStringType(), &argument);
     RuntimeValue receiver{NomadString{"borrowed enclosing receiver"}};
@@ -1181,9 +1181,9 @@ BOOST_AUTO_TEST_CASE(logical_local_views_preserve_complete_values_ownership_and_
         BOOST_TEST(snapshot.getStorage()[0].getIntegerValue() == 11);
         BOOST_TEST(suffix[0].getIntegerValue() == 42);
         const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{19}});
-        const auto nested = interpreter.runFunction(runtime.getFunctionId("nestedLogicalLocal"), {&argument, 1});
+        const auto nested = interpreter.runFunction(runtime.getScriptFunctionId("nestedLogicalLocal"), {&argument, 1});
         BOOST_TEST(nested.getValue().getIntegerValue() == 20);
-        BOOST_TEST(interpreter.runFunction(runtime.getFunctionId("emptyLogicalLocal"), {}).getValue().getIntegerValue() == 0);
+        BOOST_TEST(interpreter.runFunction(runtime.getScriptFunctionId("emptyLogicalLocal"), {}).getValue().getIntegerValue() == 0);
         BOOST_TEST(active->getCurrentCallable() == callable);
         BOOST_TEST(active->getIntegerParameter(0) == 123);
         BOOST_TEST(active->getFunctionVariableStorage(outerId).data() == outer.data());
@@ -1323,8 +1323,8 @@ BOOST_AUTO_TEST_CASE(hidden_pointers_survive_nested_calls_and_host_reentry_failu
     fixture.addFunction("success", "return 42");
     fixture.addFunction("failure", "fun nested\nfail\nend\nnested\nreturn 0");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* success = runtime.getFunction(runtime.getFunctionId("success"))->asScriptFunction();
-    const auto* failure = runtime.getFunction(runtime.getFunctionId("failure"))->asScriptFunction();
+    const auto* success = runtime.getFunction(runtime.getScriptFunctionId("success"))->asScriptFunction();
+    const auto* failure = runtime.getFunction(runtime.getScriptFunctionId("failure"))->asScriptFunction();
     std::array<RuntimeValue, 2> receiver;
     std::array<RuntimeValue, 2> destination;
     VirtualMachine machine(&runtime, 128);

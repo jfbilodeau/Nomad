@@ -1657,7 +1657,7 @@ bool FormatStringLiteral::parsePlaceholders(
         auto* expressionFunction = context->getRuntime()->getScriptCallable(functionId);
         expressionFunction->setParentId(
             context->isHubInitializer() && function->getParentId().isInvalid()
-                ? context->getRuntime()->getFunctionId("$init")
+                ? context->getRuntime()->getScriptFunctionId("$init")
                 : function->getId()
         );
         expressionFunction->setHub(context->getHub().empty() ? function->getHub() : context->getHub());

@@ -308,7 +308,7 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
     BOOST_TEST(declaration->getReturnType() == runtime.getTypeByName("log.SinkConfiguration"));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("exerciseDeferred"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("exerciseDeferred"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
     BOOST_TEST(calls == 1);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
@@ -319,9 +319,9 @@ BOOST_AUTO_TEST_CASE(generated_references_register_stable_ids_and_execute_the_sc
         "updated = updateConfiguration log.Level.Debug configuration true\n"
         "return updated.active\n"}}}, {}}, *laterCompiler);
     BOOST_REQUIRE(later.succeeded());
-    BOOST_TEST(runtime.getCallableOverloadCount("updateConfiguration") == 1U);
+    BOOST_TEST(runtime.getFunctionOverloadCount("updateConfiguration") == 1U);
     BOOST_TEST(runtime.getNativeFunctionId("updateConfiguration") == id);
-    virtualMachine->executeFunction(runtime.getFunctionId("later"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("later"), {}, result);
     BOOST_TEST(result.getBooleanValue());
     BOOST_TEST(calls == 2);
 }
@@ -454,7 +454,7 @@ BOOST_AUTO_TEST_CASE(concrete_and_deferred_overloads_share_ordinary_resolution) 
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getTypeByName("Number")}).id == objectId);
     BOOST_TEST(runtime.resolveFunction("choose", {runtime.getIntegerType()}).id == integerId);
     RuntimeValue value;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, value);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, value);
     BOOST_TEST(value.getIntegerValue() == 42);
 }
 

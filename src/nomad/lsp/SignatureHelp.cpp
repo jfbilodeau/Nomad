@@ -89,7 +89,7 @@ std::vector<const Callable*> findCallables(
         for (const auto* constructor : composite->getConstructors()) callables.push_back(constructor);
     } else {
         std::vector<CallableId> overloads;
-        runtime.getCallableOverloads(name, overloads);
+        runtime.getFunctionIds(name, overloads);
         for (const auto id : overloads) callables.push_back(runtime.getFunction(id));
         if (callables.empty()) {
             const auto separator = name.rfind('.');

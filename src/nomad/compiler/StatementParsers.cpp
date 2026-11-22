@@ -32,7 +32,7 @@ NomadString generateFunFunctionName(CompilerContext* context, ScriptCallableBase
 
     do {
         testFunctionName = function->getName() + "@" + toString(line) + "[" + toString(count) + "]";
-        testId = context->getRuntime()->getFunctionId(testFunctionName);
+        testId = context->getRuntime()->getScriptFunctionId(testFunctionName);
         count++;
 
         if (count > 1000) {
@@ -417,7 +417,7 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptCal
     // Fun is already registered by pre_parse_fun_statement
     tokens->nextLine();
 
-    auto funId =  context->getRuntime()->getFunctionId(funName);
+    auto funId =  context->getRuntime()->getScriptFunctionId(funName);
     auto funFunction = context->getRuntime()->getScriptCallable(funId);
 
     if (funFunction == nullptr) {
@@ -1107,7 +1107,7 @@ std::unique_ptr<Statement> parseOnStatement(CompilerContext* context, ScriptCall
         return nullptr;
     }
 
-    const auto handlerFunctionId = context->getRuntime()->getFunctionId(handlerName);
+    const auto handlerFunctionId = context->getRuntime()->getScriptFunctionId(handlerName);
 
     if (handlerFunctionId.isInvalid()) {
         context->addError("Unknown handler function '" + handlerName + "'", tokens);

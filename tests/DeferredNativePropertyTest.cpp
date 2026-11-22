@@ -122,7 +122,7 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
             BOOST_TEST(runtime.getInstructions().size() == instructionCount);
         } else {
             RuntimeValue answer;
-            virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, answer);
+            virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, answer);
             BOOST_TEST(answer.getBooleanValue());
             BOOST_TEST(stored == 2);
             BOOST_TEST(getterCalls == 1);
@@ -162,7 +162,7 @@ BOOST_AUTO_TEST_CASE(script_class_properties_preserve_object_reference_ownership
         (result.diagnostics.empty() ? "" : result.diagnostics.front().message));
     const auto objectsBefore = NomadObject::getLiveObjectCount();
     RuntimeValue answer;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, answer);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, answer);
     BOOST_TEST(answer.getIntegerValue() == 3);
     BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 1U);
     stored.freeObjectValue();

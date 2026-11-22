@@ -2137,9 +2137,18 @@ Functions, methods, and constructors share the `CallableId` type. Callable IDs
 do not implicitly convert to integers or other ID categories.
 `getCallableCount()` counts all registered functions, methods, and constructors,
 both native and script.
-`getCallableId(name)` returns the first free-function overload as a `CallableId`,
+`functionExists(name)` tests for a registered free function, native or script.
+`getFunctionId(name)` returns the first free-function overload as a `CallableId`,
 or `CallableId::INVALID` when absent. It does not select an overload.
-`getCallableOverloads(name, ids)` lists free-function overload IDs.
+`getScriptFunctionId(name)` and `getNativeFunctionId(name)` restrict this lookup
+to the corresponding source category, returning `CallableId::INVALID` for a
+different source or an absent name.
+`getFunctionIds(name, ids)` replaces the supplied vector with all free-function
+overload IDs in registration order. `getFunctionOverloadCount(name)` returns
+their count. These name queries do not log and exclude methods and constructors,
+including members with the same name as a free function.
+Use `getCallable(id)` for any-category lookup by an existing ID; it returns a
+borrowed descriptor or `nullptr` for an invalid ID.
 
 `Runtime::registerNativeClassProperty` returns a `PropertyId`;
 `Runtime::registerNativeClassMethod` and `registerNativeStructMethod` return

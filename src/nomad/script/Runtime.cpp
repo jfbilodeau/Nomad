@@ -359,7 +359,7 @@ ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
         getContainingHub(name).empty() ||
         !canRegisterHubMember(name) ||
         isHubVariable(name) ||
-        getCallableId(name).isValid() ||
+        functionExists(name) ||
         getConstantId(name).isValid() ||
         getTypeByName(name) != nullptr ||
         getEventId(name).isValid() ||
@@ -615,7 +615,7 @@ HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
     }
 
     if (
-        getCallableId(name).isValid() ||
+        functionExists(name) ||
         getConstantId(name).isValid() ||
         getTypeByName(name) != nullptr ||
         getEventId(name).isValid() ||
@@ -742,7 +742,7 @@ CallableId Runtime::registerNativeFunctionEntry(
         pending = pending || !native->isSignatureResolved();
     }
 
-    if (!pending && getCallableOverloadCount(name) != 0) {
+    if (!pending && getFunctionOverloadCount(name) != 0) {
         if (
             NomadString error;
             !canOverloadCallable(
@@ -803,7 +803,7 @@ void Runtime::validateNativeFunctionSignatures() {
     }
 
     for (const auto* function : pending) {
-        if (getCallableOverloadCount(function->getName()) > 1) {
+        if (getFunctionOverloadCount(function->getName()) > 1) {
             NomadString error;
             if (
                 !canOverloadCallable(
@@ -1751,7 +1751,12 @@ NomadString Runtime::describeResolveFailure(const NomadString& name, const Resol
     return {};
 }
 
-CallableId Runtime::getCallableId(const NomadString& name) const {
+bool Runtime::functionExists(const NomadString& name) const {
+
+    return getFunctionId(name).isValid();
+}
+
+CallableId Runtime::getFunctionId(const NomadString& name) const {
     for (const auto* callable : m_callables) {
         if (callable->getName() == name && callable->getType() == CallableType::Function) {
             return callable->getId();
@@ -1761,17 +1766,17 @@ CallableId Runtime::getCallableId(const NomadString& name) const {
     return CallableId::INVALID;
 }
 
-void Runtime::getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const {
-    overloads.clear();
+void Runtime::getFunctionIds(const NomadString& name, std::vector<CallableId>& ids) const {
+    ids.clear();
 
     for (const auto* callable : m_callables) {
         if (callable->getName() == name && callable->getType() == CallableType::Function) {
-            overloads.push_back(callable->getId());
+            ids.push_back(callable->getId());
         }
     }
 }
 
-NomadIndex Runtime::getCallableOverloadCount(const NomadString& name) const {
+NomadIndex Runtime::getFunctionOverloadCount(const NomadString& name) const {
     return static_cast<NomadIndex>(std::ranges::count_if(m_callables, [&name](const auto* callable) {
         return callable->getName() == name && callable->getType() == CallableType::Function;
     }));
@@ -2806,7 +2811,7 @@ const StackEffect& Runtime::getInstructionStackEffect(const OpCodeId id) const {
 }
 
 CallableId Runtime::getNativeFunctionId(const NomadString& name) const {
-    const auto* function = getNativeFunction(getCallableId(name));
+    const auto* function = getNativeFunction(getFunctionId(name));
     return function == nullptr ? CallableId::INVALID : function->getId();
 }
 
@@ -3494,7 +3499,7 @@ CallableId Runtime::registerScriptFunction(
         return CallableId::INVALID;
     }
 
-    if (getCallableId(name) != CallableId::INVALID) {
+    if (functionExists(name)) {
         log::error("Function with name '" + name + "' conflicts with an already registered callable.");
 
         return CallableId::INVALID;
@@ -3539,8 +3544,8 @@ const ScriptFunction* Runtime::getScriptFunction(const CallableId functionId) co
     return function == nullptr ? nullptr : function->asScriptFunction();
 }
 
-CallableId Runtime::getFunctionId(const NomadString& name) const {
-    const auto* function = getScriptFunction(getCallableId(name));
+CallableId Runtime::getScriptFunctionId(const NomadString& name) const {
+    const auto* function = getScriptFunction(getFunctionId(name));
     return function == nullptr ? CallableId::INVALID : function->getId();
 }
 

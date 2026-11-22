@@ -69,7 +69,7 @@ CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
-    const auto functionId = runtime.getFunctionId("test");
+    const auto functionId = runtime.getScriptFunctionId("test");
 
     const auto compiled = compiler->compileFunctions(&context);
     const auto error = context.getFirstError();
@@ -783,7 +783,7 @@ BOOST_AUTO_TEST_CASE(two_dimensional_indexers_evaluate_once_in_order_with_distin
     BOOST_TEST(result.getIntegerValue() == 9);
     BOOST_TEST(calls == "receiversecondfirstget");
     calls.clear();
-    virtualMachine->executeFunction(runtime.getFunctionId("write"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("write"), {}, result);
     BOOST_TEST(calls == "receiverassignedsecondfirstset");
     BOOST_TEST(NomadObject::getLiveObjectCount() == before);
     auto machine = runtime.createVirtualMachine();
@@ -1064,7 +1064,7 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
                 (compilation.getFirstError() ? compilation.getFirstError()->message : "Compilation failed"));
             const auto before = NomadObject::getLiveObjectCount();
             RuntimeValue result;
-            virtualMachine->executeFunction(runtime.getFunctionId(name), {}, result);
+            virtualMachine->executeFunction(runtime.getScriptFunctionId(name), {}, result);
             BOOST_TEST(result.getIntegerValue() == expected);
             BOOST_TEST(NomadObject::getLiveObjectCount() == before);
             {

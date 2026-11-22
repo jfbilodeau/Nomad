@@ -118,7 +118,7 @@ BOOST_AUTO_TEST_CASE(empty_declarations_publish_closed_and_open_class_types)
     CompilerContext context(compiler);
     Tokenizer tokens(&context, "ast.nomad", "class Closed\nend");
     BOOST_REQUIRE(tokens.nextLine());
-    const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
+    const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getScriptFunctionId("main")), &tokens);
     const auto* declaration = dynamic_cast<const ClassDeclaration*>(statement.get());
     BOOST_REQUIRE(declaration != nullptr);
     BOOST_TEST(declaration->isDeclaration());
@@ -141,7 +141,7 @@ BOOST_AUTO_TEST_CASE(class_symbols_are_available_before_cross_file_signatures)
         auto& runtime = fixture.getRuntime();
         const auto* type = runtime.getTypeByName("model.Point");
         BOOST_REQUIRE(type != nullptr);
-        const auto* identity = runtime.getScriptFunction(runtime.getFunctionId("identity"));
+        const auto* identity = runtime.getScriptFunction(runtime.getScriptFunctionId("identity"));
         BOOST_REQUIRE(identity != nullptr);
         BOOST_TEST(identity->getParameterType(0) == type);
         BOOST_TEST(identity->getReturnType() == type);
@@ -238,8 +238,8 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
             "end\n"
             "return 42"
         );
-        BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getFunctionId("main"))));
-        statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
+        BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getScriptFunctionId("main"))));
+        statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getScriptFunctionId("main")), &tokens);
         BOOST_REQUIRE_MESSAGE(statement != nullptr,
             (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Missing class AST"));
         BOOST_TEST(!context.hasError());
@@ -282,8 +282,8 @@ BOOST_AUTO_TEST_CASE(member_declarations_retain_typed_headers_initializers_and_b
     BOOST_REQUIRE(members[0]->getInitializer() != nullptr);
     BOOST_TEST(members[2]->getCallableId().isValid());
     BOOST_TEST(declaration->getType()->getProperties().empty());
-    BOOST_TEST(runtime.getFunctionId("move").isInvalid());
-    BOOST_TEST(runtime.getFunctionId("init").isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId("move").isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId("init").isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(member_source_scanning_balances_blocks_callbacks_and_loop_closers)
@@ -314,8 +314,8 @@ BOOST_AUTO_TEST_CASE(member_source_scanning_balances_blocks_callbacks_and_loop_c
         "end\n"
         "return 7"
     );
-    BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getFunctionId("main"))));
-    const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
+    BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getScriptFunctionId("main"))));
+    const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getScriptFunctionId("main")), &tokens);
     const auto* declaration = dynamic_cast<const ClassDeclaration*>(statement.get());
     BOOST_REQUIRE_MESSAGE(declaration != nullptr,
         (context.getFirstError() ? formatDiagnostic(*context.getFirstError()) : "Missing class AST"));
@@ -347,8 +347,8 @@ BOOST_AUTO_TEST_CASE(member_overloads_register_distinct_parameter_types_on_the_c
         "fun move value:int\nend\nfun move value:float\nend\n"
         "end"
     );
-    BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getFunctionId("main"))));
-    const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens);
+    BOOST_REQUIRE(prepareMembers(context, tokens, runtime.getScriptCallable(runtime.getScriptFunctionId("main"))));
+    const auto statement = parser::parseLine(&context, runtime.getScriptFunction(runtime.getScriptFunctionId("main")), &tokens);
     const auto* declaration = dynamic_cast<const ClassDeclaration*>(statement.get());
     BOOST_REQUIRE(declaration != nullptr);
     BOOST_TEST(!context.hasError());
@@ -385,7 +385,7 @@ BOOST_AUTO_TEST_CASE(class_parameter_types_are_resolved_after_all_class_symbols_
         validTypes.addFunction(reversed ? "a" : "z", "open hub model\nclass Second\nend\nend");
         BOOST_REQUIRE_MESSAGE(validTypes.compile(), validTypes.getDiagnostics());
         BOOST_TEST(!validTypes.hasError("Unknown type"));
-        BOOST_TEST(validTypes.getRuntime().getFunctionId("model.accept").isInvalid());
+        BOOST_TEST(validTypes.getRuntime().getScriptFunctionId("model.accept").isInvalid());
     }
 }
 
@@ -411,7 +411,7 @@ BOOST_AUTO_TEST_CASE(invalid_member_headers_duplicates_and_unclosed_bodies_are_r
             Tokenizer tokens(&context, "invalid-members.nomad", NomadString("class Point\n") + body + "\nend");
             BOOST_REQUIRE(tokens.nextLine());
             const auto statement = parser::parseLine(
-                &context, runtime.getScriptFunction(runtime.getFunctionId("main")), &tokens
+                &context, runtime.getScriptFunction(runtime.getScriptFunctionId("main")), &tokens
             );
             BOOST_TEST(statement == nullptr);
             BOOST_TEST(context.hasError());
@@ -469,8 +469,8 @@ BOOST_AUTO_TEST_CASE(member_signatures_precede_body_parsing_and_receiver_types_a
         if (method->getName() == "identity") BOOST_TEST(method->getReturnType() == type);
         if (method->getName() == "echo") BOOST_TEST(method->getReturnType() == runtime.getIntegerType());
     }
-    BOOST_TEST(runtime.getFunctionId("echo").isInvalid());
-    BOOST_TEST(runtime.getFunctionId("Point.echo").isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId("echo").isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId("Point.echo").isInvalid());
 }
 
 BOOST_AUTO_TEST_CASE(member_bodies_and_initializers_report_ordinary_source_errors)
@@ -648,7 +648,7 @@ BOOST_AUTO_TEST_CASE(field_initializers_reject_receiver_reads_captures_and_forma
     );
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     RuntimeValue result;
-    fixture.getVirtualMachine().executeFunction(fixture.getRuntime().getFunctionId("main"), {}, result);
+    fixture.getVirtualMachine().executeFunction(fixture.getRuntime().getScriptFunctionId("main"), {}, result);
     auto* object = result.asObject<ScriptObject>();
     BOOST_TEST(object->getField(0).getIntegerValue() == 10);
     BOOST_TEST(object->getField(1).getIntegerValue() == 23);
@@ -701,7 +701,7 @@ BOOST_AUTO_TEST_CASE(explicit_field_declarations_link_to_property_metadata)
     fixture.addFunction("main", "class Point\nend");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     auto& runtime = fixture.getRuntime();
-    auto* function = runtime.getScriptCallable(runtime.getFunctionId("main"));
+    auto* function = runtime.getScriptCallable(runtime.getScriptFunctionId("main"));
     CompilerContext context(&fixture.getCompiler());
     Tokenizer tokens(&context, "fields.nomad", "class Point\nx = 42\nend");
     BOOST_REQUIRE(prepareMembers(context, tokens, function));
@@ -845,10 +845,10 @@ BOOST_AUTO_TEST_CASE(external_open_class_fields_are_shared_across_functions_and_
         const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
         BOOST_REQUIRE(type->getProperty("extra") != nullptr);
         BOOST_TEST(type->getProperty("extra")->getValueType() == fixture.getRuntime().getIntegerType());
-        const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("read"));
+        const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getScriptFunctionId("read"));
         BOOST_REQUIRE(read != nullptr);
         BOOST_TEST(read->getReturnType() == fixture.getRuntime().getIntegerType());
-        const auto* write = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("write"));
+        const auto* write = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getScriptFunctionId("write"));
         BOOST_REQUIRE(write != nullptr);
         BOOST_TEST(write->getVariableId("alias.extra").isInvalid());
         BOOST_TEST(context.getErrorCount() == 0u);
@@ -876,7 +876,7 @@ BOOST_AUTO_TEST_CASE(external_field_inference_is_stable_across_variable_context_
         const auto* type = fixture.getRuntime().getTypeByName("Point")->asClassType();
         BOOST_REQUIRE(type->getProperty("extra") != nullptr);
         BOOST_TEST(type->getProperty("extra")->getValueType() == fixture.getRuntime().getIntegerType());
-        const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getFunctionId("read"));
+        const auto* read = fixture.getRuntime().getScriptFunction(fixture.getRuntime().getScriptFunctionId("read"));
         BOOST_REQUIRE(read != nullptr);
         BOOST_TEST(read->getReturnType() == fixture.getRuntime().getIntegerType());
     }
@@ -1036,7 +1036,7 @@ BOOST_AUTO_TEST_CASE(stored_fields_are_not_parsed_as_other_types_native_methods)
         BOOST_TEST(fixture.getCompiler().compileScripts(&context));
         BOOST_TEST(context.getWarningCount() == 0u);
         BOOST_TEST(context.getErrorCount() == 0u);
-        const auto* read = runtime.getScriptFunction(runtime.getFunctionId("read"));
+        const auto* read = runtime.getScriptFunction(runtime.getScriptFunctionId("read"));
         BOOST_REQUIRE(read != nullptr);
         BOOST_TEST(read->getReturnType() == runtime.getIntegerType());
     }

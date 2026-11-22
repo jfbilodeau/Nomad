@@ -406,7 +406,7 @@ BOOST_AUTO_TEST_CASE(script_registration_reports_collisions_immediately)
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"answer", {"first.nomad", "return 1"}}}, {}});
-    BOOST_REQUIRE(runtime.getFunctionId("answer").isValid());
+    BOOST_REQUIRE(runtime.getScriptFunctionId("answer").isValid());
     compiler->registerSources(&context, {{{"answer", {"second.nomad", "return 2"}}}, {}});
 
     BOOST_REQUIRE(context.getErrorCount() == 1U);
@@ -513,7 +513,7 @@ BOOST_AUTO_TEST_CASE(registered_source_batches_are_owned_by_the_compiler)
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("answer"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("answer"), {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
 }
 
@@ -525,7 +525,7 @@ BOOST_AUTO_TEST_CASE(context_variables_compile_and_execute_with_global_ids)
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"contextVariable", {"contextVariable.nomad",
         "global.value = 17\nreturn global.value"}}}, {}});
-    const auto functionId = runtime.getFunctionId("contextVariable");
+    const auto functionId = runtime.getScriptFunctionId("contextVariable");
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
@@ -542,7 +542,7 @@ BOOST_AUTO_TEST_CASE(context_variables_in_format_strings_use_global_ids)
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"contextFormatString", {"contextFormatString.nomad",
         "global.value = 17\nreturn $\"value {global.value}\""}}}, {}});
-    const auto functionId = runtime.getFunctionId("contextFormatString");
+    const auto functionId = runtime.getScriptFunctionId("contextFormatString");
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
     RuntimeValue result;
@@ -570,7 +570,7 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
         compiler->registerSources(&context, batch);
         batch.sources.front().source.filePath.reset();
     }
-    const auto scriptId = compiler->getScriptId(runtime.getFunctionId("z"));
+    const auto scriptId = compiler->getScriptId(runtime.getScriptFunctionId("z"));
     compiler->registerSources(&context, {{{"a", {"untitled:a", "return 1"}}}, {}});
     BOOST_REQUIRE(compiler->compileFunctions(&context));
 
@@ -580,15 +580,15 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     BOOST_TEST(script.source.text == text);
     BOOST_REQUIRE(script.source.filePath.has_value());
     BOOST_TEST(*script.source.filePath == path);
-    BOOST_TEST(compiler->getScriptId(runtime.getFunctionId("declared")) == scriptId);
-    BOOST_TEST(compiler->getScriptId(runtime.getFunctionId("a")) != scriptId);
-    BOOST_TEST(!compiler->getScript(compiler->getScriptId(runtime.getFunctionId("a"))).source.filePath.has_value());
+    BOOST_TEST(compiler->getScriptId(runtime.getScriptFunctionId("declared")) == scriptId);
+    BOOST_TEST(compiler->getScriptId(runtime.getScriptFunctionId("a")) != scriptId);
+    BOOST_TEST(!compiler->getScript(compiler->getScriptId(runtime.getScriptFunctionId("a"))).source.filePath.has_value());
 
     std::vector<ScriptFunction*> functions;
     runtime.getScriptFunctions(functions);
     auto generatedCount = NomadIndex{0};
     for (const auto* function : functions) {
-        if (function->getParentId() == runtime.getFunctionId("z")) {
+        if (function->getParentId() == runtime.getScriptFunctionId("z")) {
             ++generatedCount;
             BOOST_TEST(compiler->getScriptId(function->getId()) == scriptId);
             BOOST_TEST(function->getPath() == "editor:z");
@@ -597,7 +597,7 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     }
     BOOST_TEST(generatedCount == 1U);
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("z"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("z"), {}, result);
     BOOST_TEST(result.getStringValue() == "42");
     runtime.getStringType()->freeValue(&result);
 }
@@ -608,7 +608,7 @@ BOOST_AUTO_TEST_CASE(script_lookup_rejects_invalid_and_out_of_range_ids)
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"answer", {"answer.nomad", "return 42"}}}, {}});
-    const auto scriptId = compiler->getScriptId(runtime.getFunctionId("answer"));
+    const auto scriptId = compiler->getScriptId(runtime.getScriptFunctionId("answer"));
     BOOST_TEST(isValidId(scriptId));
     BOOST_TEST(compiler->getScript(scriptId).scriptName == "answer");
 
@@ -616,7 +616,7 @@ BOOST_AUTO_TEST_CASE(script_lookup_rejects_invalid_and_out_of_range_ids)
         BOOST_CHECK_THROW((void)compiler->getScript(invalidId), NomadBug);
         BOOST_CHECK_THROW((void)compiler->createFunction(&context, invalidId, "invalid"), NomadBug);
     }
-    BOOST_TEST(runtime.getFunctionId("invalid").isInvalid());
+    BOOST_TEST(runtime.getScriptFunctionId("invalid").isInvalid());
     BOOST_TEST(!context.hasError());
 }
 
@@ -629,7 +629,7 @@ BOOST_AUTO_TEST_CASE(function_creation_reports_collisions_against_its_own_script
         {"first", {"untitled:first", "return 1"}},
         {"second", {"untitled:second", "return 2"}}
     }, {}});
-    const auto scriptId = compiler->getScriptId(runtime.getFunctionId("second"));
+    const auto scriptId = compiler->getScriptId(runtime.getScriptFunctionId("second"));
     const auto functionId = compiler->createFunction(&context, scriptId, "first");
 
     BOOST_TEST(functionId.isInvalid());

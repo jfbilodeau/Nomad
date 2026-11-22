@@ -796,7 +796,7 @@ BOOST_AUTO_TEST_CASE(frame_and_closure_captures_copy_complete_ranges_and_keep_em
         "test.captureCurrentStorage",
         [](VirtualMachine* active) {
             const auto* function = active->getRuntime()->getFunction(
-                active->getRuntime()->getCallableId("test.captureStorageProbe")
+                active->getRuntime()->getFunctionId("test.captureStorageProbe")
             )->asNativeFunction();
             function->getFn()(active);
         },
@@ -945,7 +945,7 @@ BOOST_AUTO_TEST_CASE(receiver_captures_copy_borrowed_struct_storage_and_preserve
         "test.captureCurrentReceiver",
         [](VirtualMachine* active) {
             const auto* function = active->getRuntime()->getFunction(
-                active->getRuntime()->getCallableId("test.captureReceiverProbe")
+                active->getRuntime()->getFunctionId("test.captureReceiverProbe")
             )->asNativeFunction();
             function->getFn()(active);
         },

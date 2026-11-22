@@ -105,7 +105,7 @@ struct LogConfigurationFixture {
         const auto error = context.getFirstError();
         const auto message = error.has_value() ? error->message : NomadString("Unknown compilation error");
         BOOST_REQUIRE_MESSAGE(success, message);
-        return runtime.getFunctionId(name);
+        return runtime.getScriptFunctionId(name);
     }
 
     RuntimeValue execute(const NomadString& source) {

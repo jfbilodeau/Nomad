@@ -83,7 +83,7 @@ CallableId compileFunction(Runtime& runtime, const NomadString& source) {
     auto compiler = runtime.createCompiler();
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"test", {"test.nomad", source}}}, {}});
-    const auto functionId = runtime.getFunctionId("test");
+    const auto functionId = runtime.getScriptFunctionId("test");
 
     const auto compiled = compiler->compileFunctions(&context);
     const auto error = context.getFirstError();

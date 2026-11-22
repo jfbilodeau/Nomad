@@ -484,11 +484,13 @@ public:
     // registered here under one namespace, so a name resolves the same way regardless of how it is implemented.
     // Signatures are read live from the callable because a script function's parameters and return type are
     // only known once it has been pre-parsed and its return type inferred.
+    // Tests for a registered native or script free function without selecting an overload.
+    [[nodiscard]] bool functionExists(const NomadString& name) const;
     // First free-function overload, for signature-driven parsing; not an overload selection.
-    [[nodiscard]] CallableId getCallableId(const NomadString& name) const;
+    [[nodiscard]] CallableId getFunctionId(const NomadString& name) const;
     // Every free function registered under `name`. Holds more than one entry when the name is overloaded.
-    void getCallableOverloads(const NomadString& name, std::vector<CallableId>& overloads) const;
-    [[nodiscard]] NomadIndex getCallableOverloadCount(const NomadString& name) const;
+    void getFunctionIds(const NomadString& name, std::vector<CallableId>& ids) const;
+    [[nodiscard]] NomadIndex getFunctionOverloadCount(const NomadString& name) const;
     [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
     // The ID the next published callable receives; invalid when the callable table is full.
     [[nodiscard]] CallableId getNextCallableId() const;
@@ -658,7 +660,7 @@ public:
 
     // Script functions. Enumeration and source/bytecode lookups exclude native callables.
     CallableId registerScriptFunction(const NomadString& name, const NomadString& path, const NomadString& source);
-    [[nodiscard]] CallableId getFunctionId(const NomadString& name) const;
+    [[nodiscard]] CallableId getScriptFunctionId(const NomadString& name) const;
     // Null unless `functionId` identifies a script function.
     [[nodiscard]] ScriptFunction* getScriptFunction(CallableId functionId);
     [[nodiscard]] const ScriptFunction* getScriptFunction(CallableId functionId) const;

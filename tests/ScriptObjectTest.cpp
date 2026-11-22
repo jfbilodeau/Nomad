@@ -492,7 +492,7 @@ BOOST_AUTO_TEST_CASE(compiled_and_interpreted_properties_share_storage_and_prese
                 BOOST_REQUIRE(compiler->compileFunctions(&context));
                 const auto beforeExecution = NomadObject::getLiveObjectCount();
                 RuntimeValue result;
-                virtualMachine->executeFunction(runtime.getFunctionId("test"), {}, result);
+                virtualMachine->executeFunction(runtime.getScriptFunctionId("test"), {}, result);
                 BOOST_TEST(NomadString(result.getStringValue()) == "hello");
                 runtime.getStringType()->freeValue(&result);
                 BOOST_TEST(NomadObject::getLiveObjectCount() == beforeExecution);
@@ -627,7 +627,7 @@ BOOST_AUTO_TEST_CASE(initializer_source_order_is_independent_of_property_registr
     BOOST_TEST(type->getProperty("second")->hasExplicitInitializer());
     BOOST_TEST(!type->getProperty("late")->hasExplicitInitializer());
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     const auto* object = result.asObject<ScriptObject>();
     BOOST_TEST(calls == 2);
     BOOST_TEST(object->getField(type->getFieldIndex(type->getProperty("first")->getId())).getIntegerValue() == 7);
@@ -665,7 +665,7 @@ BOOST_AUTO_TEST_CASE(generated_defaults_honor_type_initialization_only_for_field
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     BOOST_TEST(initialized == 0u);
     RuntimeValue result;
-    virtualMachine->executeFunction(runtime.getFunctionId("main"), {}, result);
+    virtualMachine->executeFunction(runtime.getScriptFunctionId("main"), {}, result);
     BOOST_TEST(explicitCalls == 1u);
     BOOST_TEST(initialized == 2u);
     auto* object = result.asObject<ScriptObject>();
@@ -756,10 +756,10 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
         .getter = [](VirtualMachine* machine, RuntimeValue& result) {
             auto* receiver = machine->getThis();
             machine->run(machine->getRuntime()->getScriptFunction(
-                machine->getRuntime()->getFunctionId("helper")), {});
+                machine->getRuntime()->getScriptFunctionId("helper")), {});
             BOOST_TEST(machine->getThis() == receiver);
             BOOST_CHECK_THROW(machine->run(machine->getRuntime()->getScriptFunction(
-                machine->getRuntime()->getFunctionId("failingHelper")), {}), NomadException);
+                machine->getRuntime()->getScriptFunctionId("failingHelper")), {}), NomadException);
             BOOST_TEST(machine->getThis() == receiver);
             BOOST_CHECK_THROW(
                 static_cast<void>(Interpreter{*machine}.runFunction(CallableId::INVALID, {})), std::invalid_argument
@@ -797,7 +797,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     compiler->addOpCode(probe);
     compiler->addOpCode(OpCodes::op_push_this);
     compiler->addOpCode(OpCodes::op_call_script_function);
-    compiler->addIndex(runtime.getScriptFunction(runtime.getFunctionId("helper"))->getFunctionStart());
+    compiler->addIndex(runtime.getScriptFunction(runtime.getScriptFunctionId("helper"))->getFunctionStart());
     compiler->addIndex(0);
     compiler->addOpCode(OpCodes::op_pop_this);
     compiler->addOpCode(probe);
