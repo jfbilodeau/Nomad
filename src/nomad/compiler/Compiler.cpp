@@ -367,18 +367,31 @@ bool Compiler::foldBinary(
     return m_runtime->foldBinary(op, lhsType, lhs, rhsType, rhs, result);
 }
 
+IdentifierType Compiler::getReservedIdentifierType(const NomadString& name) const {
+    if (m_runtime->getKeywordId(name).isValid()) {
+
+        return IdentifierType::Keyword;
+    }
+
+    if (isStatement(name)) {
+
+        return IdentifierType::Statement;
+    }
+
+    return IdentifierType::Unknown;
+}
+
 IdentifierType Compiler::getIdentifierType(const NomadString& name, const ScriptCallableBase* function) const {
     if (getReceiverType(function) != nullptr) {
         if (name == "this") return function->getClassType() != nullptr ? IdentifierType::Receiver :
             (function->getParameterId(name) != NOMAD_INVALID_ID ? IdentifierType::Parameter : IdentifierType::Unknown);
         if (name.starts_with("this.")) return IdentifierType::Unknown;
     }
-    if (m_runtime->getKeywordId(name).isValid()) {
-        return IdentifierType::Keyword;
-    }
 
-    if (isStatement(name)) {
-        return IdentifierType::Statement;
+    const auto reservedType = getReservedIdentifierType(name);
+    if (reservedType != IdentifierType::Unknown) {
+
+        return reservedType;
     }
 
     const auto* callable = m_runtime->getFunction(m_runtime->getFunctionId(name));
@@ -450,9 +463,10 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCall
         return;
     }
 
-    definition.identifierType = getIdentifierType(name, function);
+    definition.identifierType = getReservedIdentifierType(name);
 
-    if (definition.identifierType == IdentifierType::Keyword || definition.identifierType == IdentifierType::Statement) {
+    if (definition.identifierType != IdentifierType::Unknown) {
+
         return;
     }
 
@@ -512,6 +526,7 @@ void Compiler::getIdentifierDefinition(const NomadString& name, const ScriptCall
             return;
         }
 
+        definition.identifierType = IdentifierType::ContextVariable;
         definition.contextVariableId = variableId;
         definition.valueType = m_runtime->getContextVariableType(variableId);
 

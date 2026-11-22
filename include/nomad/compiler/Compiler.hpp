@@ -342,6 +342,7 @@ public:
     NomadString generateFunctionName(const NomadString& name, const ScriptCallableBase* function, NomadIndex line);
 
 private:
+    [[nodiscard]] IdentifierType getReservedIdentifierType(const NomadString& name) const;
     void addPropertyAccess(PropertyId id, bool write);
     std::vector<std::unique_ptr<DeferredType>> m_deferredTypes;
     std::vector<std::unique_ptr<DeferredTypeTarget>> m_deferredTypeTargets;
