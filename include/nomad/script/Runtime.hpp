@@ -762,7 +762,6 @@ private:
         const NomadString& doc
     );
     CallableId addCallableToTable(std::unique_ptr<Function> function);
-    CallableId catalogCallable(Callable* callable);
     [[nodiscard]] bool canOverloadCallable(
         const NomadString& name,
         const std::vector<Parameter>& parameters,
@@ -812,6 +811,7 @@ private:
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<std::unique_ptr<Function>> m_functions;
     std::vector<Callable*> m_callables;
+    std::unordered_map<NomadString, std::vector<CallableId>> m_functionIdsByName;
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;

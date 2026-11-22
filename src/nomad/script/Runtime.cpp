@@ -726,23 +726,22 @@ CallableId Runtime::registerNativeFunctionEntry(
     }
 
     auto pending = deferred;
-    for (const auto* callable : m_callables) {
-        if (callable->getName() != name || callable->getType() != CallableType::Function) {
-            continue;
+    const auto overloads = m_functionIdsByName.find(name);
+    if (overloads != m_functionIdsByName.end()) {
+        for (const auto id : overloads->second) {
+            const auto* native = getNativeFunction(id);
+
+            if (native == nullptr) {
+                log::error("Cannot register native function '" + name + "': a callable of a different kind exists");
+
+                return CallableId::INVALID;
+            }
+
+            pending = pending || !native->isSignatureResolved();
         }
-
-        const auto* native = static_cast<const Function*>(callable)->asNativeFunction();
-
-        if (native == nullptr) {
-            log::error("Cannot register native function '" + name + "': a callable of a different kind exists");
-
-            return CallableId::INVALID;
-        }
-
-        pending = pending || !native->isSignatureResolved();
     }
 
-    if (!pending && getFunctionOverloadCount(name) != 0) {
+    if (!pending && overloads != m_functionIdsByName.end()) {
         if (
             NomadString error;
             !canOverloadCallable(
@@ -825,15 +824,31 @@ void Runtime::validateNativeFunctionSignatures() {
 }
 
 CallableId Runtime::addCallableToTable(std::unique_ptr<Function> function) {
-    if (function == nullptr) {
+    const auto id = getNextCallableId();
+    if (function == nullptr || id.isInvalid() || function->getId() != id) {
+
         return CallableId::INVALID;
     }
 
-    m_functions.push_back(std::move(function));
-    const auto id = catalogCallable(m_functions.back().get());
-    if (id == CallableId::INVALID) {
-        m_functions.pop_back();
+    if (m_functions.size() == m_functions.capacity()) {
+        m_functions.reserve(std::max(std::size_t{1}, m_functions.size() * 2));
     }
+
+    if (m_callables.size() == m_callables.capacity()) {
+        m_callables.reserve(std::max(std::size_t{1}, m_callables.size() * 2));
+    }
+
+    // Keep the candidate locally owned until index allocation succeeds; the final pushes cannot allocate.
+    const auto overloads = m_functionIdsByName.find(function->getName());
+    if (overloads == m_functionIdsByName.end()) {
+        m_functionIdsByName.emplace(function->getName(), std::vector<CallableId>{id});
+    } else {
+        overloads->second.push_back(id);
+    }
+
+    auto* registered = function.get();
+    m_functions.push_back(std::move(function));
+    m_callables.push_back(registered);
 
     return id;
 }
@@ -844,17 +859,6 @@ CallableId Runtime::getNextCallableId() const {
     }
 
     return CallableId{toNomadId(m_callables.size())};
-}
-
-CallableId Runtime::catalogCallable(Callable* callable) {
-    const auto id = getNextCallableId();
-    if (callable == nullptr || id.isInvalid() || callable->getId() != id) {
-        return CallableId::INVALID;
-    }
-
-    m_callables.push_back(callable);
-
-    return id;
 }
 
 PropertyId Runtime::registerNativeClassProperty(
@@ -1675,12 +1679,7 @@ ResolveResult Runtime::resolveFunction(
     const std::vector<const Type*>& argumentTypes
 ) const {
     std::vector<CallableId> candidates;
-
-    for (const auto* callable : m_callables) {
-        if (callable->getName() == name && callable->getType() == CallableType::Function) {
-            candidates.push_back(callable->getId());
-        }
-    }
+    getFunctionIds(name, candidates);
 
     return resolveAmong(std::move(candidates), argumentTypes);
 }
@@ -1757,29 +1756,24 @@ bool Runtime::functionExists(const NomadString& name) const {
 }
 
 CallableId Runtime::getFunctionId(const NomadString& name) const {
-    for (const auto* callable : m_callables) {
-        if (callable->getName() == name && callable->getType() == CallableType::Function) {
-            return callable->getId();
-        }
-    }
+    const auto functions = m_functionIdsByName.find(name);
 
-    return CallableId::INVALID;
+    return functions == m_functionIdsByName.end() ? CallableId::INVALID : functions->second.front();
 }
 
 void Runtime::getFunctionIds(const NomadString& name, std::vector<CallableId>& ids) const {
     ids.clear();
 
-    for (const auto* callable : m_callables) {
-        if (callable->getName() == name && callable->getType() == CallableType::Function) {
-            ids.push_back(callable->getId());
-        }
+    const auto functions = m_functionIdsByName.find(name);
+    if (functions != m_functionIdsByName.end()) {
+        ids = functions->second;
     }
 }
 
 NomadIndex Runtime::getFunctionOverloadCount(const NomadString& name) const {
-    return static_cast<NomadIndex>(std::ranges::count_if(m_callables, [&name](const auto* callable) {
-        return callable->getName() == name && callable->getType() == CallableType::Function;
-    }));
+    const auto functions = m_functionIdsByName.find(name);
+
+    return functions == m_functionIdsByName.end() ? 0 : functions->second.size();
 }
 
 ParameterShape Runtime::getParameterShape(const Type* type) const {
@@ -1805,13 +1799,18 @@ bool Runtime::canOverloadCallable(
     }
 
     const auto returnsValue = returnType != nullptr && !returnType->isVoid();
+    const auto overloads = m_functionIdsByName.find(name);
+    if (overloads == m_functionIdsByName.end()) {
 
-    for (const auto* callable : m_callables) {
-        if (callable->getId() == excludedId ||
-            callable->getName() != name || callable->getType() != CallableType::Function) {
+        return true;
+    }
+
+    for (const auto id : overloads->second) {
+        if (id == excludedId) {
             continue;
         }
-        const auto* existingFunction = static_cast<const Function*>(callable);
+
+        const auto* existingFunction = getFunction(id);
         if (existingFunction == nullptr || existingFunction->asNativeFunction() == nullptr) {
             error = "a callable of a different kind is already registered under that name";
 

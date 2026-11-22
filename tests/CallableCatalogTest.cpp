@@ -874,6 +874,11 @@ BOOST_AUTO_TEST_CASE(script_function_views_and_state_survive_table_growth)
     BOOST_TEST(runtime.getScriptFunction(scriptId) == script);
     BOOST_TEST(runtime.getFunction(scriptId) == function);
     BOOST_TEST(runtime.getCallable(scriptId) == callable);
+    BOOST_TEST(runtime.getFunctionId("script") == scriptId);
+    BOOST_TEST(runtime.getScriptFunctionId("script") == scriptId);
+    std::vector<CallableId> scriptIds{CallableId::INVALID};
+    runtime.getFunctionIds("script", scriptIds);
+    BOOST_TEST(scriptIds == std::vector<CallableId>({scriptId}));
     BOOST_TEST(function->asScriptFunction() == script);
     BOOST_TEST(function->asNativeFunction() == nullptr);
     BOOST_TEST(&callable->getParameters() == &script->getParameters());
@@ -905,10 +910,16 @@ BOOST_AUTO_TEST_CASE(duplicate_native_function_name_is_rejected)
 {
     Runtime runtime;
 
-    BOOST_REQUIRE(registerVoidNativeFunction(runtime, "duplicate").isValid());
+    const auto originalId = registerVoidNativeFunction(runtime, "duplicate");
+    BOOST_REQUIRE(originalId.isValid());
+    const auto nextId = runtime.getNextCallableId();
 
     BOOST_TEST(registerVoidNativeFunction(runtime, "duplicate").isInvalid());
+    BOOST_TEST(runtime.getNextCallableId() == nextId);
     BOOST_TEST(runtime.getFunctionOverloadCount("duplicate") == NomadIndex{1});
+    std::vector<CallableId> ids;
+    runtime.getFunctionIds("duplicate", ids);
+    BOOST_TEST(ids == std::vector<CallableId>({originalId}));
 }
 
 BOOST_AUTO_TEST_CASE(duplicate_function_name_is_rejected)
@@ -955,9 +966,12 @@ BOOST_AUTO_TEST_CASE(overloads_are_reported_for_a_registered_name)
 {
     Runtime runtime;
 
+    std::vector<CallableId> overloads{CallableId::INVALID};
+    runtime.getFunctionIds("test.single", overloads);
+    BOOST_TEST(overloads.empty());
+    BOOST_TEST(!runtime.functionExists("test.single"));
     const auto nativeFunctionId = registerVoidNativeFunction(runtime, "test.single");
 
-    std::vector<CallableId> overloads;
     runtime.getFunctionIds("test.single", overloads);
 
     BOOST_REQUIRE(overloads.size() == 1);
@@ -966,6 +980,14 @@ BOOST_AUTO_TEST_CASE(overloads_are_reported_for_a_registered_name)
 
     runtime.getFunctionIds("missing", overloads);
     BOOST_TEST(overloads.empty());
+    BOOST_TEST(runtime.registerNativeFunction(
+        "missing", {}, {}, runtime.getVoidType(), ""
+    ).isInvalid());
+    BOOST_TEST(!runtime.functionExists("missing"));
+    const auto laterId = registerVoidNativeFunction(runtime, "missing");
+    BOOST_REQUIRE(laterId.isValid());
+    runtime.getFunctionIds("missing", overloads);
+    BOOST_TEST(overloads == std::vector<CallableId>({laterId}));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -996,6 +1018,29 @@ BOOST_AUTO_TEST_CASE(native_functions_can_be_overloaded_on_parameter_type)
     std::vector<CallableId> functionIds{CallableId::INVALID};
     runtime.getFunctionIds("test.convert", functionIds);
     BOOST_TEST(functionIds == std::vector<CallableId>({fromFloat, fromString}));
+
+    for (auto index = NomadIndex{0}; index < 128; ++index) {
+        BOOST_REQUIRE(registerVoidNativeFunction(runtime, "test.growth" + std::to_string(index)).isValid());
+    }
+
+    BOOST_TEST(registerNativeFunction(
+        runtime,
+        "test.convert",
+        {defParameter("value", runtime.getFloatType(), "")},
+        runtime.getIntegerType()
+    ).isInvalid());
+    runtime.getFunctionIds("test.convert", functionIds);
+    BOOST_TEST(functionIds == std::vector<CallableId>({fromFloat, fromString}));
+    const auto fromInteger = registerNativeFunction(
+        runtime,
+        "test.convert",
+        {defParameter("value", runtime.getIntegerType(), "")},
+        runtime.getIntegerType()
+    );
+    BOOST_REQUIRE(fromInteger.isValid());
+    runtime.getFunctionIds("test.convert", functionIds);
+    BOOST_TEST(functionIds == std::vector<CallableId>({fromFloat, fromString, fromInteger}));
+    BOOST_TEST(runtime.getFunctionId("test.convert") == fromFloat);
 
     const auto selectedFloat = runtime.resolveFunction("test.convert", {runtime.getFloatType()});
     BOOST_REQUIRE(selectedFloat.isResolved());

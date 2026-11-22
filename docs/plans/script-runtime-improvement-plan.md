@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: checked Debug/Release callable-name lookup and registration baselines are recorded; no optimization has been applied. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The opt-in benchmark builds and its checked workload passes in Windows Debug and Release. Production code is unchanged in this measurement step; CTest still has 13 entries. The build and language/tooling CTest groups passed after K6, the broader seven-entry validation passed after R28, and the last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion was source-reviewed, not runtime-tested. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline; method/constructor and other catalog indexes remain pending. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The indexed language library and unchanged benchmark build and pass checked runs in Windows Debug and Release. Seven targeted Windows Debug CTests pass after the index change, including compiler/LSP and module/SDK consumers; the last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
 ## Component contract
 
@@ -424,9 +424,64 @@ Measure each change before and after on the same workload.
   No production optimization, timing threshold, or unit-test timing assertion was
   introduced; no CTest rerun or manual gameplay validation was needed for this
   standalone benchmark addition.
-- Next reviewable scope: index free-function names while preserving callable IDs,
-  registration order, native/script filtering, overload visibility, and rejected
-  publication behavior, then rerun this identical Debug/Release workload.
+#### Indexed free-function names: first R1/R15 scope
+
+- The user approved using a private owned-name to ordered-CallableId index for
+  both free-function lookups and same-name registration/overload checks. It
+  follows the existing native-member index pattern. Function IDs, registration
+  order, native/script filtering, pending-declaration visibility, diagnostics,
+  and hub publication/ownership remain unchanged. Signatures are read live from
+  descriptors, not cached in the index. Methods and constructors remain excluded.
+- `getFunctionId`, `getFunctionIds`, `getFunctionOverloadCount`, and
+  `resolveFunction` use the indexed bucket. Native registration and overload
+  validation inspect only same-named functions rather than scanning unrelated
+  callables. Registration stays open; no declaration seal or new VM checks were
+  introduced. Method/constructor resolution is unchanged in this scope.
+- Function publication prepares owner/table capacity before changing the index
+  and keeps the candidate locally owned until index allocation succeeds.
+  The final ownership/table commits cannot allocate. The former single-caller
+  `catalogCallable` helper is folded into this publication path. Rejections do
+  not publish name entries or consume callable IDs; actual allocation exceptions
+  propagate. This ordering was source-reviewed, not tested by allocator fault
+  injection or ID-space exhaustion.
+- Existing catalog regressions now cover missing names queried before later
+  registration, rejected callbacks/duplicates without ID or overload pollution,
+  ordered overload appends after unrelated catalog growth, and script identity.
+  Existing native/script/deferred signatures, same-named owner members, hub
+  ownership, and source diagnostics remain covered.
+- Validation: the indexed language library and the unchanged
+  `nomad-lookup-benchmark` build and pass in Windows Debug and Release.
+  `nomad_test_language`, `nomad_test_remaining`, `nomad_test_tooling`,
+  `nomad_lsp_process`, `nomad_module_runtime_integration`,
+  `nomad_package_integration`, and `nomad_distribution_integration` pass on
+  `windows-debug`. Runtime's private layout changed, so C++ hosts/modules must
+  rebuild. No public signature changed.
+- The same 2026-11-22 workload, configuration flags, catalog sizes, warmup,
+  query counts, and five-sample protocol were used. Indexed values below are
+  medians with `[min,max]` ranges; units match the baseline above.
+
+| Configuration | Added functions | Registration (ms) | First (us) | Middle (us) | Last (us) | Missing (us) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Debug | 100 | 1.198 [0.849,1.538] | 0.263 [0.224,0.356] | 0.213 [0.199,0.309] | 0.243 [0.209,0.274] | 0.227 [0.200,0.262] |
+| Debug | 1,000 | 10.879 [9.320,11.228] | 0.258 [0.242,0.338] | 0.212 [0.187,0.275] | 0.213 [0.195,0.252] | 0.162 [0.155,0.179] |
+| Debug | 5,000 | 61.419 [53.225,68.867] | 0.282 [0.213,0.358] | 0.195 [0.187,0.492] | 0.215 [0.192,0.435] | 0.267 [0.155,0.365] |
+| Release | 100 | 0.053 [0.044,0.080] | 0.024 [0.022,0.032] | 0.022 [0.020,0.030] | 0.022 [0.020,0.028] | 0.015 [0.014,0.017] |
+| Release | 1,000 | 0.648 [0.567,0.703] | 0.030 [0.029,0.034] | 0.023 [0.022,0.028] | 0.023 [0.022,0.023] | 0.015 [0.015,0.016] |
+| Release | 5,000 | 3.655 [3.417,4.498] | 0.022 [0.021,0.044] | 0.021 [0.020,0.036] | 0.021 [0.020,0.037] | 0.014 [0.014,0.024] |
+
+- At 5,000 additions, Release last-hit lookup changes from 36.604 to 0.021 us,
+  and native registration from 211.632 to 3.655 ms. Debug last-hit lookup changes
+  from 113.387 to 0.215 us and registration from 743.244 to 61.419 ms. Lookup
+  position/catalog size no longer produces the previous linear late-hit cost.
+- Debug first-name medians are about 0.03-0.04 us higher than baseline, with
+  overlapping observed ranges. This is not a claim that every case improved.
+  The index adds storage whose memory cost was not measured. These remain
+  shared-machine microbenchmarks, not whole-startup, compilation, gameplay, or
+  cross-platform measurements. No full-suite rerun or manual gameplay validation
+  was performed.
+- Next reviewable scope: measure owner-scoped method/constructor name resolution
+  before extending indexing to the remaining R1 paths. Other name catalogs and
+  the remaining step-8 findings stay separate.
 
 ## Corrections to earlier review notes
 
@@ -476,7 +531,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 
 | ID | Priority | Kind | Finding | Evidence | Status | Step |
 | --- | --- | --- | --- | --- | --- | --- |
-| R1 | P1 | perf | Name-keyed linear scans over all callables (`getCallableId`, overload counts, `resolveFunction`, `resolveMethod`, `resolveConstructor` per call site, multi-pass `registerNativeFunction`); no name index | `Runtime.cpp`: getFunctionId, getFunctionIds, getFunctionOverloadCount, resolveFunction, resolveMethod, resolveConstructor, registerNativeFunction | verified | 8 |
+| R1 | P1 | perf | Name-keyed linear scans over all callables (`getCallableId`, overload counts, `resolveFunction`, `resolveMethod`, `resolveConstructor` per call site, multi-pass `registerNativeFunction`); no name index | `Runtime.hpp/cpp`: function-name index/publication and owner resolution; catalog tests and RuntimeLookupBenchmark | Free-function name/list/count/resolution and same-name checks indexed and measured with approval; method/constructor resolution remains pending | 8 |
 | R2 | P1 | perf | Linear interning and lookups: `getStringId` O(S), `internContextVariable` O(C), `getEventId`, `getKeywordId`, `getDynamicVariableId`, `getFormatStringId`, `getContextId`, `getInstructionId(name)` | `Runtime.cpp`: getStringId, internContextVariable, getEventId, getKeywordId, getDynamicVariableId, getFormatStringId, getContextId, getInstructionId | verified | 8 |
 | R3 | P1 | correctness | `getString(id)` and `getStringByName(missing)` index `m_strings` with the INVALID id (out of bounds) | `Runtime.cpp`: getString, getStringByName; `LanguageRegistryIdTest.cpp`: failed-lookup regression | Fixed: null on failure without logging; caller owns logging policy, valid/empty-string results and interning preserved | 6 |
 | R4 | P1 | correctness | Function registration publishes a hub member even when `addCallableToTable` returned INVALID | `Runtime.cpp`: registerHubNativeFunction, registerScriptFunction; `LanguageHubTest.cpp` | Fixed: native and script publication are validity-gated; existing registration tests pass; callable-capacity exhaustion source-reviewed, not runtime-tested | 6 |
@@ -490,7 +545,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R12 | P2 | policy | registerHub validates identifier segments in Runtime. This conflicts with the decision that the Compiler owns identifier syntax validation | `Runtime.cpp`: registerHub; `StatementParsers.cpp`: parseHubHeader; `Tokenizer.cpp`: nextIdentifier; `LanguageHubTest.cpp`: host/source naming regressions | Resolved by review: host names are not restricted to script identifiers; remaining namespace-structure checks are intentional; compiler token validation and existing language tests pass; no C++ change | 6 |
 | R13 | P2 | perf | rebuildHubMembers rebuilds all hub maps on each registerHub, duplicating incremental registerHubMember; per-member linear hub lookups | `Runtime.cpp`: rebuildHubMembers, registerHub | verified | 8 |
 | R14 | P2 | quality | Can-register predicates log errors as side effects; callers log again | `Runtime.cpp`: namespace checks/public declaration entry points; `TypeManager.hpp/cpp`: catalog registration; type-manager rejection/boundary regressions | Fixed and revised with approval: class/catalog rejection returns INVALID without logging; type-name policy and publication moved to Runtime, with opaque catalog names and integrity preserved | 7 |
-| R15 | P2 | perf | Registration makes several full passes over callables (quadratic startup) | `Runtime.cpp`: registerNativeFunction, getFunctionOverloadCount, canOverloadCallable | verified | 8 |
+| R15 | P2 | perf | Registration makes several full passes over callables (quadratic startup) | `Runtime.cpp`: registerNativeFunction, getFunctionOverloadCount, canOverloadCallable; RuntimeLookupBenchmark | Same-name free-function scans replaced by the shared index and distinct-name registration measured; broader startup/large-overload workloads not measured | 8 |
 | R16 | P2 | redundancy | Duplicate lookup pairs: getScriptCallableAtLine vs getFunctionAtLine; getScriptCallableAtInstructionIndex vs getFunctionAtInstructionIndex; getScriptCallableByStartAddress vs getFunctionByStartAddress | `Runtime.hpp/cpp`, `VirtualMachine.hpp/cpp`; catalog, source-navigation, and frame tests | Fixed: function-only navigation APIs and the test-only current-script getter removed; general callable navigation and function-only ID views retained | 2, 7 |
 | R17 | P2 | const-correctness | Const methods return mutable pointers or mutate state: getFormatString, getFunctions, getVariableContext, setContextVariable* | `Runtime.hpp/cpp`; documentation reader; registry/catalog constness tests; context contracts | Complete with approval: owned format/function metadata has const-correct views; test-only navigation removed under R16; mutable live-context facade intentionally retained and documented | 7 |
 | R18 | P3 | typing | Well-known type getters perform string-keyed lookups on every call (about 490 call sites, mostly registration); getStringType returns a different pointer type; unchecked `static_cast` downcasts where other code uses `asX()` | `Runtime.hpp/cpp`: convenience type getters and iterator initializer; native-member and type-manager tests | Step 7 implemented with approval: consistent const Type* string view and iterator category query; name-based lookup caching remains in step 8 | 7, 8 |
