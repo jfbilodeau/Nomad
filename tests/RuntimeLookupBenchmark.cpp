@@ -1,7 +1,11 @@
+#include <nomad/compiler/Compilation.hpp>
+#include <nomad/compiler/Compiler.hpp>
+
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
 #include <array>
@@ -139,6 +143,33 @@ double measureResolution(
     ) * iterations;
     if (checksum != expectedChecksum) {
         throw std::runtime_error(std::format("Benchmark resolution changed for '{}'", name));
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
+double measureCurrentCallable(
+    const nomad::VirtualMachine& machine,
+    const nomad::ScriptCallableBase* expected,
+    const nomad::NomadIndex iterations
+) {
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        if (machine.getCurrentCallable() != expected) {
+            throw std::runtime_error("The benchmark probe has the wrong active script callable");
+        }
+    }
+
+    auto matchingQueries = nomad::NomadIndex{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        matchingQueries += machine.getCurrentCallable() == expected;
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    if (matchingQueries != iterations) {
+        throw std::runtime_error("The active script callable changed during benchmark lookup");
     }
 
     return elapsed / static_cast<double>(iterations);
@@ -497,6 +528,125 @@ void runStringBenchmark() {
     }
 }
 
+void runCurrentCallableBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto catalogSizes = std::array<nomad::NomadIndex, 4>{0, 100, 1000, 5000};
+    constexpr auto labels = std::array{"caller_us", "nested_us", "restored_us"};
+    const auto source = nomad::NomadString{
+        "fun benchmarkActiveCallee\nbenchmarkCurrentProbe\nend\n"
+        "fun benchmarkActiveCaller\nbenchmarkCurrentProbe\n"
+        "benchmarkActiveCallee\nbenchmarkCurrentProbe\nend\n"
+    };
+    auto fixedCallableCount = nomad::NomadIndex{0};
+    std::cout << "Active-callable lookup: native probes inside a compiled caller, nested callee, and restored caller.\n"
+        << "Only unrelated native-function count varies; getCurrentCallable is microseconds per checked query.\n"
+        << "Compilation, initialization, frame transitions, and probe entry are outside timing.\n"
+        << std::flush;
+
+    for (const auto addedCount : catalogSizes) {
+        std::vector<nomad::NomadString> names;
+        names.reserve(addedCount);
+        for (auto index = nomad::NomadIndex{0}; index < addedCount; ++index) {
+            names.push_back(std::format("benchmark.active.noise.{:06}", index));
+        }
+
+        const auto iterations = nomad::NomadIndex{2000000} / std::max(addedCount, nomad::NomadIndex{100});
+        std::array<std::vector<double>, 3> samples;
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            std::array<const nomad::ScriptCallableBase*, 3> expectedCallables{};
+            auto probeVisits = nomad::NomadIndex{0};
+            nomad::Runtime runtime;
+            const auto probeId = runtime.registerNativeFunction(
+                "benchmarkCurrentProbe",
+                [&](nomad::VirtualMachine* machine) {
+                    if (
+                        probeVisits >= expectedCallables.size() ||
+                        expectedCallables[probeVisits] == nullptr
+                    ) {
+                        throw std::runtime_error("Unexpected active-callable benchmark probe");
+                    }
+
+                    samples[probeVisits].push_back(measureCurrentCallable(
+                        *machine,
+                        expectedCallables[probeVisits],
+                        iterations
+                    ));
+                    ++probeVisits;
+                },
+                {},
+                runtime.getVoidType(),
+                ""
+            );
+            if (probeId.isInvalid()) {
+                throw std::runtime_error("Failed to register the active-callable benchmark probe");
+            }
+
+            for (const auto& name : names) {
+                if (
+                    runtime.registerNativeFunction(
+                        name,
+                        [](nomad::VirtualMachine*) {},
+                        {},
+                        runtime.getVoidType(),
+                        ""
+                    ).isInvalid()
+                ) {
+                    throw std::runtime_error("Failed to populate the active-callable benchmark catalog");
+                }
+            }
+
+            auto compiler = runtime.createCompiler();
+            const auto compilation = nomad::compileSources(
+                {{{"benchmarkActiveMain", {"benchmark-active.nomad", source}}}, {}},
+                *compiler
+            );
+            if (!compilation.succeeded()) {
+                auto message = nomad::NomadString{"Active-callable benchmark compilation failed:\n"};
+                for (const auto& diagnostic : compilation.diagnostics) {
+                    message += diagnostic.message + "\n";
+                }
+
+                throw std::runtime_error(message);
+            }
+
+            const auto callerId = runtime.getScriptFunctionId("benchmarkActiveCaller");
+            const auto* caller = runtime.getScriptFunction(callerId);
+            const auto* callee = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkActiveCallee"));
+            if (
+                caller == nullptr ||
+                callee == nullptr ||
+                !caller->isCompiled() ||
+                !callee->isCompiled()
+            ) {
+                throw std::runtime_error("The active-callable benchmark functions are unavailable");
+            }
+
+            const auto currentFixedCount = runtime.getCallableCount() - addedCount;
+            if (fixedCallableCount == 0) {
+                fixedCallableCount = currentFixedCount;
+            } else if (currentFixedCount != fixedCallableCount) {
+                throw std::runtime_error("The compiled benchmark callable count changed between samples");
+            }
+
+            expectedCallables = {caller, callee, caller};
+            runtime.initializeScripts();
+            auto machine = runtime.createVirtualMachine();
+            machine->executeFunction(callerId);
+            if (probeVisits != expectedCallables.size()) {
+                throw std::runtime_error("The benchmark did not visit every expected compiled frame");
+            }
+        }
+
+        std::cout << "active_unrelated=" << addedCount << " total=" << fixedCallableCount + addedCount
+            << " iterations=" << iterations;
+        for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+            printSamples(labels[query], samples[query]);
+        }
+
+        std::cout << std::endl;
+    }
+}
+
 } // namespace
 
 int main() {
@@ -505,6 +655,7 @@ int main() {
         runBenchmark();
         runOwnerResolutionBenchmark();
         runStringBenchmark();
+        runCurrentCallableBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

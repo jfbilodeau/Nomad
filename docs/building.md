@@ -115,6 +115,13 @@ strings. An empty-text primer is registered outside timing. Checks cover ID orde
 text, stable object identity/reference counts, missing lookups, and timed result
 checksums. Debug builds also check live string-object counts after cleanup.
 
+An active-callable section queries `VirtualMachine::getCurrentCallable()` from
+native probes inside a compiled caller, a nested callee, and the restored caller,
+with 0, 100, 1,000, or 5,000 unrelated native functions. Each timed query must
+return the expected descriptor. Compilation, script initialization, and frame
+transitions are outside timing; this measures lookup cost, not an entire frame
+or formatting operation.
+
 Run the same target, configuration, and workload before and after an optimization.
 Compare optimized Release results separately from Debug results; timing values
 are observations, not pass/fail thresholds.
