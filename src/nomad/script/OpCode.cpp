@@ -240,17 +240,19 @@ void op_code_load_default_r(VirtualMachine* interpreter) {
 }
 
 void op_call_script_function(VirtualMachine* interpreter) {
-    const auto address = interpreter->nextIndex();
+    const auto callableId = CallableId{interpreter->nextId()};
     const auto reservedStackSlots = interpreter->nextIndex();
 
-    interpreter->callScriptFunction(address, reservedStackSlots);
+    const auto* callable = interpreter->getRuntime()->getScriptCallable(callableId);
+    interpreter->callScriptFunction(*callable, reservedStackSlots);
 }
 
 void op_call_script_method(VirtualMachine* interpreter) {
-    const auto address = interpreter->nextIndex();
+    const auto callableId = CallableId{interpreter->nextId()};
     const auto reservedStackSlots = interpreter->nextIndex();
 
-    interpreter->callScriptMethod(address, reservedStackSlots);
+    const auto* callable = interpreter->getRuntime()->getScriptCallable(callableId);
+    interpreter->callScriptMethod(*callable, reservedStackSlots);
 }
 
 void op_create_script_object(VirtualMachine* interpreter) {

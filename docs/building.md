@@ -122,6 +122,13 @@ return the expected descriptor. Compilation, script initialization, and frame
 transitions are outside timing; this measures lookup cost, not an entire frame
 or formatting operation.
 
+A script-call section measures a prepared scalar caller invoking one compiled
+leaf, with the same unrelated-function counts. Each sample performs 50,000
+complete invocations after warmup. Timing includes two script frames, execution,
+return, and a result checksum, but no current-callable queries. Setup and state
+checks are outside timing. This captures call overhead separately from lookup
+gains; it does not isolate individual frame-entry instructions.
+
 Run the same target, configuration, and workload before and after an optimization.
 Compare optimized Release results separately from Debug results; timing values
 are observations, not pass/fail thresholds.

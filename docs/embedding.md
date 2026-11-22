@@ -1452,6 +1452,8 @@ Low-level VM execution uses `captureExecutionState()` and
 receiver, and running state. Snapshots borrow receiver/storage references;
 they do not retain values or preserve result/intermediate registers.
 Restoration does not release values in discarded stack slots.
+It restores active-callable identity through the saved local-frame index;
+the borrowed frame storage must remain valid.
 
 For scoped restoration, include `<nomad/script/ExecutionStateGuard.hpp>` and
 create `const ExecutionStateGuard state(machine)` before changing the VM state.
@@ -1471,13 +1473,26 @@ restoring the borrowed registers. Low-level callers outside a call frame must
 preserve any register contents they need across execution and release owned
 temporary values before restoring them.
 
-`enterScriptFrame(address, receiver)` requires a validated compiled entry address
-and arguments/hidden pointers already on the stack. It starts script execution
+`enterScriptFrame(callable, receiver)` takes a registered, compiled
+`ScriptCallableBase` from the VM's runtime and requires arguments/hidden pointers
+already on the stack. It starts script execution
 and enters a frame. `executeScript()` executes bytecode until stopping.
 `enterNativeFrame(receiver)` binds the current stack arguments and receiver
 without executing a callback or changing the running flag.
 The optional receiver defaults to an empty value for free functions and
 struct methods; struct receiver pointers follow `Callable::getCallStorageLayout()`.
+
+`callScriptFunction(callable, reservedStackSlots)` and
+`callScriptMethod(callable, reservedStackSlots)` likewise take an already-resolved
+script-callable reference and a compiler-verified local/temporary-slot budget.
+Each script frame requires five additional `RuntimeValue` slots beyond its
+arguments and reserved body storage. Receiver references in the frame remain borrowed.
+
+For hosts emitting bytecode, `op_call_script_function` and
+`op_call_script_method` keep two operands: a `CallableId` encoded with `addId`,
+then the reserved slot count encoded with `addIndex`. The target operand is no
+longer a start address. Existing bytecode emitters must be updated; rebuild C++
+consumers of the changed low-level call signatures.
 
 The caller owns argument, receiver, and result storage, invokes native callbacks,
 and restores the enclosing execution state before releasing and popping arguments.
@@ -2106,8 +2121,13 @@ const runtimes accept `std::vector<const ScriptFunction*>`. Both views borrow
 the same descriptors and exclude native functions, methods, and constructors.
 The former `getFunctionAtInstructionIndex` and `VirtualMachine::getCurrentScript`
 APIs are removed. Use general script-callable navigation and
-`VirtualMachine::getCurrentCallable` for current frame metadata. If a function-only
-view is needed, pass the resolved callable's ID to `getScriptFunction`.
+`VirtualMachine::getCurrentCallable` for current frame metadata. It returns the
+borrowed callable of the active script frame, or `nullptr` without a script frame.
+Native calls retain the enclosing script identity, and nested script calls and
+state restoration select their respective frames. Changing the instruction
+pointer alone does not change this identity; use Runtime's instruction-range
+queries for address-based navigation. If a function-only view is needed, pass
+the resolved callable's ID to `getScriptFunction`.
 
 Include `<nomad/script/InstructionDump.hpp>` and use
 `dumpInstructions(runtime, output)` to include every compiled script callable.

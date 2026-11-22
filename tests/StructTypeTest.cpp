@@ -1485,7 +1485,7 @@ BOOST_AUTO_TEST_CASE(scalar_parameter_bytecode_uses_offsets_after_wide_parameter
         compiler->addLoadIntegerValue(value, ExpressionTarget::Stack);
     }
     compiler->addOpCode(OpCodes::op_call_script_function);
-    compiler->addIndex(inner->getFunctionStart());
+    compiler->addId(inner->getId().id);
     compiler->addIndex(0);
     runtime.getStringType()->emitFreeStackValue(*compiler, 3);
     compiler->addOpCode(OpCodes::op_pop_n);
@@ -1759,7 +1759,7 @@ BOOST_AUTO_TEST_CASE(struct_parameter_assignment_to_local_copies_without_mutatin
     compiler->addId(initialize.id);
     arguments.compile(compiler.get(), caller);
     compiler->addOpCode(OpCodes::op_call_script_function);
-    compiler->addIndex(callee->getFunctionStart());
+    compiler->addId(callee->getId().id);
     compiler->addIndex(0);
     compiler->addFreeArguments(&arguments);
     runtime.getIntegerType()->emitStoreFunctionVariable(*compiler, caller->getVariableOffset(returnedNumber));
@@ -2005,7 +2005,11 @@ BOOST_AUTO_TEST_CASE(borrowed_destination_copies_preserve_nested_values_and_rele
             machine.pushObjectValue(parameters[index]);
         }
     }
-    machine.callScriptFunction(0, 0);
+    const auto frameId = runtime.registerScriptFunction("structStorageFrame", "storage.nomad", "");
+    auto* frame = runtime.getScriptFunction(frameId);
+    BOOST_REQUIRE(frame != nullptr);
+    frame->setFunctionStart(0);
+    machine.callScriptFunction(*frame, 0);
     machine.reserveLocals(13);
     const auto locals = machine.getLocalStorage(0, 13);
     locals[0].setIntegerValue(107);

@@ -239,7 +239,7 @@ void VirtualMachine::enterScriptFrame(const ScriptCallableBase& callable, const 
     m_running = true;
     m_instructionIndex = 0;
     m_this = receiver;
-    callScriptMethod(callable.getFunctionStart(), callable.getReservedStackSlots());
+    callScriptMethod(callable, callable.getReservedStackSlots());
 }
 
 void VirtualMachine::enterNativeFrame(const RuntimeValue& receiver) {
@@ -288,7 +288,7 @@ void VirtualMachine::run(
         pushHostArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
     }
 
-    callScriptFunction(function->getFunctionStart(), function->getReservedStackSlots());
+    callScriptFunction(*function, function->getReservedStackSlots());
     executeScript();
 }
 
@@ -362,7 +362,7 @@ void VirtualMachine::executeFunction(const ScriptFunction& function) {
         restoreExecutionState(state);
     };
 
-    callScriptFunction(function.getFunctionStart(), function.getReservedStackSlots());
+    callScriptFunction(function, function.getReservedStackSlots());
     executeScript();
 }
 
@@ -422,7 +422,7 @@ void VirtualMachine::executeCreationBody(const ScriptCallableBase* callable, con
     m_result = RuntimeValue{};
     m_intermediate = RuntimeValue{};
     m_this = receiver;
-    callScriptMethod(callable->getFunctionStart(), callable->getReservedStackSlots());
+    callScriptMethod(*callable, callable->getReservedStackSlots());
     executeScript();
 }
 
@@ -498,18 +498,29 @@ void VirtualMachine::fault(const NomadString& faultMessage) const {
 }
 
 const ScriptCallableBase* VirtualMachine::getCurrentCallable() const {
-    return m_runtime->getScriptCallableAtInstructionIndex(m_instructionIndex);
+    if (m_variableIndex <= s_scriptFrameSlotCount) {
+
+        return nullptr;
+    }
+
+    return m_runtime->getScriptCallable(CallableId{m_stack[m_variableIndex - 2].getIdValue()});
 }
 
-void VirtualMachine::callScriptFunction(const NomadIndex address, const NomadIndex reservedStackSlots) {
-    pushScriptFrame(reservedStackSlots);
+void VirtualMachine::callScriptFunction(
+    const ScriptCallableBase& callable,
+    const NomadIndex reservedStackSlots
+) {
+    pushScriptFrame(callable.getId(), reservedStackSlots);
     m_this = RuntimeValue{};
-    jump(address);
+    jump(callable.getFunctionStart());
 }
 
-void VirtualMachine::callScriptMethod(const NomadIndex address, const NomadIndex reservedStackSlots) {
-    pushScriptFrame(reservedStackSlots);
-    jump(address);
+void VirtualMachine::callScriptMethod(
+    const ScriptCallableBase& callable,
+    const NomadIndex reservedStackSlots
+) {
+    pushScriptFrame(callable.getId(), reservedStackSlots);
+    jump(callable.getFunctionStart());
 }
 
 void VirtualMachine::allocateScriptObject(const TypeId typeId) {
@@ -517,7 +528,7 @@ void VirtualMachine::allocateScriptObject(const TypeId typeId) {
     m_this.setObjectValue(new ScriptObject(classType));
 }
 
-void VirtualMachine::pushScriptFrame(const NomadIndex reservedStackSlots) {
+void VirtualMachine::pushScriptFrame(const CallableId callableId, const NomadIndex reservedStackSlots) {
     // The frame header and the callee's reserved stack slots must fit above the current top.
     if (m_stackIndex >= m_stack.size() ||
         s_scriptFrameSlotCount + reservedStackSlots >= m_stack.size() - m_stackIndex) {
@@ -533,6 +544,7 @@ void VirtualMachine::pushScriptFrame(const NomadIndex reservedStackSlots) {
     pushIndex(returnAddress);
     pushIndex(previousParameterIndex);
     pushIndex(previousVariableIndex);
+    pushId(callableId.id);
     pushValue(previousThis);
 
     // Variables start after the saved call frame slots.
@@ -922,6 +934,7 @@ void VirtualMachine::returnFunction(const NomadIndex variableCount) {
     popN(variableCount);
 
     m_this = popValue();
+    pop1();
     m_variableIndex = popIndex();
     m_parameterIndex = popIndex();
     m_instructionIndex = popIndex();

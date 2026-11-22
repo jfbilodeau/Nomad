@@ -2,7 +2,9 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4's active-callable baseline is now recorded; no VM cache or new index has been added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame workloads in Windows Debug and Release. Runtime/VM code is unchanged in this measurement step and CTest was not rerun; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
+
+**V4:** Frame-header callable-ID tracking is implemented and validated. Next reviewable scope: measure V6's native-property metadata-copy overhead.
 
 ## Component contract
 
@@ -667,10 +669,130 @@ Measure each change before and after on the same workload.
   machine, not representative whole-call, closure, formatting, or gameplay
   measurements. The runs contain scheduling variability; all ranges are retained.
   No whole-project performance, memory, or cross-platform result is claimed.
-- Next reviewable scope: V4's frame-local current-callable tracking and
-  execution-state restoration contract, before deciding on a VM change.
-  Any optimization must preserve native nesting, closure and constructor frames,
-  host state capture/restore, and public instruction-range lookup behavior.
+- The frame-local design review below is complete with approval. The benchmark
+  remains the unchanged pre-implementation baseline.
+
+#### V4 approved frame-header design
+
+- Source review confirmed that script calls previously encoded a start address and
+  reserved local-slot count. The shared compiler call-target helper already
+  knew the target `CallableId`; linking converted it into an address.
+  Runtime's existing `getScriptCallable(CallableId)` resolves through the
+  canonical callable table in constant time.
+- The user approved storing the callee's `CallableId` in the existing script-frame
+  header. Grow the header from four to five slots, keeping the saved receiver
+  last so script-receiver access remains unchanged. The current callable is
+  resolved from that header, not from a new VM member, parallel catalog, or
+  pointer/range cache.
+- Ordinary returns discard the callee-ID slot and restore the existing caller
+  local-frame index. That index selects the enclosing frame's own ID. Native
+  calls already preserve the local-frame index, and `ExecutionState` already
+  captures/restores it; no new snapshot field or independent restoration state
+  is needed. IDs do not own or retain callable descriptors.
+- Reuse the existing specialized script-function and script-method opcodes,
+  keeping two operands: `CallableId` followed by reserved local-slot count.
+  Only the target operand changes meaning; no new opcode or instruction width
+  is needed. Update compiler linking, operand metadata/dumping, direct call
+  consumers, and frame-slot/transient-stack accounting together. Preserve
+  compiler-owned target/compiled-body validation and existing diagnostics.
+- The approved behavioral distinction is explicit: `getCurrentCallable()`
+  identifies the active script frame, or null without one. Arbitrary changes
+  to the instruction pointer alone no longer select another callable.
+  Runtime's start-address and instruction-range navigation APIs retain their
+  existing live-range, first-match, and boundary behavior.
+- Keep registration and callable metadata open. Resolve frame IDs through the
+  existing Runtime table without a declaration seal, range-invalidation
+  mechanism, additional ownership, or compiler-specific instruction.
+- The design review was source-only. Implementation and measured validation
+  are recorded below.
+
+#### V4 implementation and validation
+
+- The approved five-slot header stores the callee ID immediately before the
+  borrowed receiver. `getCurrentCallable()` reads it through the local-frame
+  index and reuses Runtime's constant-time ID lookup. Return and raw-state
+  restoration select the caller header without an extra VM/snapshot field.
+  Native frames retain the enclosing local-frame index.
+- Script-call linking now writes `CallableId` and reserved slot count. The
+  existing callable-ID operand formatter handles function/method targets.
+  C++ frame-entry APIs take already-resolved `ScriptCallableBase` references,
+  avoiding a redundant lookup when the host already has the descriptor.
+  Existing compiler target/compiled-body diagnostics remain unchanged.
+- The shared frame-slot constant and return decoder account for five slots.
+  Compiler peak-storage metadata still measures the caller's own operands and
+  temporaries; nested frame/callee capacity is checked when entering that frame.
+  No new transient-stack policy or early-rejection behavior was introduced.
+  Exact-capacity tests now cover the additional slot, including prepared scalar
+  rejection/success at six/seven total slots.
+- The focused regression first failed seven assertions against instruction-based
+  identity. It now verifies no-frame lookup, cross-callable jumps, native entry,
+  mutable compiled ranges, nested return, closure execution, exception unwinding,
+  and raw-state restoration. Runtime's instruction-range tests remain unchanged.
+- All six selected Windows Debug CTests pass: `nomad_test_language`,
+  `nomad_test_remaining`, `nomad_test_tooling`, `nomad_test_bindings`,
+  `nomad_compiler_exports`, and `nomad_module_runtime_integration`.
+  Existing constructor/initializer, receiver, capture, storage, allocation-free
+  bookkeeping, and consuming-module regressions pass. One old scalar boundary
+  expectation was corrected for the approved extra header slot; consuming
+  project scripts were not changed.
+- Debug and Release benchmark builds and checked runs pass with language DLL
+  hashes matched to the current build. The earlier benchmark sections still pass.
+  Fresh pre-change measurements were captured before editing VM/dispatch code.
+  Active lookup uses the unchanged five-sample, three-probe workload and query
+  counts above. Values are median `[min,max]` microseconds per checked query.
+
+| Build | Phase | Unrelated functions | Caller (us) | Nested callee (us) | Restored caller (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug | Before | 0 | 0.059 [0.043,0.110] | 0.041 [0.039,0.096] | 0.070 [0.049,0.090] |
+| Debug | After | 0 | 0.018 [0.016,0.041] | 0.018 [0.016,0.021] | 0.017 [0.015,0.027] |
+| Debug | Before | 100 | 0.262 [0.217,0.331] | 0.313 [0.210,0.344] | 0.258 [0.212,0.430] |
+| Debug | After | 100 | 0.032 [0.022,0.048] | 0.021 [0.016,0.048] | 0.022 [0.016,0.047] |
+| Debug | Before | 1,000 | 3.379 [2.439,4.957] | 2.313 [1.415,3.644] | 2.153 [1.646,3.847] |
+| Debug | After | 1,000 | 0.021 [0.018,0.056] | 0.021 [0.016,0.043] | 0.021 [0.016,0.042] |
+| Debug | Before | 5,000 | 13.253 [10.365,24.787] | 14.296 [9.884,20.044] | 14.328 [11.286,18.942] |
+| Debug | After | 5,000 | 0.033 [0.018,0.058] | 0.032 [0.017,0.053] | 0.031 [0.016,0.053] |
+| Release | Before | 0 | 0.035 [0.025,0.063] | 0.025 [0.022,0.072] | 0.037 [0.024,0.060] |
+| Release | After | 0 | 0.002 [0.002,0.002] | 0.002 [0.002,0.002] | 0.002 [0.002,0.002] |
+| Release | Before | 100 | 0.165 [0.156,0.215] | 0.167 [0.159,0.255] | 0.222 [0.166,0.270] |
+| Release | After | 100 | 0.002 [0.002,0.003] | 0.002 [0.002,0.006] | 0.002 [0.002,0.004] |
+| Release | Before | 1,000 | 1.428 [1.308,1.861] | 1.420 [1.285,1.641] | 1.520 [1.203,1.735] |
+| Release | After | 1,000 | 0.002 [0.002,0.004] | 0.002 [0.002,0.004] | 0.002 [0.002,0.004] |
+| Release | Before | 5,000 | 11.119 [8.593,12.167] | 7.304 [6.158,11.053] | 7.789 [6.484,15.863] |
+| Release | After | 5,000 | 0.002 [0.002,0.003] | 0.002 [0.002,0.003] | 0.002 [0.002,0.003] |
+
+- A separate checked call benchmark was added before the VM change: five fresh
+  Runtimes per size, 32 warmup invocations, then 50,000 invocations of a prepared
+  scalar caller that calls one compiled leaf and returns 42. Timing includes
+  two script frames, execution, return, and a result checksum, with no timed
+  current-callable queries. Setup, initialization, and full state-restoration
+  checks are outside timing. Totals are 17, 117, 1,017, and 5,017 callables.
+  This measures complete call overhead, not isolated frame-entry instructions.
+
+| Build | Unrelated functions | Before nested call (us) | After nested call (us) |
+| --- | --- | --- | --- |
+| Debug | 0 | 0.589 [0.422,0.674] | 0.539 [0.446,0.659] |
+| Debug | 100 | 0.478 [0.445,0.559] | 0.516 [0.497,0.657] |
+| Debug | 1,000 | 0.443 [0.404,0.645] | 0.582 [0.479,0.679] |
+| Debug | 5,000 | 0.668 [0.501,0.746] | 0.626 [0.585,0.665] |
+| Release | 0 | 0.093 [0.072,0.140] | 0.071 [0.063,0.106] |
+| Release | 100 | 0.073 [0.062,0.084] | 0.074 [0.064,0.085] |
+| Release | 1,000 | 0.068 [0.061,0.081] | 0.084 [0.073,0.100] |
+| Release | 5,000 | 0.061 [0.057,0.088] | 0.078 [0.071,0.125] |
+
+- Query cost no longer grows with unrelated registrations. No-query calls have
+  extra header/ID-dispatch work: the Release medians at 1,000 and 5,000 additions
+  rise by 0.016 and 0.017 us per complete two-frame invocation. Other medians
+  and overlapping ranges show scheduling variation; not every workload is
+  claimed faster. The extra header slot also reduces maximum nesting capacity
+  for a fixed-size stack.
+- These are warm microbenchmarks on a shared machine. Very cheap post-change
+  queries use short timing batches and rounded nanosecond-level values, so those
+  figures are approximate. No timing threshold, whole-game speedup, heap-memory
+  estimate, allocator fault injection, or cross-platform result is claimed.
+  The full 13-entry suite was not rerun, and no manual gameplay validation was done.
+- V4 is complete. Next reviewable scope: measure V6's native-property metadata
+  copying before proposing a borrowed-access change. Other step-8 catalogs,
+  registration-copy work, and singleton-hub decisions remain separate.
 
 ## Corrections to earlier review notes
 
@@ -787,7 +909,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V1 | P1 | correctness | Stack bound checks run after the write and are compiled out in release | `VirtualMachine.cpp`: pushValue, pushBoolean, pushInteger, pushIndex, pushId, pushFloat write `m_stack[m_stackIndex]` before TEST_STACK_OVERFLOW; the macros exist only under NOMAD_DEBUG | verified | 3 |
 | V2 | P2 | quality | TEST_STACK_* macros are not hygienic; UNDERFLOW uses the overflow condition | `VirtualMachine.cpp`: macro block at the top of the file | verified | 3 |
 | V3 | P2 | dead-code | Unused VM accessors: freeObjectVariable, typed setXVariableValue, initStringVariable, getFunction*VariableValue, setVariableValue forwarder | `VirtualMachine.hpp` (about lines 223–258, 272); `VirtualMachine.cpp`: freeObjectVariable | verified | 1 (done) |
-| V4 | P1 | perf | getCurrentCallable() is a linear scan over all callables; reached from closure creation, freeObjectVariable, and dynamic formatting | `Runtime.cpp`: instruction-range lookup; `VirtualMachine.cpp`: current-callable/frame access; RuntimeLookupBenchmark active-frame workload | Checked Debug/Release caller/nested/restored-frame baselines recorded; frame-tracking design and optimization remain pending | 8 |
+| V4 | P1 | perf | getCurrentCallable() is a linear scan over all callables; reached from closure creation, freeObjectVariable, and dynamic formatting | `VirtualMachine.cpp`: frame-header ID and return; `Compiler.cpp`: ID-based call-target linking; RuntimeLookupBenchmark query/call workloads | Fixed: five-slot frame owns callee ID; no new VM/snapshot field or index; six Debug CTests and checked Debug/Release comparisons pass; no-query call cost recorded | 8 (done) |
 | V5 | P1 | perf | RTTI conversion on stored-property access; removing it requires a safe receiver-storage boundary | `VirtualMachine.cpp`: getProperty, setProperty, getStoredPropertyAddress; `NomadObject.cpp`, `ScriptObject.cpp`: storage query and allocated field snapshot | Fixed: measured checked storage query replaces VM RTTI; existing guards/layouts retained, native ABI rebuild required | 4 (done) |
 | V6 | P1 | perf | Native property access copies NativePropertyInfo (with std::function members) by value on every access | `VirtualMachine.cpp`: getNativeProperty, setNativeProperty; `Runtime.cpp`: getNativePropertyInfo returns std::optional by value; `NativeProperty.cpp`:36 getInfo | verified | 8 |
 | V7 | P2 | redundancy | Six execution entry points with near-identical result copy and free logic, and inconsistent error policy (log and return, invalid_argument, VirtualMachineException) | `VirtualMachine.cpp`: executeFunction overloads, runFunction, runClosure, run(ScriptFunction), run(Closure) | Fixed: shared lookup/result finalization; specialized runner contracts retained, host result-copy failures release VM results | 4 |

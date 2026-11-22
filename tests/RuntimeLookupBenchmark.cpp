@@ -175,6 +175,46 @@ double measureCurrentCallable(
     return elapsed / static_cast<double>(iterations);
 }
 
+double measureNestedScriptCalls(
+    nomad::VirtualMachine& machine,
+    const nomad::ScriptFunction& caller,
+    const nomad::NomadIndex iterations
+) {
+    const auto before = machine.captureExecutionState();
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        machine.executeFunction(caller);
+        if (machine.getIntegerResult() != 42) {
+            throw std::runtime_error("Unexpected nested script-call benchmark result");
+        }
+    }
+
+    auto checksum = std::uint64_t{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        machine.executeFunction(caller);
+        checksum += static_cast<std::uint64_t>(machine.getIntegerResult());
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    const auto after = machine.captureExecutionState();
+    if (
+        checksum != std::uint64_t{42} * iterations ||
+        after.instructionIndex != before.instructionIndex ||
+        after.stackIndex != before.stackIndex ||
+        after.parameterIndex != before.parameterIndex ||
+        after.variableIndex != before.variableIndex ||
+        after.running != before.running ||
+        after.receiver.getObjectValue() != before.receiver.getObjectValue() ||
+        machine.getCurrentCallable() != nullptr
+    ) {
+        throw std::runtime_error("Nested script calls changed their result or enclosing execution state");
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
 void printSamples(const char* name, std::vector<double> samples) {
     std::ranges::sort(samples);
     std::cout << ' ' << name << '=' << samples[samples.size() / 2]
@@ -647,6 +687,90 @@ void runCurrentCallableBenchmark() {
     }
 }
 
+void runNestedScriptCallBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto iterations = nomad::NomadIndex{50000};
+    constexpr auto catalogSizes = std::array<nomad::NomadIndex, 4>{0, 100, 1000, 5000};
+    const auto source = nomad::NomadString{
+        "fun benchmarkCallLeaf\nreturn 41\nend\n"
+        "fun benchmarkCallCaller\nreturn benchmarkCallLeaf + 1\nend\n"
+    };
+    auto fixedCallableCount = nomad::NomadIndex{0};
+    std::cout << "Script-call overhead: a prepared scalar caller invokes one compiled leaf; no callable queries are timed.\n"
+        << "Microseconds per complete invocation include two script frames, execution, return, and result checksum.\n"
+        << "Runtime setup, compilation, initialization, and state checks are outside timing.\n"
+        << std::flush;
+
+    for (const auto addedCount : catalogSizes) {
+        std::vector<nomad::NomadString> names;
+        names.reserve(addedCount);
+        for (auto index = nomad::NomadIndex{0}; index < addedCount; ++index) {
+            names.push_back(std::format("benchmark.calls.noise.{:06}", index));
+        }
+
+        std::vector<double> samples;
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            nomad::Runtime runtime;
+            for (const auto& name : names) {
+                if (
+                    runtime.registerNativeFunction(
+                        name,
+                        [](nomad::VirtualMachine*) {},
+                        {},
+                        runtime.getVoidType(),
+                        ""
+                    ).isInvalid()
+                ) {
+                    throw std::runtime_error("Failed to populate the script-call benchmark catalog");
+                }
+            }
+
+            auto compiler = runtime.createCompiler();
+            const auto compilation = nomad::compileSources(
+                {{{"benchmarkCallMain", {"benchmark-calls.nomad", source}}}, {}},
+                *compiler
+            );
+            if (!compilation.succeeded()) {
+                auto message = nomad::NomadString{"Script-call benchmark compilation failed:\n"};
+                for (const auto& diagnostic : compilation.diagnostics) {
+                    message += diagnostic.message + "\n";
+                }
+
+                throw std::runtime_error(message);
+            }
+
+            const auto* caller = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkCallCaller"));
+            const auto* leaf = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkCallLeaf"));
+            if (
+                caller == nullptr ||
+                leaf == nullptr ||
+                !caller->isCompiled() ||
+                !leaf->isCompiled() ||
+                caller->getReturnType() != runtime.getIntegerType() ||
+                leaf->getReturnType() != runtime.getIntegerType()
+            ) {
+                throw std::runtime_error("The nested script-call benchmark functions are unavailable");
+            }
+
+            const auto currentFixedCount = runtime.getCallableCount() - addedCount;
+            if (fixedCallableCount == 0) {
+                fixedCallableCount = currentFixedCount;
+            } else if (currentFixedCount != fixedCallableCount) {
+                throw std::runtime_error("The script-call benchmark catalog changed between samples");
+            }
+
+            runtime.initializeScripts();
+            auto machine = runtime.createVirtualMachine();
+            samples.push_back(measureNestedScriptCalls(*machine, *caller, iterations));
+        }
+
+        std::cout << "call_unrelated=" << addedCount << " total=" << fixedCallableCount + addedCount
+            << " iterations=" << iterations;
+        printSamples("nested_call_us", samples);
+        std::cout << std::endl;
+    }
+}
+
 } // namespace
 
 int main() {
@@ -656,6 +780,7 @@ int main() {
         runOwnerResolutionBenchmark();
         runStringBenchmark();
         runCurrentCallableBenchmark();
+        runNestedScriptCallBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

@@ -99,7 +99,7 @@ void compileTestConstructor(
     compiler.addFunctionEntry(constructor);
     compiler.addOpCode(OpCodes::op_push_this);
     compiler.addOpCode(OpCodes::op_call_script_method);
-    compiler.addIndex(runtime.getScriptCallable(initializerId)->getFunctionStart());
+    compiler.addId(initializerId.id);
     compiler.addIndex(0);
     compiler.addOpCode(OpCodes::op_pop_this);
     compiler.addFunctionReturn(constructor);
@@ -797,7 +797,7 @@ BOOST_AUTO_TEST_CASE(script_receiver_frames_restore_across_script_and_native_cal
     compiler->addOpCode(probe);
     compiler->addOpCode(OpCodes::op_push_this);
     compiler->addOpCode(OpCodes::op_call_script_function);
-    compiler->addIndex(runtime.getScriptFunction(runtime.getScriptFunctionId("helper"))->getFunctionStart());
+    compiler->addId(runtime.getScriptFunctionId("helper").id);
     compiler->addIndex(0);
     compiler->addOpCode(OpCodes::op_pop_this);
     compiler->addOpCode(probe);

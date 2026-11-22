@@ -6,6 +6,7 @@
 #include <nomad/interpreter/Interpreter.hpp>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -46,6 +47,16 @@ void executeInstruction(Runtime& runtime, VirtualMachine& machine, const NomadIn
     runtime.getInstructions()[address].fn(&machine);
 }
 
+const ScriptFunction& registerFrameFunction(Runtime& runtime) {
+    const auto id = runtime.registerScriptFunction("physicalStorageFrame", "storage-frame.nomad", "");
+    auto* function = runtime.getScriptFunction(id);
+    BOOST_REQUIRE(function != nullptr);
+    function->setFunctionStart(0);
+    function->setFunctionEnd(1);
+
+    return *function;
+}
+
 #if defined(_MSC_VER) && defined(_DEBUG)
 thread_local NomadIndex callAllocations = 0;
 _CRT_ALLOC_HOOK previousAllocationHook = nullptr;
@@ -71,6 +82,72 @@ int countCallAllocations(
 }
 
 BOOST_AUTO_TEST_SUITE(virtual_machine_storage)
+
+BOOST_AUTO_TEST_CASE(current_callable_belongs_to_the_frame_through_jumps_reentry_and_unwinding) {
+    nomad::test::LanguageTestFixture fixture;
+    auto& runtime = fixture.getRuntime();
+    BOOST_REQUIRE(runtime.registerNativeFunction(
+        "raiseFrameFailure",
+        [&](VirtualMachine* active) {
+            const auto* failure = runtime.getScriptFunction(runtime.getScriptFunctionId("frameFailure"));
+            BOOST_TEST(active->getCurrentCallable() == failure);
+            active->jump(NOMAD_INVALID_INDEX);
+            BOOST_TEST(active->getCurrentCallable() == failure);
+            active->fault("Expected frame failure");
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    ).isValid());
+    fixture.addFunction("frameFirst", "return 1");
+    fixture.addFunction("frameSecond", "return 2");
+    fixture.addFunction("frameFailure", "raiseFrameFailure\nreturn 0");
+    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
+    runtime.initializeScripts();
+    const auto* first = runtime.getScriptFunction(runtime.getScriptFunctionId("frameFirst"));
+    const auto* second = runtime.getScriptFunction(runtime.getScriptFunctionId("frameSecond"));
+    const auto* failure = runtime.getScriptFunction(runtime.getScriptFunctionId("frameFailure"));
+    VirtualMachine machine(&runtime, 64);
+    machine.jump(first->getFunctionStart());
+    BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(machine.getInstructionIndex()) == first);
+    BOOST_TEST(machine.getCurrentCallable() == nullptr);
+    machine.enterScriptFrame(*first);
+    const auto firstState = machine.captureExecutionState();
+    {
+        const ExecutionStateGuard state(machine);
+        machine.jump(second->getFunctionStart());
+        BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(machine.getInstructionIndex()) == second);
+        BOOST_TEST(machine.getCurrentCallable() == first);
+        machine.enterNativeFrame();
+        BOOST_TEST(machine.getCurrentCallable() == first);
+    }
+
+    const auto compiledEnd = first->getFunctionEnd();
+    runtime.getScriptFunction(first->getId())->setFunctionEnd(NOMAD_INVALID_INDEX);
+    BOOST_TEST(runtime.getScriptCallableAtInstructionIndex(first->getFunctionStart()) == nullptr);
+    BOOST_TEST(machine.getCurrentCallable() == first);
+    runtime.getScriptFunction(first->getId())->setFunctionEnd(compiledEnd);
+    machine.enterScriptFrame(*second);
+    BOOST_TEST(machine.getCurrentCallable() == second);
+    machine.returnFunction(0);
+    BOOST_TEST(machine.getCurrentCallable() == first);
+    machine.restoreExecutionState(firstState);
+    const Closure closure(second);
+    machine.executeClosure(closure);
+    BOOST_TEST(machine.getIntegerResult() == 2);
+    BOOST_TEST(machine.getCurrentCallable() == first);
+    BOOST_CHECK_THROW(machine.executeFunction(*failure), VirtualMachineException);
+    BOOST_TEST(machine.getCurrentCallable() == first);
+    const auto restored = machine.captureExecutionState();
+    BOOST_TEST(restored.instructionIndex == firstState.instructionIndex);
+    BOOST_TEST(restored.stackIndex == firstState.stackIndex);
+    BOOST_TEST(restored.parameterIndex == firstState.parameterIndex);
+    BOOST_TEST(restored.variableIndex == firstState.variableIndex);
+    BOOST_TEST(restored.running == firstState.running);
+    machine.returnFunction(0);
+    machine.jump(second->getFunctionStart());
+    BOOST_TEST(machine.getCurrentCallable() == nullptr);
+}
 
 BOOST_AUTO_TEST_CASE(constant_loads_copy_owned_values_for_all_expression_targets) {
     Runtime runtime;
@@ -305,13 +382,14 @@ BOOST_AUTO_TEST_CASE(host_execution_releases_results_on_discard_and_copy_failure
 
 BOOST_AUTO_TEST_CASE(contiguous_parameter_blocks_and_local_views_keep_physical_order) {
     Runtime runtime;
+    const auto& frame = registerFrameFunction(runtime);
     VirtualMachine machine(&runtime, 32);
     machine.pushInteger(5);
     machine.pushInteger(4);
     machine.pushInteger(1);
     machine.pushInteger(2);
     machine.pushInteger(3);
-    machine.callScriptFunction(0, 0);
+    machine.callScriptFunction(frame, 0);
     machine.reserveLocals(4);
     const auto& constMachine = machine;
     const auto point = machine.getParameterStorage(0, 3);
@@ -327,7 +405,7 @@ BOOST_AUTO_TEST_CASE(contiguous_parameter_blocks_and_local_views_keep_physical_o
     BOOST_TEST(constMachine.getLocalStorage(1, 3)[0].getIntegerValue() == 23);
     const auto* original = locals.data();
     machine.pushInteger(42);
-    machine.callScriptFunction(0, 0);
+    machine.callScriptFunction(frame, 0);
     machine.reserveLocals(2);
     BOOST_TEST(machine.getParameterStorage(0, 1)[0].getIntegerValue() == 42);
     BOOST_TEST(machine.getLocalStorage(0, 2).data() != original);
@@ -341,11 +419,12 @@ BOOST_AUTO_TEST_CASE(contiguous_parameter_blocks_and_local_views_keep_physical_o
 
 BOOST_AUTO_TEST_CASE(native_calls_and_reentry_preserve_enclosing_script_storage) {
     Runtime runtime;
+    const auto& frame = registerFrameFunction(runtime);
     VirtualMachine machine(&runtime, 32);
     machine.pushInteger(1);
     machine.pushInteger(2);
     machine.pushInteger(3);
-    machine.callScriptFunction(0, 0);
+    machine.callScriptFunction(frame, 0);
     machine.reserveLocals(1);
     machine.getLocalStorage(0, 1)[0].setIntegerValue(19);
     const auto* enclosing = machine.getEnclosingParameterStorage(0, 3).data();
@@ -355,7 +434,7 @@ BOOST_AUTO_TEST_CASE(native_calls_and_reentry_preserve_enclosing_script_storage)
             BOOST_TEST(std::as_const(*active).getEnclosingParameterStorage(0, 3).data() == enclosing);
             active->getEnclosingParameterStorage(0, 3)[0].setIntegerValue(7);
             active->pushInteger(8);
-            active->callScriptFunction(0, 0);
+            active->callScriptFunction(frame, 0);
             active->reserveLocals(1);
             BOOST_TEST(active->getEnclosingParameterStorage(0, 1)[0].getIntegerValue() == 8);
             active->returnFunction(1);
@@ -1086,7 +1165,8 @@ BOOST_AUTO_TEST_CASE(empty_views_do_not_require_storage_or_address_arithmetic) {
     BOOST_TEST(constMachine.getParameterStorage(maximum, 0).empty());
     BOOST_TEST(constMachine.getEnclosingParameterStorage(maximum, 0).empty());
     machine.pushInteger(1);
-    machine.callScriptFunction(0, 0);
+    const auto& frame = registerFrameFunction(runtime);
+    machine.callScriptFunction(frame, 0);
     for (const auto offset : {NomadIndex{0}, NomadIndex{1}, maximum}) {
         BOOST_TEST(machine.getLocalStorage(offset, 0).empty());
         BOOST_TEST(machine.getParameterStorage(offset, 0).empty());
@@ -1238,7 +1318,7 @@ BOOST_AUTO_TEST_CASE(address_opcodes_use_full_width_offsets_and_folded_parameter
     machine.pushInteger(2);
     machine.pushInteger(3);
     machine.pushN(wideOffset);
-    machine.callScriptFunction(0, 0);
+    machine.callScriptFunction(*function, 0);
     machine.reserveLocals(wideOffset + 3);
     executeInstruction(runtime, machine, localAddress);
     BOOST_TEST(machine.peekStack(0).getStorageAddress() == machine.getLocalStorage(wideOffset, 1).data());
@@ -1265,6 +1345,7 @@ BOOST_AUTO_TEST_CASE(address_opcodes_use_full_width_offsets_and_folded_parameter
 
 BOOST_AUTO_TEST_CASE(indirect_opcodes_preserve_scalar_and_reference_ownership) {
     Runtime runtime;
+    const auto& frame = registerFrameFunction(runtime);
     auto compiler = runtime.createCompiler();
     std::array<RuntimeValue, 3> storage;
     storage[0].setIntegerValue(17);
@@ -1272,7 +1353,7 @@ BOOST_AUTO_TEST_CASE(indirect_opcodes_preserve_scalar_and_reference_ownership) {
     storage[2].setStringValue("replaced");
     VirtualMachine machine(&runtime, 32);
     machine.pushStorageAddress(storage.data());
-    machine.callScriptFunction(0, 0);
+    machine.callScriptFunction(frame, 0);
     const auto emit = [&](const NomadString& name, const NomadIndex field) {
         const auto address = compiler->addOpCode(name);
         compiler->addIndex(0);
@@ -1331,7 +1412,7 @@ BOOST_AUTO_TEST_CASE(hidden_pointers_survive_nested_calls_and_host_reentry_failu
     machine.pushStorageAddress(destination.data());
     machine.pushStorageAddress(receiver.data());
     machine.pushInteger(7);
-    machine.callScriptFunction(0, 0);
+    machine.callScriptFunction(*success, 0);
     BOOST_TEST(machine.getIntegerParameter(0) == 7);
     BOOST_TEST(machine.getParameter(1).getStorageAddress() == receiver.data());
     BOOST_TEST(machine.getParameter(2).getStorageAddress() == destination.data());
@@ -1358,7 +1439,7 @@ BOOST_AUTO_TEST_CASE(hidden_pointers_survive_nested_calls_and_host_reentry_failu
     BOOST_TEST(std::as_const(machine).getStorageParameter(1, 0).getIntegerValue() == 23);
     BOOST_TEST(std::as_const(machine).getStorageParameter(2, 1).getIntegerValue() == 31);
     machine.pushInteger(11);
-    machine.callScriptMethod(0, 0);
+    machine.callScriptMethod(*success, 0);
     BOOST_TEST(machine.getIntegerParameter(0) == 11);
     machine.returnFunction(0);
     machine.pop1();
@@ -1439,7 +1520,7 @@ BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_own
     compiler->addOpCode(OpCodes::op_integer_push_n);
     compiler->addInteger(7);
     compiler->addOpCode(OpCodes::op_call_script_function);
-    compiler->addIndex(callee->getFunctionStart());
+    compiler->addId(callee->getId().id);
     compiler->addIndex(0);
     compiler->addOpCode(OpCodes::op_pop_3);
     compiler->addLoadFunctionVariable(caller->getVariableOffset(destinationId), runtime.getIntegerType(),
@@ -1456,18 +1537,19 @@ BOOST_AUTO_TEST_CASE(bytecode_calls_forward_hidden_pointers_and_release_only_own
 
 BOOST_AUTO_TEST_CASE(calls_need_only_existing_frames_and_requested_pointer_slots) {
     Runtime runtime;
+    const auto& frame = registerFrameFunction(runtime);
     VirtualMachine machine(&runtime, 8);
     machine.pushStorageAddress(machine.getParameterAddress(0));
-    machine.callScriptFunction(0, 0);
-    BOOST_CHECK_THROW(machine.callScriptFunction(0, 0), VirtualMachineException);
+    machine.callScriptFunction(frame, 0);
+    BOOST_CHECK_THROW(machine.callScriptFunction(frame, 0), VirtualMachineException);
     machine.returnFunction(0);
     machine.pop1();
     BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
-    machine.callScriptFunction(0, 0);
+    machine.callScriptFunction(frame, 0);
     machine.returnFunction(0);
     BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
-    VirtualMachine emptyCall(&runtime, 5);
-    emptyCall.callScriptFunction(0, 0);
+    VirtualMachine emptyCall(&runtime, 6);
+    emptyCall.callScriptFunction(frame, 0);
     BOOST_CHECK_THROW(emptyCall.reserveLocals(1), VirtualMachineException);
     emptyCall.returnFunction(0);
     BOOST_TEST(emptyCall.peekStack(0).getIntegerValue() == 0);
@@ -1791,6 +1873,7 @@ BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) 
 
 BOOST_AUTO_TEST_CASE(script_and_native_call_bookkeeping_does_not_allocate) {
     Runtime runtime;
+    const auto& frame = registerFrameFunction(runtime);
     VirtualMachine machine(&runtime, 64);
     std::array<RuntimeValue, 2> storage;
     const auto callback = runtime.registerNativeFunction("writeStorage", [](VirtualMachine* active) {
@@ -1806,9 +1889,9 @@ BOOST_AUTO_TEST_CASE(script_and_native_call_bookkeeping_does_not_allocate) {
         };
 
         for (auto index = 0; index < 100; ++index) {
-            machine.callScriptFunction(0, 0);
+            machine.callScriptFunction(frame, 0);
             machine.pushStorageAddress(storage.data());
-            machine.callScriptFunction(0, 0);
+            machine.callScriptFunction(frame, 0);
             machine.pushStorageAddress(storage.data() + 1);
             machine.callNativeFunction(callback);
             machine.pop1();

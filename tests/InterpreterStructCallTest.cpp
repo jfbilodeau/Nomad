@@ -909,13 +909,13 @@ BOOST_AUTO_TEST_CASE(ordinary_scalar_calls_use_the_prepared_frame_stack_boundary
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     const auto functionId = runtime.getScriptFunctionId("preparedScalarStack");
     const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}});
-    for (const auto stackSize : {5, 6}) {
+    for (const auto stackSize : {6, 7}) {
         VirtualMachine machine(&runtime, stackSize);
         const Interpreter interpreter(machine);
         machine.setIntegerResult(41);
         machine.setIntegerIntermediate(43);
         const auto before = machine.captureExecutionState();
-        if (stackSize == 5) {
+        if (stackSize == 6) {
             BOOST_CHECK_EXCEPTION(
                 static_cast<void>(interpreter.runFunction(functionId, {&argument, 1})),
                 VirtualMachineException,

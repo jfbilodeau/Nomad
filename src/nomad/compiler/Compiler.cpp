@@ -2595,7 +2595,7 @@ void Compiler::addScriptCallTarget(const CallableId functionId) {
     const auto callIndex = static_cast<NomadIndex>(m_instructions.size());
 
     m_functionLinks.emplace_back(FunctionLink{functionId, callIndex});
-    addIndex(0);
+    addId(0);
     addIndex(0);
 }
 
@@ -2646,7 +2646,7 @@ void Compiler::linkFunctions() {
             reportInternalError("Function '" + function->getName() + "' has not been compiled");
         }
 
-        setIndex(link.callIndex, function->getFunctionStart());
+        setId(link.callIndex, function->getId().id);
         setIndex(link.callIndex + 1, function->getReservedStackSlots());
     }
 }

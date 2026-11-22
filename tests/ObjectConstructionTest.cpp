@@ -113,7 +113,7 @@ BOOST_AUTO_TEST_CASE(call_opcodes_have_specialized_operands) {
         BOOST_REQUIRE(id.isValid());
         const auto operands = runtime.getInstructionOperands(id);
         BOOST_REQUIRE(operands.size() == 2u);
-        BOOST_CHECK(operands[0] == Operand::Function);
+        BOOST_CHECK(operands[0] == Operand::Callable);
         BOOST_CHECK(operands[1] == Operand::Index);
     }
     const auto constructorId = runtime.getInstructionId(OpCodes::op_create_script_object);
@@ -227,7 +227,7 @@ BOOST_AUTO_TEST_CASE(script_construction_bytecode_uses_linked_calls_and_ordinary
     BOOST_REQUIRE(initializer != nullptr);
     BOOST_TEST(initializer->getName() == type->getInitializerName());
     BOOST_TEST(initializer->getClassType() == type);
-    BOOST_TEST(instructions[start + 2].value.getIndexValue() == initializer->getFunctionStart());
+    BOOST_TEST(instructions[start + 2].value.getIdValue() == initializer->getId().id);
     BOOST_TEST(constructor->getVariableCount() == 0u);
     BOOST_TEST(instructions[constructor->getFunctionEnd() - 1].fn ==
         runtime.getInstructionFn(runtime.getInstructionId(OpCodes::op_return)));

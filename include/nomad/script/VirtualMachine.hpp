@@ -115,14 +115,21 @@ public:
     void stop(const RuntimeValue& result);
     [[noreturn]] void fault(const NomadString& faultMessage) const;
 
+    // Borrows the active script frame's callable, independently of the current instruction pointer.
     [[nodiscard]] const ScriptCallableBase* getCurrentCallable() const;
     [[nodiscard]] NomadIndex getParameterIndex() const { return m_parameterIndex; }
     [[nodiscard]] NomadIndex getVariableIndex() const { return m_variableIndex; }
     // Borrows the object receiver saved in an active compiled script frame, not a temporary native receiver.
     [[nodiscard]] NomadObject* getScriptReceiver() const;
 
-    void callScriptFunction(NomadIndex address, NomadIndex reservedStackSlots);
-    void callScriptMethod(NomadIndex address, NomadIndex reservedStackSlots);
+    void callScriptFunction(
+        const ScriptCallableBase& callable,
+        NomadIndex reservedStackSlots
+    );
+    void callScriptMethod(
+        const ScriptCallableBase& callable,
+        NomadIndex reservedStackSlots
+    );
     void allocateScriptObject(TypeId typeId);
     void callNativeFunction(CallableId nativeFunctionId);
     void callNativeMethod(CallableId methodId);
@@ -302,9 +309,9 @@ private:
     void freeHostArguments(NomadIndex firstIndex, const std::vector<const Type*>& argumentTypes);
     void initializeStructStorage(RuntimeValue* destination, const Type* type);
     void executeCreationBody(const ScriptCallableBase* callable, const RuntimeValue& receiver);
-    void pushScriptFrame(NomadIndex reservedStackSlots);
+    void pushScriptFrame(CallableId callableId, NomadIndex reservedStackSlots);
 
-    static constexpr NomadIndex s_scriptFrameSlotCount = 4;
+    static constexpr NomadIndex s_scriptFrameSlotCount = 5;
 
     Runtime* m_runtime;
     NomadIndex m_instructionIndex = 0;
