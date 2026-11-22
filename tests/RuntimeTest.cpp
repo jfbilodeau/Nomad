@@ -338,14 +338,14 @@ BOOST_AUTO_TEST_CASE(runtime_owns_registered_functions_and_exposes_observer_view
 
         BOOST_TEST(firstFunctionId.isValid());
         BOOST_TEST(secondFunctionId.id == firstFunctionId.id + 1);
-        BOOST_TEST(runtime.getFunctionCount() == 2U);
+        BOOST_TEST(runtime.getScriptFunctionCount() == 2U);
         BOOST_TEST(runtime.getScriptFunction(firstFunctionId) != nullptr);
         BOOST_TEST(runtime.getScriptFunction(secondFunctionId) != nullptr);
         BOOST_TEST((runtime.getFunctionId("first") == firstFunctionId));
-        BOOST_TEST(runtime.getFunctionName(secondFunctionId).value() == "second");
+        BOOST_TEST(runtime.getScriptFunctionName(secondFunctionId).value() == "second");
 
         std::vector<ScriptFunction*> functions;
-        runtime.getFunctions(functions);
+        runtime.getScriptFunctions(functions);
 
         BOOST_TEST(functions.size() == 2U);
         BOOST_TEST(functions[0] == runtime.getScriptFunction(firstFunctionId));
@@ -361,13 +361,13 @@ BOOST_AUTO_TEST_CASE(runtime_rejects_invalid_and_duplicate_function_ids)
 
     BOOST_TEST(functionId.isValid());
     BOOST_TEST(runtime.registerScriptFunction("function", "duplicate.nomad", "").isInvalid());
-    BOOST_TEST(runtime.getFunctionCount() == 1U);
+    BOOST_TEST(runtime.getScriptFunctionCount() == 1U);
     BOOST_TEST(runtime.getScriptFunction(CallableId::INVALID) == nullptr);
     BOOST_TEST(runtime.getScriptFunction(CallableId{-2}) == nullptr);
     BOOST_TEST(runtime.getScriptFunction(CallableId{1}) == nullptr);
-    BOOST_TEST(!runtime.getFunctionName(CallableId::INVALID).has_value());
-    BOOST_TEST(!runtime.getFunctionName(CallableId{-2}).has_value());
-    BOOST_TEST(!runtime.getFunctionName(CallableId{1}).has_value());
+    BOOST_TEST(!runtime.getScriptFunctionName(CallableId::INVALID).has_value());
+    BOOST_TEST(!runtime.getScriptFunctionName(CallableId{-2}).has_value());
+    BOOST_TEST(!runtime.getScriptFunctionName(CallableId{1}).has_value());
 }
 
 BOOST_AUTO_TEST_CASE(runtime_source_lookup_ignores_unknown_ranges_and_prefers_inner_functions)

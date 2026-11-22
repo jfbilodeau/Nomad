@@ -1359,7 +1359,7 @@ void DebugConsole::renderFunctionInspector() {
             );
 
             std::vector<ScriptFunction*> functions;
-            m_game->getRuntime()->getFunctions(functions);
+            m_game->getRuntime()->getScriptFunctions(functions);
             std::ranges::sort(functions, {}, &ScriptFunction::getName);
 
             const auto* selectedFunction = m_selectedFunctionId.isInvalid()

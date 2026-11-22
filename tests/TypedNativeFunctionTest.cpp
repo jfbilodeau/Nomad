@@ -206,14 +206,14 @@ BOOST_AUTO_TEST_CASE(global_functions_share_overloads_and_reject_conflicts_witho
     BOOST_REQUIRE(manualId.isValid());
     const auto hubId = runtime.registerHub("reserved", HubMode::Opened);
     BOOST_REQUIRE(hubId.isValid());
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     BOOST_TEST(runtime.registerNativeFunction("convert", [](NomadInteger) {
         return NomadFloat{0.0f};
     }, {{"renamedValue", ""}}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerNativeFunction("reserved", [] {
         return NomadInteger{0};
     }, {}, NomadDoc("")).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    BOOST_TEST(runtime.getCallableCount() == before);
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     BOOST_TEST(runtime.getNativeFunctionId("reserved").isInvalid());
     fixture.addFunction("main",
@@ -231,7 +231,7 @@ BOOST_AUTO_TEST_CASE(invalid_registration_does_not_publish_a_callable) {
     Runtime runtime;
     const auto hubId = runtime.registerHub("example", HubMode::Opened);
     BOOST_REQUIRE(hubId.isValid());
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     const auto callback = [](NomadInteger value) { return value; };
     BOOST_TEST(runtime.registerNativeFunction("invalid", callback, {}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerNativeFunction("invalid", callback,
@@ -244,7 +244,7 @@ BOOST_AUTO_TEST_CASE(invalid_registration_does_not_publish_a_callable) {
     BOOST_TEST(runtime.registerHubNativeFunction(hubId, "invalid", callback, {}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerHubNativeFunction(hubId, "invalid", missing,
         {{"value", ""}}, NomadDoc("")).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    BOOST_TEST(runtime.getCallableCount() == before);
     BOOST_TEST(runtime.getFunctionId("invalid").isInvalid());
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     const auto qualified = runtime.registerHubNativeFunction(hubId, "child.invalid", callback,
@@ -253,10 +253,10 @@ BOOST_AUTO_TEST_CASE(invalid_registration_does_not_publish_a_callable) {
     BOOST_TEST(runtime.getNativeFunctionId("example.child.invalid") == qualified);
     BOOST_REQUIRE(runtime.registerHubNativeFunction(hubId, "valid", callback,
         {{"value", ""}}, NomadDoc("")).isValid());
-    const auto after = runtime.getFunctionTableSize();
+    const auto after = runtime.getCallableCount();
     BOOST_TEST(runtime.registerHubNativeFunction(hubId, "valid", callback,
         {{"value", ""}}, NomadDoc("")).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == after);
+    BOOST_TEST(runtime.getCallableCount() == after);
 }
 
 BOOST_AUTO_TEST_CASE(string_results_copy_values_and_release_temporary_arguments) {

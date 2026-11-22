@@ -30,7 +30,7 @@ void Game::initGameFunctions() {
         [this](VirtualMachine* interpreter) {
             const auto callableId = interpreter->getCallableIdParameter(0);
 
-            const auto result = m_runtime->getFunctionName(callableId);
+            const auto result = m_runtime->getScriptFunctionName(callableId);
 
             if (!result) {
                 log::error("Function ID for scene not found");
@@ -125,7 +125,7 @@ void Game::initGameFunctions() {
 
             auto postCreateClosure = interpreter->createClosure(m_runtime, postCreateFunction);
 
-            const auto result = m_runtime->getFunctionName(functionId);
+            const auto result = m_runtime->getScriptFunctionName(functionId);
 
             if (!result) {
                 log::error("Function ID for scene not found");

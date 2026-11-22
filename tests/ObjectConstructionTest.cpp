@@ -880,7 +880,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_rejects_invalid_definitions_without_partial
     Runtime runtime;
     const auto* type = registerClass(runtime, "InvalidDefinitionObject");
     const auto callback = [](VirtualMachine* machine) { machine->getResult().setObjectValue(new ConstructedObject); };
-    const auto originalCount = runtime.getFunctionTableSize();
+    const auto originalCount = runtime.getCallableCount();
     const auto originalConstructors = runtime.getConstructors().size();
     const NativeConstructorDefinition definition{{}, callback, ""};
     for (const auto invalid : {
@@ -902,7 +902,7 @@ BOOST_AUTO_TEST_CASE(add_constructor_rejects_invalid_definitions_without_partial
         }).isInvalid());
     }
     BOOST_TEST(runtime.registerNativeClassConstructor(type->getId(), {}).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == originalCount);
+    BOOST_TEST(runtime.getCallableCount() == originalCount);
     BOOST_TEST(runtime.getConstructors().size() == originalConstructors);
     BOOST_TEST(type->getConstructors().empty());
     BOOST_TEST((runtime.resolveConstructor(type, {}).status == ResolveStatus::UnknownName));

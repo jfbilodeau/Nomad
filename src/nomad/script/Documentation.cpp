@@ -377,7 +377,7 @@ void generateDocumentation(const Runtime* runtime, std::ostream& out) {
 
     std::vector<const ScriptFunction*> scriptFunctions;
 
-    runtime->getFunctions(scriptFunctions);
+    runtime->getScriptFunctions(scriptFunctions);
 
     for (auto function: scriptFunctions) {
         if (function->isNested() || function->getName().starts_with("$")) continue;

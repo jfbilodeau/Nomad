@@ -585,7 +585,7 @@ BOOST_AUTO_TEST_CASE(functions_keep_their_script_identity_across_registration_an
     BOOST_TEST(!compiler->getScript(compiler->getScriptId(runtime.getFunctionId("a"))).source.filePath.has_value());
 
     std::vector<ScriptFunction*> functions;
-    runtime.getFunctions(functions);
+    runtime.getScriptFunctions(functions);
     auto generatedCount = NomadIndex{0};
     for (const auto* function : functions) {
         if (function->getParentId() == runtime.getFunctionId("z")) {

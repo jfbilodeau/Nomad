@@ -145,11 +145,11 @@ BOOST_AUTO_TEST_CASE(add_iterable_owns_factory_metadata_and_association)
     BOOST_TEST(calls == 0);
     factory->getFn()(nullptr);
     BOOST_TEST(calls == 1);
-    const auto count = runtime.getFunctionTableSize();
+    const auto count = runtime.getCallableCount();
     definition.factory.name = "secondTraversal";
     definition.factory.function = [](VirtualMachine*) {};
     BOOST_CHECK_THROW(runtime.registerNativeClassIterable(id, definition), NomadException);
-    BOOST_TEST(runtime.getFunctionTableSize() == count);
+    BOOST_TEST(runtime.getCallableCount() == count);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(type->getIterableInfo()->factoryId == info->factoryId);
 }
@@ -166,9 +166,9 @@ BOOST_AUTO_TEST_CASE(add_iterable_rejects_invalid_definitions_before_publishing_
         {"traverse", {}, runtime.getTypeManager().getIteratorType(integer)->getId(), [](VirtualMachine*) {}, ""}
     };
     const auto stringIteratorId = runtime.getTypeManager().getIteratorType(runtime.getStringType())->getId();
-    const auto count = runtime.getFunctionTableSize();
+    const auto count = runtime.getCallableCount();
     const auto verifyUnchanged = [&]() {
-        BOOST_TEST(runtime.getFunctionTableSize() == count);
+        BOOST_TEST(runtime.getCallableCount() == count);
         BOOST_TEST(type->getMethods().empty());
         BOOST_TEST(!type->getIterableInfo().has_value());
     };
@@ -223,9 +223,9 @@ BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_class_
     };
     const auto methodId = runtime.registerNativeClassMethod(id, definition.factory);
     BOOST_REQUIRE(methodId.isValid());
-    const auto count = runtime.getFunctionTableSize();
+    const auto count = runtime.getCallableCount();
     BOOST_CHECK_THROW(runtime.registerNativeClassIterable(id, definition), NomadException);
-    BOOST_TEST(runtime.getFunctionTableSize() == count);
+    BOOST_TEST(runtime.getCallableCount() == count);
     BOOST_TEST(type->getMethods().size() == 1u);
     BOOST_TEST(!type->getIterableInfo().has_value());
     auto* mutableType = const_cast<ClassType*>(type);
@@ -233,7 +233,7 @@ BOOST_AUTO_TEST_CASE(add_iterable_preserves_existing_member_conflicts_and_class_
     auto candidate = definition;
     candidate.factory.name = "anotherTraversal";
     BOOST_CHECK_THROW(runtime.registerNativeClassIterable(id, candidate), NomadException);
-    BOOST_TEST(runtime.getFunctionTableSize() == count);
+    BOOST_TEST(runtime.getCallableCount() == count);
     BOOST_TEST(type->getIterableInfo()->factoryId == methodId);
 }
 

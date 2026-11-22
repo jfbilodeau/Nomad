@@ -96,7 +96,7 @@ std::vector<const Callable*> findCallables(
             if (separator == NomadString::npos) return {};
             const auto* receiver = findValueType(name.substr(0, separator));
             const auto member = name.substr(separator + 1);
-            for (auto index = NomadIndex{0}; index < runtime.getFunctionTableSize(); ++index) {
+            for (auto index = NomadIndex{0}; index < runtime.getCallableCount(); ++index) {
                 const auto* method = runtime.getMethod(CallableId{toNomadId(index)});
                 if (method == nullptr || method->getClassType() != receiver || method->getName() != member) continue;
                 const auto* composite = receiver->asCompositeType();

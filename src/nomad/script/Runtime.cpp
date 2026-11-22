@@ -1577,7 +1577,8 @@ const NativeConstructor* Runtime::getNativeConstructor(const CallableId function
 }
 
 
-NomadIndex Runtime::getFunctionTableSize() const {
+NomadIndex Runtime::getCallableCount() const {
+
     return m_callables.size();
 }
 
@@ -3543,7 +3544,7 @@ CallableId Runtime::getFunctionId(const NomadString& name) const {
     return function == nullptr ? CallableId::INVALID : function->getId();
 }
 
-std::optional<NomadString> Runtime::getFunctionName(CallableId functionId) const {
+std::optional<NomadString> Runtime::getScriptFunctionName(CallableId functionId) const {
     const auto* function = getScriptFunction(functionId);
 
     if (function == nullptr) {
@@ -3553,15 +3554,16 @@ std::optional<NomadString> Runtime::getFunctionName(CallableId functionId) const
     return function->getName();
 }
 
-NomadIndex Runtime::getFunctionCount() const {
+NomadIndex Runtime::getScriptFunctionCount() const {
+
     return static_cast<NomadIndex>(std::count_if(m_callables.begin(), m_callables.end(), [](const auto* callable) {
         return callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script;
     }));
 }
 
-void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) {
+void Runtime::getScriptFunctions(std::vector<ScriptFunction*>& functions) {
     functions.clear();
-    functions.reserve(getFunctionCount());
+    functions.reserve(getScriptFunctionCount());
 
     for (auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {
@@ -3570,9 +3572,9 @@ void Runtime::getFunctions(std::vector<ScriptFunction*>& functions) {
     }
 }
 
-void Runtime::getFunctions(std::vector<const ScriptFunction*>& functions) const {
+void Runtime::getScriptFunctions(std::vector<const ScriptFunction*>& functions) const {
     functions.clear();
-    functions.reserve(getFunctionCount());
+    functions.reserve(getScriptFunctionCount());
 
     for (const auto* callable : m_callables) {
         if (callable->getType() == CallableType::Function && callable->getSource() == CallableSource::Script) {

@@ -501,7 +501,7 @@ public:
         std::unique_ptr<Constructor> constructor
     );
 
-    // Function table
+    // Callable table
     // Every function, method and constructor shares this ID space. Native member IDs are separate.
     [[nodiscard]] const Callable* getCallable(CallableId functionId) const;
     // Null unless `functionId` identifies a free function, native or script.
@@ -514,7 +514,8 @@ public:
     [[nodiscard]] const NativeMethod& getUncheckedNativeMethod(const CallableId callableId) const {
         return *static_cast<const NativeMethod*>(m_callables[toNomadIndex(callableId.id)]);
     }
-    [[nodiscard]] NomadIndex getFunctionTableSize() const;
+    // Counts all registered functions, methods, and constructors, regardless of source.
+    [[nodiscard]] NomadIndex getCallableCount() const;
     // `argumentTypes` is indexed by parameter and holds `nullptr` for parameters the compiler supplies. An overload
     // matching every argument exactly wins over one that merely accepts them.
     [[nodiscard]] ResolveResult resolveFunction(
@@ -663,10 +664,10 @@ public:
     [[nodiscard]] const ScriptFunction* getScriptFunction(CallableId functionId) const;
     [[nodiscard]] ScriptCallableBase* getScriptCallable(CallableId callableId);
     [[nodiscard]] const ScriptCallableBase* getScriptCallable(CallableId callableId) const;
-    [[nodiscard]] std::optional<NomadString> getFunctionName(CallableId functionId) const;
-    [[nodiscard]] NomadIndex getFunctionCount() const;
-    void getFunctions(std::vector<ScriptFunction*>& functions);
-    void getFunctions(std::vector<const ScriptFunction*>& functions) const;
+    [[nodiscard]] std::optional<NomadString> getScriptFunctionName(CallableId functionId) const;
+    [[nodiscard]] NomadIndex getScriptFunctionCount() const;
+    void getScriptFunctions(std::vector<ScriptFunction*>& functions);
+    void getScriptFunctions(std::vector<const ScriptFunction*>& functions) const;
     [[nodiscard]] const ScriptCallableBase* getScriptCallableAtLine(
         const NomadString& sourceName,
         NomadIndex line

@@ -277,7 +277,7 @@ ApiAnalysis analyzeApiSymbols(
         }
     }
     std::vector<ScriptFunction*> scriptFunctions;
-    runtime->getFunctions(scriptFunctions);
+    runtime->getScriptFunctions(scriptFunctions);
     for (const auto* function : scriptFunctions) {
         if (function->isNested() || function->getName().starts_with('$')) continue;
         auto signature = function->getName();

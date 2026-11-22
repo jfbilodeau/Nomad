@@ -379,7 +379,7 @@ BOOST_AUTO_TEST_CASE(format_expression_infers_return_type_and_captures_before_co
     BOOST_TEST(context.getErrorCount() == 0);
 
     std::vector<ScriptFunction*> functions;
-    runtime.getFunctions(functions);
+    runtime.getScriptFunctions(functions);
     auto generatedCount = NomadIndex{0};
     for (const auto* function : functions) {
         if (function->getParentId() == hostId) {

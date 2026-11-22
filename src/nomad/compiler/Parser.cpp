@@ -177,7 +177,7 @@ bool parseNativeMemberArguments(
 ) {
     auto* runtime = context->getRuntime();
     const Method* shape = nullptr;
-    for (auto index = NomadIndex{0}; index < runtime->getFunctionTableSize(); ++index) {
+    for (auto index = NomadIndex{0}; index < runtime->getCallableCount(); ++index) {
         const auto* method = runtime->getMethod(CallableId{toNomadId(index)});
         if (method != nullptr && method->getName() == memberName &&
             (receiverType == nullptr || method->getClassType() == receiverType) &&

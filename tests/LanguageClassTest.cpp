@@ -740,7 +740,7 @@ BOOST_AUTO_TEST_CASE(field_reads_and_writes_capture_this_without_native_member_n
     BOOST_TEST(type->getProperty("value")->getValueType() == runtime.getIntegerType());
     auto foundCapture = false;
     std::vector<ScriptFunction*> functions;
-    runtime.getFunctions(functions);
+    runtime.getScriptFunctions(functions);
     for (const auto* function : functions) {
         if (function->getCaptureId("this") != NOMAD_INVALID_ID) {
             BOOST_TEST(function->getCaptureType(function->getCaptureId("this")) == type);
@@ -784,7 +784,7 @@ BOOST_AUTO_TEST_CASE(member_callbacks_capture_this_and_format_placeholders_use_m
     }
     auto foundCapture = false;
     std::vector<ScriptFunction*> functions;
-    runtime.getFunctions(functions);
+    runtime.getScriptFunctions(functions);
     for (const auto* function : functions) {
         if (function->getParentId() == callbackMethod) {
             BOOST_TEST(function->getCaptureId("this") != NOMAD_INVALID_ID);

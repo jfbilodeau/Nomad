@@ -1321,7 +1321,7 @@ BOOST_AUTO_TEST_CASE(format_string_direct_lookup_does_not_create_expression_func
         "name.toUpper = 7\nscore = 10\nreturn $\"{name.toUpper}:{score}\"");
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
     std::vector<ScriptFunction*> functions;
-    fixture.getRuntime().getFunctions(functions);
+    fixture.getRuntime().getScriptFunctions(functions);
     BOOST_TEST(functions.size() == 1);
     const auto outcome = fixture.execute("main");
     BOOST_TEST(outcome.text == "7:10");

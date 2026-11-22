@@ -55,7 +55,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     const auto savedIntermediate = machine->getIntermediate();
     const auto functionsBefore = [&] {
         std::vector<ScriptFunction*> functions;
-        machine->getRuntime()->getFunctions(functions);
+        machine->getRuntime()->getScriptFunctions(functions);
         return functions.size();
     }();
     const auto variableCount = function->getVariableCount();
@@ -131,7 +131,7 @@ void evaluateFrameExpressions(VirtualMachine* machine) {
     BOOST_TEST(function->getCaptureCount() == captures);
     BOOST_TEST(machine->getRuntime()->getInstructions().size() == instructionCount);
     std::vector<ScriptFunction*> functions;
-    machine->getRuntime()->getFunctions(functions);
+    machine->getRuntime()->getScriptFunctions(functions);
     BOOST_TEST(functions.size() == functionsBefore);
     BOOST_TEST(context.getInterpreter().execute("value + 2", context));
 }

@@ -166,25 +166,25 @@ BOOST_AUTO_TEST_CASE(borrowed_runtime_remains_usable_after_game_destruction)
 
 BOOST_AUTO_TEST_CASE(windowed_creation_does_not_compile_or_execute_entry)
 {
-    const auto functionCount = runtime.getFunctionCount();
+    const auto functionCount = runtime.getScriptFunctionCount();
     auto game = Game::createForRuntime(&runtime, options, false);
 
     BOOST_TEST(game->getRuntime() == &runtime);
     BOOST_TEST(game->getResources() != nullptr);
     BOOST_TEST(game->getCanvas() != nullptr);
-    BOOST_TEST(runtime.getFunctionCount() == functionCount);
+    BOOST_TEST(runtime.getScriptFunctionCount() == functionCount);
     BOOST_TEST(!entryExecuted);
 }
 
 BOOST_AUTO_TEST_CASE(headless_creation_does_not_compile_or_execute_entry)
 {
-    const auto functionCount = runtime.getFunctionCount();
+    const auto functionCount = runtime.getScriptFunctionCount();
     options.debug = true;
     auto game = Game::createForRuntime(&runtime, options, true);
 
     BOOST_TEST(game->getRuntime() == &runtime);
     BOOST_TEST(runtime.isDebug());
-    BOOST_TEST(runtime.getFunctionCount() == functionCount);
+    BOOST_TEST(runtime.getScriptFunctionCount() == functionCount);
     BOOST_TEST(!entryExecuted);
 }
 

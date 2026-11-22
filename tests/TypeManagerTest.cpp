@@ -281,7 +281,7 @@ BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations) {
     auto* other = manager.getMutableCompositeType(otherId);
     BOOST_REQUIRE(owner != nullptr && other != nullptr);
     const auto initialCount = manager.getProperties().size();
-    const auto callableCount = runtime.getFunctionTableSize();
+    const auto callableCount = runtime.getCallableCount();
     BOOST_TEST(manager.registerProperty(other, std::make_unique<Property>(
         manager.getNextPropertyId(), owner, "wrongOwner", runtime.getIntegerType()
     )).isInvalid());
@@ -304,7 +304,7 @@ BOOST_AUTO_TEST_CASE(property_catalog_publishes_only_accepted_declarations) {
     ));
     BOOST_REQUIRE(secondId.isValid());
     BOOST_TEST(toNomadIndex(secondId.id) == initialCount + 1);
-    BOOST_TEST(runtime.getFunctionTableSize() == callableCount);
+    BOOST_TEST(runtime.getCallableCount() == callableCount);
     BOOST_TEST(manager.getProperties().size() == initialCount + 2);
     BOOST_TEST(manager.getProperty(PropertyId{toNomadId(initialCount + 2)}) == nullptr);
 }
@@ -636,7 +636,7 @@ BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_o
     const auto* owner = manager.getTypeByName("CallableOwner")->asClassType();
     BOOST_REQUIRE(manager.registerScriptClassProperty(ownerId, "value", runtime.getIntegerType()).isValid());
     manager.finalizeCompositeFieldLayout(ownerId);
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     auto callbacks = 0;
     const NativeMethodDefinition methodDefinition{
         .name = "managedMethod",
@@ -656,7 +656,7 @@ BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_o
     const auto scriptConstructorId = runtime.registerScriptClassConstructor(ownerId,
         {defParameter("value", runtime.getIntegerType(), "")}, "owner.nomad", "this.value = value");
     BOOST_REQUIRE(methodId.isValid() && constructorId.isValid() && scriptMethodId.isValid() && scriptConstructorId.isValid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before + 4);
+    BOOST_TEST(runtime.getCallableCount() == before + 4);
     for (const auto id : {methodId, constructorId, scriptMethodId, scriptConstructorId}) {
         BOOST_TEST(runtime.getFunction(id) == nullptr);
         BOOST_TEST(runtime.getCallable(id) != nullptr);
@@ -683,7 +683,7 @@ BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_o
     BOOST_TEST(runtime.registerScriptClassMethod(ownerId, "scriptMethod", {}, "", "").isInvalid());
     BOOST_TEST(runtime.registerScriptClassConstructor(ownerId,
         {defParameter("value", runtime.getIntegerType(), "")}, "", "").isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before + 4);
+    BOOST_TEST(runtime.getCallableCount() == before + 4);
     runtime.getNativeMethod(methodId)->getFn()(nullptr);
     runtime.getNativeConstructor(constructorId)->getFn()(nullptr);
     BOOST_TEST(callbacks == 2);
@@ -699,7 +699,7 @@ BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_cons
         .function = [](VirtualMachine*) {},
         .documentation = ""
     };
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     for (const auto invalidId : {TypeId::INVALID, structId, runtime.getIntegerType()->getId(), manager.reserveTypeId()}) {
         BOOST_TEST(runtime.registerNativeClassConstructor(invalidId, definition).isInvalid());
         BOOST_TEST(runtime.registerNativeClassConstructor(ownerId, invalidId, definition).isInvalid());
@@ -720,13 +720,13 @@ BOOST_AUTO_TEST_CASE(class_callable_registration_rejects_invalid_owners_and_cons
         definition.parameters = {{invalidId, "value", ""}};
         BOOST_TEST(runtime.registerNativeClassConstructor(ownerId, definition).isInvalid());
     }
-    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    BOOST_TEST(runtime.getCallableCount() == before);
     definition.parameters = {};
     const auto id = runtime.registerNativeClassConstructor(ownerId, definition);
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getNativeConstructor(id)->getConstructedType() == manager.getTypeByName("ConstructorOwner"));
     BOOST_TEST(runtime.registerNativeClassConstructor(ownerId, definition).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before + 1);
+    BOOST_TEST(runtime.getCallableCount() == before + 1);
 }
 
 BOOST_AUTO_TEST_CASE(class_registration_preflight_returns_invalid_ids_without_logging) {
@@ -1011,14 +1011,14 @@ BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_ow
         .function = [](VirtualMachine*) {},
         .documentation = "Struct method."
     };
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     BOOST_TEST(runtime.registerNativeClassMethod(structId, definition).isInvalid());
     BOOST_TEST(runtime.registerNativeStructMethod(classId, definition).isInvalid());
     BOOST_TEST(runtime.registerScriptClassMethod(structId, "scriptMethod", {}, "", "").isInvalid());
     BOOST_TEST(runtime.registerScriptStructMethod(classId, "scriptMethod", {}, "", "").isInvalid());
     BOOST_TEST(runtime.registerNativeStructMethod(runtime.getIntegerType()->getId(), definition).isInvalid());
     BOOST_TEST(runtime.registerScriptStructMethod(TypeId::INVALID, "scriptMethod", {}, "", "").isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    BOOST_TEST(runtime.getCallableCount() == before);
     const auto nativeId = runtime.registerNativeStructMethod(structId, definition);
     const auto scriptId = runtime.registerScriptStructMethod(structId, "scriptMethod",
         {defParameter("number", runtime.getIntegerType(), "")}, "struct.nomad", "return number");
@@ -1041,7 +1041,7 @@ BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_ow
     invalid.returnTypeId = definition.returnTypeId;
     invalid.function = {};
     BOOST_TEST(runtime.registerNativeStructMethod(structId, invalid).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before + 2);
+    BOOST_TEST(runtime.getCallableCount() == before + 2);
 }
 
 BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destination_metadata) {
@@ -1060,7 +1060,7 @@ BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destinat
         .function = [&](VirtualMachine*) { ++calls; },
         .documentation = "Struct construction."
     };
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     BOOST_TEST(runtime.registerNativeClassConstructor(structId, definition).isInvalid());
     BOOST_TEST(runtime.registerNativeStructConstructor(classId, definition).isInvalid());
     BOOST_TEST(runtime.registerScriptClassConstructor(structId, {}, "", "").isInvalid());
@@ -1068,7 +1068,7 @@ BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destinat
     BOOST_TEST(runtime.registerNativeStructConstructor(TypeId::INVALID, definition).isInvalid());
     BOOST_TEST(runtime.registerScriptStructConstructor(TypeId::INVALID, {}, "", "").isInvalid());
     BOOST_TEST(runtime.registerNativeClassConstructor(structId, classId, definition).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    BOOST_TEST(runtime.getCallableCount() == before);
     const auto nativeId = runtime.registerNativeStructConstructor(structId, definition);
     const auto scriptId = runtime.registerScriptStructConstructor(structId, {}, "constructor.nomad", "this.number = 1");
     const auto emptyConstructorId = runtime.registerScriptStructConstructor(emptyId, {}, "", "");
@@ -1131,7 +1131,7 @@ BOOST_AUTO_TEST_CASE(struct_constructor_registration_uses_void_borrowed_destinat
     BOOST_TEST(runtime.registerScriptStructConstructor(structId,
         {defParameter("this", runtime.getIntegerType(), "")}, "", "").isInvalid());
     BOOST_TEST(calls == 0);
-    BOOST_TEST(runtime.getFunctionTableSize() == before + 5);
+    BOOST_TEST(runtime.getCallableCount() == before + 5);
 }
 
 BOOST_AUTO_TEST_CASE(parameterized_callbacks_can_grow_family_catalog_and_initializer_registers_callables) {
@@ -1435,9 +1435,9 @@ BOOST_AUTO_TEST_CASE(runtime_indexers_and_iterables_preserve_catalogs_and_regist
     BOOST_TEST(!manager.getIterableInfo(nullptr).has_value());
     BOOST_TEST(!manager.getIterableInfo(other.getIntegerType()).has_value());
     BOOST_TEST(!manager.getIterableInfo(manager.getTypeByName("NotASequence")).has_value());
-    const auto callableCount = runtime.getFunctionTableSize();
+    const auto callableCount = runtime.getCallableCount();
     BOOST_CHECK_THROW(runtime.registerNativeClassIterable(ownerId, iterable), NomadException);
-    BOOST_TEST(runtime.getFunctionTableSize() == callableCount);
+    BOOST_TEST(runtime.getCallableCount() == callableCount);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

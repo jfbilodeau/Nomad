@@ -580,7 +580,7 @@ BOOST_AUTO_TEST_CASE(generates_script_class_fields_constructors_and_method_overl
     BOOST_TEST(counter.find("- `this:") == NomadString::npos);
     BOOST_TEST(documentation.str().find("$init") == NomadString::npos);
     std::vector<ScriptFunction*> functions;
-    runtime.getFunctions(functions);
+    runtime.getScriptFunctions(functions);
     auto nestedFunctions = 0;
     for (const auto* function : functions) {
         if (!function->isNested()) continue;

@@ -2097,7 +2097,10 @@ an instruction or operand; its end address is excluded.
 `getScriptCallableByStartAddress(address)` requires an exact compiled start
 address. These lookups return `nullptr` when no callable matches.
 Function-only ID lookups and enumeration still exclude methods and constructors.
-`getFunctions` clears the supplied vector and lists registered script functions
+`getScriptFunctionCount()` counts registered script functions, excluding native
+functions, methods, and constructors. `getScriptFunctionName(id)` returns their
+name, or an empty optional for an invalid ID or a different callable category.
+`getScriptFunctions` clears the supplied vector and lists registered script functions
 in catalog order. Mutable runtimes accept `std::vector<ScriptFunction*>`;
 const runtimes accept `std::vector<const ScriptFunction*>`. Both views borrow
 the same descriptors and exclude native functions, methods, and constructors.
@@ -2132,6 +2135,8 @@ statements. A statement discards any returned value.
 
 Functions, methods, and constructors share the `CallableId` type. Callable IDs
 do not implicitly convert to integers or other ID categories.
+`getCallableCount()` counts all registered functions, methods, and constructors,
+both native and script.
 `getCallableId(name)` returns the first free-function overload as a `CallableId`,
 or `CallableId::INVALID` when absent. It does not select an overload.
 `getCallableOverloads(name, ids)` lists free-function overload IDs.
