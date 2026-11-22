@@ -52,14 +52,12 @@ NativePropertyInfo NativeProperty::getInfo() const {
     NativePropertySetFn setter;
     if (m_getFn) {
         getter = [this](VirtualMachine* machine, RuntimeValue& result) {
-            requireResolvedType();
-            m_getFn(machine, result);
+            getValue(machine, result);
         };
     }
     if (m_setFn) {
         setter = [this](VirtualMachine* machine, const RuntimeValue& value) {
-            requireResolvedType();
-            m_setFn(machine, value);
+            setValue(machine, value);
         };
     }
     return {
@@ -73,6 +71,36 @@ NativePropertyInfo NativeProperty::getInfo() const {
         m_getterMethodId, 
         m_setterMethodId
     };
+}
+
+CallableId NativeProperty::getGetterMethodId() const noexcept {
+
+    return m_getterMethodId;
+}
+
+CallableId NativeProperty::getSetterMethodId() const noexcept {
+
+    return m_setterMethodId;
+}
+
+bool NativeProperty::hasGetterCallback() const noexcept {
+
+    return static_cast<bool>(m_getFn);
+}
+
+bool NativeProperty::hasSetterCallback() const noexcept {
+
+    return static_cast<bool>(m_setFn);
+}
+
+void NativeProperty::getValue(VirtualMachine* machine, RuntimeValue& result) const {
+    requireResolvedType();
+    m_getFn(machine, result);
+}
+
+void NativeProperty::setValue(VirtualMachine* machine, const RuntimeValue& value) const {
+    requireResolvedType();
+    m_setFn(machine, value);
 }
 
 bool NativeProperty::isTypeResolved() const {

@@ -430,6 +430,44 @@ snapshot directly.
 `Runtime::getNativeIndexerInfo(id)` instead returns borrowed const metadata,
 or `nullptr` for an invalid or unregistered ID. It does not copy callbacks.
 
+### Native property execution
+
+`Runtime::getNativeProperty(id)` borrows the registered `NativeProperty`
+descriptor, or returns `nullptr` for an invalid or non-native property.
+Descriptors remain stable when the catalog grows and must outlive their use.
+Include `<nomad/script/NativeProperty.hpp>` for the descriptor API.
+
+`getGetterMethodId()` and `getSetterMethodId()` identify method-backed accessors;
+an absent method has an invalid ID. `hasGetterCallback()` and
+`hasSetterCallback()` report raw callback availability without invoking it or
+requiring value-type completion.
+
+`NativeProperty::getValue(machine, result)` and `setValue(machine, value)`
+invoke the stored raw callback. The corresponding callback must exist; callers
+handle receiver binding and value ownership. Incomplete value types throw
+before callback invocation. Getter outputs follow the owned-result contract;
+setter inputs remain borrowed.
+
+For checked lookup, accessor validation, and receiver binding, use
+`VirtualMachine::getNativeProperty` and `setNativeProperty`. They reject invalid
+IDs, missing callbacks, and method-backed access before binding the receiver,
+and restore the previous borrowed receiver on return or exception.
+Method-backed properties use typed interpreter access instead.
+
+VM access and object-receiver interpretation invoke the same registered callback
+without copying its state or metadata. Mutable value-captured state persists
+across calls and throws and is shared by all receivers and VMs using that
+registration. It is not per-object or per-VM state, and getter/setter state is
+not automatically shared. Reentrant calls use the same instance; the host
+remains responsible for captured lifetimes and state synchronization.
+
+Explicit resolved `getInfo()` snapshots still copy callbacks and text.
+Invoking such a snapshot does not advance value-captured state in the registered
+callback; referenced objects and pointer/reference captures remain shared.
+Snapshots obtained before type completion retain guarded descriptor-backed
+callbacks and can be invoked after successful completion; the descriptor must
+outlive those callbacks.
+
 ### Type lookup
 
 Include `<nomad/script/Type.hpp>` for the base `Type`, storage categories, and

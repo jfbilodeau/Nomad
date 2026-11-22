@@ -45,12 +45,14 @@ InterpreterValue InterpreterObjectReceiver::getProperty(const PropertyId propert
         throw std::invalid_argument("Invalid interpreter property getter");
     }
     if (const auto* native = property->asNativeProperty()) {
-        const auto info = native->getInfo();
-        if (info.getterMethodId.isValid()) {
-            return getInterpreter().runObjectMethod(*getType()->asClassType(), m_object, info.getterMethodId, {});
+        const auto getterMethodId = native->getGetterMethodId();
+        if (getterMethodId.isValid()) {
+
+            return getInterpreter().runObjectMethod(*getType()->asClassType(), m_object, getterMethodId, {});
         }
-        if (info.setterMethodId.isValid()) {
-            throw std::invalid_argument("Native property '" + info.name + "' is write-only");
+
+        if (native->getSetterMethodId().isValid()) {
+            throw std::invalid_argument("Native property '" + native->getName() + "' is write-only");
         }
     }
     const auto* type = property->getValueType();
@@ -78,14 +80,16 @@ void InterpreterObjectReceiver::setProperty(const PropertyId propertyId, const I
         throw std::invalid_argument("Invalid interpreter property setter");
     }
     if (const auto* native = property->asNativeProperty()) {
-        const auto info = native->getInfo();
-        if (info.setterMethodId.isValid()) {
+        const auto setterMethodId = native->getSetterMethodId();
+        if (setterMethodId.isValid()) {
             static_cast<void>(getInterpreter().runObjectMethod(
-                *getType()->asClassType(), m_object, info.setterMethodId, {&value, 1}));
+                *getType()->asClassType(), m_object, setterMethodId, {&value, 1}));
+
             return;
         }
-        if (info.getterMethodId.isValid()) {
-            throw std::invalid_argument("Native property '" + info.name + "' is read-only");
+
+        if (native->getGetterMethodId().isValid()) {
+            throw std::invalid_argument("Native property '" + native->getName() + "' is read-only");
         }
     }
     const auto* type = property->getValueType();
@@ -130,8 +134,7 @@ void InterpreterObjectReceiver::setProperty(
         throw std::invalid_argument("Stored property paths require struct owners");
     }
     if (const auto* native = property->asNativeProperty()) {
-        const auto info = native->getInfo();
-        if (info.getterMethodId.isValid() || info.setterMethodId.isValid()) {
+        if (native->getGetterMethodId().isValid() || native->getSetterMethodId().isValid()) {
             const auto current = getProperty(propertyId);
             InterpreterStorage temporary(type, current.getStorage());
             getInterpreter().setProperty(*type, temporary.getMutableStorage(), propertyPath.substr(separator + 1), value);

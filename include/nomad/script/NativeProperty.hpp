@@ -23,6 +23,14 @@ public:
 
     [[nodiscard]] const NativeProperty* asNativeProperty() const override;
     [[nodiscard]] NativePropertyInfo getInfo() const;
+    [[nodiscard]] CallableId getGetterMethodId() const noexcept;
+    [[nodiscard]] CallableId getSetterMethodId() const noexcept;
+    [[nodiscard]] bool hasGetterCallback() const noexcept;
+    [[nodiscard]] bool hasSetterCallback() const noexcept;
+    // Requires the raw callback; caller handles receiver binding and value ownership.
+    // Incomplete value types throw before invocation.
+    void getValue(VirtualMachine* machine, RuntimeValue& result) const;
+    void setValue(VirtualMachine* machine, const RuntimeValue& value) const;
     [[nodiscard]] bool isTypeResolved() const;
     void resolveValueType(const Type* type);
     void completeTypeResolution();

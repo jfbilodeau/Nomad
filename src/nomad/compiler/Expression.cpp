@@ -1100,8 +1100,12 @@ InterpreterValue NativeMemberExpression::onEvaluate(InterpreterContext& context)
         if (property == nullptr) {
             raiseException("Invalid property getter: " + m_qualifiedName);
         }
-        if (const auto* native = property->asNativeProperty();
-            native != nullptr && getType()->isStruct() && native->getInfo().getterMethodId.isInvalid()) {
+        if (
+            const auto* native = property->asNativeProperty();
+            native != nullptr &&
+            getType()->isStruct() &&
+            native->getGetterMethodId().isInvalid()
+        ) {
             raiseException("Struct member values are not supported by the interpreter");
         }
         const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));
@@ -1152,8 +1156,12 @@ InterpreterValue NativeMemberExpression::evaluateAssignment(
         raiseException("Invalid property setter: " + m_qualifiedName);
     }
     if (m_receiver->getType()->asCompositeType() != nullptr) {
-        if (const auto* native = property->asNativeProperty();
-            native != nullptr && getType()->isStruct() && native->getInfo().setterMethodId.isInvalid()) {
+        if (
+            const auto* native = property->asNativeProperty();
+            native != nullptr &&
+            getType()->isStruct() &&
+            native->getSetterMethodId().isInvalid()
+        ) {
             raiseException("Struct member values are not supported by the interpreter");
         }
         const auto location = m_receiver->getStorageLocation().value_or(StorageLocation(m_receiver.get()));

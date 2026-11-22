@@ -137,6 +137,8 @@ Checks cover metadata contents, results and setter side effects, callback counts
 borrowed receiver identity/reference counts, VM-state restoration, and receiver
 cleanup. Setup and ownership/state checks are outside timing. These scalar
 workloads do not measure reference-valued or unresolved properties.
+After descriptor-based execution, copied metadata remains a separate control;
+compare VM getter/setter timings without treating snapshot-copy cost as removed.
 
 Run the same target, configuration, and workload before and after an optimization.
 Compare optimized Release results separately from Debug results; timing values

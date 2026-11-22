@@ -8,6 +8,7 @@
 
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
@@ -638,14 +639,19 @@ void VirtualMachine::getNativeProperty(
     const RuntimeValue& receiver,
     RuntimeValue& result
 ) {
-    const auto info = m_runtime->getNativePropertyInfo(propertyId);
-    if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+    const auto* property = m_runtime->getNativeProperty(propertyId);
+    if (
+        property != nullptr &&
+        (property->getGetterMethodId().isValid() || property->getSetterMethodId().isValid())
+    ) {
         fault("Method-backed native properties require typed interpreter access");
     }
-    if (!info || !info->getFn) {
+
+    if (property == nullptr || !property->hasGetterCallback()) {
         fault("Invalid native property getter");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { info->getFn(machine, result); }, receiver);
+
+    invokeNativeMember([&](VirtualMachine* machine) { property->getValue(machine, result); }, receiver);
 }
 
 void VirtualMachine::getProperty(
@@ -716,14 +722,19 @@ void VirtualMachine::setNativeProperty(
     const RuntimeValue& receiver,
     const RuntimeValue& value
 ) {
-    const auto info = m_runtime->getNativePropertyInfo(propertyId);
-    if (info && (info->getterMethodId.isValid() || info->setterMethodId.isValid())) {
+    const auto* property = m_runtime->getNativeProperty(propertyId);
+    if (
+        property != nullptr &&
+        (property->getGetterMethodId().isValid() || property->getSetterMethodId().isValid())
+    ) {
         fault("Method-backed native properties require typed interpreter access");
     }
-    if (!info || !info->setFn) {
+
+    if (property == nullptr || !property->hasSetterCallback()) {
         fault("Invalid native property setter");
     }
-    invokeNativeMember([&](VirtualMachine* machine) { info->setFn(machine, value); }, receiver);
+
+    invokeNativeMember([&](VirtualMachine* machine) { property->setValue(machine, value); }, receiver);
 }
 
 void VirtualMachine::callNativeIndexer(

@@ -5,6 +5,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterObjectReceiver.hpp>
 
 #include <nomad/system/String.hpp>
 
@@ -332,6 +333,163 @@ BOOST_AUTO_TEST_CASE(compiled_property_setter_commits_mutated_receiver) {
     virtualMachine->executeFunction(functionId, {}, result);
 
     BOOST_TEST(result.getIntegerValue() == 3);
+}
+
+BOOST_AUTO_TEST_CASE(raw_property_callbacks_keep_registered_state_and_snapshot_copies_independent) {
+    auto lastWrite = NomadInteger{0};
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    const auto propertyId = runtime.registerNativeClassProperty(type->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "statefulValue",
+        .getter = [calls = NomadInteger{0}](VirtualMachine*, RuntimeValue& result) mutable {
+            result.setIntegerValue(++calls);
+        },
+        .setter = [calls = NomadInteger{0}, &lastWrite](VirtualMachine*, const RuntimeValue& value) mutable {
+            lastWrite = value.getIntegerValue() + ++calls;
+        },
+        .documentation = ""
+    });
+    BOOST_REQUIRE(propertyId.isValid());
+    RuntimeValue firstReceiver;
+    RuntimeValue secondReceiver;
+    const RuntimeValueGuard firstOwner(*type, &firstReceiver);
+    const RuntimeValueGuard secondOwner(*type, &secondReceiver);
+    firstReceiver.setObjectValue(new TestObject);
+    secondReceiver.setObjectValue(new TestObject);
+    VirtualMachine machine(&runtime);
+    VirtualMachine otherMachine(&runtime);
+    RuntimeValue result;
+    machine.getNativeProperty(propertyId, firstReceiver, result);
+    BOOST_TEST(result.getIntegerValue() == 1);
+    machine.getNativeProperty(propertyId, secondReceiver, result);
+    BOOST_TEST(result.getIntegerValue() == 2);
+    otherMachine.getNativeProperty(propertyId, secondReceiver, result);
+    BOOST_TEST(result.getIntegerValue() == 3);
+    const Interpreter interpreter(machine);
+    {
+        InterpreterObjectReceiver interpretedReceiver(interpreter, *type, secondReceiver.getObjectValue());
+        const auto interpreted = interpretedReceiver.getProperty(propertyId);
+        BOOST_TEST(interpreted.getValue().getIntegerValue() == 4);
+        auto snapshot = runtime.getNativePropertyInfo(propertyId).value();
+        snapshot.getFn(nullptr, result);
+        BOOST_TEST(result.getIntegerValue() == 5);
+        snapshot.getFn(nullptr, result);
+        BOOST_TEST(result.getIntegerValue() == 6);
+        machine.getNativeProperty(propertyId, firstReceiver, result);
+        BOOST_TEST(result.getIntegerValue() == 5);
+        machine.setNativeProperty(propertyId, firstReceiver, RuntimeValue{NomadInteger{10}});
+        BOOST_TEST(lastWrite == 11);
+        otherMachine.setNativeProperty(propertyId, secondReceiver, RuntimeValue{NomadInteger{20}});
+        BOOST_TEST(lastWrite == 22);
+        snapshot.setFn(nullptr, RuntimeValue{NomadInteger{30}});
+        BOOST_TEST(lastWrite == 31);
+        machine.setNativeProperty(propertyId, firstReceiver, RuntimeValue{NomadInteger{40}});
+        BOOST_TEST(lastWrite == 43);
+        const InterpreterValue assignedValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{50}});
+        interpretedReceiver.setProperty(propertyId, assignedValue);
+        BOOST_TEST(lastWrite == 54);
+    }
+
+    BOOST_TEST(firstReceiver.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(secondReceiver.getObjectValue()->getReferenceCount() == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(raw_property_state_survives_reentry_catalog_growth_and_exceptions) {
+    Runtime runtime;
+    const auto* type = registerTestObject(runtime);
+    RuntimeValue receiver;
+    RuntimeValue savedReceiver;
+    const RuntimeValueGuard receiverOwner(*type, &receiver);
+    const RuntimeValueGuard savedOwner(*type, &savedReceiver);
+    receiver.setObjectValue(new TestObject);
+    savedReceiver.setObjectValue(new TestObject);
+    auto propertyId = PropertyId::INVALID;
+    auto reentered = false;
+    auto nestedValue = NomadInteger{0};
+    auto throwSetter = true;
+    auto lastWrite = NomadInteger{0};
+    propertyId = runtime.registerNativeClassProperty(type->getId(), {
+        .valueType = runtime.getIntegerType(),
+        .name = "reentrantValue",
+        .getter = [
+            calls = NomadInteger{0},
+            &runtime,
+            type,
+            &propertyId,
+            &receiver,
+            &reentered,
+            &nestedValue
+        ](VirtualMachine* active, RuntimeValue& result) mutable {
+            BOOST_TEST(active->getThis() == receiver.getObjectValue());
+            ++calls;
+            if (!reentered) {
+                reentered = true;
+                for (auto index = 0; index < 64; ++index) {
+                    BOOST_REQUIRE(runtime.registerNativeClassProperty(type->getId(), {
+                        .valueType = runtime.getIntegerType(),
+                        .name = "growthValue" + std::to_string(index),
+                        .getter = [](VirtualMachine*, RuntimeValue& value) { value.setIntegerValue(0); }
+                    }).isValid());
+                }
+
+                RuntimeValue nested;
+                active->getNativeProperty(propertyId, receiver, nested);
+                nestedValue = nested.getIntegerValue();
+                BOOST_TEST(active->getThis() == receiver.getObjectValue());
+            }
+
+            result.setIntegerValue(calls);
+        },
+        .setter = [
+            calls = NomadInteger{0},
+            &receiver,
+            &throwSetter,
+            &lastWrite
+        ](VirtualMachine* active, const RuntimeValue& value) mutable {
+            BOOST_TEST(active->getThis() == receiver.getObjectValue());
+            lastWrite = value.getIntegerValue() + ++calls;
+            if (throwSetter) {
+                active->fault("Expected stateful property failure");
+            }
+        },
+        .documentation = ""
+    });
+    BOOST_REQUIRE(propertyId.isValid());
+    const auto* descriptor = runtime.getNativeProperty(propertyId);
+    VirtualMachine machine(&runtime);
+    machine.enterNativeFrame(savedReceiver);
+    const auto before = machine.captureExecutionState();
+    RuntimeValue result;
+    machine.getNativeProperty(propertyId, receiver, result);
+    BOOST_TEST(nestedValue == 2);
+    BOOST_TEST(result.getIntegerValue() == 2);
+    BOOST_TEST(machine.getThis() == savedReceiver.getObjectValue());
+    BOOST_TEST(runtime.getNativeProperty(propertyId) == descriptor);
+    machine.getNativeProperty(propertyId, receiver, result);
+    BOOST_TEST(result.getIntegerValue() == 3);
+    BOOST_CHECK_EXCEPTION(
+        machine.setNativeProperty(propertyId, receiver, RuntimeValue{NomadInteger{10}}),
+        VirtualMachineException,
+        [](const auto& error) {
+
+            return NomadString{error.what()} == "Expected stateful property failure";
+        }
+    );
+    BOOST_TEST(lastWrite == 11);
+    BOOST_TEST(machine.getThis() == savedReceiver.getObjectValue());
+    throwSetter = false;
+    machine.setNativeProperty(propertyId, receiver, RuntimeValue{NomadInteger{10}});
+    BOOST_TEST(lastWrite == 12);
+    const auto after = machine.captureExecutionState();
+    BOOST_TEST(after.instructionIndex == before.instructionIndex);
+    BOOST_TEST(after.stackIndex == before.stackIndex);
+    BOOST_TEST(after.parameterIndex == before.parameterIndex);
+    BOOST_TEST(after.variableIndex == before.variableIndex);
+    BOOST_TEST(after.running == before.running);
+    BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+    BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+    BOOST_TEST(savedReceiver.getObjectValue()->getReferenceCount() == 1U);
 }
 
 BOOST_AUTO_TEST_CASE(compiled_method_receives_receiver_and_arguments) {

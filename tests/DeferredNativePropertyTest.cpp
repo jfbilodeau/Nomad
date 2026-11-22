@@ -80,6 +80,21 @@ BOOST_AUTO_TEST_CASE(enum_properties_resolve_in_both_targets_without_running_cal
         BOOST_CHECK_THROW(info.setFn(nullptr, RuntimeValue(NomadInteger{2})), NomadException);
         {
             VirtualMachine machine(&runtime);
+            const RuntimeValue emptyReceiver;
+            const auto missingReceiver = [](const auto& error) {
+
+                return NomadString{error.what()} == "Object method has no instance";
+            };
+            BOOST_CHECK_EXCEPTION(
+                machine.getNativeProperty(id, emptyReceiver, value),
+                VirtualMachineException,
+                missingReceiver
+            );
+            BOOST_CHECK_EXCEPTION(
+                machine.setNativeProperty(id, emptyReceiver, RuntimeValue(NomadInteger{2})),
+                VirtualMachineException,
+                missingReceiver
+            );
             RuntimeValue receiver;
             receiver.setObjectValue(new PropertyOwner);
             BOOST_CHECK_THROW(machine.getNativeProperty(id, receiver, value), NomadException);
