@@ -2176,8 +2176,10 @@ bool Runtime::canRegisterNativeMember(const Type* classType, const NomadString& 
         return false;
     }
 
-    if (owner->getProperty(name) != nullptr ||
-        getMemberType(getNativeMemberId(classType, name)) != MemberType::Unknown) {
+    if (
+        owner->getProperty(name) != nullptr || 
+        getNativeMemberId(classType, name).has_value()
+    ) {
         error = "the type already has a member with that name";
         return false;
     }
@@ -2445,10 +2447,14 @@ void Runtime::catalogNativeMethod(const CallableId id) {
     m_nativeMembersByName[method->getName()].push_back(id);
 }
 
-MemberReference Runtime::getNativeMemberId(const Type* classType, const NomadString& name) const {
+std::optional<MemberReference> Runtime::getNativeMemberId(
+    const Type* classType,
+    const NomadString& name
+) const {
     const auto overloads = m_nativeMembersByName.find(name);
     if (overloads == m_nativeMembersByName.end()) {
-        return PropertyId::INVALID;
+
+        return std::nullopt;
     }
 
     for (const auto memberId : overloads->second) {
@@ -2474,7 +2480,7 @@ MemberReference Runtime::getNativeMemberId(const Type* classType, const NomadStr
         }
     }
 
-    return PropertyId::INVALID;
+    return std::nullopt;
 }
 
 MemberType Runtime::getMemberType(const MemberReference& member) const {

@@ -378,7 +378,11 @@ public:
         NomadString& error
     ) const;
     void validateNativePropertyTypes();
-    [[nodiscard]] MemberReference getNativeMemberId(const Type* classType, const NomadString& name) const;
+    // First matching native member for this owner/name, or nullopt; does not select an overload.
+    [[nodiscard]] std::optional<MemberReference> getNativeMemberId(
+        const Type* classType,
+        const NomadString& name
+    ) const;
     [[nodiscard]] MemberType getMemberType(const MemberReference& member) const;
     [[nodiscard]] std::optional<NativePropertyInfo> getNativePropertyInfo(const MemberReference& member) const;
     [[nodiscard]] const NativeMethod* getNativeMemberMethod(const MemberReference& member) const;

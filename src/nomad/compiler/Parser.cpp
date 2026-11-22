@@ -219,9 +219,8 @@ std::unique_ptr<Expression> createNativeMemberExpression(
         context->getCompiler()->getIdentifierDefinition(identifier->getIdentifier(), function, definition);
         receiverType = definition.valueType;
         if (const auto* composite = receiverType != nullptr ? receiverType->asCompositeType() : nullptr) {
-            storedField = context->getRuntime()->getMemberType(
-                context->getRuntime()->getNativeMemberId(definition.valueType, memberName)
-            ) == MemberType::Unknown && !std::ranges::any_of(
+            const auto nativeMember = context->getRuntime()->getNativeMemberId(receiverType, memberName);
+            storedField = !nativeMember && !std::ranges::any_of(
                 composite->getMethods(),
                 [&](const auto* method) { return method->getName() == memberName; }
             );

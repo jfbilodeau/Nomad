@@ -666,7 +666,7 @@ BOOST_AUTO_TEST_CASE(class_callables_share_runtime_ids_without_changing_layout_o
     BOOST_TEST(runtime.getNativeConstructor(constructorId)->getReturnType() == manager.getTypeByName("Created"));
     BOOST_TEST(!runtime.getNativeConstructor(constructorId)->getCallStorageLayout().receiverOffset.has_value());
     BOOST_TEST(runtime.getNativeConstructor(constructorId)->getClassType() == owner);
-    BOOST_TEST(runtime.getNativeMemberId(owner, "managedMethod") == MemberReference{methodId});
+    BOOST_TEST(runtime.getNativeMemberId(owner, "managedMethod").value() == MemberReference{methodId});
     BOOST_TEST(runtime.getNativeMemberOverloadCount("managedMethod") == 1U);
     BOOST_TEST(runtime.getScriptCallable(scriptMethodId)->getSourceCode() == "return 1");
     BOOST_TEST(runtime.getScriptCallable(scriptConstructorId)->getPath() == "owner.nomad");
@@ -1026,7 +1026,7 @@ BOOST_AUTO_TEST_CASE(struct_method_registration_shares_catalogs_and_preserves_ow
     BOOST_REQUIRE(scriptId.isValid());
     BOOST_TEST(runtime.getNativeMethod(nativeId)->getClassType() == type);
     BOOST_TEST(runtime.getScriptCallable(scriptId)->getClassType() == type);
-    BOOST_TEST(runtime.getNativeMemberId(type, "structMethod") == MemberReference{nativeId});
+    BOOST_TEST(runtime.getNativeMemberId(type, "structMethod").value() == MemberReference{nativeId});
     BOOST_TEST(runtime.resolveMethod(type, "structMethod", {runtime.getIntegerType()}).id == nativeId);
     BOOST_TEST(runtime.resolveMethod(type, "scriptMethod", {runtime.getIntegerType()}).id == scriptId);
     BOOST_TEST(type->asCompositeType()->getMethods().size() == 2U);

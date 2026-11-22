@@ -282,7 +282,7 @@ BOOST_AUTO_TEST_CASE(native_registration_keeps_methods_out_of_global_function_ca
     BOOST_TEST(last.id > first.id + 1);
     BOOST_TEST((runtime.getNextNativeFunctionId(first) == last));
     BOOST_TEST(runtime.getNativeFunctionId("catalogMethod").isInvalid());
-    BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "catalogMethod")) == method);
+    BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "catalogMethod").value()) == method);
     const auto* methodCallable = runtime.getNativeMemberMethod(method);
     BOOST_REQUIRE(methodCallable != nullptr);
     BOOST_TEST(methodCallable->getClassType() == type);
@@ -1007,7 +1007,7 @@ BOOST_AUTO_TEST_CASE(indexers_support_arbitrary_arity_and_restore_native_paramet
     Runtime runtime;
     auto virtualMachine = runtime.createVirtualMachine();
     const auto* type = registerTestObject(runtime);
-    const auto increment = std::get<CallableId>(runtime.getNativeMemberId(type, "increment"));
+    const auto increment = std::get<CallableId>(runtime.getNativeMemberId(type, "increment").value());
     auto* nested = new TestObject;
     RuntimeValue nestedReceiver;
     nestedReceiver.setObjectValue(nested);

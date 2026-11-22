@@ -38,6 +38,10 @@ static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativePr
     std::optional<NativePropertyInfo>>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getNativeIndexerInfo(IndexerId{})),
     const NativeIndexerInfo*>);
+static_assert(std::is_same_v<
+    decltype(std::declval<const Runtime&>().getNativeMemberId(nullptr, NomadString{})),
+    std::optional<MemberReference>
+>);
 static_assert(!std::is_same_v<NativePropertyDefinition, NativePropertyInfo>);
 static_assert(!std::is_same_v<NativeIndexerDefinition, NativeIndexerInfo>);
 static_assert(std::is_aggregate_v<ParameterDefinition>);
@@ -116,7 +120,7 @@ BOOST_AUTO_TEST_CASE(add_method_resolves_ids_and_owns_registered_metadata_and_ca
     BOOST_TEST(runtime.getMethod(id) == method);
     BOOST_TEST(runtime.getNativeMemberMethod(id) == method);
     BOOST_TEST((runtime.getMemberType(id) == MemberType::Method));
-    BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "answer")) == id);
+    BOOST_TEST(std::get<CallableId>(runtime.getNativeMemberId(type, "answer").value()) == id);
     const auto methods = type->getMethods();
     BOOST_REQUIRE(methods.size() == 1u);
     BOOST_TEST(methods[0] == method);
@@ -269,7 +273,7 @@ BOOST_AUTO_TEST_CASE(add_property_owns_its_definition_and_exposes_registered_cal
     BOOST_TEST(runtime.getProperty(id) == type->getProperty("value"));
     BOOST_TEST(runtime.getNativeProperty(id) == type->getProperty(id));
     BOOST_TEST((runtime.getMemberType(id) == MemberType::Property));
-    BOOST_TEST(std::get<PropertyId>(runtime.getNativeMemberId(type, "value")) == id);
+    BOOST_TEST(std::get<PropertyId>(runtime.getNativeMemberId(type, "value").value()) == id);
     std::vector<MemberReference> members;
     runtime.getNativeMembers(type, members);
     BOOST_REQUIRE(members.size() == 1u);
@@ -360,7 +364,7 @@ BOOST_AUTO_TEST_CASE(runtime_native_properties_preserve_catalog_identity_and_fro
     BOOST_TEST(property->getDoc() == "Managed accessor.");
     BOOST_TEST(property->getValueType() == runtime.getIntegerType());
     BOOST_TEST(property->isTypeResolved());
-    BOOST_TEST(runtime.getNativeMemberId(owner, "managed") == MemberReference{id});
+    BOOST_TEST(runtime.getNativeMemberId(owner, "managed").value() == MemberReference{id});
     std::vector<MemberReference> overloads;
     runtime.getNativeMemberOverloads("managed", overloads);
     BOOST_REQUIRE(overloads.size() == 1U);
@@ -409,7 +413,7 @@ BOOST_AUTO_TEST_CASE(runtime_native_property_rejections_do_not_publish_members) 
     }).isValid());
     BOOST_TEST(runtime.registerNativeClassProperty(ownerId, definition).isInvalid());
     BOOST_TEST(owner->getProperties().empty());
-    BOOST_TEST(runtime.getNativeMemberId(owner, "candidate") == MemberReference{});
+    BOOST_TEST(!runtime.getNativeMemberId(owner, "candidate").has_value());
     BOOST_TEST(runtime.getNativeMemberOverloadCount("candidate") == 1U);
     definition.name = "noAccessors";
     definition.getter = {};
@@ -704,8 +708,8 @@ BOOST_AUTO_TEST_CASE(method_backed_properties_validate_accessor_signatures_and_p
     BOOST_TEST(runtime.registerNativeClassProperty(ownerId, {
         .valueType = valueType, .name = "methodValue", .getterMethodId = getter
     }).isInvalid());
-    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(owner, "rejectedGetter")) == MemberType::Unknown));
-    BOOST_TEST((runtime.getMemberType(runtime.getNativeMemberId(owner, "rejectedSetter")) == MemberType::Unknown));
+    BOOST_TEST(!runtime.getNativeMemberId(owner, "rejectedGetter").has_value());
+    BOOST_TEST(!runtime.getNativeMemberId(owner, "rejectedSetter").has_value());
     BOOST_TEST(calls == 0);
 }
 
@@ -935,13 +939,14 @@ BOOST_AUTO_TEST_CASE(registers_read_only_write_only_and_read_write_properties) {
         .documentation = NomadDoc("Read/write value")
     });
 
-    BOOST_REQUIRE((runtime.getMemberType(readOnlyId) == MemberType::Property));
+    BOOST_REQUIRE(readOnlyId.has_value());
+    BOOST_REQUIRE((runtime.getMemberType(*readOnlyId) == MemberType::Property));
     BOOST_REQUIRE(writeOnlyId.isValid());
     BOOST_REQUIRE(readWriteId.isValid());
 
-    const auto readOnlyInfo = runtime.getNativePropertyInfo(readOnlyId);
+    const auto readOnlyInfo = runtime.getNativePropertyInfo(*readOnlyId);
     BOOST_REQUIRE(readOnlyInfo.has_value());
-    BOOST_TEST(readOnlyInfo->id == std::get<PropertyId>(readOnlyId));
+    BOOST_TEST(readOnlyInfo->id == std::get<PropertyId>(*readOnlyId));
     BOOST_TEST(readOnlyInfo->classType == runtime.getStringType());
     BOOST_TEST(readOnlyInfo->name == "length");
     BOOST_TEST(readOnlyInfo->valueType == runtime.getIntegerType());
@@ -1104,8 +1109,10 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     runtime.getNativeMembers(runtime.getStringType(), stringMembers);
     BOOST_TEST(stringMembers.size() == NomadIndex{12});
     const auto hasCustomStringMethod = std::ranges::find(stringMembers, MemberReference{stringMethodId}) != stringMembers.end();
+    const auto lengthMember = runtime.getNativeMemberId(runtime.getStringType(), "length");
+    BOOST_REQUIRE(lengthMember.has_value());
     const auto hasLength =
-        std::ranges::find(stringMembers, runtime.getNativeMemberId(runtime.getStringType(), "length")) !=
+        std::ranges::find(stringMembers, *lengthMember) !=
         stringMembers.end();
     BOOST_TEST(hasCustomStringMethod);
     BOOST_TEST(hasLength);
@@ -1144,8 +1151,12 @@ BOOST_AUTO_TEST_CASE(native_metadata_queries_do_not_copy_callbacks) {
     BOOST_REQUIRE(propertyId.isValid());
     BOOST_REQUIRE(indexerId.isValid());
     copies = 0;
-    BOOST_TEST((runtime.getNativeMemberId(type, "copyProbe") == MemberReference{propertyId}));
-    BOOST_TEST((runtime.getNativeMemberId(runtime.getStringType(), "copyProbe") == MemberReference{PropertyId::INVALID}));
+    const auto nativeMember = runtime.getNativeMemberId(type, "copyProbe");
+    BOOST_REQUIRE(nativeMember.has_value());
+    BOOST_TEST((*nativeMember == MemberReference{propertyId}));
+    BOOST_TEST(!runtime.getNativeMemberId(runtime.getStringType(), "copyProbe").has_value());
+    BOOST_TEST(!runtime.getNativeMemberId(nullptr, "copyProbe").has_value());
+    BOOST_TEST(!runtime.getNativeMemberId(type, "missingCopyProbe").has_value());
     std::vector<MemberReference> members;
     runtime.getNativeMembers(type, members);
     BOOST_REQUIRE(members.size() == 1U);

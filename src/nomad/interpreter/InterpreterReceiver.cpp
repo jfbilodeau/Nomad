@@ -26,8 +26,9 @@ const Interpreter& InterpreterReceiver::getInterpreter() const {
 
 PropertyId InterpreterReceiver::resolveProperty(const NomadStringView name) const {
     const auto member = m_type.getRuntime()->getNativeMemberId(&m_type, NomadString{name});
-    if (m_type.getRuntime()->getMemberType(member) == MemberType::Property) {
-        return std::get<PropertyId>(member);
+    if (member && m_type.getRuntime()->getMemberType(*member) == MemberType::Property) {
+
+        return std::get<PropertyId>(*member);
     }
     const auto* owner = m_type.asCompositeType();
     const auto* property = owner != nullptr ? owner->getProperty(name) : nullptr;

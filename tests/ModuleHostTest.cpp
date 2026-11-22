@@ -1762,8 +1762,9 @@ BOOST_AUTO_TEST_CASE(collections_maps_contains_and_key_snapshots_do_not_change_t
     const auto* mapType = runtime.getTypeManager().getParameterizedType("Map", {runtime.getStringType(), runtime.getIntegerType()});
     for (const auto* name : {"keys", "values", "entries"}) {
         const auto memberId = runtime.getNativeMemberId(mapType, name);
-        BOOST_REQUIRE((runtime.getMemberType(memberId) == MemberType::Method));
-        const auto* method = runtime.getNativeMemberMethod(memberId);
+        BOOST_REQUIRE(memberId.has_value());
+        BOOST_REQUIRE((runtime.getMemberType(*memberId) == MemberType::Method));
+        const auto* method = runtime.getNativeMemberMethod(*memberId);
         BOOST_REQUIRE(method != nullptr);
         BOOST_TEST(method->getParameterCount() == 0u);
     }

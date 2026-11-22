@@ -2134,8 +2134,11 @@ or `CallableId::INVALID` when absent. It does not select an overload.
 `Runtime::registerNativeClassMethod` and `registerNativeStructMethod` return
 the method's `CallableId`. Their failure results are `PropertyId::INVALID` and
 `CallableId::INVALID`, respectively.
-`getNativeMemberId` returns a `MemberReference`, a `std::variant<PropertyId, CallableId>`.
-An absent member is represented by `PropertyId::INVALID`.
+`getNativeMemberId(ownerType, name)` returns `std::optional<MemberReference>`.
+It returns the first native member matching that owner and name without selecting
+an overload. If the name is absent or no native member belongs to that owner,
+the result is empty without logging. Unwrap a successful result to inspect the member's
+`std::variant<PropertyId, CallableId>` ID category.
 Member enumeration and overload APIs use `std::vector<MemberReference>`.
 `getMemberType(member)` returns `MemberType::Property`, `MemberType::Method`,
 or `MemberType::Unknown` for an invalid reference.

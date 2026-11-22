@@ -713,18 +713,22 @@ bool NativeMemberExpression::resolveMember(
     }
 
     auto* runtime = context->getRuntime();
-    m_memberId = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
+    const auto nativeMember = runtime->getNativeMemberId(m_receiver->getType(), m_memberName);
+    if (nativeMember) {
+        m_memberId = *nativeMember;
+        m_memberType = runtime->getMemberType(*nativeMember);
+    }
 
     const auto* owner = m_receiver->getType()->asClassType();
     const auto* composite = m_receiver->getType()->asCompositeType();
-    if (runtime->getMemberType(m_memberId) == MemberType::Method ||
+    if (m_memberType == MemberType::Method ||
         (composite != nullptr && std::ranges::any_of(composite->getMethods(),
             [&](const auto* method) { return method->getName() == m_memberName; }))) {
         m_memberType = MemberType::Method;
         return true;
     }
 
-    if (runtime->getMemberType(m_memberId) == MemberType::Unknown) {
+    if (!nativeMember) {
         if (m_receiver->getType()->isStruct()) {
             const auto* property = composite->getProperty(m_memberName);
             if (assignment && context->getMode() == CompilerMode::Script) {
@@ -802,7 +806,6 @@ bool NativeMemberExpression::resolveMember(
         return false;
     }
 
-    m_memberType = runtime->getMemberType(m_memberId);
     return true;
 }
 
