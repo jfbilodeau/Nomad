@@ -13,6 +13,8 @@
 
 #include <nomad/compiler/statements/ReturnStatement.hpp>
 
+#include <nomad/script/FunctionResolution.hpp>
+
 #include <nomad/system/String.hpp>
 
 #include <algorithm>
@@ -1488,12 +1490,13 @@ bool parseCallableArguments(
 
     for (NomadIndex i = 0; i < parameters.size(); ++i) {
         const auto& parameter = parameters[i];
+        const auto parameterShape = runtime->getParameterShape(parameter.type);
 
         // Hidden source parameters are supplied by the compiler and consume no tokens.
         const auto isSourceParameter =
-            parameter.type == runtime->getFileNameType() ||
-            parameter.type == runtime->getFunctionNameType() ||
-            parameter.type == runtime->getLineNumberType();
+            parameterShape == ParameterShape::SourceFile ||
+            parameterShape == ParameterShape::SourceFunction ||
+            parameterShape == ParameterShape::SourceLine;
 
         // Overloads with fewer parameters leave the trailing script-supplied arguments out.
         if (allowOmittedArguments && !isSourceParameter &&
@@ -1511,7 +1514,7 @@ bool parseCallableArguments(
 
         const auto argumentType = parameter.type;
 
-        if (parameter.type == context->getRuntime()->getFileNameType()) {
+        if (parameterShape == ParameterShape::SourceFile) {
             auto argument = createFileNameArgument(
                 tokens->getLineIndex(),
                 tokens->getColumnIndex(),
@@ -1520,7 +1523,7 @@ bool parseCallableArguments(
             );
 
             arguments->add(std::move(argument));
-        } else if (parameter.type == context->getRuntime()->getFunctionNameType()) {
+        } else if (parameterShape == ParameterShape::SourceFunction) {
             auto argument = createFunctionNameArgument(
                 tokens->getLineIndex(),
                 tokens->getColumnIndex(),
@@ -1528,14 +1531,14 @@ bool parseCallableArguments(
                 function->getName()
             );
             arguments->add(std::move(argument));
-        } else if (parameter.type == context->getRuntime()->getLineNumberType()) {
+        } else if (parameterShape == ParameterShape::SourceLine) {
             auto argument = createLineNumberArgument(
                 tokens->getLineIndex(),
                 tokens->getColumnIndex(),
                 parameter.type
             );
             arguments->add(std::move(argument));
-        } else if (parameter.type == context->getRuntime()->getEventDispatchType()) {
+        } else if (parameterShape == ParameterShape::EventDispatch) {
             std::vector<std::unique_ptr<Argument>> eventDispatchArguments;
 
             if (!parseEventDispatch(context, function, tokens, eventDispatchArguments)) {
@@ -1543,7 +1546,7 @@ bool parseCallableArguments(
             }
 
             arguments->addAll(std::move(eventDispatchArguments));
-        } else if (parameter.type == context->getRuntime()->getEventCallbackType()) {
+        } else if (parameterShape == ParameterShape::EventCallback) {
             NomadString eventName;
 
             if (!tokens->nextIdentifier(eventName)) {
@@ -1602,7 +1605,9 @@ bool parseCallableArguments(
 
             arguments->add(std::move(eventCallbackArgument));
 
-        } else if (const auto callbackType = argumentType != nullptr ? argumentType->asCallback() : nullptr; callbackType != nullptr) {
+        } else if (parameterShape == ParameterShape::Callback) {
+            const auto* callbackType = argumentType->asCallback();
+
             if (tokens->is("then") && i + 1 < parameters.size()) {
                 context->addError("`then` callback must be the last argument", tokens);
 
