@@ -3706,8 +3706,9 @@ targets are applied, and native signatures and overload sets must validate befor
 callbacks become usable. Successful resolution releases the targets; compilation
 failure aborts startup.
 
-For custom native-function targets, `Runtime::getMutableNativeFunction(id)`
-returns the destination or null for a non-native/invalid ID.
+For custom native-function targets, `Runtime::getNativeFunction(id)` on a mutable
+runtime returns the mutable destination. The const overload returns the same
+descriptor as `const NativeFunction*`. Both return null for a non-native/invalid ID.
 `resolveParameterType(index, type)` and `resolveReturnType(type)` assign only
 matching canonical types belonging to that function's runtime. They reject
 invalid indices, non-deferred slots, and completed signatures, and leave the

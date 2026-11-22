@@ -200,14 +200,15 @@ BOOST_AUTO_TEST_CASE(public_resolution_apis_validate_slots_types_and_completion_
         },
         placeholder, "");
     BOOST_REQUIRE(id.isValid());
-    auto* function = runtime.getMutableNativeFunction(id);
+    auto* function = runtime.getNativeFunction(id);
     BOOST_REQUIRE(function != nullptr);
+    BOOST_TEST(std::as_const(runtime).getNativeFunction(id) == function);
     BOOST_TEST(function->getReturnType() == placeholder);
     BOOST_TEST(function->getReturnTypeName() == "int");
-    BOOST_TEST(runtime.getMutableNativeFunction(CallableId{}) == nullptr);
+    BOOST_TEST(runtime.getNativeFunction(CallableId{}) == nullptr);
     const auto scriptId = runtime.registerScriptFunction("scriptOnly", "script.nomad", "");
     BOOST_REQUIRE(scriptId.isValid());
-    BOOST_TEST(runtime.getMutableNativeFunction(scriptId) == nullptr);
+    BOOST_TEST(runtime.getNativeFunction(scriptId) == nullptr);
     BOOST_CHECK_THROW(function->resolveParameterType(2, runtime.getIntegerType()), NomadException);
     BOOST_CHECK_THROW(function->resolveParameterType(1, runtime.getBooleanType()), NomadException);
     BOOST_CHECK_THROW(function->resolveParameterType(0, nullptr), NomadException);

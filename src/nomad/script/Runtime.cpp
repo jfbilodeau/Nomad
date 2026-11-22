@@ -49,7 +49,7 @@ Runtime::Runtime():
 
     if (
         !registerParameterizedType(
-            "Iterator", 
+            "Iterator",
             1,
             [](Runtime* runtime, TypeId id, const std::vector<const Type*>& arguments) {
                 return std::make_unique<ClassType>(
@@ -60,7 +60,7 @@ Runtime::Runtime():
                 const auto* iteratorType = runtime->getType(id).value()->asClassType();
                 const auto* valueType = iteratorType->getTypeArguments()[0];
                 const auto advanceId = runtime->registerNativeClassMethod(
-                    id, 
+                    id,
                     {
                         .name = "moveNext",
                         .parameters = {},
@@ -72,7 +72,7 @@ Runtime::Runtime():
                     }
                 );
                 const auto currentId = runtime->registerNativeClassProperty(
-                    id, 
+                    id,
                     {
                         .valueType = valueType,
                         .name = "current",
@@ -356,12 +356,12 @@ ContextVariableId Runtime::registerHubVariable(const HubId hubId, const NomadStr
 ContextVariableId Runtime::registerHubVariable(const NomadString& name) {
     if (
         m_scriptInitialization.state != ScriptInitializationState::Pending ||
-        getContainingHub(name).empty() || 
+        getContainingHub(name).empty() ||
         !canRegisterHubMember(name) ||
         isHubVariable(name) ||
-        getCallableId(name).isValid() || 
+        getCallableId(name).isValid() ||
         getConstantId(name).isValid() ||
-        getTypeByName(name) != nullptr || 
+        getTypeByName(name) != nullptr ||
         getEventId(name).isValid() ||
         getDynamicVariableId(name).isValid() ||
         getVariableContextIdByPrefix(name).isValid()
@@ -394,9 +394,9 @@ void Runtime::setScriptInitializer(const CallableId functionId) {
 
     if (
         m_scriptInitialization.state != ScriptInitializationState::Pending ||
-        m_scriptInitialization.functionId != CallableId::INVALID || 
+        m_scriptInitialization.functionId != CallableId::INVALID ||
         function == nullptr ||
-        function->getParameterCount() != 0 || 
+        function->getParameterCount() != 0 ||
         function->getReturnType() != getVoidType() ||
         function->getFunctionStart() == NOMAD_INVALID_INDEX
     ) {
@@ -572,7 +572,7 @@ void Runtime::rebuildHubMembers() {
 
 HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
     if (
-        name.empty() || 
+        name.empty() ||
         (mode != HubMode::Opened && mode != HubMode::Closed)
     ) {
         log::error("Cannot register a hub with an empty name or invalid mode");
@@ -615,11 +615,11 @@ HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
     }
 
     if (
-        getCallableId(name).isValid() || 
+        getCallableId(name).isValid() ||
         getConstantId(name).isValid() ||
-        getTypeByName(name) != nullptr || 
+        getTypeByName(name) != nullptr ||
         getEventId(name).isValid() ||
-        getDynamicVariableId(name).isValid() || 
+        getDynamicVariableId(name).isValid() ||
         isHubVariable(name) ||
         getVariableContextIdByPrefix(name + ".").isValid() ||
         m_typeManager.getParameterizedTypeArgumentCount(name).has_value() ||
@@ -651,7 +651,14 @@ CallableId Runtime::registerNativeFunction(
     const Type* returnType,
     const NomadString& doc
 ) {
-    return registerNativeFunctionEntry(name, std::move(fn), parameters, returnType, doc);
+
+    return registerNativeFunctionEntry(
+        name,
+        std::move(fn),
+        parameters,
+        returnType,
+        doc
+    );
 }
 
 CallableId Runtime::registerNativeFunctionEntry(
@@ -663,41 +670,47 @@ CallableId Runtime::registerNativeFunctionEntry(
 ) {
     if (!canRegisterHubMember(name, true)) {
         log::error("Cannot register function '" + name + "': name is reserved by a hub");
+
         return CallableId::INVALID;
     }
 
     const auto isDeferred = [this](const Type* type) {
+
         return type != nullptr && type->getRuntime() == this &&
             dynamic_cast<const DeferredType*>(type) != nullptr;
     };
 
-    const auto deferred = 
+    const auto deferred =
         isDeferred(returnType) ||
         std::ranges::any_of(
-            parameters, 
-            [&](const auto& parameter) { 
-                return isDeferred(parameter.type); 
+            parameters,
+            [&](const auto& parameter) {
+
+                return isDeferred(parameter.type);
             }
         );
+
     if (
         !fn ||
         (
             !isDeferred(returnType) &&
             (
-                !ownsType(returnType) || 
+                !ownsType(returnType) ||
                 (
-                    returnType->isInternal() && 
+                    returnType->isInternal() &&
                     !returnType->isVoid()
                 )
             )
         )
     ) {
         log::error("Cannot register native callable '" + name + "': invalid callback or return type");
+
         return CallableId::INVALID;
     }
+
     for (const auto& parameter : parameters) {
         if (
-            parameter.name.empty() || 
+            parameter.name.empty() ||
             (
                 !isDeferred(parameter.type) &&
                 (
@@ -711,6 +724,7 @@ CallableId Runtime::registerNativeFunctionEntry(
             return CallableId::INVALID;
         }
     }
+
     auto pending = deferred;
     for (const auto* callable : m_callables) {
         if (callable->getName() != name || callable->getType() != CallableType::Function) {
@@ -721,6 +735,7 @@ CallableId Runtime::registerNativeFunctionEntry(
 
         if (native == nullptr) {
             log::error("Cannot register native function '" + name + "': a callable of a different kind exists");
+
             return CallableId::INVALID;
         }
 
@@ -728,55 +743,77 @@ CallableId Runtime::registerNativeFunctionEntry(
     }
 
     if (!pending && getCallableOverloadCount(name) != 0) {
-        if (NomadString error; !canOverloadCallable(name, parameters, returnType, error)) {
+        if (
+            NomadString error;
+            !canOverloadCallable(
+                name,
+                parameters,
+                returnType,
+                error
+            )
+        ) {
             log::error("Cannot register native function '" + name + "': " + error);
+
             return CallableId::INVALID;
         }
     }
+
     auto function = std::make_unique<NativeFunction>(
         getNextCallableId(),
-        name, 
-        std::move(fn), 
-        parameters, 
-        returnType, 
-        doc, 
+        name,
+        std::move(fn),
+        parameters,
+        returnType,
+        doc,
         pending
     );
+
     return addCallableToTable(std::move(function));
 }
 
-NativeFunction* Runtime::getMutableNativeFunction(const CallableId id) {
-    if (getNativeFunction(id) == nullptr) {
+NativeFunction* Runtime::getNativeFunction(const CallableId id) {
+    if (std::as_const(*this).getNativeFunction(id) == nullptr) {
+
         return nullptr;
     }
+
     return static_cast<NativeFunction*>(m_callables[toNomadIndex(id.id)]);
 }
 
 void Runtime::validateNativeFunctionSignatures() {
     std::vector<NativeFunction*> pending;
     for (const auto& function : m_functions) {
-        auto* native = dynamic_cast<NativeFunction*>(function.get());
+        auto* native = getNativeFunction(function->getId());
         if (native != nullptr && !native->isSignatureResolved()) {
             if (
                 !ownsType(native->getReturnType()) ||
                 std::ranges::any_of(
-                    native->getParameters(), 
+                    native->getParameters(),
                     [this](const auto& parameter) {
+
                         return !ownsType(parameter.type);
                     }
                 )
             ) {
                 throw NomadException("Native function '" + native->getName() + "' has an unresolved signature");
             }
+
             pending.push_back(native);
         }
     }
+
     for (const auto* function : pending) {
         if (getCallableOverloadCount(function->getName()) > 1) {
             NomadString error;
-            if (!canOverloadCallable(
-                function->getName(), function->getParameters(), function->getReturnType(), error, function->getId()
-            )) {
+            if (
+                !canOverloadCallable(
+                    function->getName(),
+                    function->getParameters(),
+                    function->getReturnType(),
+                    error,
+                    function->getId()
+                )
+            ) {
                 throw NomadException("Cannot resolve native function '" + function->getName() + "': " + error);
             }
         }
@@ -1055,9 +1092,9 @@ CallableId Runtime::registerScriptStructConstructor(
     auto* owner = type.has_value() && (*type)->isStruct() ? m_typeManager.getMutableCompositeType(ownerId) : nullptr;
 
     return registerScriptConstructor(
-        owner, 
-        std::move(parameters), 
-        std::move(path), 
+        owner,
+        std::move(parameters),
+        std::move(path),
         std::move(source)
     );
 }
@@ -2502,8 +2539,13 @@ NomadIndex Runtime::getNativeMemberOverloadCount(const NomadString& name) const 
     return members == m_nativeMembersByName.end() ? 0 : members->second.size();
 }
 
-OpCodeId Runtime::registerInstruction(const NomadString& name, const InstructionFn fn, const NomadString& doc,
-                                     std::vector<Operand> operands, const StackEffect stackEffect) {
+OpCodeId Runtime::registerInstruction(
+    const NomadString& name,
+    const InstructionFn fn,
+    const NomadString& doc,
+    std::vector<Operand> operands,
+    const StackEffect stackEffect
+) {
     auto id = getInstructionId(name);
 
     if (id.isValid()) {
@@ -2704,6 +2746,7 @@ bool Runtime::foldBinary(
 OpCodeId Runtime::getInstructionId(const NomadString& name) const {
     for (NomadIndex i = 0; i < m_opCodes.size(); ++i) {
         if (m_opCodes[i].name == name) {
+
             return m_opCodes[i].id;
         }
     }
@@ -2712,9 +2755,10 @@ OpCodeId Runtime::getInstructionId(const NomadString& name) const {
 }
 
 OpCodeId Runtime::getInstructionId(const InstructionFn fn) const {
-    for (auto& op_code: m_opCodes) {
-        if (op_code.fn == fn) {
-            return op_code.id;
+    for (auto& opCode : m_opCodes) {
+        if (opCode.fn == fn) {
+
+            return opCode.id;
         }
     }
 
@@ -2723,6 +2767,7 @@ OpCodeId Runtime::getInstructionId(const InstructionFn fn) const {
 
 InstructionFn Runtime::getInstructionFn(const OpCodeId id) const {
     if (isIdOutOfRange(id.id, m_opCodes.size())) {
+
         return nullptr;
     }
 
@@ -2878,9 +2923,9 @@ const Type* Runtime::getConstantType(const ConstantId id) const {
     return getUncheckedConstantType(id);
 }
 
-ConstantId Runtime::getFirstConstantId() const
-{
+ConstantId Runtime::getFirstConstantId() const {
     if (m_constants.empty()) {
+
         return ConstantId::INVALID;
     }
 
@@ -2897,11 +2942,16 @@ ConstantId Runtime::getNextConstantId(const ConstantId currentId) const {
     return ConstantId{currentId.id + 1};
 }
 
-EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventParameter> &parameterTypes) {
+EventId Runtime::registerEvent(
+    const NomadString& name,
+    const std::vector<EventParameter>& parameterTypes
+) {
     if (!canRegisterHubMember(name)) {
         log::error("Cannot register event '" + name + "': name is reserved by a hub");
+
         return EventId::INVALID;
     }
+
     if (getEventId(name).isValid()) {
         log::error("Event with name '" + name + "' already registered.");
 
@@ -2913,20 +2963,30 @@ EventId Runtime::registerEvent(const NomadString &name, const std::vector<EventP
     m_events.emplace_back(id, name, parameterTypes);
 
     // Also register event type.
-    if (registerType(std::make_unique<EventType>(this, m_typeManager.reserveTypeId(), &m_events.back())).isInvalid()) {
+    if (
+        registerType(
+            std::make_unique<EventType>(
+                this,
+                m_typeManager.reserveTypeId(),
+                &m_events.back()
+            )
+        ).isInvalid()
+    ) {
         m_events.pop_back();
         log::error("Cannot register event '" + name + "': event type registration failed");
 
         return EventId::INVALID;
     }
+
     registerHubMember(name, id);
 
     return id;
 }
 
-EventId Runtime::getEventId(const NomadString &name) const {
-    for (auto& event: m_events) {
+EventId Runtime::getEventId(const NomadString& name) const {
+    for (auto& event : m_events) {
         if (event.name == name) {
+
             return event.id;
         }
     }
@@ -3232,10 +3292,14 @@ ContextVariableId Runtime::registerContextVariable(
     return internContextVariable(contextId, localVariableId);
 }
 
-ContextVariableId Runtime::registerOrUpdateContextVariable(const NomadString &variableName, const Type *type) {
+ContextVariableId Runtime::registerOrUpdateContextVariable(
+    const NomadString& variableName,
+    const Type* type
+) {
     const auto contextId = getVariableContextIdByPrefix(variableName);
 
     if (contextId.isInvalid()) {
+
         return ContextVariableId::INVALID;
     }
 

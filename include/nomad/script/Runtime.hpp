@@ -467,7 +467,7 @@ public:
     [[nodiscard]] const NativeFunction& getUncheckedNativeFunction(const CallableId functionId) const {
         return *static_cast<const NativeFunction*>(m_callables[toNomadIndex(functionId.id)]);
     }
-    [[nodiscard]] NativeFunction* getMutableNativeFunction(CallableId functionId);
+    [[nodiscard]] NativeFunction* getNativeFunction(CallableId functionId);
     [[nodiscard]] const NativeFunction* getNativeFunction(const NomadString& name) const;
     [[nodiscard]] std::vector<const NativeFunction*> getNativeFunctions() const;
     void validateNativeFunctionSignatures();

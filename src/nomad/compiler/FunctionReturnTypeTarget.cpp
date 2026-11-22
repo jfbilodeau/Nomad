@@ -24,7 +24,7 @@ NomadString FunctionReturnTypeTarget::getDescription() const {
 }
 
 void FunctionReturnTypeTarget::resolve(const Type* type) {
-    auto* function = m_runtime->getMutableNativeFunction(m_id);
+    auto* function = m_runtime->getNativeFunction(m_id);
     if (type == nullptr || type->getTypeName() != m_type.name || function == nullptr) {
         throw NomadException("Cannot resolve " + getDescription() + ": invalid type or target '" + m_type.name + "'");
     }
