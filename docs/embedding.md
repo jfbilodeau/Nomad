@@ -876,7 +876,15 @@ context-local IDs are equal. `registerHubVariable` also returns a
 `ContextVariableId`.
 
 Pass a registered context-variable handle to the runtime's context-variable
-metadata, read/write tracking, and value APIs. Values read through
+metadata, read/write tracking, and value APIs.
+
+On invalid handles, `getContextVariableName` returns an empty name and
+`getContextVariableType` returns `nullptr`. The read/write tracking setters and
+`setContextVariableValue` leave the context unchanged; `getContextVariableValue`
+leaves its output unchanged. Each of these six calls logs
+`Invalid context variable id: <id>` once, from the same diagnostic source location.
+
+Values read through
 `getContextVariableValue` are borrowed; the context retains ownership.
 `setStringContextVariableValue` releases its temporary string on both return and
 throw. The context setter borrows the input and must copy any value it retains.

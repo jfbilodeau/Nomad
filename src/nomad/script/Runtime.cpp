@@ -3295,7 +3295,7 @@ NomadString Runtime::getContextVariableName(const ContextVariableId contextVaria
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
+
         return NOMAD_EMPTY_STRING;
     }
 
@@ -3306,7 +3306,7 @@ const Type* Runtime::getContextVariableType(const ContextVariableId contextVaria
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
+
         return nullptr;
     }
 
@@ -3317,7 +3317,7 @@ void Runtime::setContextVariableWritten(const ContextVariableId contextVariableI
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
+
         return;
     }
 
@@ -3328,7 +3328,7 @@ void Runtime::setContextVariableRead(const ContextVariableId contextVariableId, 
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
+
         return;
     }
 
@@ -3339,7 +3339,7 @@ void Runtime::setContextVariableValue(const ContextVariableId contextVariableId,
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
+
         return;
     }
 
@@ -3350,7 +3350,7 @@ void Runtime::getContextVariableValue(const ContextVariableId contextVariableId,
     const auto* contextVariable = getContextVariable(contextVariableId);
 
     if (contextVariable == nullptr) {
-        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
+
         return;
     }
 
@@ -3387,6 +3387,8 @@ ContextVariableId Runtime::internContextVariable(const VariableContextId context
 
 const Runtime::ContextVariable* Runtime::getContextVariable(const ContextVariableId contextVariableId) const {
     if (isIdOutOfRange(contextVariableId.id, m_contextVariables.size())) {
+        log::error("Invalid context variable id: " + std::to_string(contextVariableId.id));
+
         return nullptr;
     }
 

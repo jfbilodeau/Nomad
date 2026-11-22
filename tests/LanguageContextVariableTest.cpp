@@ -5,12 +5,16 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
+#include <nomad/log/Logger.hpp>
+#include <nomad/log/MemorySink.hpp>
+
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <array>
@@ -33,6 +37,82 @@ static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadContextVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
 
 BOOST_AUTO_TEST_SUITE(language_context_variables)
+
+BOOST_AUTO_TEST_CASE(invalid_handles_report_once_from_a_shared_origin_without_changing_values_or_tracking) {
+    Runtime runtime;
+    const auto& constRuntime = runtime;
+    auto context = std::make_unique<SimpleVariableContext>();
+    const auto* borrowedContext = context.get();
+    const auto contextId = runtime.registerVariableContext("checked", "checked.", std::move(context));
+    BOOST_REQUIRE(contextId.isValid());
+    const auto variableId = runtime.registerContextVariable(contextId, "checked.value", runtime.getIntegerType());
+    BOOST_REQUIRE(variableId.isValid());
+    const auto localVariableId = borrowedContext->getVariableId("checked.value");
+    constRuntime.setContextVariableValue(variableId, RuntimeValue{NomadInteger{17}});
+
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    const auto sinkId = logger.createMemorySink();
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Error);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    NomadString diagnosticOrigin;
+    const auto checkSharedError = [&](const ContextVariableId invalidId) {
+        logger.flush();
+        const auto& entries = sink->getEntries();
+        BOOST_REQUIRE(entries.size() == 1U);
+        const auto& entry = entries.front();
+        BOOST_TEST((entry.level == LogLevel::Error));
+        const auto expectedMessage = "Invalid context variable id: " + std::to_string(invalidId.id);
+        const auto messagePosition = entry.message.find(expectedMessage);
+        BOOST_REQUIRE(messagePosition != NomadString::npos);
+        const auto origin = entry.message.substr(messagePosition + expectedMessage.size());
+        BOOST_REQUIRE(!origin.empty());
+        if (diagnosticOrigin.empty()) {
+            diagnosticOrigin = origin;
+        } else {
+            BOOST_TEST(origin == diagnosticOrigin);
+        }
+
+        sink->clear();
+    };
+
+    for (const auto invalidId : {
+        ContextVariableId::INVALID,
+        ContextVariableId{-2},
+        ContextVariableId{variableId.id + 1},
+        ContextVariableId{NOMAD_ID_MAX}
+    }) {
+        BOOST_TEST(constRuntime.getContextVariableName(invalidId).empty());
+        checkSharedError(invalidId);
+        BOOST_TEST(constRuntime.getContextVariableType(invalidId) == nullptr);
+        checkSharedError(invalidId);
+        constRuntime.setContextVariableRead(invalidId, true);
+        checkSharedError(invalidId);
+        constRuntime.setContextVariableWritten(invalidId, true);
+        checkSharedError(invalidId);
+        constRuntime.setContextVariableValue(invalidId, RuntimeValue{NomadInteger{29}});
+        checkSharedError(invalidId);
+        RuntimeValue output{NomadInteger{37}};
+        constRuntime.getContextVariableValue(invalidId, output);
+        checkSharedError(invalidId);
+        BOOST_TEST(output.getIntegerValue() == 37);
+        BOOST_TEST(!borrowedContext->isRead(localVariableId));
+        BOOST_TEST(!borrowedContext->isWritten(localVariableId));
+    }
+
+    RuntimeValue stored;
+    constRuntime.getContextVariableValue(variableId, stored);
+    BOOST_TEST(stored.getIntegerValue() == 17);
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
+}
 
 BOOST_AUTO_TEST_CASE(string_context_setter_failures_release_temporaries_and_preserve_retained_values) {
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
