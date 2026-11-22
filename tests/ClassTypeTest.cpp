@@ -4,6 +4,7 @@
 
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/CompositeType.hpp>
+#include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptObject.hpp>
@@ -487,6 +488,9 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
     BOOST_REQUIRE(composite->getMethods().size() == 1U);
     BOOST_REQUIRE(composite->getConstructors().size() == 1U);
     BOOST_TEST(composite->getMethods().front() == runtime.getMethod(method));
+    BOOST_TEST(composite->getMethod("update") == runtime.getMethod(method));
+    BOOST_TEST(composite->getMethod("stored") == nullptr);
+    BOOST_TEST(composite->getMethod("Fields") == nullptr);
     BOOST_TEST(composite->getConstructors().front() == runtime.getConstructor(constructor));
     for (const auto id : {stored, native}) {
         const auto* property = composite->getProperty(id);
@@ -506,6 +510,59 @@ BOOST_AUTO_TEST_CASE(composite_and_class_views_share_member_ownership_and_layout
     Property unowned(PropertyId{}, nullptr, "unowned", runtime.getIntegerType());
     BOOST_TEST(unowned.getOwnerType() == nullptr);
     BOOST_TEST(unowned.getClassType() == nullptr);
+}
+
+BOOST_AUTO_TEST_CASE(method_name_lookup_uses_the_owner_catalog_and_keeps_first_declarations_after_growth) {
+    Runtime runtime;
+    const auto ownerId = runtime.registerClass("MethodLookup", ClassMode::Closed);
+    BOOST_REQUIRE(ownerId.isValid());
+    auto* owner = runtime.getTypeManager().getMutableCompositeType(ownerId);
+    BOOST_REQUIRE(owner != nullptr);
+    auto callbackCalls = 0;
+    const auto registerOwnedMethod = [&](const NomadString& name, std::vector<Parameter> parameters) {
+
+        return runtime.registerMethod(
+            owner,
+            std::make_unique<NativeMethod>(
+                runtime.getNextCallableId(),
+                name,
+                owner,
+                [&](VirtualMachine*) { ++callbackCalls; },
+                std::move(parameters),
+                runtime.getVoidType(),
+                NomadString{}
+            )
+        );
+    };
+
+    BOOST_TEST(owner->getMethod("inspect") == nullptr);
+    const auto first = registerOwnedMethod("inspect", {});
+    const auto second = registerOwnedMethod("inspect", {
+        defParameter("value", runtime.getIntegerType(), "")
+    });
+    const auto scripted = runtime.registerScriptClassMethod(ownerId, "scripted", {}, "lookup.nomad", "");
+    BOOST_REQUIRE(first.isValid());
+    BOOST_REQUIRE(second.isValid());
+    BOOST_REQUIRE(scripted.isValid());
+    const auto* original = runtime.getMethod(first);
+    BOOST_TEST(owner->getMethod("inspect") == original);
+    BOOST_TEST(owner->getMethod(NomadStringView{"xxinspectzz"}.substr(2, 7)) == original);
+    BOOST_TEST(owner->getMethod("scripted") == runtime.getMethod(scripted));
+    BOOST_TEST(!runtime.getNativeMemberId(owner, "inspect").has_value());
+    BOOST_TEST(owner->getInitializer() == nullptr);
+    const auto initializer = registerOwnedMethod(owner->getInitializerName(), {});
+    BOOST_REQUIRE(initializer.isValid());
+    BOOST_TEST(owner->getInitializer() == runtime.getMethod(initializer));
+
+    for (auto index = 0; index < 32; ++index) {
+        BOOST_REQUIRE(registerOwnedMethod("additional" + std::to_string(index), {}).isValid());
+    }
+
+    BOOST_TEST(owner->getMethod("inspect") == original);
+    BOOST_TEST(owner->getMethod("scripted") == runtime.getMethod(scripted));
+    BOOST_TEST(owner->getInitializer() == runtime.getMethod(initializer));
+    BOOST_TEST(owner->getMethod("missing") == nullptr);
+    BOOST_TEST(callbackCalls == 0);
 }
 
 BOOST_AUTO_TEST_CASE(field_layout_separates_logical_indices_from_physical_slots) {

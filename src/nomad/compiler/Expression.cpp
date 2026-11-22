@@ -721,9 +721,13 @@ bool NativeMemberExpression::resolveMember(
 
     const auto* owner = m_receiver->getType()->asClassType();
     const auto* composite = m_receiver->getType()->asCompositeType();
-    if (m_memberType == MemberType::Method ||
-        (composite != nullptr && std::ranges::any_of(composite->getMethods(),
-            [&](const auto* method) { return method->getName() == m_memberName; }))) {
+    if (
+        m_memberType == MemberType::Method ||
+        (
+            composite != nullptr &&
+            composite->getMethod(m_memberName) != nullptr
+        )
+    ) {
         m_memberType = MemberType::Method;
         return true;
     }

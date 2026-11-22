@@ -38,12 +38,8 @@ const NomadString& CompositeType::getInitializerName() const {
 }
 
 const Method* CompositeType::getInitializer() const {
-    for (const auto& method : m_methods) {
-        if (method->getName() == m_initializerName) {
-            return method.get();
-        }
-    }
-    return nullptr;
+
+    return getMethod(m_initializerName);
 }
 
 const CompositeType* CompositeType::asCompositeType() const {
@@ -104,6 +100,19 @@ CallableId CompositeType::registerMethod(
     return id;
 }
 
+const Method* CompositeType::getMethod(const NomadStringView name) const {
+    const auto method = std::find_if(
+        m_methods.begin(),
+        m_methods.end(),
+        [name](const auto& candidate) {
+
+            return candidate->getName() == name;
+        }
+    );
+
+    return method == m_methods.end() ? nullptr : method->get();
+}
+
 std::vector<const Method*> CompositeType::getMethods() const {
     std::vector<const Method*> methods;
     methods.reserve(m_methods.size());
@@ -135,8 +144,8 @@ PropertyId CompositeType::registerProperty(
             )
         ) ||
         getProperty(property->getName()) != nullptr ||
-        std::ranges::any_of(m_methods, [&](const auto& method) { return method->getName() == property->getName(); }
-    )) {
+        getMethod(property->getName()) != nullptr
+    ) {
         log::error("Cannot register property: invalid owner, value type, or duplicate definition");
         return PropertyId::INVALID;
     }

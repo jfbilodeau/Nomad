@@ -220,10 +220,7 @@ std::unique_ptr<Expression> createNativeMemberExpression(
         receiverType = definition.valueType;
         if (const auto* composite = receiverType != nullptr ? receiverType->asCompositeType() : nullptr) {
             const auto nativeMember = context->getRuntime()->getNativeMemberId(receiverType, memberName);
-            storedField = !nativeMember && !std::ranges::any_of(
-                composite->getMethods(),
-                [&](const auto* method) { return method->getName() == memberName; }
-            );
+            storedField = !nativeMember && composite->getMethod(memberName) == nullptr;
         }
     }
     auto hasExplicitArguments = false;

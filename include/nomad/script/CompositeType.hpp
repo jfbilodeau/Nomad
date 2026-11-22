@@ -44,6 +44,8 @@ public:
         const TypeManager& manager,
         std::unique_ptr<Method> method
     );
+    // Borrowed first declaration with this name, or nullptr; does not select an overload.
+    [[nodiscard]] const Method* getMethod(NomadStringView name) const;
     [[nodiscard]] std::vector<const Method*> getMethods() const;
     [[nodiscard]] PropertyId registerProperty(
         const TypeManager& manager,

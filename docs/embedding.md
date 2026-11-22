@@ -446,6 +446,12 @@ Classes and structs are composite types; an empty struct is still a struct and
 not `void`. Use `asClassType()`, `asStructType()`, or `asCompositeType()` when you
 need the corresponding descriptor instead of a boolean result.
 
+`CompositeType::getProperty(name)` and `getMethod(name)` return borrowed
+descriptors or `nullptr` when absent. Method lookup includes native and script
+declarations owned by the composite, even when not indexed for native-member
+lookup. It returns the first declaration for an overloaded name without
+selecting an overload. Returned pointers remain stable as members are added.
+
 `Runtime::getTypeManager()` returns the runtime-owned `TypeManager` by reference;
 the const runtime overload returns a const reference. Include
 `<nomad/script/TypeManager.hpp>` to use its APIs. The manager and its descriptors
