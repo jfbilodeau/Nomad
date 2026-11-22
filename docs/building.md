@@ -87,3 +87,20 @@ in SDK distributions. It is enabled by default; configure with
 `-DNOMAD_BUILD_LSP=OFF` to omit the executable. See the
 [extension instructions](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
 to connect a local build to VS Code.
+
+## Lookup and registration benchmarks
+
+Build the `nomad-lookup-benchmark` target in the selected CMake configuration.
+It is excluded from normal builds and is not a CTest entry. Run its executable
+from the build's `tests` directory (`tests/Debug` or `tests/Release` for
+Visual Studio).
+
+The benchmark measures native-function registration and first, middle, last,
+and missing free-function name lookups after adding 100, 1,000, and 5,000
+functions to a fresh Runtime. It checks registration order and lookup results
+and reports five-sample medians with minimum/maximum values. Registration
+excludes Runtime construction and name/parameter preparation.
+
+Run the same target, configuration, and workload before and after an optimization.
+Compare optimized Release results separately from Debug results; timing values
+are observations, not pass/fail thresholds.
