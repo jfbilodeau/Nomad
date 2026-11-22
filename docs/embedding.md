@@ -2122,6 +2122,9 @@ Use `resolveFunction(name, argumentTypes)`, `resolveMethod(receiverType, name,
 argumentTypes)`, or `resolveConstructor(ownerType, argumentTypes)` to select an
 overload. Inspect the `ResolveResult` before retrieving the selected callable.
 Method and constructor resolution accept class or struct owners.
+Only declarations published in that Runtime's callable table are candidates;
+owner-local unpublished declarations and descriptors from other runtimes are
+excluded, even when their numeric IDs collide.
 The selected ID or pointer can be retained without repeating name resolution.
 Function overloads are selected by parameter count and types, independently of
 their implementation. Different parameter counts require all parameters to be

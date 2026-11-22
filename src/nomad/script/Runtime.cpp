@@ -1690,12 +1690,17 @@ ResolveResult Runtime::resolveMethod(
     const std::vector<const Type*>& argumentTypes
 ) const {
     std::vector<CallableId> candidates;
-
-    for (const auto* callable : m_callables) {
-        if (callable->getName() == name &&
-            callable->getType() == CallableType::Method &&
-            callable->getClassType() == classType) {
-            candidates.push_back(callable->getId());
+    const auto* owner = classType != nullptr ? classType->asCompositeType() : nullptr;
+    if (owner != nullptr) {
+        for (const auto* method : owner->getMethods()) {
+            // Owner-local declarations need not be published in this runtime's callable table.
+            if (
+                method->getName() == name &&
+                method->getClassType() == classType &&
+                getMethod(method->getId()) == method
+            ) {
+                candidates.push_back(method->getId());
+            }
         }
     }
 
@@ -1707,10 +1712,15 @@ ResolveResult Runtime::resolveConstructor(
     const std::vector<const Type*>& argumentTypes
 ) const {
     std::vector<CallableId> candidates;
-
-    for (const auto* callable : m_callables) {
-        if (callable->getType() == CallableType::Constructor && callable->getClassType() == classType) {
-            candidates.push_back(callable->getId());
+    const auto* owner = classType != nullptr ? classType->asCompositeType() : nullptr;
+    if (owner != nullptr) {
+        for (const auto* constructor : owner->getConstructors()) {
+            if (
+                constructor->getClassType() == classType &&
+                getConstructor(constructor->getId()) == constructor
+            ) {
+                candidates.push_back(constructor->getId());
+            }
         }
     }
 

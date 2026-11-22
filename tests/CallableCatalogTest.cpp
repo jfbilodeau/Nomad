@@ -1826,6 +1826,10 @@ BOOST_AUTO_TEST_CASE(resolve_constructor_selects_by_argument_types)
     BOOST_TEST(emptyResult.id == empty);
     BOOST_TEST(integerResult.id == fromInteger);
     BOOST_TEST(pairResult.id == fromPair);
+    const auto candidates = std::vector<CallableId>{empty, fromInteger, fromPair};
+    BOOST_TEST(emptyResult.candidates == candidates);
+    BOOST_TEST(integerResult.candidates == candidates);
+    BOOST_TEST(pairResult.candidates == candidates);
 
     BOOST_TEST(runtime.resolveConstructor(type, {runtime.getStringType()}).status == ResolveStatus::NoMatchingTypes);
     BOOST_TEST(
@@ -1834,6 +1838,87 @@ BOOST_AUTO_TEST_CASE(resolve_constructor_selects_by_argument_types)
     BOOST_TEST(
         runtime.resolveConstructor(registerResolutionType(runtime, "Other"), {}).status == ResolveStatus::UnknownName
     );
+}
+
+BOOST_AUTO_TEST_CASE(owner_resolution_ignores_unpublished_and_foreign_descriptors_with_colliding_ids) {
+    Runtime runtime;
+    Runtime foreign;
+    const auto* owner = registerResolutionType(runtime, "CatalogOwner");
+    const auto* publishedOwner = registerResolutionType(runtime, "PublishedOwner");
+    auto* catalogOwner = runtime.getTypeManager().getMutableCompositeType(owner->getId());
+    BOOST_REQUIRE(catalogOwner != nullptr);
+    const auto arguments = std::vector<const Type*>{runtime.getIntegerType()};
+    const auto parameters = std::vector{defParameter("value", runtime.getIntegerType(), "")};
+    const auto unpublishedMethodId = runtime.getNextCallableId();
+    BOOST_REQUIRE(catalogOwner->registerMethod(
+        runtime.getTypeManager(),
+        std::make_unique<NativeMethod>(
+            unpublishedMethodId,
+            "catalogMethod",
+            owner,
+            [](VirtualMachine*) {},
+            parameters,
+            runtime.getVoidType(),
+            NomadString{}
+        )
+    ).isValid());
+    const auto publishedMethodId = runtime.registerNativeClassMethod(publishedOwner->getId(), {
+        .name = "catalogMethod",
+        .parameters = {{runtime.getIntegerType()->getId(), "value", ""}},
+        .returnTypeId = runtime.getVoidType()->getId(),
+        .function = [](VirtualMachine*) {}
+    });
+    BOOST_REQUIRE(publishedMethodId == unpublishedMethodId);
+    const auto unpublishedConstructorId = runtime.getNextCallableId();
+    BOOST_REQUIRE(catalogOwner->registerConstructor(
+        runtime.getTypeManager(),
+        std::make_unique<NativeConstructor>(
+            unpublishedConstructorId,
+            owner->getTypeName(),
+            owner,
+            owner,
+            [](VirtualMachine*) {},
+            parameters,
+            NomadString{}
+        )
+    ).isValid());
+    const auto publishedConstructorId = registerResolutionConstructor(
+        runtime,
+        publishedOwner,
+        {{runtime.getIntegerType()->getId(), "value", ""}}
+    );
+    BOOST_REQUIRE(publishedConstructorId == unpublishedConstructorId);
+    const auto* foreignOwner = registerResolutionType(foreign, "ForeignOwner");
+    const auto foreignMethodId = foreign.registerNativeClassMethod(foreignOwner->getId(), {
+        .name = "catalogMethod",
+        .parameters = {{foreign.getIntegerType()->getId(), "value", ""}},
+        .returnTypeId = foreign.getVoidType()->getId(),
+        .function = [](VirtualMachine*) {}
+    });
+    const auto foreignConstructorId = registerResolutionConstructor(
+        foreign,
+        foreignOwner,
+        {{foreign.getIntegerType()->getId(), "value", ""}}
+    );
+    BOOST_REQUIRE(foreignMethodId == publishedMethodId);
+    BOOST_REQUIRE(foreignConstructorId == publishedConstructorId);
+
+    for (const auto& result : {
+        runtime.resolveMethod(owner, "catalogMethod", arguments),
+        runtime.resolveConstructor(owner, arguments),
+        runtime.resolveMethod(foreignOwner, "catalogMethod", arguments),
+        runtime.resolveConstructor(foreignOwner, arguments),
+        runtime.resolveMethod(nullptr, "catalogMethod", arguments),
+        runtime.resolveConstructor(runtime.getIntegerType(), arguments)
+    }) {
+        BOOST_TEST(result.status == ResolveStatus::UnknownName);
+        BOOST_TEST(result.id.isInvalid());
+        BOOST_TEST(result.candidates.empty());
+        BOOST_TEST(result.argumentTypes == arguments);
+    }
+
+    BOOST_TEST(runtime.resolveMethod(publishedOwner, "catalogMethod", arguments).id == publishedMethodId);
+    BOOST_TEST(runtime.resolveConstructor(publishedOwner, arguments).id == publishedConstructorId);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
