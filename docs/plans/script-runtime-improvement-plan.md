@@ -4,7 +4,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**V4:** Frame-header callable-ID tracking is implemented and validated. Next reviewable scope: measure V6's native-property metadata-copy overhead.
+**V6 next step:** Descriptor-based callback invocation is approved, with persistent registration-owned callback state. Implementation and regression/performance validation are pending.
 
 ## Component contract
 
@@ -790,9 +790,129 @@ Measure each change before and after on the same workload.
   figures are approximate. No timing threshold, whole-game speedup, heap-memory
   estimate, allocator fault injection, or cross-platform result is claimed.
   The full 13-entry suite was not rerun, and no manual gameplay validation was done.
-- V4 is complete. Next reviewable scope: measure V6's native-property metadata
+- V4 is complete. The following V6 baseline measures native-property metadata
   copying before proposing a borrowed-access change. Other step-8 catalogs,
   registration-copy work, and singleton-hub decisions remain separate.
+
+#### V6 native-property copy/access baseline
+
+- The opt-in benchmark appends a native-property workload without changing
+  Runtime, NativeProperty, VM behavior, or public signatures. The existing
+  `getNativeProperty(PropertyId)` borrows a descriptor; `getNativePropertyInfo`
+  returns a snapshot copying the property name, documentation, and both
+  callbacks. Current VM getter and setter access each obtain that full snapshot.
+- Three controlled cases register one resolved integer property on a fresh
+  owner. `small_capture` uses 16-byte getter/setter objects and five-byte name
+  and documentation. `large_capture` keeps that text but captures 32 integers
+  plus a benchmark-state reference in each 264-byte callback object.
+  `long_metadata` keeps the small callbacks with a 128-byte name and
+  256-byte documentation. Callback object sizes are reported, not inferred
+  from a presumed standard-library inline-storage threshold.
+- Five fresh Runtimes per case perform 32 warmups and 50,000 timed operations
+  for each metric: borrowed descriptor lookup, copied metadata retrieval,
+  complete VM getter access, and complete VM setter access. No accessor is
+  invoked during either metadata-only metric. Getter results are 42; setter
+  inputs vary over 64 integers and every resulting side effect is checked.
+  Both callback shapes perform the same scalar operation and observe the
+  bound receiver while counting visits.
+- Warmups verify full metadata contents, owner/value type and IDs, callback
+  presence, and absence of method-backed IDs. Timed checks cover descriptor
+  identity, metadata checksums, getter checksums, and individual writes.
+  Setup, callback/receiver lifetime management, and final state checks are
+  outside timing. Final checks verify exact callback counts, borrowed receiver
+  identity/reference count, all execution-state fields, result/intermediate
+  registers, no script frame, lookup misses, and receiver-object cleanup.
+- Windows Debug and Release builds and all checked executions pass. Bundled
+  language DLL hashes match the current configuration's build. All earlier
+  benchmark sections still pass. The existing 13 CTest entries are unchanged
+  and were not rerun for this standalone benchmark-only extension.
+- Release was repeated once unchanged because the long-metadata measurements
+  varied substantially, including a metadata-only median above complete getter
+  access in the first run. Both runs and all ranges are retained, rather than
+  selecting the faster samples. Values are five-sample median `[min,max]`
+  microseconds per checked operation.
+
+| Build/run | Case | Descriptor (us) | Metadata copy (us) | VM getter (us) | VM setter (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug 1 | Small capture | 0.014 [0.013,0.039] | 2.472 [1.991,2.577] | 2.913 [2.874,3.204] | 3.221 [2.464,3.488] |
+| Debug 1 | Large capture | 0.023 [0.012,0.029] | 2.895 [2.729,3.205] | 3.630 [2.976,3.758] | 3.754 [3.090,4.207] |
+| Debug 1 | Long metadata | 0.016 [0.013,0.036] | 3.462 [3.189,4.176] | 3.633 [3.485,3.817] | 3.648 [3.403,3.941] |
+| Release 1 | Small capture | 0.001 [0.001,0.001] | 0.036 [0.031,0.044] | 0.070 [0.059,0.085] | 0.064 [0.062,0.080] |
+| Release 1 | Large capture | 0.001 [0.001,0.002] | 0.095 [0.089,0.107] | 0.123 [0.109,0.180] | 0.125 [0.109,0.183] |
+| Release 1 | Long metadata | 0.003 [0.001,0.005] | 0.146 [0.094,0.205] | 0.137 [0.126,0.199] | 0.182 [0.127,0.243] |
+| Release 2 | Small capture | 0.001 [0.001,0.004] | 0.039 [0.032,0.041] | 0.058 [0.054,0.066] | 0.067 [0.061,0.083] |
+| Release 2 | Large capture | 0.002 [0.001,0.003] | 0.128 [0.084,0.140] | 0.129 [0.116,0.158] | 0.132 [0.111,0.166] |
+| Release 2 | Long metadata | 0.001 [0.001,0.002] | 0.101 [0.089,0.131] | 0.143 [0.117,0.158] | 0.132 [0.116,0.198] |
+
+- Metadata retrieval is measurably more expensive than descriptor lookup in
+  every case. Release copy medians are 0.036/0.039 us for small captures,
+  0.095/0.128 us for large captures, and 0.146/0.101 us for long metadata.
+  These identify callback and text copying as worthwhile execution-path
+  design candidates, not a measured speedup from an unimplemented alternative.
+- These are synthetic warm scalar workloads on a shared machine. Timings include
+  their respective result checks, and full access also includes receiver
+  observation/callback counters. Descriptor timings are rounded at nanosecond
+  scale. No allocation counts, heap-memory estimates, timing thresholds,
+  whole-game speedup, or cross-platform results are claimed.
+  Reference-valued properties, unresolved value types, method-backed properties,
+  exception paths, and stateful value-captured callbacks are not timed.
+- The descriptor-execution design review below is complete with approval.
+  These checked measurements remain the pre-implementation baseline.
+
+#### V6 approved descriptor-execution design
+
+- The user approved invoking each callback owned by the registered
+  NativeProperty descriptor instead of copying the full metadata snapshot for
+  execution. Introduce narrow read-only capability/method-ID queries and
+  specialized getter/setter invocation methods. Keep raw callbacks private;
+  no friend, cache, index, duplicated metadata record, or new opcode is needed.
+- VM dispatch retains its existing checks and receiver-restoration path.
+  Preserve error precedence: invalid/method-backed properties and missing
+  accessors are rejected before binding the receiver; a missing receiver is
+  rejected before unresolved-type invocation. NativeProperty retains the
+  deferred-type guard at callback invocation. Existing callback exceptions
+  propagate without replacing diagnostics or rolling back their side effects.
+- The approved semantic change is explicit: mutable value-captured state belongs
+  to each registered getter or setter and persists across invocations, including
+  throws. All receivers and VMs using that property invoke the same callback
+  instance; this is not per-object or per-VM storage. Getter and setter state
+  are not automatically shared with each other. Reentrant calls use that same
+  instance, and callback state synchronization remains the host's responsibility,
+  as with other native callables.
+- Executing the registered callback also removes execution-time callback-copy
+  constructors and their possible allocation failures or copy side effects.
+  Registration and explicit snapshot retrieval keep their existing copying
+  contracts. State restoration still restores borrowed VM receivers, not state
+  mutated inside a callback.
+- Property descriptors are separately allocated and owned by the declaring
+  composite's `unique_ptr` collection, so catalog growth does not move them.
+  The Runtime/owner must outlive invocation, including reentry. Use this existing
+  lifetime contract without retaining extra ownership, exposing raw callback
+  references, or sealing open registration.
+- Preserve `NativeProperty::getInfo()` and
+  `Runtime::getNativePropertyInfo()` for metadata consumers. Resolved snapshots
+  still copy their callbacks and text; their explicit callback invocation remains
+  snapshot-based. Existing unresolved snapshots retain descriptor-backed guarded
+  callbacks that can be invoked after successful type completion. Do not change
+  that deferred-resolution contract while optimizing VM execution.
+- Adjacent interpreter dispatch currently copies full snapshots merely to inspect
+  method-backed accessor IDs. Replace those execution-time checks with the
+  descriptor's narrow queries, including the corresponding expression-evaluation
+  checks, while preserving method routing and read-only/write-only diagnostics.
+  Leave compiler resolution, language-server, documentation, and other metadata
+  consumers on their existing APIs unless directly required by this change.
+- This step records an approved design and source review only. No C++, benchmark,
+  or public API implementation changed, and no build, CTest, or new timing run
+  was performed. The preceding benchmark/build-guide edits remain intact.
+- Next reviewable scope: implement the descriptor queries/invocation methods and
+  migrate VM plus directly dependent interpreter execution checks. Add focused
+  regressions for mutable callback-state persistence across calls, receivers,
+  reentry and throws, and unchanged explicit snapshot behavior. Preserve existing
+  reference ownership, catalog-growth, invalid/read-only/write-only/method-backed,
+  deferred-type, and receiver-restoration coverage. Run selected CTests directly
+  through the workspace integration, then compare the unchanged checked
+  Debug/Release property workload with the recorded baseline. Snapshot-copy
+  timings remain a separate control, not a target for this execution-path change.
 
 ## Corrections to earlier review notes
 
@@ -911,7 +1031,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V3 | P2 | dead-code | Unused VM accessors: freeObjectVariable, typed setXVariableValue, initStringVariable, getFunction*VariableValue, setVariableValue forwarder | `VirtualMachine.hpp` (about lines 223–258, 272); `VirtualMachine.cpp`: freeObjectVariable | verified | 1 (done) |
 | V4 | P1 | perf | getCurrentCallable() is a linear scan over all callables; reached from closure creation, freeObjectVariable, and dynamic formatting | `VirtualMachine.cpp`: frame-header ID and return; `Compiler.cpp`: ID-based call-target linking; RuntimeLookupBenchmark query/call workloads | Fixed: five-slot frame owns callee ID; no new VM/snapshot field or index; six Debug CTests and checked Debug/Release comparisons pass; no-query call cost recorded | 8 (done) |
 | V5 | P1 | perf | RTTI conversion on stored-property access; removing it requires a safe receiver-storage boundary | `VirtualMachine.cpp`: getProperty, setProperty, getStoredPropertyAddress; `NomadObject.cpp`, `ScriptObject.cpp`: storage query and allocated field snapshot | Fixed: measured checked storage query replaces VM RTTI; existing guards/layouts retained, native ABI rebuild required | 4 (done) |
-| V6 | P1 | perf | Native property access copies NativePropertyInfo (with std::function members) by value on every access | `VirtualMachine.cpp`: getNativeProperty, setNativeProperty; `Runtime.cpp`: getNativePropertyInfo returns std::optional by value; `NativeProperty.cpp`:36 getInfo | verified | 8 |
+| V6 | P1 | perf | Native property access copies NativePropertyInfo (with std::function members) by value on every access | `NativeProperty.cpp`: snapshots/type guards; `VirtualMachine.cpp`: property dispatch; `InterpreterObjectReceiver.cpp`: method routing; RuntimeLookupBenchmark property workload | Checked baselines recorded; descriptor invocation with persistent registered-callback state approved; implementation/validation pending | 8 |
 | V7 | P2 | redundancy | Six execution entry points with near-identical result copy and free logic, and inconsistent error policy (log and return, invalid_argument, VirtualMachineException) | `VirtualMachine.cpp`: executeFunction overloads, runFunction, runClosure, run(ScriptFunction), run(Closure) | Fixed: shared lookup/result finalization; specialized runner contracts retained, host result-copy failures release VM results | 4 |
 | V8 | P2 | redundancy | Save and restore of m_result and m_intermediate duplicated; BOOST_SCOPE_EXIT used instead of RAII guards | `VirtualMachine.cpp`: executeCreationBody, createNativeStruct, createNativeObject; `Interpreter.cpp`: evaluation entry points | Resolved by review: existing call-frame protection retained; local restoration outside call frames, no separate register guard | 4 |
 | V9 | P2 | redundancy | Obsolete current-frame snapshot API duplicates closure capture-source resolution, including struct receiver layout logic | `VirtualMachine.cpp`: createClosure; `InterpreterCallFrame.cpp`: current-frame capture preparation | Fixed: removed test-only snapshot API; migrated tests to production frame and closure paths | 4 |

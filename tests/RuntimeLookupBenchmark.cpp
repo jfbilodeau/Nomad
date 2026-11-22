@@ -3,8 +3,11 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/NativeProperty.hpp>
+#include <nomad/script/NomadObject.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
@@ -16,9 +19,17 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
+
+struct PropertyBenchmarkState {
+    nomad::NomadInteger value = 0;
+    nomad::NomadIndex reads = 0;
+    nomad::NomadIndex writes = 0;
+    nomad::NomadObject* receiver = nullptr;
+};
 
 double measureLookup(
     const nomad::Runtime& runtime,
@@ -210,6 +221,151 @@ double measureNestedScriptCalls(
         machine.getCurrentCallable() != nullptr
     ) {
         throw std::runtime_error("Nested script calls changed their result or enclosing execution state");
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
+double measurePropertyDescriptor(
+    const nomad::Runtime& runtime,
+    const nomad::NativeProperty& expected,
+    const nomad::NomadIndex iterations
+) {
+    const auto propertyId = expected.getId();
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        if (runtime.getNativeProperty(propertyId) != &expected) {
+            throw std::runtime_error("Unexpected native-property benchmark descriptor");
+        }
+    }
+
+    auto matchingDescriptors = nomad::NomadIndex{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        matchingDescriptors += runtime.getNativeProperty(propertyId) == &expected;
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    if (matchingDescriptors != iterations) {
+        throw std::runtime_error("Native-property descriptor identity changed during measurement");
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
+double measurePropertyInfoCopy(
+    const nomad::Runtime& runtime,
+    const nomad::NativeProperty& expected,
+    const nomad::NomadIndex iterations
+) {
+    const auto propertyId = expected.getId();
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        const auto info = runtime.getNativePropertyInfo(propertyId);
+        if (
+            !info ||
+            info->id != propertyId ||
+            info->classType != expected.getClassType() ||
+            info->valueType != expected.getValueType() ||
+            info->name != expected.getName() ||
+            info->doc != expected.getDoc() ||
+            !info->getFn ||
+            !info->setFn ||
+            info->getterMethodId.isValid() ||
+            info->setterMethodId.isValid()
+        ) {
+            throw std::runtime_error("Unexpected copied native-property benchmark metadata");
+        }
+    }
+
+    auto checksum = std::uint64_t{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        const auto info = runtime.getNativePropertyInfo(propertyId);
+        if (!info) {
+            throw std::runtime_error("Native-property metadata disappeared during measurement");
+        }
+
+        checksum += static_cast<std::uint64_t>(info->id.id + 1) + info->name.size() + info->doc.size()
+            + static_cast<std::uint64_t>(static_cast<bool>(info->getFn))
+            + static_cast<std::uint64_t>(static_cast<bool>(info->setFn));
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    const auto expectedChecksum = (
+        static_cast<std::uint64_t>(propertyId.id + 1)
+        + expected.getName().size() + expected.getDoc().size() + 2
+    ) * iterations;
+    if (checksum != expectedChecksum) {
+        throw std::runtime_error("Native-property metadata changed during measurement");
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
+double measurePropertyGetter(
+    nomad::VirtualMachine& machine,
+    const nomad::PropertyId propertyId,
+    const nomad::RuntimeValue& receiver,
+    const nomad::NomadIndex iterations
+) {
+    nomad::RuntimeValue result;
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        machine.getNativeProperty(propertyId, receiver, result);
+        if (result.getIntegerValue() != 42) {
+            throw std::runtime_error("Unexpected native-property benchmark getter result");
+        }
+    }
+
+    auto checksum = std::uint64_t{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        machine.getNativeProperty(propertyId, receiver, result);
+        checksum += static_cast<std::uint64_t>(result.getIntegerValue());
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    if (checksum != std::uint64_t{42} * iterations) {
+        throw std::runtime_error("Native-property getter results changed during measurement");
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
+double measurePropertySetter(
+    nomad::VirtualMachine& machine,
+    const nomad::PropertyId propertyId,
+    const nomad::RuntimeValue& receiver,
+    const PropertyBenchmarkState& state,
+    const nomad::NomadInteger bias,
+    const nomad::NomadIndex iterations
+) {
+    nomad::RuntimeValue value;
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        value.setIntegerValue(static_cast<nomad::NomadInteger>(index));
+        machine.setNativeProperty(propertyId, receiver, value);
+        if (state.value != value.getIntegerValue() - bias) {
+            throw std::runtime_error("Unexpected native-property benchmark setter side effect");
+        }
+    }
+
+    auto matchingWrites = nomad::NomadIndex{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        value.setIntegerValue(static_cast<nomad::NomadInteger>(index % 64));
+        machine.setNativeProperty(propertyId, receiver, value);
+        matchingWrites += state.value == value.getIntegerValue() - bias;
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    if (matchingWrites != iterations) {
+        throw std::runtime_error("Native-property setter side effects changed during measurement");
     }
 
     return elapsed / static_cast<double>(iterations);
@@ -771,6 +927,140 @@ void runNestedScriptCallBenchmark() {
     }
 }
 
+void runNativePropertyBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto iterations = nomad::NomadIndex{50000};
+    constexpr auto cases = std::array{"small_capture", "large_capture", "long_metadata"};
+    constexpr auto labels = std::array{"descriptor_us", "info_copy_us", "getter_us", "setter_us"};
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    std::cout << "Native properties: borrowed descriptor lookup, copied metadata, and complete VM getter/setter access.\n"
+        << "Cases vary callback capture size or metadata text length; scalar callback behavior is otherwise fixed.\n"
+        << "Microseconds per checked operation include result checks; setup and ownership/state checks are outside timing.\n"
+        << std::flush;
+
+    for (const auto* caseName : cases) {
+        const auto largeCapture = nomad::NomadStringView{caseName} == "large_capture";
+        const auto longMetadata = nomad::NomadStringView{caseName} == "long_metadata";
+        const auto name = longMetadata ? nomad::NomadString(128, 'n') : nomad::NomadString{"value"};
+        const auto documentation = longMetadata ? nomad::NomadString(256, 'd') : nomad::NomadString{"value"};
+        auto getterCaptureSize = nomad::NomadIndex{0};
+        auto setterCaptureSize = nomad::NomadIndex{0};
+        std::array<std::vector<double>, 4> samples;
+
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            PropertyBenchmarkState state;
+            nomad::Runtime runtime;
+            const auto ownerId = runtime.registerClass("BenchmarkProperty", nomad::ClassMode::Closed);
+            if (ownerId.isInvalid()) {
+                throw std::runtime_error("Failed to register the native-property benchmark owner");
+            }
+
+            const auto* ownerType = runtime.getType(ownerId).value()->asClassType();
+            const auto bias = static_cast<nomad::NomadInteger>(sample) + 3;
+            state.value = 42 - bias;
+            nomad::NativePropertyDefinition definition{
+                .valueType = runtime.getIntegerType(),
+                .name = name,
+                .documentation = documentation
+            };
+            if (largeCapture) {
+                std::array<nomad::NomadInteger, 32> payload;
+                std::ranges::fill(payload, bias);
+                auto getter = [&state, payload](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                    state.receiver = machine->getThis();
+                    ++state.reads;
+                    result.setIntegerValue(state.value + payload.back());
+                };
+                auto setter = [&state, payload](nomad::VirtualMachine* machine, const nomad::RuntimeValue& value) {
+                    state.receiver = machine->getThis();
+                    ++state.writes;
+                    state.value = value.getIntegerValue() - payload.back();
+                };
+                getterCaptureSize = sizeof(getter);
+                setterCaptureSize = sizeof(setter);
+                definition.getter = std::move(getter);
+                definition.setter = std::move(setter);
+            } else {
+                auto getter = [&state, bias](nomad::VirtualMachine* machine, nomad::RuntimeValue& result) {
+                    state.receiver = machine->getThis();
+                    ++state.reads;
+                    result.setIntegerValue(state.value + bias);
+                };
+                auto setter = [&state, bias](nomad::VirtualMachine* machine, const nomad::RuntimeValue& value) {
+                    state.receiver = machine->getThis();
+                    ++state.writes;
+                    state.value = value.getIntegerValue() - bias;
+                };
+                getterCaptureSize = sizeof(getter);
+                setterCaptureSize = sizeof(setter);
+                definition.getter = std::move(getter);
+                definition.setter = std::move(setter);
+            }
+
+            const auto propertyId = runtime.registerNativeClassProperty(ownerId, std::move(definition));
+            const auto* property = runtime.getNativeProperty(propertyId);
+            if (
+                propertyId.isInvalid() ||
+                property == nullptr ||
+                !property->isTypeResolved() ||
+                property->getClassType() != ownerType ||
+                property->getValueType() != runtime.getIntegerType() ||
+                runtime.getNativeProperty(nomad::PropertyId::INVALID) != nullptr ||
+                runtime.getNativePropertyInfo(nomad::PropertyId::INVALID).has_value()
+            ) {
+                throw std::runtime_error("Unexpected native-property benchmark registration or lookup bounds");
+            }
+
+            nomad::RuntimeValue receiver;
+            const nomad::RuntimeValueGuard receiverOwner(*ownerType, &receiver);
+            receiver.setObjectValue(new nomad::NomadObject);
+            auto machine = runtime.createVirtualMachine();
+            machine->setIntegerResult(73);
+            machine->setIntegerIntermediate(79);
+            const auto before = machine->captureExecutionState();
+            samples[0].push_back(measurePropertyDescriptor(runtime, *property, iterations));
+            samples[1].push_back(measurePropertyInfoCopy(runtime, *property, iterations));
+            if (state.reads != 0 || state.writes != 0) {
+                throw std::runtime_error("Native-property metadata lookup unexpectedly invoked an accessor");
+            }
+
+            samples[2].push_back(measurePropertyGetter(*machine, propertyId, receiver, iterations));
+            samples[3].push_back(measurePropertySetter(*machine, propertyId, receiver, state, bias, iterations));
+            const auto after = machine->captureExecutionState();
+            if (
+                state.reads != iterations + 32 ||
+                state.writes != iterations + 32 ||
+                state.receiver != receiver.getObjectValue() ||
+                receiver.getObjectValue()->getReferenceCount() != 1 ||
+                after.instructionIndex != before.instructionIndex ||
+                after.stackIndex != before.stackIndex ||
+                after.parameterIndex != before.parameterIndex ||
+                after.variableIndex != before.variableIndex ||
+                after.running != before.running ||
+                after.receiver.getObjectValue() != before.receiver.getObjectValue() ||
+                machine->getIntegerResult() != 73 ||
+                machine->getIntegerIntermediate() != 79 ||
+                machine->getCurrentCallable() != nullptr
+            ) {
+                throw std::runtime_error("Native-property access changed receiver ownership or enclosing VM state");
+            }
+        }
+
+        std::cout << "property_case=" << caseName << " getter_capture_bytes=" << getterCaptureSize
+            << " setter_capture_bytes=" << setterCaptureSize << " name_bytes=" << name.size()
+            << " documentation_bytes=" << documentation.size() << " iterations=" << iterations;
+        for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+            printSamples(labels[query], samples[query]);
+        }
+
+        std::cout << std::endl;
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Native-property benchmark leaked receiver objects");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -781,6 +1071,7 @@ int main() {
         runStringBenchmark();
         runCurrentCallableBenchmark();
         runNestedScriptCallBenchmark();
+        runNativePropertyBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

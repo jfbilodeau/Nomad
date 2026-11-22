@@ -129,6 +129,15 @@ return, and a result checksum, but no current-callable queries. Setup and state
 checks are outside timing. This captures call overhead separately from lookup
 gains; it does not isolate individual frame-entry instructions.
 
+A native-property section compares borrowed descriptor lookup, copied metadata,
+and complete VM getter/setter access. Three fixed cases use small callback
+captures, large captures, or long property names/documentation. Each sample
+performs 50,000 operations after warmup and reports the callback object sizes.
+Checks cover metadata contents, results and setter side effects, callback counts,
+borrowed receiver identity/reference counts, VM-state restoration, and receiver
+cleanup. Setup and ownership/state checks are outside timing. These scalar
+workloads do not measure reference-valued or unresolved properties.
+
 Run the same target, configuration, and workload before and after an optimization.
 Compare optimized Release results separately from Debug results; timing values
 are observations, not pass/fail thresholds.
