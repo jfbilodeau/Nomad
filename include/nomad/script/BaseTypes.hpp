@@ -166,6 +166,7 @@ public:
     using ValueType::ValueType;
     void initValue(RuntimeValue* value) const override;
     [[nodiscard]] NomadString getTypeName() const override;
+    [[nodiscard]] NomadIndex getParameterStackValueCount() const override;
     void copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const override;
     void toString(const RuntimeValue* value, NomadString& string) const override;
 };

@@ -302,7 +302,7 @@ private:
     void endNativeCall(const NativeCallFrame& frame);
     [[nodiscard]] ExecutionState beginScriptRun();
     void pushHostArgument(
-        const Type* type,
+        const Parameter& parameter,
         const RuntimeValue& value,
         std::vector<const Type*>& argumentTypes
     );

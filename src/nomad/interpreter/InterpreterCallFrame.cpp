@@ -6,15 +6,58 @@
 #include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <limits>
 #include <stdexcept>
 
 namespace nomad {
+
+namespace {
+
+NomadIndex addArgumentSlots(const NomadIndex count, const NomadIndex added) {
+    if (added > std::numeric_limits<NomadIndex>::max() - count) {
+        throw NomadException("Argument storage size exceeds the maximum slot count");
+    }
+
+    return count + added;
+}
+
+NomadIndex getCaptureSlotCount(const ScriptFunction& function) {
+    auto count = NomadIndex{0};
+    for (const auto& capture : function.getCaptures()) {
+        count = addArgumentSlots(count, capture.type->getSize());
+    }
+
+    return count;
+}
+
+NomadIndex getCaptureSlotCount(const Closure& closure) {
+    auto count = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < closure.getCaptureCount(); ++index) {
+        count = addArgumentSlots(count, closure.getCaptureStorage(index).size());
+    }
+
+    return count;
+}
+
+NomadIndex getArgumentSlotCount(
+    const std::span<const InterpreterValue> arguments,
+    const Closure* closure
+) {
+    auto count = closure == nullptr ? NomadIndex{0} : getCaptureSlotCount(*closure);
+    for (const auto& argument : arguments) {
+        count = addArgumentSlots(count, argument.getStorage().size());
+    }
+
+    return count;
+}
+
+} // namespace
 
 InterpreterCallFrame::InterpreterCallFrame(
     VirtualMachine& machine,
     const ScriptFunction& function
 ):
-    InterpreterCallFrame(machine, function, function.getReturnType(), nullptr)
+    InterpreterCallFrame(machine, function, function.getReturnType(), nullptr, getCaptureSlotCount(function))
 {
     const auto& captures = function.getCaptures();
     const auto* parent = machine.getCurrentCallable();
@@ -77,7 +120,13 @@ InterpreterCallFrame::InterpreterCallFrame(
     RuntimeValue* receiverStorage,
     const Closure* closure
 ):
-    InterpreterCallFrame(machine, callable, resultType, receiverStorage)
+    InterpreterCallFrame(
+        machine,
+        callable,
+        resultType,
+        receiverStorage,
+        getArgumentSlotCount(arguments, closure)
+    )
 {
     const auto captureCount = closure != nullptr ? closure->getCaptureCount() : 0;
     if (arguments.size() + captureCount != callable.getParameterCount()) {
@@ -104,7 +153,8 @@ InterpreterCallFrame::InterpreterCallFrame(
         machine,
         *closure.getFunction(),
         closure.getFunction()->getReturnType(),
-        nullptr
+        nullptr,
+        addArgumentSlots(arguments.size(), getCaptureSlotCount(closure))
     )
 {
     const auto* function = closure.getFunction();
@@ -126,14 +176,15 @@ InterpreterCallFrame::InterpreterCallFrame(
     VirtualMachine& machine,
     const Callable& callable,
     const Type* resultType,
-    RuntimeValue* receiverStorage
+    RuntimeValue* receiverStorage,
+    const NomadIndex argumentSlotCount
 ):
     m_machine(machine),
     m_resultType(resultType),
     m_savedResult(machine.getResult()),
     m_savedIntermediate(machine.getIntermediate())
 {
-    const auto layout = callable.getCallStorageLayout();
+    const auto layout = callable.getCallStorageLayout(argumentSlotCount);
     if (m_resultType->isStruct()) {
         m_resultStorage.resize(m_resultType->getSize());
     }

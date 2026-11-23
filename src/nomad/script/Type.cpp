@@ -18,6 +18,10 @@ Type::Type(Runtime* runtime, const TypeId id, NomadString documentation):
     }
 }
 
+NomadIndex Type::getParameterStackValueCount() const {
+    return getSize();
+}
+
 Runtime* Type::getRuntime() const {
     return m_runtime;
 }

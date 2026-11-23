@@ -4,7 +4,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**V16:** Host-call allocation/latency baselines are recorded. Closure parameter-shape/layout queries account for substantial measured work; review that path before changing argument bookkeeping.
+**V16:** Plain fixed type contributions and concrete call-site frame widths are implemented and validated. Parser classification and signature-only dispatch guards remain intact; bookkeeping vectors still need a separate design review.
 
 ## Component contract
 
@@ -1062,12 +1062,187 @@ Measure each change before and after on the same workload.
   whole-game result. No Release allocation count, timing threshold, memory-byte
   estimate, exception/fault-injection benchmark, or cross-platform result is
   claimed.
-- Next reviewable scope: review allocation-free parameter-shape/width lookup
-  before optimizing host cleanup vectors. Preserve canonical type identity,
-  event/source/callback classification, checked host layouts, and open
-  registration. Do not introduce a parallel index, cached layout, declaration
-  seal, or new type-category API without discussing the evidence and trade-offs.
-  Raw argument-bookkeeping changes remain a separate measured decision.
+- The parameter-width design review below is complete with approval. These
+  checked measurements remain the pre-implementation baseline. Raw argument
+  bookkeeping changes stay separate.
+
+#### V16 approved specialized parameter-width design
+
+- This records the initial optional-width design. The later fixed-contribution
+  revision below supersedes its return contract while retaining the measured
+  allocation-free separation from parser classification.
+- The user selected a specialized per-type width query instead of caching five
+  canonical parser descriptors in TypeManager. Only event-callback and
+  event-dispatch parameters have special stack widths; source arguments,
+  ordinary callback values, structs, and other values use their value size.
+  Execution layout does not need the parser's complete parameter classification.
+- The approved virtual type-metadata query is
+  `Type::getParameterStackValueCount()`, returning
+  `std::optional<NomadIndex>`. Its default returns the live `getSize()` result.
+  EventCallbackType supplies two slots for its canonical registered descriptor;
+  EventDispatchType reports no fixed width for its canonical descriptor.
+  Keep the specialized behavior in those two existing final classes, rather
+  than adding a type-category enum, generalized flags, or compiler special cases.
+- `Parameter::getStackValueCount()` retains the unresolved-null check and its
+  existing error. It delegates fixed-width lookup to the type and, for an absent
+  width, raises the unchanged call-site-dependent event-dispatch error including
+  the parameter name. Callable offset, storage-size, and layout calculations
+  consume that existing Parameter API without dropping their overflow checks
+  or host-input validation.
+- Preserve canonical identity, not merely matching display names, dynamic type,
+  or numeric IDs. The two event-type overrides can check publication through the
+  owning Runtime's existing constant-time ID lookup and exact pointer identity.
+  Runtime constructs the canonical final event descriptors before public use;
+  unregistered copies and colliding IDs must retain their former ordinary-width
+  behavior. A registered descriptor from another Runtime is interpreted through
+  its own owning Runtime, as the existing Parameter path already does.
+- TypeManager's parser-oriented `getParameterShape()` and Runtime's forwarding
+  API remain unchanged, including source/event/callback precedence, null and
+  foreign-descriptor behavior, and standalone catalog behavior. This is not a
+  claimed optimization of every classifier consumer: the direct integer-shape
+  benchmark is intentionally an unchanged control.
+- The query reads live size/registration metadata on each use. No cached
+  callable layout, per-type shape field, name index, parallel descriptor cache,
+  declaration seal, extra ownership, or registration-order requirement is added.
+  TypeManager still does not call Runtime; any event-descriptor identity check
+  belongs to the event type implementation. No public registration, VM, or
+  interpreter signature needs removal.
+- The design review was source-only. Implementation and checked measurements
+  are recorded below; cleanup vectors remain unchanged.
+
+#### V16 live-width implementation and validation
+
+- Type now exposes `getParameterStackValueCount()` with the approved optional
+  live-width contract. Only EventCallbackType and EventDispatchType override it,
+  using the owning Runtime's ID lookup and exact descriptor identity.
+  Parameter delegates to the query while retaining its original unresolved-type
+  and named dynamic-width exceptions. Callable layout/overflow checks, host
+  Closure validation, parser classification, and VM behavior remain unchanged.
+- A focused existing-file regression covers both Runtime owners, unpublished
+  event descriptors with colliding IDs, reserved holes, invalid IDs, and event
+  descriptors in a separate TypeManager catalog. Existing width checks now
+  verify the exact missing/dynamic-width messages. Existing empty/struct,
+  ordinary/callback/source/event, layout-overflow, owned argument/capture,
+  Closure validation, reentry, and catalog-growth coverage remains green.
+- Four selected Windows Debug CTests pass: `nomad_test_language`,
+  `nomad_test_remaining`, `nomad_compiler_exports`, and
+  `nomad_module_runtime_integration`. The changed virtual Type interface and
+  dependent consumers were rebuilt through the workspace testing integration.
+  Public embedding documentation describes fixed zero versus absent width,
+  event identity behavior, and the C++ rebuild requirement.
+- The unchanged benchmark builds and passes checked Debug/Release runs with
+  matching language DLL hashes, including every preceding section. The same
+  nine host cases retain five samples, 32 warmups, 50,000 timing calls, and a
+  separate 1,000-call Debug allocation pass. Release was repeated once unchanged
+  because untouched controls also exhibited timing drift; both runs are retained.
+  Values are median `[min,max]` microseconds per invocation.
+
+| Case | After Debug (us) | After Release 1 (us) | After Release 2 (us) | Debug requests/call |
+| --- | --- | --- | --- | --- |
+| Prepared empty | 0.438 [0.398,0.462] | 0.033 [0.030,0.070] | 0.032 [0.028,0.044] | 0 |
+| Raw empty | 1.494 [1.386,1.547] | 0.058 [0.040,0.098] | 0.063 [0.042,0.128] | 2 |
+| Raw integer | 2.189 [2.096,2.275] | 0.092 [0.083,0.128] | 0.130 [0.074,0.178] | 3 |
+| Raw four integers | 2.976 [2.943,3.108] | 0.161 [0.139,0.200] | 0.244 [0.133,0.272] | 3 |
+| Raw two strings | 8.893 [8.514,9.365] | 0.424 [0.350,0.483] | 0.434 [0.383,0.564] | 7 |
+| Raw capture vector | 4.986 [4.703,5.080] | 0.252 [0.223,0.302] | 0.242 [0.221,0.369] | 4 |
+| Closure empty | 2.011 [1.911,2.093] | 0.119 [0.089,0.124] | 0.086 [0.078,0.158] | 2 |
+| Closure integer | 3.042 [2.950,3.388] | 0.157 [0.126,0.245] | 0.142 [0.126,0.267] | 3 |
+| Closure captured | 7.310 [6.905,7.590] | 0.393 [0.336,0.451] | 0.427 [0.299,0.618] | 5 |
+
+- Debug allocation values have identical minimum/median/maximum across all
+  five samples. The untimed subpath probes show the intended separation:
+
+| Probe | Before Debug requests/operation | After median [min,max] |
+| --- | --- | --- |
+| Integer parser parameter classification | 45 | 45 [45,45] |
+| Integer callable storage layout | 45 | 0 [0,0] |
+| Integer Closure-frame preparation | 48 | 3 [3,3] |
+| Raw empty call with explicit empty capture vector | 1 | 1 [1,1] |
+
+- Against Debug baseline run 2, scalar Closure calls change from 63.299 to
+  3.042 us and from 93 to 3 allocation requests; captured Closure calls change
+  from 187.432 to 7.310 us and from 275 to 5 requests. The unchanged classifier
+  still makes 45 requests, while integer storage-layout lookup makes zero.
+  No new cached metadata, index, shape field, category enum, declaration seal,
+  or TypeManager-to-Runtime call was introduced.
+- Release scalar Closure medians change from 1.316 to 0.157/0.142 us; captured
+  Closure medians change from 3.786 to 0.393/0.427 us. These are observations
+  from the same checked workload, not isolated virtual-call timings.
+  Untouched raw/prepared controls also vary between runs, so their changes are
+  not attributed to this implementation. Release allocations are unmeasured;
+  Debug counts include STL instrumentation and are not Release heap estimates.
+- This completes the measured width-query sub-step, not all V16 bookkeeping
+  work. No full 13-entry suite rerun, manual gameplay, allocation fault injection,
+  timing threshold, or cross-platform result is claimed.
+- Next reviewable scope: review the remaining raw argument-type cleanup vector,
+  default empty capture-vector construction, and Closure-frame argument metadata
+  separately. Preserve partial-copy cleanup, borrowed enclosing state,
+  explicit/capture ordering, and result ownership before choosing a storage
+  change. The recorded post-width measurements provide the new baseline;
+  do not optimize those vectors automatically in this step.
+
+#### V16 fixed contributions and concrete call-site widths
+
+- The user approved simplifying `Type::getParameterStackValueCount()` to return
+  a plain `NomadIndex`. It reports one parameter value's fixed contribution,
+  including zero for empty storage. Event callbacks retain their canonical
+  two-slot override; event dispatch uses the default one event-ID slot.
+  The concrete call site counts expanded payload arguments separately.
+- InterpreterCallFrame now totals actual typed argument storage and capture
+  spans before calling the existing `getCallStorageLayout(argumentSlotCount)`
+  overload. Compiler ArgumentList already counts expanded argument nodes and
+  now checks total-slot overflow. No new opcode, layout cache, argument buffer,
+  or ownership discriminator was added.
+- Signature-only Parameter, callable total-size/layout, and later-offset queries
+  still reject event-dispatch widths they cannot determine. A nonallocating
+  concrete event-type and exact-publication check retains those diagnostics
+  without parser name scans or another public type-category API. Raw host calls
+  validate complete scalar/reference storage and reject unexpanded dispatch
+  or event-callback pairs before executing a body. Their existing partial-copy
+  cleanup and enclosing-state restoration remain unchanged.
+- A new raw-host regression first reproduced six failures under the old
+  acceptance path: both expanded event kinds ran despite incomplete inputs.
+  It now verifies rejection before execution, unchanged result/state/stack
+  marker, and release of a reference argument copied earlier in reverse order.
+  Additional focused coverage counts event ID plus struct, empty, and scalar
+  payloads before hidden result-pointer placement and rejects max-plus-one
+  call-site overflow. Event identity and signature-only diagnostic tests remain.
+- Four selected Windows Debug CTests pass: `nomad_test_language`,
+  `nomad_test_remaining`, `nomad_compiler_exports`, and
+  `nomad_module_runtime_integration`. Existing typed/Closure capture, empty and
+  struct argument, event parsing, ownership, partial-copy, reentry, and module
+  consumers pass after rebuilding the changed C++ interface.
+- The unchanged benchmark builds and passes checked Debug and Release runs
+  with bundled library hashes matched to the current configuration, including
+  all preceding workloads. Five-sample median `[min,max]` timings below use
+  the existing host protocol; allocation counts remain Debug-only.
+
+| Case | Debug (us) | Release (us) | Debug requests/call |
+| --- | --- | --- | --- |
+| Prepared empty | 0.270 [0.234,1.241] | 0.035 [0.034,0.037] | 0 |
+| Raw empty | 0.961 [0.863,3.242] | 0.047 [0.044,0.059] | 2 |
+| Raw integer | 1.491 [1.322,3.415] | 0.107 [0.105,0.119] | 3 |
+| Raw four integers | 1.998 [1.898,3.495] | 0.245 [0.228,0.290] | 3 |
+| Raw two strings | 6.707 [6.353,28.430] | 0.459 [0.435,0.504] | 7 |
+| Raw capture vector | 3.801 [3.501,8.818] | 0.312 [0.307,0.339] | 4 |
+| Closure empty | 1.317 [1.245,4.880] | 0.103 [0.088,0.136] | 2 |
+| Closure integer | 1.835 [1.717,4.316] | 0.149 [0.143,0.164] | 3 |
+| Closure captured | 5.877 [4.819,8.126] | 0.427 [0.388,0.466] | 5 |
+
+- Debug counts are unchanged from the optional-width sub-step: integer
+  signature layout makes zero allocation requests; integer Closure-frame
+  preparation makes three; the parser classifier control remains at 45; and
+  raw empty calls with explicit empty captures make one. Each count has identical
+  minimum/median/maximum across five samples.
+- Release scalar Closure timing remains within the preceding 0.142/0.157 us
+  measurements, and captured Closure timing is 0.427 us. Debug samples show
+  substantial scheduling variability, including untouched controls. This is an
+  API/contract simplification with preserved allocation gains, not a claimed new
+  speedup. No Release allocation count, full-suite rerun, manual gameplay,
+  cross-platform result, or timing threshold is claimed.
+- This follow-up is complete. Next reviewable scope remains the separate
+  host-call bookkeeping-vector design review; retain partial-copy cleanup and
+  raw/typed ownership contracts before changing those structures.
 
 ## Corrections to earlier review notes
 
@@ -1196,7 +1371,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V13 | P3 | const-correctness | getCurrentFunction() const returns a non-const ScriptFunction*; receiver validation repeats on copies and binding | `VirtualMachine.hpp`: getCurrentScript; `VirtualMachine.cpp`: getThis, bindThisFromStack, copyThisToResult, copyThisToIntermediate | Fixed: const script getter and unchecked bound-receiver copies; host/receiver-binding null checks intentionally retained | 2 (done), 4 (done) |
 | V14 | P3 | naming | `stack_size` parameter; `integer_value` and `float_value` locals; memberId used for both CallableId and PropertyId; get*Function*VariableValue and set*VariableValue are asymmetric | `VirtualMachine.hpp/cpp`: constructor, scalar operand readers, native method/property parameters and function-variable accessors | Complete: remaining parameter/local names normalized; obsolete accessor asymmetry resolved by review with APIs unchanged | 7 |
 | V15 | P2 | quality | runNativeIndexer uses magic offsets (+2, +3) and convoluted release index arithmetic; duplicates the m_result reset in callNativeIndexer | `VirtualMachine.cpp`: runNativeIndexer, callNativeIndexer | Implemented: named receiver slot count and position, explicit copied-argument count; early reset retained for copy failures | 4 |
-| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `VirtualMachine.cpp`: raw/Closure runners; `InterpreterCallFrame.cpp`: preparation; `Callable.cpp`: parameter widths; RuntimeLookupBenchmark host workloads/probes | Consumers verified; checked Debug/Release latency and Debug CRT allocation baselines recorded; parameter-shape/layout design review precedes bookkeeping optimization | 8 |
+| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `Type.cpp`, `BaseTypes.cpp`, `Callable.cpp`: fixed contributions/signature guards; `InterpreterCallFrame.cpp`: concrete call-site widths; RuntimeLookupBenchmark host workloads/probes | Plain widths/call-site layouts implemented with preserved allocation gains; four Debug CTests and checked Debug/Release runs pass; bookkeeping-vector design pending | 8 |
 | V17 | P3 | quality | fault() is not `[[noreturn]]`; many fault-then-continue patterns | `VirtualMachine.hpp`: fault declaration | Fixed: `[[noreturn]]` | 4 |
 
 ### Compiler

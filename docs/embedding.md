@@ -2126,15 +2126,30 @@ appended to the parameter list, and exclude receivers, saved call frames, and
 return destinations. They do not change logical positions, parameter counts,
 VM parameter access, or the calling convention.
 
-`Parameter::getStackValueCount()` reports the parameter's stack width. Ordinary
-values use `Type::getSize()`; event callbacks occupy two slots even though their
-type's value size is one. Compiler-supplied source parameters occupy their usual
+`Type::getParameterStackValueCount()` returns a `NomadIndex` for the fixed
+contribution of one parameter value. Its default uses the live `getSize()`;
+zero means no slots. Canonical event callbacks contribute two slots.
+Event dispatch contributes one event-ID slot; the call site counts its expanded
+payload arguments separately. Unpublished event-callback instances, including
+copies with colliding IDs, retain their ordinary value width.
+Rebuild C++ descriptors and consumers after updating this virtual interface.
+
+`Parameter::getStackValueCount()` is a signature-only width query. Event callbacks
+occupy two slots even though their type's value size
+is one. Compiler-supplied source parameters occupy their usual
 single slot. Event dispatch includes an event-specific payload, so its complete
 width is call-site-dependent: querying that width, a callable's total size
 containing it, or a later parameter's offset throws `NomadException`. The offset
 of the dispatch parameter itself remains computable if all preceding widths are
 known. This does not restrict dispatch calls; their arguments are still expanded
 at the call site.
+
+Use `Callable::getCallStorageLayout(argumentSlotCount)` with the actual expanded
+argument-slot total to place hidden receiver/result pointers. Compiler argument
+lists count concrete argument nodes; InterpreterCallFrame counts supplied
+argument storage and capture spans. Call-site totals are checked for overflow.
+Raw VM host calls still require complete scalar/reference arguments; they reject
+unexpanded event dispatch and event-callback pairs before executing the body.
 
 Missing/deferred parameter sizes, slot-count overflow, and invalid or out-of-range
 parameter positions also produce `NomadException`. Offset queries require only

@@ -4,6 +4,8 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/Runtime.hpp>
+
 #include <nomad/system/String.hpp>
 
 #include <format>
@@ -311,6 +313,15 @@ void EventCallbackType::initValue(RuntimeValue* value) const {
 
 NomadString EventCallbackType::getTypeName() const {
     return EVENT_CALLBACK_TYPE_NAME;
+}
+
+NomadIndex EventCallbackType::getParameterStackValueCount() const {
+    if (getRuntime()->getType(getId()) != this) {
+
+        return getSize();
+    }
+
+    return 2;
 }
 
 void EventCallbackType::copyValue(const RuntimeValue* sourceValue, RuntimeValue* destinationValue) const {

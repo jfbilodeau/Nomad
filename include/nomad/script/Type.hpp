@@ -34,6 +34,9 @@ public:
     [[nodiscard]] virtual NomadString getTypeName() const = 0;
     [[nodiscard]] virtual TypeStorage getStorage() const = 0;
     [[nodiscard]] virtual NomadIndex getSize() const = 0;
+    // Fixed contribution of one parameter value; zero means no slots.
+    // Event dispatch contributes its ID slot; the call site counts payload arguments separately.
+    [[nodiscard]] virtual NomadIndex getParameterStackValueCount() const;
     [[nodiscard]] Runtime* getRuntime() const;
     [[nodiscard]] TypeId getId() const;
     [[nodiscard]] const NomadString& getDocumentation() const;

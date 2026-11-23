@@ -52,7 +52,8 @@ private:
         VirtualMachine& machine,
         const Callable& callable,
         const Type* resultType,
-        RuntimeValue* receiverStorage
+        RuntimeValue* receiverStorage,
+        NomadIndex argumentSlotCount
     );
 
     struct ArgumentStorage {

@@ -8,6 +8,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/NativeCallable.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/ScriptObject.hpp>
 #include <nomad/script/StructType.hpp>
@@ -939,6 +940,60 @@ BOOST_AUTO_TEST_CASE(ordinary_scalar_calls_use_the_prepared_frame_stack_boundary
         BOOST_TEST(machine.getIntegerIntermediate() == 43);
     }
 
+}
+
+BOOST_AUTO_TEST_CASE(raw_host_calls_reject_unexpanded_event_parameters_and_release_copied_arguments) {
+    Runtime runtime;
+    auto calls = 0;
+    const auto probeId = runtime.registerNativeFunction(
+        "recordExpandedHostCall",
+        [&](VirtualMachine*) { ++calls; },
+        {},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(probeId.isValid());
+    auto compiler = runtime.createCompiler();
+    RuntimeValue text{NomadString{"owned expanded-call argument"}};
+    const RuntimeValueGuard textOwner(*runtime.getStringType(), &text);
+    RuntimeValue receiver{NomadString{"borrowed expanded-call receiver"}};
+    const RuntimeValueGuard receiverOwner(*runtime.getStringType(), &receiver);
+    for (const auto* type : {runtime.getEventDispatchType(), runtime.getEventCallbackType()}) {
+        const auto functionId = runtime.registerScriptFunction(
+            "expandedHost" + type->getTypeName(), "expanded-host.nomad", ""
+        );
+        auto* function = runtime.getScriptFunction(functionId);
+        BOOST_REQUIRE(function != nullptr);
+        function->addParameter("expanded", type, "");
+        function->addParameter("text", runtime.getStringType(), "");
+        function->setReturnType(runtime.getIntegerType());
+        function->setFunctionStart(runtime.getInstructions().size());
+        compiler->addOpCode(OpCodes::op_call_native_function);
+        compiler->addId(probeId.id);
+        compiler->addLoadIntegerValue(42, ExpressionTarget::Result);
+        compiler->addOpCode(OpCodes::op_return);
+        function->setFunctionEnd(runtime.getInstructions().size());
+        runtime.initializeScripts();
+        VirtualMachine machine(&runtime, 64);
+        machine.pushInteger(91);
+        machine.enterNativeFrame(receiver);
+        machine.setIntegerResult(73);
+        const auto before = machine.captureExecutionState();
+        const std::vector arguments{RuntimeValue{NomadInteger{0}}, text};
+        BOOST_CHECK_THROW(machine.run(function, arguments), NomadException);
+        const auto after = machine.captureExecutionState();
+        BOOST_TEST(calls == 0);
+        BOOST_TEST(after.instructionIndex == before.instructionIndex);
+        BOOST_TEST(after.stackIndex == before.stackIndex);
+        BOOST_TEST(after.parameterIndex == before.parameterIndex);
+        BOOST_TEST(after.variableIndex == before.variableIndex);
+        BOOST_TEST(after.running == before.running);
+        BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+        BOOST_TEST(machine.getIntegerResult() == 73);
+        BOOST_TEST(machine.peekStack(0).getIntegerValue() == 91);
+        BOOST_TEST(text.getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(ordinary_scalar_copy_failures_release_arguments_and_result_snapshots) {

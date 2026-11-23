@@ -30,6 +30,7 @@ struct Parameter {
     NomadDocField;
 
     [[nodiscard]] NomadString getTypeName() const;
+    // Signature-only width; event dispatch requires the expanded call-site arguments.
     [[nodiscard]] NomadIndex getStackValueCount() const;
 };
 

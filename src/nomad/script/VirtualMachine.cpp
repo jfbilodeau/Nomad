@@ -279,14 +279,14 @@ void VirtualMachine::run(
     argumentTypes.reserve(function->getParameterCount());
     for (auto index = closures.size(); index > 0; --index) {
         pushHostArgument(
-            function->getParameterType(toNomadId(args.size() + index - 1)),
+            function->getParameters()[args.size() + index - 1],
             closures[index - 1],
             argumentTypes
         );
     }
 
     for (auto index = args.size(); index > 0; --index) {
-        pushHostArgument(function->getParameterType(toNomadId(index - 1)), args[index - 1], argumentTypes);
+        pushHostArgument(function->getParameters()[index - 1], args[index - 1], argumentTypes);
     }
 
     callScriptFunction(*function, function->getReservedStackSlots());
@@ -383,16 +383,22 @@ void VirtualMachine::executeScript() {
 }
 
 void VirtualMachine::pushHostArgument(
-    const Type* type,
+    const Parameter& parameter,
     const RuntimeValue& value,
     std::vector<const Type*>& argumentTypes
 ) {
+    const auto* type = parameter.type;
     if (type == nullptr) {
         fault("Host argument has no parameter type");
     }
     if (type->isStruct()) {
         fault("Host calls do not support struct argument storage");
     }
+
+    if (parameter.getStackValueCount() != 1) {
+        fault("Host calls require scalar or reference argument storage");
+    }
+
     pushValue(RuntimeValue{});
     argumentTypes.push_back(type);
     type->copyValue(&value, &m_stack[m_stackIndex]);

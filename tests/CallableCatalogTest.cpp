@@ -7,9 +7,12 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/compiler/CallNode.hpp>
+#include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/Parser.hpp>
 #include <nomad/compiler/Tokenizer.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Callable.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/NativeCallable.hpp>
@@ -42,6 +45,10 @@ static_assert(std::is_base_of_v<ScriptCallableBase, ScriptConstructor>);
 static_assert(!std::is_copy_constructible_v<ScriptFunction>);
 static_assert(!std::is_copy_constructible_v<ScriptMethod>);
 static_assert(!std::is_copy_constructible_v<ScriptConstructor>);
+static_assert(std::is_same_v<
+    decltype(std::declval<const Type&>().getParameterStackValueCount()),
+    NomadIndex
+>);
 static_assert(std::is_same_v<decltype(std::declval<const Runtime&>().getScriptCallable(CallableId{})), const ScriptCallableBase*>);
 static_assert(std::is_same_v<decltype(std::declval<Runtime&>().getScriptCallable(CallableId{})), ScriptCallableBase*>);
 
@@ -300,7 +307,16 @@ BOOST_AUTO_TEST_CASE(parameter_stack_widths_preserve_existing_argument_shapes)
         BOOST_TEST(type->getSize() == 1U);
         const auto parameter = defParameter("value", type, "");
         if (type == runtime.getEventDispatchType()) {
-            BOOST_CHECK_THROW((void)parameter.getStackValueCount(), NomadException);
+            BOOST_TEST(type->getParameterStackValueCount() == 1U);
+            BOOST_CHECK_EXCEPTION(
+                static_cast<void>(parameter.getStackValueCount()),
+                NomadException,
+                [](const auto& error) {
+
+                    return NomadString{error.what()} ==
+                        "Parameter 'value' has a call-site-dependent event-dispatch layout";
+                }
+            );
         } else {
             BOOST_TEST(parameter.getStackValueCount() == 1U);
         }
@@ -309,7 +325,50 @@ BOOST_AUTO_TEST_CASE(parameter_stack_widths_preserve_existing_argument_shapes)
     BOOST_TEST(eventCallback.type->getSize() == 1U);
     BOOST_TEST(eventCallback.getStackValueCount() == 2U);
     const auto unresolved = defParameter("unresolved", nullptr, "");
-    BOOST_CHECK_THROW((void)unresolved.getStackValueCount(), NomadException);
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(unresolved.getStackValueCount()),
+        NomadException,
+        [](const auto& error) {
+
+            return NomadString{error.what()} ==
+                "Cannot calculate parameter layout: type of 'unresolved' is unresolved";
+        }
+    );
+}
+
+BOOST_AUTO_TEST_CASE(event_parameter_widths_require_exact_registration_in_the_owning_runtime) {
+    Runtime runtime;
+    Runtime other;
+    for (auto* owner : {&runtime, &other}) {
+        const auto* callback = owner->getEventCallbackType();
+        const auto* dispatch = owner->getEventDispatchType();
+        BOOST_TEST(callback->getParameterStackValueCount() == 2U);
+        BOOST_TEST(dispatch->getParameterStackValueCount() == 1U);
+        BOOST_TEST(defParameter("handler", callback, "").getStackValueCount() == 2U);
+        const auto hole = owner->getTypeManager().reserveTypeId();
+        for (const auto id : {callback->getId(), dispatch->getId(), hole, TypeId::INVALID}) {
+            const EventCallbackType unpublishedCallback(owner, id);
+            const EventDispatchType unpublishedDispatch(owner, id);
+            for (const auto* type : std::vector<const Type*>{&unpublishedCallback, &unpublishedDispatch}) {
+                BOOST_TEST(type->getParameterStackValueCount() == 1U);
+                BOOST_TEST(defParameter("copy", type, "").getStackValueCount() == 1U);
+            }
+        }
+    }
+
+    TypeManager separateCatalog(runtime);
+    const auto callbackId = separateCatalog.registerType(
+        std::make_unique<EventCallbackType>(&runtime, separateCatalog.reserveTypeId())
+    );
+    const auto dispatchId = separateCatalog.registerType(
+        std::make_unique<EventDispatchType>(&runtime, separateCatalog.reserveTypeId())
+    );
+    BOOST_REQUIRE(callbackId.isValid());
+    BOOST_REQUIRE(dispatchId.isValid());
+    for (const auto id : {callbackId, dispatchId}) {
+        const auto* type = separateCatalog.getType(id).value();
+        BOOST_TEST(defParameter("separate", type, "").getStackValueCount() == 1U);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(parameter_layout_preserves_logical_positions_across_callable_categories)
@@ -412,6 +471,77 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_param
     BOOST_REQUIRE(dispatchId.isValid());
     BOOST_CHECK_THROW((void)runtime.getCallable(dispatchId)->getCallStorageLayout(), NomadException);
     BOOST_TEST(*runtime.getCallable(dispatchId)->getCallStorageLayout(17).returnOffset == 17U);
+    const auto eventId = runtime.registerEvent("layoutPayload", {
+        {"point", point->getId(), point->getTypeName()},
+        {"empty", empty->getId(), empty->getTypeName()},
+        {"number", runtime.getIntegerType()->getId(), "int"}
+    });
+    BOOST_REQUIRE(eventId.isValid());
+    const auto event = runtime.getEventDefinition(eventId);
+    BOOST_REQUIRE(event.has_value());
+    ArgumentList arguments;
+    arguments.addEventDispatchArgument(1, 0, runtime.getEventDispatchType(), *event);
+    arguments.addExpressionArgument(
+        1,
+        1,
+        point,
+        std::make_unique<ConstructorExpression>(nullptr, 1, 1, "HiddenPoint", point, ArgumentList{})
+    );
+    arguments.addExpressionArgument(
+        1,
+        2,
+        empty,
+        std::make_unique<ConstructorExpression>(nullptr, 1, 2, "HiddenEmpty", empty, ArgumentList{})
+    );
+    arguments.addExpressionArgument(
+        1,
+        3,
+        runtime.getIntegerType(),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 3, 7)
+    );
+    BOOST_TEST(runtime.getEventDispatchType()->getParameterStackValueCount() == 1U);
+    BOOST_TEST(arguments.getArgumentCount() == 4U);
+    const auto expandedLayout = runtime.getCallable(dispatchId)->getCallStorageLayout(arguments.getArgumentCount());
+    BOOST_REQUIRE(expandedLayout.returnOffset.has_value());
+    BOOST_TEST(*expandedLayout.returnOffset == 4U);
+    BOOST_TEST(expandedLayout.stackSlotCount == 5U);
+}
+
+BOOST_AUTO_TEST_CASE(call_site_stack_counts_reject_overflow_before_layout_is_built) {
+    Runtime runtime;
+    ClassType* maximumType = nullptr;
+    BOOST_REQUIRE(runtime.registerClass<ScriptCallableTestType>(
+        "MaximumArgumentField", ClassMode::Closed, maximumType, std::numeric_limits<NomadIndex>::max()
+    ).isValid());
+    const auto payloadId = runtime.registerStruct("MaximumArgumentPayload");
+    BOOST_REQUIRE(payloadId.isValid());
+    auto& manager = runtime.getTypeManager();
+    BOOST_REQUIRE(manager.registerScriptStructProperty(payloadId, "field", maximumType).isValid());
+    manager.finalizeCompositeFieldLayout(payloadId);
+    const auto* payload = runtime.getType(payloadId).value();
+    ArgumentList arguments;
+    arguments.addExpressionArgument(
+        1,
+        0,
+        payload,
+        std::make_unique<ConstructorExpression>(
+            nullptr, 1, 0, "MaximumArgumentPayload", payload, ArgumentList{}
+        )
+    );
+    arguments.addExpressionArgument(
+        1,
+        1,
+        runtime.getIntegerType(),
+        std::make_unique<IntegerLiteral>(nullptr, 1, 1, 1)
+    );
+    BOOST_CHECK_EXCEPTION(
+        static_cast<void>(arguments.getArgumentCount()),
+        NomadException,
+        [](const auto& error) {
+
+            return NomadString{error.what()} == "Argument storage size exceeds the maximum slot count";
+        }
+    );
 }
 
 BOOST_AUTO_TEST_CASE(hidden_call_layout_requires_resolved_sizes_and_return_types) {

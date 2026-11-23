@@ -13,6 +13,7 @@
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <algorithm>
+#include <limits>
 
 namespace nomad {
 
@@ -176,7 +177,12 @@ NomadIndex ArgumentList::getArgumentCount() const {
     NomadIndex total = 0;
 
     for (const auto& argument : m_arguments) {
-        total += argument->getStackValueCount();
+        const auto count = argument->getStackValueCount();
+        if (count > std::numeric_limits<NomadIndex>::max() - total) {
+            throw NomadException("Argument storage size exceeds the maximum slot count");
+        }
+
+        total += count;
     }
 
     return total;

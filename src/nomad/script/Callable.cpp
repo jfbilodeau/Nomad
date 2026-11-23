@@ -2,7 +2,7 @@
 
 #include <nomad/script/Callable.hpp>
 
-#include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/Type.hpp>
 
@@ -31,14 +31,14 @@ NomadIndex Parameter::getStackValueCount() const {
         throw NomadException("Cannot calculate parameter layout: type of '" + name + "' is unresolved");
     }
 
-    switch (type->getRuntime()->getParameterShape(type)) {
-    case ParameterShape::EventCallback:
-        return 2;
-    case ParameterShape::EventDispatch:
+    if (
+        dynamic_cast<const EventDispatchType*>(type) != nullptr &&
+        type->getRuntime()->getType(type->getId()) == type
+    ) {
         throw NomadException("Parameter '" + name + "' has a call-site-dependent event-dispatch layout");
-    default:
-        return type->getSize();
     }
+
+    return type->getParameterStackValueCount();
 }
 
 Parameter defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
