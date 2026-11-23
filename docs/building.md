@@ -140,6 +140,23 @@ workloads do not measure reference-valued or unresolved properties.
 After descriptor-based execution, copied metadata remains a separate control;
 compare VM getter/setter timings without treating snapshot-copy cost as removed.
 
+A host-call section compares prepared zero-argument execution, raw script calls
+with zero/one/four integers or two string arguments, the raw capture-vector path,
+and Closure calls with empty/scalar/captured arguments. Each of five fresh
+Runtime samples performs 50,000 calls after warmup. Argument vectors and a
+source-created scalar/string closure are prepared outside timing. Checks cover
+results, capture/reference ownership, borrowed enclosing state, and final cleanup.
+
+On MSVC Debug, a separate untimed pass counts current-thread CRT allocation and
+reallocation requests over 1,000 calls per case, after validating a one-allocation
+control. The hook is restored after the pass and is not installed during latency
+measurement. Other builds explicitly report allocation counts as unavailable;
+Release timings must not be interpreted as measured Release allocation counts.
+Separate Debug probes measure parameter classification, scalar call layout,
+closure-frame preparation, and a raw call with an explicitly prepared empty
+capture vector. Counts include Debug STL instrumentation and all work in the
+selected path, not just argument-storage capacity allocations.
+
 Run the same target, configuration, and workload before and after an optimization.
 Compare optimized Release results separately from Debug results; timing values
 are observations, not pass/fail thresholds.

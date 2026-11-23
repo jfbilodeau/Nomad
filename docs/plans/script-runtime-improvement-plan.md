@@ -4,7 +4,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**V6:** Descriptor-based callback invocation is implemented and validated, with persistent registration-owned callback state and unchanged explicit snapshots. Next reviewable scope: measure V16's per-host-call argument allocations.
+**V16:** Host-call allocation/latency baselines are recorded. Closure parameter-shape/layout queries account for substantial measured work; review that path before changing argument bookkeeping.
 
 ## Component contract
 
@@ -965,9 +965,109 @@ Measure each change before and after on the same workload.
   whole-game, or cross-platform performance evidence. No allocation-count or
   heap-memory claim, timing threshold, full 13-entry rerun, or manual gameplay
   validation is claimed.
-- V6 is complete. Next reviewable scope: verify V16's host-call/capture consumers
-  and measure per-host-call argument allocation and latency before proposing
-  a storage or cleanup change. Other step-8 work remains separate.
+- V6 is complete. V16's host-call/capture consumers and allocation/latency
+  baselines are recorded below; no argument-storage change has been made.
+
+#### V16 host-call allocation and latency baseline
+
+- Production `executeFunction(CallableId, arguments)` reaches the raw
+  ScriptFunction runner, and Runtime initialization calls that runner directly.
+  Production game/entity/scene/event callbacks use Closure objects through
+  `executeFunction(Closure*, arguments)`, which reaches the Closure runner and
+  InterpreterCallFrame. The explicit third raw capture-vector parameter has
+  a test consumer in InterpreterTest; no production caller supplying that
+  parameter was found in the repository. It was not removed in this step.
+- The raw runner creates a local argument-type vector and reserves parameter
+  count for cleanup. The Closure path validates explicit/capture widths, then
+  prepares an InterpreterCallFrame with its own argument metadata. These are
+  distinct paths; prepared execution is a separate control, not a replacement
+  for owned argument preparation or host validation.
+- The existing opt-in benchmark now appends nine checked cases, with five fresh
+  Runtimes, 32 warmup calls, and 50,000 timed calls per case. Compilation,
+  initialization, argument vectors, and source-created scalar/string closure
+  preparation are outside timing. Cases return integer 42 and time the full
+  invocation plus result checksum:
+  - `prepared_empty`: prepared ScriptFunction execution, without host arguments.
+  - `raw_empty`, `raw_integer`, and `raw_four_integers`: raw script calls with
+    zero, one, or four explicit integers.
+  - `raw_two_strings`: two prepared string arguments, returning their total
+    length without creating a result string.
+  - `raw_capture_vector`: one explicit integer plus borrowed scalar/string
+    captures from the prepared Closure, passed through the raw vector API.
+  - `closure_empty`, `closure_integer`, and `closure_captured`: Closure runner
+    calls without captures, with one integer, or with one integer plus owned
+    scalar/string captures. Raw and Closure capture cases execute the same body.
+- An untimed pass separately counts allocation/reallocation requests over
+  1,000 calls using the existing MSVC Debug CRT-hook approach. A direct
+  single-allocation CRT control verifies the probe; the previous hook is restored
+  on return or throw and no hook is installed during latency timing.
+  Counts are current-thread requests, not bytes or peak/live heap usage.
+  Release and non-MSVC builds explicitly report counts as unavailable.
+- Checks verify results, the enclosing instruction/stack/parameter/local/running
+  state and borrowed receiver, a preexisting stack marker, argument/receiver
+  references, capture references, no active script frame after return, and final
+  receiver/argument/capture object cleanup. Raw APIs do not promise to preserve
+  result/intermediate registers, so no additional register contract is imposed.
+- Debug and Release builds and checked executions pass with bundled language
+  DLL hashes matched to the current builds. All preceding benchmark sections
+  still pass. The first Debug run revealed unexpectedly large Closure costs;
+  after adding the subpath probes below, the unchanged timed workloads were
+  run again. Both Debug runs are retained. The existing 13 CTest entries remain
+  unchanged and were not rerun for this standalone benchmark extension.
+  Values are five-sample median `[min,max]` microseconds per invocation.
+
+| Case | Debug 1 (us) | Debug 2 (us) | Release (us) | Debug requests/call |
+| --- | --- | --- | --- | --- |
+| Prepared empty | 0.422 [0.404,0.464] | 0.416 [0.402,0.459] | 0.056 [0.053,0.063] | 0 |
+| Raw empty | 1.520 [1.463,1.652] | 1.464 [1.450,1.552] | 0.077 [0.074,0.098] | 2 |
+| Raw integer | 2.383 [2.267,2.421] | 2.250 [2.191,2.439] | 0.147 [0.129,0.153] | 3 |
+| Raw four integers | 3.154 [3.045,3.210] | 3.104 [3.047,3.131] | 0.265 [0.260,0.291] | 3 |
+| Raw two strings | 9.422 [9.160,9.548] | 9.111 [8.950,9.249] | 0.738 [0.663,0.763] | 7 |
+| Raw capture vector | 5.440 [5.369,5.984] | 5.274 [5.164,5.416] | 0.446 [0.397,0.465] | 4 |
+| Closure empty | 2.074 [2.004,2.128] | 2.003 [1.908,2.125] | 0.155 [0.139,0.193] | 2 |
+| Closure integer | 62.618 [61.860,62.714] | 63.299 [62.724,64.329] | 1.316 [1.225,1.333] | 93 |
+| Closure captured | 187.167 [184.759,190.941] | 187.432 [187.245,188.982] | 3.786 [3.613,3.913] | 275 |
+
+- Each Debug allocation value above has identical minimum/median/maximum across
+  all five samples in both runs. These include Debug STL instrumentation,
+  default empty capture-vector temporaries, validation, body execution, and
+  cleanup; they must not be interpreted as Release allocation counts or as
+  allocations exclusively from the argument-type reserve.
+- Four untimed Debug subpath probes also use five samples of 1,000 operations:
+
+| Probe | Allocation requests/operation, median [min,max] |
+| --- | --- |
+| Integer parameter classification | 45 [45,45] |
+| Integer callable storage layout | 45 [45,45] |
+| Integer Closure-frame preparation, without execution | 48 [48,48] |
+| Raw empty call with an explicitly prepared empty capture vector | 1 [1,1] |
+
+- Source tracing explains the repeated work: `Parameter::getStackValueCount`
+  calls `Runtime::getParameterShape`, which delegates to TypeManager. For an
+  ordinary integer, classification performs five built-in name lookups;
+  `getTypeId` scans descriptors and obtains type names by value.
+  The Closure runner checks parameter width, then frame preparation calculates
+  call layout through the same classifier again. For the scalar case, the
+  measured 45 classifier requests plus 48 frame-preparation requests account
+  for the complete 93-request call. Allocation call stacks were not captured.
+- In the measured Release build, the scalar Closure call is 1.316 us versus
+  0.147 us for raw integer invocation; the shared captured body costs 3.786 us
+  through Closure versus 0.446 us through raw capture vectors. These compare
+  complete paths, including different validation/ownership preparation, not
+  isolated vector or classifier instruction timings.
+- Only benchmark code, its private linkage to the existing Boost scope-exit
+  dependency, the build guide, and this plan changed. VM/Interpreter/TypeManager
+  behavior, APIs, guards, ownership, and registration remain unchanged.
+  These are warm microbenchmarks on a shared Windows/MSVC machine, not a
+  whole-game result. No Release allocation count, timing threshold, memory-byte
+  estimate, exception/fault-injection benchmark, or cross-platform result is
+  claimed.
+- Next reviewable scope: review allocation-free parameter-shape/width lookup
+  before optimizing host cleanup vectors. Preserve canonical type identity,
+  event/source/callback classification, checked host layouts, and open
+  registration. Do not introduce a parallel index, cached layout, declaration
+  seal, or new type-category API without discussing the evidence and trade-offs.
+  Raw argument-bookkeeping changes remain a separate measured decision.
 
 ## Corrections to earlier review notes
 
@@ -1096,7 +1196,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V13 | P3 | const-correctness | getCurrentFunction() const returns a non-const ScriptFunction*; receiver validation repeats on copies and binding | `VirtualMachine.hpp`: getCurrentScript; `VirtualMachine.cpp`: getThis, bindThisFromStack, copyThisToResult, copyThisToIntermediate | Fixed: const script getter and unchecked bound-receiver copies; host/receiver-binding null checks intentionally retained | 2 (done), 4 (done) |
 | V14 | P3 | naming | `stack_size` parameter; `integer_value` and `float_value` locals; memberId used for both CallableId and PropertyId; get*Function*VariableValue and set*VariableValue are asymmetric | `VirtualMachine.hpp/cpp`: constructor, scalar operand readers, native method/property parameters and function-variable accessors | Complete: remaining parameter/local names normalized; obsolete accessor asymmetry resolved by review with APIs unchanged | 7 |
 | V15 | P2 | quality | runNativeIndexer uses magic offsets (+2, +3) and convoluted release index arithmetic; duplicates the m_result reset in callNativeIndexer | `VirtualMachine.cpp`: runNativeIndexer, callNativeIndexer | Implemented: named receiver slot count and position, explicit copied-argument count; early reset retained for copy failures | 4 |
-| V16 | P3 | perf | run(ScriptFunction) allocates a `vector<const Type*>` per host call; the closure-argument path has unclear callers | `VirtualMachine.cpp`: run(ScriptFunction), run(Closure) overloads; verify closure-argument callers | partly-verified | 8 |
+| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `VirtualMachine.cpp`: raw/Closure runners; `InterpreterCallFrame.cpp`: preparation; `Callable.cpp`: parameter widths; RuntimeLookupBenchmark host workloads/probes | Consumers verified; checked Debug/Release latency and Debug CRT allocation baselines recorded; parameter-shape/layout design review precedes bookkeeping optimization | 8 |
 | V17 | P3 | quality | fault() is not `[[noreturn]]`; many fault-then-continue patterns | `VirtualMachine.hpp`: fault declaration | Fixed: `[[noreturn]]` | 4 |
 
 ### Compiler

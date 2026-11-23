@@ -7,17 +7,16 @@ Things the author wants to do.
 
 ## Open
 [ ] Auto static methods (Auto `this` detection`)
+[ ] Object serialization
 [ ] `object` dynamic type
 [ ] Code: distinguish between property and variable
 [ ] Line continuation. Use operator? (`myMethod.nextMethod` -> `myMethod\n.nextMethod`)
 [ ] Use `Task<T>` for captures?
-[ ] `struct` (Embedded types, pass by copy)
 [ ] Support for Nomad unit testing
 [ ] Improve animations declaration (avoid duplicate files...)
 [ ] Add private hub/class members
-[ ] Finish converting `NomadId` to strong types.
+[ ] Finish converting `NomadId` to strong types (Game module).
 [ ] Script fault handling
-[ ] Object serialization
 [ ] File IO module.
 [ ] Replace ref counting with garbage collector.
 [ ] Game debug console--root should be Game/Inventory/Windows/etc.
@@ -46,6 +45,7 @@ a = new 20  # Type for `a` is known. Reused.
 ```
  
 ## Completed
+[X] `struct` (Embedded types, pass by copy)
 [X] Refactor module names. `<module_name>` -> `<module_name>.nomad.dll`. Drop the `nomad-*` prefix. Replace with `nomad.*`?
 [X] Nomad scripts in modules
 [X] Configure logging via `nomad.toml`

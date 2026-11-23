@@ -164,7 +164,7 @@ endif()
 nomad_copy_runtime_dependencies(nomad_test)
 
 add_executable(nomad-lookup-benchmark EXCLUDE_FROM_ALL RuntimeLookupBenchmark.cpp)
-target_link_libraries(nomad-lookup-benchmark PRIVATE Nomad::Language)
+target_link_libraries(nomad-lookup-benchmark PRIVATE Nomad::Language Boost::scope_exit)
 nomad_configure_runtime_target(nomad-lookup-benchmark)
 target_compile_definitions(nomad-lookup-benchmark PRIVATE NOMAD_BENCHMARK_CONFIGURATION="$<CONFIG>")
 nomad_copy_runtime_dependencies(nomad-lookup-benchmark)

@@ -1,14 +1,19 @@
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
 
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
+
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/Closure.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VirtualMachine.hpp>
+
+#include <boost/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
@@ -18,11 +23,40 @@
 #include <format>
 #include <iomanip>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#endif
+
 namespace {
+
+#if defined(_MSC_VER) && defined(_DEBUG)
+thread_local auto hostCallAllocations = nomad::NomadIndex{0};
+thread_local auto hostAllocationProbeEnabled = false;
+_CRT_ALLOC_HOOK previousHostAllocationHook = nullptr;
+
+int countHostAllocation(
+    const int operation,
+    void* data,
+    const size_t size,
+    const int blockType,
+    const long request,
+    const unsigned char* file,
+    const int line
+) {
+    if (hostAllocationProbeEnabled && (operation == _HOOK_ALLOC || operation == _HOOK_REALLOC)) {
+        ++hostCallAllocations;
+    }
+
+    return previousHostAllocationHook == nullptr ||
+        previousHostAllocationHook(operation, data, size, blockType, request, file, line);
+}
+#endif
 
 struct PropertyBenchmarkState {
     nomad::NomadInteger value = 0;
@@ -366,6 +400,65 @@ double measurePropertySetter(
     }.count();
     if (matchingWrites != iterations) {
         throw std::runtime_error("Native-property setter side effects changed during measurement");
+    }
+
+    return elapsed / static_cast<double>(iterations);
+}
+
+template<typename Invocation>
+std::optional<nomad::NomadIndex> countHostCallAllocations(
+    const Invocation& invoke,
+    const nomad::NomadIndex iterations
+) {
+#if defined(_MSC_VER) && defined(_DEBUG)
+    const auto previousHook = _CrtSetAllocHook(countHostAllocation);
+    previousHostAllocationHook = previousHook;
+    hostCallAllocations = 0;
+    hostAllocationProbeEnabled = true;
+    BOOST_SCOPE_EXIT_ALL(previousHook) {
+        hostAllocationProbeEnabled = false;
+        _CrtSetAllocHook(previousHook);
+        previousHostAllocationHook = nullptr;
+    };
+
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        invoke();
+    }
+
+    return hostCallAllocations;
+#else
+    static_cast<void>(invoke);
+    static_cast<void>(iterations);
+
+    return std::nullopt;
+#endif
+}
+
+template<typename Invocation>
+double measureHostCall(
+    nomad::VirtualMachine& machine,
+    const Invocation& invoke,
+    const nomad::NomadIndex iterations
+) {
+    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+        invoke();
+        if (machine.getIntegerResult() != 42) {
+            throw std::runtime_error("Unexpected host-call benchmark result");
+        }
+    }
+
+    auto checksum = std::uint64_t{0};
+    const auto start = std::chrono::steady_clock::now();
+    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+        invoke();
+        checksum += static_cast<std::uint64_t>(machine.getIntegerResult());
+    }
+
+    const auto elapsed = std::chrono::duration<double, std::micro>{
+        std::chrono::steady_clock::now() - start
+    }.count();
+    if (checksum != std::uint64_t{42} * iterations) {
+        throw std::runtime_error("Host-call results changed during measurement");
     }
 
     return elapsed / static_cast<double>(iterations);
@@ -1061,6 +1154,242 @@ void runNativePropertyBenchmark() {
     }
 }
 
+void runHostCallBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto iterations = nomad::NomadIndex{50000};
+    constexpr auto allocationIterations = nomad::NomadIndex{1000};
+    constexpr auto labels = std::array{
+        "prepared_empty", "raw_empty", "raw_integer", "raw_four_integers",
+        "raw_two_strings", "raw_capture_vector", "closure_empty", "closure_integer", "closure_captured"
+    };
+    constexpr auto probeLabels = std::array{
+        "integer_parameter_shape", "integer_call_layout", "integer_closure_frame", "raw_empty_explicit_captures"
+    };
+    const auto source = nomad::NomadString{
+        "fun benchmarkHostEmpty\nreturn 42\nend\n"
+        "fun benchmarkHostInteger value:int\nreturn value\nend\n"
+        "fun benchmarkHostFour first:int second:int third:int fourth:int\n"
+        "return first + second + third + fourth\nend\n"
+        "fun benchmarkHostStrings first:string second:string\nreturn first.length + second.length\nend\n"
+        "fun benchmarkPrepareHostCapture\nprefix = \"captured\"\nbase = 13\n"
+        "benchmarkKeepHostCapture fun value\nreturn value + base + prefix.length\nend\nend\n"
+    };
+    std::array<std::vector<double>, labels.size()> latencySamples;
+    std::array<std::vector<double>, labels.size()> allocationSamples;
+    std::array<std::vector<double>, probeLabels.size()> probeSamples;
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    std::cout << "Host calls: prepared execution, raw arguments, and Closure-owned captures.\n"
+        << "Latency includes execution and result checksum; compilation and argument/capture preparation are excluded.\n"
+        << "Allocation counts use a separate untimed MSVC Debug CRT pass; other builds report unavailable.\n"
+        << std::flush;
+    const auto controlAllocations = countHostCallAllocations([] {
+#if defined(_MSC_VER) && defined(_DEBUG)
+        auto* control = _malloc_dbg(16, _NORMAL_BLOCK, __FILE__, __LINE__);
+        if (control == nullptr) {
+            throw std::runtime_error("Cannot allocate the host-call probe control");
+        }
+
+        _free_dbg(control, _NORMAL_BLOCK);
+#endif
+    }, 1);
+    if (controlAllocations.has_value() && *controlAllocations != 1) {
+        throw std::runtime_error("The host-call allocation probe did not observe its single-allocation control");
+    }
+
+    for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+        nomad::Runtime runtime;
+        std::unique_ptr<nomad::Closure> captured;
+        const auto storeId = runtime.registerNativeFunction(
+            "benchmarkKeepHostCapture",
+            [&](nomad::VirtualMachine* machine) {
+                captured = machine->createClosure(&runtime, machine->getCallableIdParameter(0));
+            },
+            {nomad::defParameter(
+                "callback",
+                runtime.getTypeManager().getCallbackType({runtime.getIntegerType()}, runtime.getIntegerType()),
+                ""
+            )},
+            runtime.getVoidType(),
+            ""
+        );
+        if (storeId.isInvalid()) {
+            throw std::runtime_error("Failed to register the host-call benchmark capture store");
+        }
+
+        auto compiler = runtime.createCompiler();
+        const auto compilation = nomad::compileSources(
+            {{{"benchmarkHostMain", {"benchmark-host.nomad", source}}}, {}},
+            *compiler
+        );
+        if (!compilation.succeeded()) {
+            auto message = nomad::NomadString{"Host-call benchmark compilation failed:\n"};
+            for (const auto& diagnostic : compilation.diagnostics) {
+                message += diagnostic.message + "\n";
+            }
+
+            throw std::runtime_error(message);
+        }
+
+        const auto* empty = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostEmpty"));
+        const auto* integer = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostInteger"));
+        const auto* four = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostFour"));
+        const auto* strings = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostStrings"));
+        for (const auto* function : {empty, integer, four, strings}) {
+            if (
+                function == nullptr ||
+                !function->isCompiled() ||
+                function->getReturnType() != runtime.getIntegerType()
+            ) {
+                throw std::runtime_error("A host-call benchmark function is unavailable");
+            }
+        }
+
+        runtime.initializeScripts();
+        auto machine = runtime.createVirtualMachine();
+        machine->executeFunction(runtime.getScriptFunctionId("benchmarkPrepareHostCapture"));
+        if (captured == nullptr || captured->getCaptureCount() != 2) {
+            throw std::runtime_error("The host-call benchmark did not capture its scalar and string values");
+        }
+
+        std::vector<nomad::RuntimeValue> rawCaptures;
+        const nomad::NomadStringObject* capturedString = nullptr;
+        for (auto index = nomad::NomadIndex{0}; index < captured->getCaptureCount(); ++index) {
+            const auto* type = captured->getCaptureType(index);
+            if (type != runtime.getIntegerType() && type != runtime.getStringType()) {
+                throw std::runtime_error("Unexpected host-call benchmark capture type");
+            }
+
+            rawCaptures.push_back(captured->getCaptureValue(index));
+            if (type == runtime.getStringType()) {
+                capturedString = rawCaptures.back().getStringObject();
+            }
+        }
+
+        if (capturedString == nullptr) {
+            throw std::runtime_error("The host-call benchmark reference capture is missing");
+        }
+
+        const auto captureReferences = capturedString->getReferenceCount();
+        nomad::RuntimeValue firstText{nomad::NomadString(19, 'a')};
+        const nomad::RuntimeValueGuard firstOwner(*runtime.getStringType(), &firstText);
+        nomad::RuntimeValue secondText{nomad::NomadString(23, 'b')};
+        const nomad::RuntimeValueGuard secondOwner(*runtime.getStringType(), &secondText);
+        nomad::RuntimeValue receiver{nomad::NomadString{"borrowed host-call receiver"}};
+        const nomad::RuntimeValueGuard receiverOwner(*runtime.getStringType(), &receiver);
+        const std::vector<nomad::RuntimeValue> noArguments;
+        const std::vector integerArguments{nomad::RuntimeValue{nomad::NomadInteger{42}}};
+        const std::vector fourArguments{
+            nomad::RuntimeValue{nomad::NomadInteger{3}},
+            nomad::RuntimeValue{nomad::NomadInteger{7}},
+            nomad::RuntimeValue{nomad::NomadInteger{13}},
+            nomad::RuntimeValue{nomad::NomadInteger{19}}
+        };
+        const std::vector textArguments{firstText, secondText};
+        const std::vector captureArguments{nomad::RuntimeValue{nomad::NomadInteger{21}}};
+        const nomad::Closure emptyClosure(empty);
+        const nomad::Closure integerClosure(integer);
+        machine->pushInteger(91);
+        machine->enterNativeFrame(receiver);
+        const auto before = machine->captureExecutionState();
+        const auto recordProbe = [&](const nomad::NomadIndex query, const auto& invoke) {
+            const auto allocations = countHostCallAllocations(invoke, allocationIterations);
+            if (allocations.has_value()) {
+                probeSamples[query].push_back(
+                    static_cast<double>(*allocations) / static_cast<double>(allocationIterations)
+                );
+            }
+        };
+        recordProbe(0, [&] {
+            if (runtime.getParameterShape(integer->getParameters()[0].type) != nomad::ParameterShape::Value) {
+                throw std::runtime_error("Unexpected parameter shape in the host-call allocation probe");
+            }
+        });
+        recordProbe(1, [&] {
+            const auto layout = integer->getCallStorageLayout();
+            if (layout.argumentSlotCount != 1 || layout.stackSlotCount != 1) {
+                throw std::runtime_error("Unexpected call layout in the host-call allocation probe");
+            }
+        });
+        recordProbe(2, [&] {
+            const nomad::InterpreterCallFrame frame(*machine, integerClosure, integerArguments);
+        });
+        recordProbe(3, [&] { machine->run(empty, noArguments, noArguments); });
+        const auto record = [&](const nomad::NomadIndex query, const auto& invoke) {
+            latencySamples[query].push_back(measureHostCall(*machine, invoke, iterations));
+            auto allocationChecksum = std::uint64_t{0};
+            const auto allocations = countHostCallAllocations([&] {
+                invoke();
+                allocationChecksum += static_cast<std::uint64_t>(machine->getIntegerResult());
+            }, allocationIterations);
+            if (allocations.has_value()) {
+                if (allocationChecksum != std::uint64_t{42} * allocationIterations) {
+                    throw std::runtime_error("The allocation-probe host calls returned unexpected results");
+                }
+
+                allocationSamples[query].push_back(
+                    static_cast<double>(*allocations) / static_cast<double>(allocationIterations)
+                );
+            }
+
+            const auto after = machine->captureExecutionState();
+            if (
+                after.instructionIndex != before.instructionIndex ||
+                after.stackIndex != before.stackIndex ||
+                after.parameterIndex != before.parameterIndex ||
+                after.variableIndex != before.variableIndex ||
+                after.running != before.running ||
+                after.receiver.getObjectValue() != before.receiver.getObjectValue() ||
+                machine->getCurrentCallable() != nullptr ||
+                machine->peekStack(0).getIntegerValue() != 91 ||
+                firstText.getObjectValue()->getReferenceCount() != 1 ||
+                secondText.getObjectValue()->getReferenceCount() != 1 ||
+                receiver.getObjectValue()->getReferenceCount() != 1 ||
+                capturedString->getReferenceCount() != captureReferences
+            ) {
+                throw std::runtime_error("Host calls changed enclosing state, borrowed references, or capture ownership");
+            }
+        };
+        record(0, [&] { machine->executeFunction(*empty); });
+        record(1, [&] { machine->run(empty, noArguments); });
+        record(2, [&] { machine->run(integer, integerArguments); });
+        record(3, [&] { machine->run(four, fourArguments); });
+        record(4, [&] { machine->run(strings, textArguments); });
+        record(5, [&] { machine->run(captured->getFunction(), captureArguments, rawCaptures); });
+        record(6, [&] { machine->run(emptyClosure, noArguments); });
+        record(7, [&] { machine->run(integerClosure, integerArguments); });
+        record(8, [&] { machine->run(*captured, captureArguments); });
+    }
+
+    for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+        std::cout << "host_call=" << labels[query] << " iterations=" << iterations
+            << " allocation_iterations=" << (controlAllocations.has_value() ? allocationIterations : 0);
+        printSamples("latency_us", latencySamples[query]);
+        if (!allocationSamples[query].empty()) {
+            printSamples("allocations_per_call", allocationSamples[query]);
+        } else {
+            std::cout << " allocations_per_call=unavailable";
+        }
+
+        std::cout << std::endl;
+    }
+
+    for (auto query = nomad::NomadIndex{0}; query < probeLabels.size(); ++query) {
+        std::cout << "host_probe=" << probeLabels[query]
+            << " iterations=" << (controlAllocations.has_value() ? allocationIterations : 0);
+        if (!probeSamples[query].empty()) {
+            printSamples("allocations_per_operation", probeSamples[query]);
+        } else {
+            std::cout << " allocations_per_operation=unavailable";
+        }
+
+        std::cout << std::endl;
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Host-call benchmark leaked argument, capture, or receiver objects");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -1072,6 +1401,7 @@ int main() {
         runCurrentCallableBenchmark();
         runNestedScriptCallBenchmark();
         runNativePropertyBenchmark();
+        runHostCallBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 
