@@ -29,6 +29,10 @@ hit.volume = 0.5
 hit.play
 ```
 
+Assignments share the same `Audio` instance. Keep a reference for as long as it
+should play: releasing its last reference stops playback and cancels its
+completion callback. `Audio` objects cannot be created with `new`.
+
 An audio instance provides:
 
 - `play`: play once from the beginning.

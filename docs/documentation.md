@@ -2,8 +2,7 @@
 
 Handwritten pages live in `docs`. CI generates the engine API page from the
 registered API with `nomadc docs`; do not edit the generated Markdown.
-The site uses Material for MkDocs for syntax highlighting and built-in code
-copy buttons; clipboard access requires HTTPS or localhost.
+The site uses Material for MkDocs.
 
 ## Build locally
 
@@ -16,32 +15,17 @@ python -m pip install -r docs/requirements.txt
 python -m mkdocs build --strict
 ```
 
-The preparation script copies handwritten pages to `out/documentation/source`,
-initializes a disposable project, and generates `engine-api.md` without
-executing game scripts. The rendered site is in `out/documentation/site`.
+The generated Markdown is in `out/documentation/source`; the rendered site is
+in `out/documentation/site`.
 Run `python -m mkdocs serve` to preview it locally.
 
-To generate the registered engine API directly outside a Nomad project, run:
-
-```console
-nomadc docs --output .
-```
-
-The compiler warns that no project was found and writes engine-only
-documentation to the ignored local output `nomad-reference.md`. Inside a
-project, the default invocation also includes API declarations from the
-discovered project scripts. Pass an explicit source or project path to document
-it regardless of the current directory.
-
-The preparation script uses only the Python standard library and needs no
-CMake installation. Test it with
-`python -m unittest discover -s scripts -p "test_*.py"`.
+For API generation outside the site workflow, see the
+[compiler CLI](cli.md#compiler).
 
 ## CI and deployment
 
-CI reuses the tested Linux SDK artifact; documentation does not trigger another
-native build. Generation errors or strict site-build errors fail the job.
-Pull requests build the site but do not deploy it.
+Pull requests validate the site without deploying it. Generation or strict
+site-build errors fail validation.
 
 After successful main-branch push CI, the Pages workflow deploys the validated
 site artifact. In repository Settings, select **Pages > Build and deployment >

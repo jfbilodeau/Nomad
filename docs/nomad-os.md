@@ -21,15 +21,8 @@ modules = ["os"]
 | `os.executablePath` | `string` | Absolute path to the running executable. |
 | `os.tempDirectory` | `string` | The operating system's temporary directory at startup. |
 
-`os.argv` is a read-only one-dimensional array. Use `ReadOnlyArray1<string>`
-in parameter type annotations.
-
-These bindings are read-only: scripts cannot assign a different array, map,
-enum, or string to them. Their collection contents are also read-only: scripts
-cannot replace argument elements, insert or replace environment entries, or
-remove or clear environment entries. Environment
-keys use the map's normal case-sensitive matching, including on Windows.
-Windows' hidden drive-directory entries are not included.
+Bindings and collection contents are read-only. Environment keys are
+case-sensitive, including on Windows.
 
 Arguments, environment text, and paths use UTF-8. Empty argument strings and
 environment values are preserved. Snapshots are captured when the module loads,
@@ -92,7 +85,3 @@ if os.env.contains "HOME"
     homeDirectory = os.env["HOME"]
 end
 ```
-
-Packaged applications retain `os` and its collections dependency and
-capture fresh snapshots when launched. Packaging itself does not run scripts or
-capture the packager's environment.

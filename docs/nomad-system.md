@@ -8,7 +8,7 @@ and orderly application shutdown:
 modules = ["system"]
 ```
 
-Keep the project's existing `nomad.version`. This module does not open a game
+This module does not open a game
 window. It is also loaded automatically when a project selects `game`.
 See [Runtime modules](modules.md) for module setup and startup behavior.
 
@@ -20,9 +20,7 @@ Use the built-in `print` function for plain output; it requires no module:
 print "Application started"
 ```
 
-For structured logging with script locations, select the independent
-[log](nomad-log.md) module explicitly. `system` no longer supplies
-`log.info` and does not load `log` automatically.
+For structured logging, select the independent [log](nomad-log.md) module.
 
 ## Math and conversions
 
@@ -50,6 +48,5 @@ invocation completes:
 system.exit
 ```
 
-Modules stop their background work before the application releases them.
 This module supplies APIs only. Running an application requires a separate
 runnable module, which owns its entry point and determines when execution ends.

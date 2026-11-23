@@ -8,15 +8,14 @@ entities, and game resources:
 modules = ["game"]
 ```
 
-Keep the project's existing `nomad.version`. The module automatically loads
+The module automatically loads
 [system](nomad-system.md). Collections are separate: add
 `collections` explicitly when a game uses lists or arrays.
 See [Runtime modules](modules.md) for module setup.
 
 ## Startup and configuration
 
-The game module prepares resources and scripts before startup. Once the host
-has initialized script hub values, the game executes `game.entry` (default
+After resources and scripts are initialized, the game executes `game.entry` (default
 `main`). The entry must take no arguments and return `void`. After that function
 returns, the game event loop handles input,
 updates, and rendering until shutdown is requested.
@@ -30,11 +29,9 @@ resource directories, and validation rules.
 
 ## Game API hubs
 
-Before scripts are compiled, the game module registers the `game` hub and its
-`game.audio`, `game.music`, and `game.debug` hubs. The debug hub also contains
-`game.debug.console` and `game.debug.draw`. Existing native function and
-dynamic-variable names stay the same; these hubs group the APIs and can be
-extended by scripts.
+The API uses the `game`, `game.audio`, `game.music`, `game.debug`,
+`game.debug.console`, and `game.debug.draw` hubs. Scripts can extend these open
+hubs with their own declarations.
 
 ## Features and guides
 
@@ -48,28 +45,21 @@ extended by scripts.
 
 ## Running and packaging
 
-Use `nomad run` to run a project. `--debug` and `--no-debug` override
-`game.debug` for that run; supplying both is an error.
-
-Use `nomad check` to validate scripts and game resources without starting the
-event loop. `nomad package` includes the game module, its dependencies, and the
-project's resources, including automatically packed sprites.
-See [CLI](cli.md) for commands and packaging options.
+Use `nomad run`, `nomad check`, and `nomad package` to run, validate, and
+distribute a game. See [CLI](cli.md) for options.
 
 Use `system.exit` to request orderly shutdown after the current script
 invocation. The game module releases its script state during shutdown.
 
-## C++ audio and font ownership
+## Fonts
 
-Include `nomad/game/resource/AudioObject.hpp` and
-`nomad/game/resource/FontObject.hpp` when using their C++ object APIs. Their
-script type names are `Audio` and `Font`; neither is script-constructible.
+Load a font and assign it to an entity:
 
-`AudioManager::createAudioObject` and `FontManager::registerFont` return object
-pointers with one caller-owned reference. Release that reference when finished.
-There are no audio-instance or font IDs to look up. `Entity::setFont` retains its
-`FontObject`, and `Entity::getFont` returns a borrowed pointer.
+```nomad
+font = game.loadFont "fonts/main.ttf" 16
+this.setText font "Hello"
+```
 
-Keep the game alive while using its resources. Game shutdown invalidates the
-underlying resources even if a C++ object reference survives; such references
-may still be released safely afterward.
+`Font` objects cannot be created with `new`. Assignments share the same font,
+which remains alive while a variable or entity references it.
+For C++ resource ownership, see [embedding](embedding.md#game-resources).

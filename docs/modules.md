@@ -27,9 +27,8 @@ loads `system`. A system-only project can select `["system"]`
 without opening a game window. An empty list selects only the fundamental
 language runtime, including built-in strings and `print`.
 
-`log` is independent of the other modules. Select it explicitly to use
-`log.debug`, `log.info`, `log.warning`, `log.error`, and `log.critical`; selecting
-`system` or `game` alone no longer provides `log.info`.
+`log` is independent of the other modules. Select it explicitly for structured
+logging; neither `system` nor `game` loads it automatically.
 
 Selecting `os` automatically loads `collections`. It does not require
 the game or system modules and does not open a window.
@@ -37,33 +36,17 @@ the game or system modules and does not open a window.
 `nomad.modules` is required in development and packaged configurations.
 There is no implicit module.
 
-Projects using the previous `nomad-collections`, `nomad-game`, `nomad-log`,
-`nomad-os`, or `nomad-system` identities must update their module lists to
-`collections`, `game`, `log`, `os`, or `system`, respectively. Update module
-manifest dependencies too, and rebuild native modules with the new filenames.
-The SDK does not provide compatibility aliases for the old identities.
-
 ## SDK modules
 
 Development commands use the modules in the selected SDK:
 
 ```text
 modules/
-  collections/
-    module.toml
-    ...
-  log/
-    module.toml
-    ...
-  system/
-    module.toml
-    ...
   game/
     module.toml
-    ...
-  os/
+    scripts/
+  system/
     module.toml
-    ...
 ```
 
 Each module directory contains its native library, supporting libraries,
@@ -83,62 +66,35 @@ Module names start with a lowercase ASCII letter and contain only lowercase
 ASCII letters, digits, and hyphens. Names do not contain paths or extensions.
 Native filenames include a `.nomad` marker before the platform extension:
 `game.nomad.dll` on Windows, `libgame.nomad.so` on Linux, and
-`libgame.nomad.dylib` on macOS. Engine libraries and launcher executable names
-are unchanged.
+`libgame.nomad.dylib` on macOS.
 
-On Windows, native dependencies are searched beside the module library, at its
-SDK or package root, beside the running executable, and in the Windows default
-DLL directories. SDK tools can check packages outside the SDK directory.
-Launching with `--project-path` does not require the working directory to be the
-package root.
+Keep each module's libraries and supporting files together when moving an SDK
+or package. Use `--project-path` to launch a project from another directory.
 
 Modules must be built for the same Nomad SDK, platform, architecture, and
 compatible compiler/runtime settings. Native modules execute trusted native
 code; only use SDKs and modules you trust.
 
-The `NomadObject::asScriptObject()` virtual interface requires rebuilding C++
-hosts, custom object subclasses, and native modules against the updated SDK.
-Do not mix binaries built before this interface change with the updated runtime.
-The loader does not negotiate or validate native C++ ABI versions.
+The loader does not negotiate native C++ ABI versions.
 
 ## Module scripts
 
-A native module can also supply `.nomad` files under its fixed `scripts/`
-directory. A missing directory means the module has no scripts; an existing
-`scripts` path must be a directory and must remain below the module directory.
-Module manifests no longer accept `[scripts]` settings. Remove those settings
-and move any custom script directory to `scripts/`.
-This does not change the application's configurable `scripts.directories` list.
+A native module can supply `.nomad` files under its fixed `scripts/` directory.
+The directory is optional, must remain inside the module, and cannot be changed
+through the manifest. Application roots remain configurable through
+`scripts.directories`.
 
 Selected modules and their transitive dependencies contribute their scripts
 automatically to compilation, checking, instruction dumps, documentation, and
-editor analysis. Discovery is recursive and deterministic, using the same
-source-loading rules as application scripts. Repeated paths are deduplicated.
-If an application root also includes a module's files, they retain module
-ownership rather than being loaded again as application scripts.
+editor analysis. Discovery is recursive; overlapping application roots do not
+load the same module file twice. Conflicting script names or module ownership
+are errors.
 
-Module file-body identities use `$<owner>.<relative-file-stem>`. For example,
-`os/scripts/main.nomad` becomes `$os.main`, and
-`os/scripts/utilities/paths.nomad` becomes `$os.utilities.paths`. These identities
-remain stable when the module directory moves. Application file-call names are
-unchanged. Dotted-name collisions such as `utilities.paths.nomad` and
-`utilities/paths.nomad`, or a file claimed by two modules, are errors.
-
-Source ownership does not add a language namespace. Public functions, hubs,
+Modules do not add a language namespace. Public functions, hubs,
 classes, and enums keep their authored names and normal conflict rules.
 Qualifying public APIs with a hub is recommended, not required. Module file
 bodies are internal; declare a public function for callable helpers. Merely
 loading or compiling a module does not execute its file bodies.
-
-Diagnostics retain the actual source path. Open editor buffers replace matching
-module files without changing their owner or relative identity. Opening a
-module file alongside a consuming project includes that buffer in the project's
-analysis.
-
-SDK builds copy each module's `scripts/` directory when present, including nested
-directories. Rebuilding removes stale staged scripts when sources are removed.
-Application packages include discovered module-owned `.nomad` sources under
-`modules/<name>/scripts/`.
 
 ## Ordering and startup
 
@@ -147,10 +103,9 @@ in manifest order, and initializes dependencies before their dependents.
 Shared dependencies are initialized once. Missing modules, invalid manifests,
 and dependency cycles are errors.
 
-All modules register their script features before compilation. After successful
-compilation and resource preparation, the host executes the generated `$init`
-function before invoking the runnable module. Initialization failure or a
-shutdown request during initialization prevents the run callback.
+Scripts are initialized after compilation and resource preparation, before the
+runnable module starts. Initialization failure or a shutdown request prevents
+application startup.
 
 Exactly one configured module must provide a run callback to run an application.
 Each runnable module owns its entry convention. The game module executes
@@ -159,20 +114,15 @@ then runs its main-thread event loop. API-only modules such as `system`
 do not provide a runnable entry.
 
 `system.exit` requests orderly shutdown after the current script invocation.
-Modules stop their background work before the application releases them.
 
-The runtime accepts module command-line arguments; see each module's guide
-for its supported options. Runtime startup errors are reported to the console
-and produce a nonzero process exit status.
-Use `--project-path <directory-or-nomad.toml>` to select a project explicitly
-when launching the runtime from another directory.
+See [CLI](cli.md#runtime) for project selection and module options.
+Startup errors produce a nonzero process exit status.
 
 ## Checking and editor diagnostics
 
 The compiler and language server use the project's resolved modules and
 configuration to expose the same script API as the running application.
-They do not execute the entry function or start the application loop.
-Editor analysis resolves scripts without generating executable instructions.
+They do not execute scripts or start the application loop.
 
 Opening a project for analysis can load its configured native modules. Do not
 enable language-server analysis for projects or SDKs you do not trust.
@@ -183,27 +133,17 @@ enable language-server analysis for projects or SDKs you do not trust.
 dependencies, and required native libraries. It does not include every module
 installed in the SDK.
 
-Modules can transform their release settings and contribute generated or
-copied files. Game packaging retains the existing automatic sprite packing.
-Conflicting package outputs or failed module contributions fail the package
-operation rather than publishing a partial archive.
-
 The packaged `nomad.toml` contains the complete resolved module list in startup
-order. Each module retains its native library, `module.toml`, and configured
-script directory under `modules/<name>/`. Shared native dependencies and licenses
-remain at the application root. The module's development-only `runtime.json`
-inventory is not included.
+order. Each module retains its native library, `module.toml`, and optional
+`scripts/` directory under `modules/<name>/`. Shared native dependencies and
+licenses remain at the application root.
 
 Packaged applications resolve modules and their script directories from these
-package-local manifests, without falling back to an SDK or flat module libraries
-at the application root. Older flat-layout packages must be rebuilt. Module
-source identities and public names are unchanged after extraction or relocation.
-Application script inputs that overlap module sources remain deduplicated and
-module-owned. The application's script directory list does not need to enumerate
-module sources.
+package-local manifests, without falling back to an SDK. Application script
+directories do not need to list module sources, and resource exclusions do not
+remove them.
 
-Module settings are preserved unless explicitly transformed for release.
-Packaging and dry runs do not execute script file bodies or class initializers.
-Explicit empty module script directories are preserved, and missing explicitly
-configured directories fail packaging, including dry runs. Application resource
-exclusions do not remove module-owned sources.
+Modules can transform their release settings and contribute files. Conflicting
+outputs or failed contributions abort packaging. Packaging and dry runs do not
+execute scripts. See [Sprites](sprites.md#source-and-compiled-sprite-roots) for
+automatic sprite packing.

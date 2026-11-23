@@ -76,15 +76,9 @@ sprite group. In the default layout, `sprites/player` and `sprites/ui` are
 separate groups. Deeper directories organize names but remain in their
 first-level group.
 
-Nomad packs each group independently. If a group does not fit within one
-texture, it is split across as many physical pages as necessary. Physical
-texture page names use the internal form `<group>#<page>`, such as
-`sprites.player#0`; scripts continue to use sprite names and do not need to
-refer to pages.
-
-Packing is deterministic and does not rotate images. Nomad trims transparent
-edges while preserving each sprite's original logical size and offset. Exact
-duplicate images may share packed pixels without sharing sprite names.
+Each group is packed independently and can span multiple texture pages. Scripts
+use sprite names, not page names. Transparent-edge trimming preserves the
+sprite's logical size and offset; packing does not rotate images.
 
 ## Source and compiled sprite roots
 
@@ -102,9 +96,7 @@ from a separate root such as `res/mod/sprites`.
 
 `nomad package` compiles each nonempty raw sprite root. It writes
 `catalog.json` and the packed PNG pages directly into that root in the package,
-then omits the individual source PNGs. Exact duplicate sprites have separate
-catalog entries that reference the same packed frame, so duplicate source
-images do not increase the packaged texture data.
+then omits the individual source PNGs.
 
 For example:
 
@@ -120,10 +112,7 @@ Already compiled roots are preserved. Empty roots do not receive a catalog,
 allowing raw PNGs added later to select dynamic packing. Packaged games also
 permit configured roots to be absent until a mod provides them.
 
-A malformed catalog is a resource error. Nomad does not silently fall back to
-raw discovery because doing so could hide damaged or incomplete packages.
-Catalog page references are restricted to PNG filenames in the same directory
-as the catalog.
+A malformed catalog is a resource error; Nomad does not fall back to raw PNGs.
 
 ## Configuration
 
@@ -139,10 +128,8 @@ max-texture-size = 2048
 padding = 1
 ```
 
-Directories are relative to `resources.directory`. They are scanned
-recursively and cannot be absolute, escape the resource directory, overlap, or
-duplicate one another. Set `directories = []` to disable automatic sprite
-discovery.
+Directories are relative to `resources.directory`. Set `directories = []` to
+disable automatic sprite discovery.
 
 `max-texture-size` limits both dimensions of each physical page. `padding` is
 the exact transparent distance between adjacent packed images and does not add

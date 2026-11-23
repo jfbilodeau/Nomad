@@ -33,10 +33,9 @@ scripts using the `log` hub. Engine diagnostics remain available without that
 module. Built-in `print` writes directly to standard output, not the log console.
 
 While debug mode is enabled, press the grave/tilde key (`~`) to open or close
-the debug console. Nomad uses the key's physical scancode, so it is the key
-normally located to the left of `1` even when the active keyboard layout shows
-a different character. The key is not consumed by the engine when debug mode
-is disabled.
+the debug console. Use the key normally located to the left of `1`, even when
+your keyboard layout shows a different character. It has no special effect when
+debug mode is disabled.
 
 The toolbar provides these controls:
 
@@ -45,14 +44,9 @@ The toolbar provides these controls:
 - **UI scale** changes the console's display scale.
 - **Physics debug draw** shows or hides Box2D collision geometry.
 
-The console also exposes runtime logs and game inspection panels. On Windows,
-the runtime is a GUI application and does not have terminal output, so use the
-console's **Logs** panel. Linux runtime messages also remain available in the
-launching terminal.
-
-The log capture sink belongs to the engine logger. If C++ code removes it or
-clears all sinks, the Logs panel reports that its sink has been removed instead
-of retaining stale log data.
+The console exposes runtime logs in its **Logs** panel and provides game
+inspection panels. Runtime messages also appear in the launching terminal,
+including on Windows.
 
 ## Physics debug drawing
 
