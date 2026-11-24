@@ -4,7 +4,9 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples. Next reviewable scope: measure R30's event-definition snapshot-copy costs.
+**I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples.
+
+**R30:** Checked event snapshot-copy baselines are recorded for Debug and Release. Current presence queries copy metadata too; both metadata size and catalog scans have measurable costs. Next reviewable scope: settle non-copying event-access contracts, including registration growth and reentry, before implementing the optimization.
 
 ## Component contract
 
@@ -1766,10 +1768,103 @@ Measure each change before and after on the same workload.
   Nonempty multi-slot scratch still allocates; no production field-size profile,
   full native-stack measurement, full-suite rerun, manual gameplay,
   cross-platform result, or timing threshold is claimed.
-- This completes the approved bounded I11 storage change. Next reviewable scope:
-  measure R30's event-definition metadata copying and its consumers before
-  considering a borrowed-access contract. Do not extend the scratch change to
-  other consumers or add more storage strategies automatically.
+- This completes the approved bounded I11 storage change. R30 below records the
+  follow-up event-definition metadata-copy measurements. Do not extend the
+  scratch change to other consumers or add more storage strategies automatically.
+
+#### R30 event-definition snapshot-copy baseline
+
+- Extended the existing opt-in benchmark only. No Runtime API, event storage,
+  compiler/game consumer, declaration ownership, or dispatch behavior changed.
+  The current definition query scans a vector by ID and returns an optional
+  detached copy containing the event name, parameter vector/text, and documentation.
+- Four shapes cover empty, one short parameter, eight short parameters, and eight
+  long-text parameters. Short event names are 13 bytes; short parameter names
+  and type names are 6 and 3 bytes. The long shape uses 128-byte event names,
+  64-byte parameter names, and a real registered 96-byte type name.
+  Documentation is empty because public event registration does not accept it.
+- Each shape uses 0/100/1,000 unrelated events registered before the target,
+  giving totals of 1/101/1,001. Each combination has five fresh Runtime samples,
+  32 warmups, and 20,000 timed operations per metric. A separate 1,000-operation
+  MSVC Debug CRT pass counts allocation/reallocation requests per operation.
+  Registration and fixture preparation are outside these measurements.
+- The snapshot and prepared-copy metrics include the same metadata checksum.
+  Presence measures the existing snapshot-returning query's `has_value()`;
+  missing measures an absent-ID query. No borrowed Runtime lookup exists as a
+  control. These operations have different work and compiler optimization
+  opportunities, so their timings must not be subtracted as an exact breakdown.
+- Checks validate full IDs, names, ordered parameter IDs/text, empty
+  documentation, invalid/missing IDs, and terminal iteration. A modified detached
+  snapshot must not affect registered metadata. After timing, appending 64
+  events must preserve both a retained snapshot and fresh metadata lookup.
+  Snapshot use after Runtime destruction is not tested.
+- Both Windows Debug and Release builds and checked executions pass, including
+  every earlier benchmark workload. Bundled language DLL hashes match the
+  corresponding builds. The existing `nomad_test_language` Debug CTest also
+  passes, including event ID, iteration, parameter, and catalog-growth coverage.
+  Tables give median `[min,max]` microseconds per operation across five samples.
+
+| Debug case | Unrelated events | Snapshot (us) | Prepared copy (us) | Presence (us) | Missing (us) |
+| --- | --- | --- | --- | --- | --- |
+| Empty | 0 | 1.501 [1.384,2.187] | 1.425 [0.948,1.720] | 1.695 [1.212,1.941] | 0.065 [0.031,0.105] |
+| Empty | 100 | 1.729 [1.565,2.200] | 1.321 [1.039,1.381] | 1.864 [1.363,1.997] | 0.325 [0.168,0.376] |
+| Empty | 1,000 | 4.009 [3.394,4.507] | 1.256 [1.014,1.885] | 3.801 [3.456,4.066] | 2.549 [2.362,2.902] |
+| One short | 0 | 3.027 [2.896,3.331] | 2.424 [2.011,2.669] | 2.664 [2.186,3.004] | 0.029 [0.027,0.079] |
+| One short | 100 | 3.316 [2.673,3.524] | 2.578 [2.472,3.318] | 3.123 [2.719,3.332] | 0.226 [0.163,0.436] |
+| One short | 1,000 | 5.270 [4.744,5.582] | 2.703 [2.248,2.982] | 5.130 [4.344,5.277] | 2.191 [1.921,2.731] |
+| Eight short | 0 | 8.975 [8.365,10.455] | 8.564 [7.872,10.807] | 8.907 [7.795,9.817] | 0.031 [0.028,0.058] |
+| Eight short | 100 | 8.549 [7.705,11.007] | 8.505 [7.336,8.813] | 8.881 [8.238,9.167] | 0.194 [0.161,0.280] |
+| Eight short | 1,000 | 11.277 [10.231,12.479] | 8.528 [8.173,9.754] | 11.217 [10.401,12.358] | 2.327 [2.139,2.529] |
+| Eight long | 0 | 13.838 [12.980,15.494] | 13.804 [12.982,14.371] | 13.356 [12.512,14.496] | 0.046 [0.034,0.055] |
+| Eight long | 100 | 14.375 [12.958,16.011] | 13.604 [12.236,14.964] | 13.954 [12.945,14.770] | 0.273 [0.187,0.308] |
+| Eight long | 1,000 | 17.371 [14.635,18.208] | 14.458 [12.047,15.090] | 15.965 [15.371,16.445] | 2.497 [2.085,2.808] |
+
+| Release case | Unrelated events | Snapshot (us) | Prepared copy (us) | Presence (us) | Missing (us) |
+| --- | --- | --- | --- | --- | --- |
+| Empty | 0 | 0.010 [0.009,0.011] | 0.009 [0.008,0.010] | 0.010 [0.010,0.011] | 0.001 [0.001,0.002] |
+| Empty | 100 | 0.054 [0.044,0.069] | 0.014 [0.008,0.016] | 0.051 [0.042,0.143] | 0.042 [0.038,0.065] |
+| Empty | 1,000 | 0.464 [0.383,0.787] | 0.012 [0.008,0.013] | 0.592 [0.540,0.764] | 0.622 [0.329,0.748] |
+| One short | 0 | 0.076 [0.072,0.108] | 0.081 [0.071,0.114] | 0.088 [0.071,0.098] | 0.003 [0.002,0.003] |
+| One short | 100 | 0.117 [0.070,0.203] | 0.071 [0.039,0.079] | 0.110 [0.072,0.171] | 0.042 [0.033,0.062] |
+| One short | 1,000 | 0.762 [0.650,0.798] | 0.070 [0.070,0.073] | 0.710 [0.575,0.783] | 0.473 [0.314,0.753] |
+| Eight short | 0 | 0.163 [0.142,0.246] | 0.127 [0.115,0.188] | 0.155 [0.125,0.238] | 0.002 [0.001,0.004] |
+| Eight short | 100 | 0.180 [0.158,0.297] | 0.113 [0.094,0.139] | 0.174 [0.129,0.236] | 0.038 [0.036,0.069] |
+| Eight short | 1,000 | 0.777 [0.514,0.932] | 0.121 [0.099,0.130] | 0.587 [0.490,0.862] | 0.470 [0.450,0.581] |
+| Eight long | 0 | 1.063 [0.803,1.328] | 1.175 [0.849,1.435] | 1.113 [0.809,1.290] | 0.002 [0.001,0.003] |
+| Eight long | 100 | 1.093 [0.873,1.279] | 0.972 [0.782,1.162] | 1.071 [0.711,1.430] | 0.042 [0.042,0.056] |
+| Eight long | 1,000 | 1.667 [1.371,1.905] | 1.019 [0.751,1.208] | 1.710 [1.421,1.927] | 0.428 [0.388,0.540] |
+
+- Snapshot, prepared-copy, and presence queries each make 3/6/20/37 Debug
+  allocation requests for empty/one-short/eight-short/eight-long definitions.
+  Their minima, medians, and maxima are identical across all samples and
+  catalog sizes. Missing queries make zero requests throughout. These counts
+  include Debug-library instrumentation; Release counts are unavailable, not
+  zero, and no byte-volume or Release allocation estimate is inferred.
+- Both copying and scanning warrant separate consideration. With no unrelated
+  events, Release snapshots cost 0.163/1.063 us for eight short/long parameters;
+  at 1,000 unrelated events they cost 0.777/1.667 us. Empty-event snapshots also
+  grow from 0.010 to 0.464 us as the catalog grows, while their prepared copies
+  remain 0.009/0.014/0.012 us. Presence-only callers still pay for complete
+  metadata copies. No optimized path or speedup has been measured.
+- Source review found nine production definition-query sites: two parser
+  signature/argument consumers, three dispatch-parameter loops, three name-only
+  adapters, and one presence-only check in Game dispatch. The parameter loops
+  can cross host-defined value-copy operations, so registration/reentry and
+  reference stability matter, not merely the immediate lookup expression.
+- Current vector growth can invalidate borrowed element references. `EventType`
+  independently owns a definition copy; its construction is not R29's alleged
+  dangling-pointer bug. The existing snapshots remain detached and survive
+  registration growth. Do not replace them with long-lived vector-element
+  pointers without settling the ownership/lifetime contract first.
+- These are checked microbenchmarks on a shared Windows/MSVC machine, with
+  visible timing variation. No production event-frequency profile, full-suite
+  rerun, manual gameplay, cross-platform result, or timing threshold is claimed.
+  Documentation-heavy definitions are not represented by these public fixtures.
+- Next reviewable scope: choose the concrete event metadata, presence, and
+  name-access contracts under D5, including safe registration growth and
+  reentry. Discuss direct ID access and any required storage changes before
+  implementation; no additional index, registration freeze, or new borrowed
+  API is authorized by this measurement step.
 
 ## Corrections to earlier review notes
 
@@ -1848,7 +1943,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R27 | P3 | perf | getVariableContextIdByPrefix computes `getHubId(getContainingHub)` twice | `Runtime.cpp`: getVariableContextIdByPrefix | verified | 8 |
 | R28 | P3 | naming | getCallableId matches only Function type despite its name; getFunctionId, getNativeFunctionId, and getFunctionTableSize (counts all callables) differ from getFunctionCount (script only) | `Runtime.hpp/cpp`: count, script metadata and name-based lookups; compiler/LSP/game consumers and catalog tests | Complete with approval: category-consistent names, specialized function existence/ID/list/count queries, source filters retained and callers migrated | 7 |
 | R29 | — | dismissed | EventType stores `&m_events.back()`. Not a dangling pointer, because EventType copies the definition | `Event.hpp:46` `const EventDefinition m_event` | verified-not-a-bug | — |
-| R30 | P3 | perf | getEventDefinition returns an optional copy of EventDefinition on each call | `Runtime.cpp`: getEventDefinition | verified | 8 |
+| R30 | P3 | perf | getEventDefinition returns an optional copy of EventDefinition on each call | `Runtime.cpp`: getEventDefinition; `RuntimeLookupBenchmark.cpp`: event snapshot/copy/presence/missing workloads | Checked Debug/Release baselines recorded; nine production consumers classified; concrete non-copying access/lifetime contract is next | 8 |
 
 ### Interpreter
 

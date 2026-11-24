@@ -67,7 +67,7 @@ from the build's `tests` directory (`tests/Debug` or `tests/Release` for
 Visual Studio).
 
 It covers registration, name lookup, member resolution, strings, property access,
-and script/host calls. Workloads and checks are defined in
+script/host calls, and event-definition snapshots. Workloads and checks are defined in
 [RuntimeLookupBenchmark.cpp](https://github.com/jfbilodeau/Nomad/blob/main/tests/RuntimeLookupBenchmark.cpp).
 Compare the same workload and configuration before and after a change. Treat
 Debug and Release separately; timings are not pass/fail thresholds. Allocation
@@ -89,3 +89,11 @@ cover field contents, bounds, aliasing, references, and enclosing VM state;
 receiver and value preparation is excluded.
 Scratch construction remains a vector-based control; compare setter timings
 directly when changing the setter's storage implementation.
+
+Event workloads compare snapshot lookup, a prepared definition copy, the current
+snapshot-based presence query, and a missing-ID query. They vary parameter count,
+text lengths, and unrelated event count; public registration leaves documentation
+empty. Each case uses five fresh samples, 32 warmups, 20,000 timed operations, and
+a separate 1,000-operation Debug allocation pass. Checks cover metadata, misses,
+detached-copy independence, and survival after catalog growth. The controls are
+not an exact subtractive breakdown of lookup and copying.

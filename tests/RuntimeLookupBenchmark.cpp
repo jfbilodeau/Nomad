@@ -7,6 +7,7 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/NomadStringObject.hpp>
@@ -1846,6 +1847,222 @@ void runAssignmentScratchBenchmark() {
     }
 }
 
+bool eventDefinitionsMatch(
+    const nomad::EventDefinition& actual,
+    const nomad::EventDefinition& expected
+) {
+
+    return actual.id == expected.id && actual.name == expected.name && actual.doc == expected.doc &&
+        std::ranges::equal(actual.parameters, expected.parameters, [](const auto& first, const auto& second) {
+
+            return first.name == second.name && first.typeId == second.typeId && first.typeName == second.typeName;
+        });
+}
+
+std::uint64_t eventDefinitionChecksum(const nomad::EventDefinition& definition) {
+    auto checksum = static_cast<std::uint64_t>(definition.id.id + 1)
+        + definition.name.size() + definition.doc.size() + definition.parameters.size();
+    for (const auto& parameter : definition.parameters) {
+        checksum += static_cast<std::uint64_t>(parameter.typeId.id + 1)
+            + parameter.name.size() + parameter.typeName.size();
+    }
+
+    return checksum;
+}
+
+void runEventSnapshotBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto iterations = nomad::NomadIndex{20000};
+    constexpr auto allocationIterations = nomad::NomadIndex{1000};
+    constexpr auto cases = std::array{"empty", "one_short", "eight_short", "eight_long"};
+    constexpr auto catalogSizes = std::array<nomad::NomadIndex, 3>{0, 100, 1000};
+    constexpr auto labels = std::array{"snapshot", "prepared_copy", "presence", "missing"};
+    std::cout << "Event definitions: late-ID snapshot lookup, prepared snapshot copy, presence query, and missing ID.\n"
+        << "Name/type text and parameter count vary independently of unrelated event registrations.\n"
+        << "Timing includes the query/copy and checksum; setup, full metadata checks, and growth checks are excluded.\n"
+        << "Allocation requests use the separate untimed MSVC Debug pass.\n"
+        << std::flush;
+
+    for (auto shape = nomad::NomadIndex{0}; shape < cases.size(); ++shape) {
+        const auto longText = shape == 3;
+        const auto parameterCount = shape == 0 ? nomad::NomadIndex{0} :
+            shape == 1 ? nomad::NomadIndex{1} : nomad::NomadIndex{8};
+        const auto name = longText ? nomad::NomadString(128, 'e') : nomad::NomadString{"snapshotEvent"};
+        const auto parameterPrefix = longText ? nomad::NomadString(63, 'p') : nomad::NomadString{"value"};
+        for (const auto unrelatedCount : catalogSizes) {
+            std::vector<nomad::NomadString> unrelatedNames;
+            unrelatedNames.reserve(unrelatedCount);
+            for (auto index = nomad::NomadIndex{0}; index < unrelatedCount; ++index) {
+                unrelatedNames.push_back(std::format("benchmarkEventNoise{:04}", index));
+            }
+
+            std::array<std::vector<double>, labels.size()> latencySamples;
+            std::array<std::vector<double>, labels.size()> allocationSamples;
+            auto parameterNameBytes = nomad::NomadIndex{0};
+            auto typeNameBytes = nomad::NomadIndex{0};
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                nomad::Runtime runtime;
+                if (runtime.getFirstEventId().isValid()) {
+                    throw std::runtime_error("The fresh-runtime event catalog changed before benchmarking");
+                }
+
+                const nomad::Type* parameterType = runtime.getIntegerType();
+                if (longText) {
+                    const auto typeId = runtime.registerClass(nomad::NomadString(96, 'T'), nomad::ClassMode::Closed);
+                    if (typeId.isInvalid()) {
+                        throw std::runtime_error("Failed to register the event benchmark parameter type");
+                    }
+
+                    parameterType = runtime.getType(typeId).value();
+                }
+
+                std::vector<nomad::EventParameter> parameters;
+                for (auto index = nomad::NomadIndex{0}; index < parameterCount; ++index) {
+                    parameters.push_back({
+                        parameterPrefix + std::to_string(index),
+                        parameterType->getId(),
+                        parameterType->getTypeName()
+                    });
+                }
+
+                parameterNameBytes = parameters.empty() ? 0 : parameters.front().name.size();
+                typeNameBytes = parameters.empty() ? 0 : parameters.front().typeName.size();
+                for (const auto& unrelatedName : unrelatedNames) {
+                    if (runtime.registerEvent(unrelatedName, {}).isInvalid()) {
+                        throw std::runtime_error("Failed to populate the event snapshot benchmark catalog");
+                    }
+                }
+
+                const auto eventId = runtime.registerEvent(name, parameters);
+                if (eventId.isInvalid() || eventId.id != nomad::toNomadId(unrelatedCount)) {
+                    throw std::runtime_error("Unexpected event snapshot benchmark registration order");
+                }
+
+                const nomad::EventDefinition expected{eventId, name, parameters, {}};
+                const auto snapshotBeforeGrowth = runtime.getEventDefinition(eventId);
+                const auto missingId = nomad::EventId{nomad::toNomadId(unrelatedCount + 1)};
+                if (
+                    !snapshotBeforeGrowth ||
+                    !eventDefinitionsMatch(*snapshotBeforeGrowth, expected) ||
+                    runtime.getEventId(name) != eventId ||
+                    runtime.getEventDefinition(nomad::EventId::INVALID).has_value() ||
+                    runtime.getEventDefinition(nomad::EventId{-2}).has_value() ||
+                    runtime.getEventDefinition(missingId).has_value() ||
+                    runtime.getNextEventId(eventId).isValid()
+                ) {
+                    throw std::runtime_error("Unexpected event snapshot metadata, iteration, or lookup bounds");
+                }
+
+                auto detached = runtime.getEventDefinition(eventId).value();
+                detached.id = nomad::EventId::INVALID;
+                detached.name = "detachedSnapshot";
+                detached.doc = "detached documentation";
+                if (!detached.parameters.empty()) {
+                    detached.parameters.front().name = "detachedParameter";
+                    detached.parameters.front().typeId = nomad::TypeId::INVALID;
+                    detached.parameters.front().typeName = "detachedType";
+                }
+
+                if (!eventDefinitionsMatch(runtime.getEventDefinition(eventId).value(), expected)) {
+                    throw std::runtime_error("Changing a detached event snapshot modified the registered event");
+                }
+
+                const auto record = [&](
+                    const nomad::NomadIndex query,
+                    const std::uint64_t expectedValue,
+                    const auto& read
+                ) {
+                    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+                        if (read() != expectedValue) {
+                            throw std::runtime_error("Unexpected event snapshot benchmark warmup result");
+                        }
+                    }
+
+                    auto checksum = std::uint64_t{0};
+                    const auto start = std::chrono::steady_clock::now();
+                    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+                        checksum += read();
+                    }
+
+                    latencySamples[query].push_back(std::chrono::duration<double, std::micro>{
+                        std::chrono::steady_clock::now() - start
+                    }.count() / static_cast<double>(iterations));
+                    if (checksum != expectedValue * iterations) {
+                        throw std::runtime_error("Event snapshot benchmark results changed during timing");
+                    }
+
+                    auto allocationChecksum = std::uint64_t{0};
+                    const auto allocations = countHostCallAllocations([&] {
+                        allocationChecksum += read();
+                    }, allocationIterations);
+                    if (allocations.has_value()) {
+                        if (allocationChecksum != expectedValue * allocationIterations) {
+                            throw std::runtime_error("Event snapshot allocation probe returned unexpected metadata");
+                        }
+
+                        allocationSamples[query].push_back(
+                            static_cast<double>(*allocations) / static_cast<double>(allocationIterations)
+                        );
+                    }
+                };
+                const auto expectedChecksum = eventDefinitionChecksum(expected);
+                record(0, expectedChecksum, [&] {
+                    const auto snapshot = runtime.getEventDefinition(eventId);
+                    if (!snapshot) {
+                        throw std::runtime_error("The benchmark event snapshot disappeared");
+                    }
+
+                    return eventDefinitionChecksum(*snapshot);
+                });
+                record(1, expectedChecksum, [&] {
+                    const auto copy = expected;
+
+                    return eventDefinitionChecksum(copy);
+                });
+                record(2, 1, [&] {
+
+                    return static_cast<std::uint64_t>(runtime.getEventDefinition(eventId).has_value());
+                });
+                record(3, 0, [&] {
+
+                    return static_cast<std::uint64_t>(runtime.getEventDefinition(missingId).has_value());
+                });
+                for (auto index = nomad::NomadIndex{0}; index < 64; ++index) {
+                    if (runtime.registerEvent(std::format("snapshotGrowth{}", index), {}).isInvalid()) {
+                        throw std::runtime_error("Failed to grow the event catalog after snapshot measurements");
+                    }
+                }
+
+                if (
+                    !eventDefinitionsMatch(*snapshotBeforeGrowth, expected) ||
+                    !eventDefinitionsMatch(runtime.getEventDefinition(eventId).value(), expected) ||
+                    runtime.getEventId(name) != eventId
+                ) {
+                    throw std::runtime_error("Event metadata or detached snapshot changed after catalog growth");
+                }
+            }
+
+            std::cout << "event_case=" << cases[shape] << " unrelated=" << unrelatedCount
+                << " total=" << unrelatedCount + 1 << " parameters=" << parameterCount
+                << " name_bytes=" << name.size() << " parameter_name_bytes=" << parameterNameBytes
+                << " type_name_bytes=" << typeNameBytes << " documentation_bytes=0"
+                << " iterations=" << iterations;
+            for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+                const auto timeLabel = std::format("{}_us", labels[query]);
+                printSamples(timeLabel.c_str(), latencySamples[query]);
+                const auto allocationLabel = std::format("{}_allocations", labels[query]);
+                if (!allocationSamples[query].empty()) {
+                    printSamples(allocationLabel.c_str(), allocationSamples[query]);
+                } else {
+                    std::cout << ' ' << allocationLabel << "=unavailable";
+                }
+            }
+
+            std::cout << std::endl;
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -1860,6 +2077,7 @@ int main() {
         runHostCallBenchmark();
         runFrameResultBenchmark();
         runAssignmentScratchBenchmark();
+        runEventSnapshotBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 
