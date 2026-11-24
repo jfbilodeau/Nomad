@@ -1,6 +1,7 @@
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/log/Logger.hpp>
@@ -11,6 +12,7 @@
 #include <nomad/script/NomadStringObject.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
+#include <nomad/script/StructType.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/container/small_vector.hpp>
@@ -1553,6 +1555,297 @@ void runFrameResultBenchmark() {
     }
 }
 
+void runAssignmentScratchBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto iterations = nomad::NomadIndex{50000};
+    constexpr auto allocationIterations = nomad::NomadIndex{1000};
+    constexpr auto cases = std::array{"empty", "integer", "string", "pair", "wide"};
+    constexpr auto labels = std::array{"construction", "prepared", "setter_id", "setter_path"};
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    std::cout << "Assignment scratch: construction, prepared Type assignment, and public ID/nested-path setters.\n"
+        << "Values alternate; timing includes operation, value/bounds checks, and saved-result checksum.\n"
+        << "Receiver/value/scratch preparation and reference/state checks are outside timing.\n"
+        << "Allocation requests use the separate untimed MSVC Debug pass.\n"
+        << std::flush;
+
+    for (auto query = nomad::NomadIndex{0}; query < cases.size(); ++query) {
+        std::array<std::vector<double>, labels.size()> latencySamples;
+        std::array<std::vector<double>, labels.size()> allocationSamples;
+        auto valueSize = nomad::NomadIndex{0};
+        auto scratchSize = nomad::NomadIndex{0};
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            nomad::Runtime runtime;
+            auto& manager = runtime.getTypeManager();
+            const nomad::Type* type = nullptr;
+            if (query == 1) {
+                type = runtime.getIntegerType();
+            } else if (query == 2) {
+                type = runtime.getStringType();
+            } else {
+                const auto id = runtime.registerStruct("BenchmarkAssignmentValue");
+                if (id.isInvalid()) {
+                    throw std::runtime_error("Failed to register an assignment benchmark value type");
+                }
+
+                const auto count = query == 0 ? nomad::NomadIndex{0} :
+                    query == 3 ? nomad::NomadIndex{2} : nomad::NomadIndex{8};
+                for (auto index = nomad::NomadIndex{0}; index < count; ++index) {
+                    const auto* fieldType = index + 1 == count ?
+                        runtime.getStringType() : runtime.getIntegerType();
+                    if (
+                        manager.registerScriptStructProperty(
+                            id,
+                            std::format("field{}", index),
+                            fieldType
+                        ).isInvalid()
+                    ) {
+                        throw std::runtime_error("Failed to register an assignment benchmark value field");
+                    }
+                }
+
+                manager.finalizeCompositeFieldLayout(id);
+                type = runtime.getType(id).value();
+            }
+
+            valueSize = type->getSize();
+            scratchSize = type->getAssignmentScratchSize();
+            const auto referenceValue = query >= 2;
+            const auto referenceOffset = valueSize == 0 ? nomad::NomadIndex{0} : valueSize - 1;
+            std::vector<nomad::RuntimeValue> firstSource(valueSize);
+            std::vector<nomad::RuntimeValue> secondSource(valueSize);
+            const nomad::RuntimeValueGuard firstOwner(
+                *type,
+                firstSource.empty() ? nullptr : firstSource.data()
+            );
+            const nomad::RuntimeValueGuard secondOwner(
+                *type,
+                secondSource.empty() ? nullptr : secondSource.data()
+            );
+            for (auto index = nomad::NomadIndex{0}; index < valueSize; ++index) {
+                if (referenceValue && index == referenceOffset) {
+                    firstSource[index].setStringValue("assignment first");
+                    secondSource[index].setStringValue("assignment second");
+                } else {
+                    firstSource[index].setIntegerValue(static_cast<nomad::NomadInteger>(index) + 17);
+                    secondSource[index].setIntegerValue(static_cast<nomad::NomadInteger>(index) + 29);
+                }
+            }
+
+            const nomad::InterpreterValue first(type, firstSource);
+            const nomad::InterpreterValue second(type, secondSource);
+            const auto firstReferences = referenceValue ?
+                firstSource[referenceOffset].getObjectValue()->getReferenceCount() : nomad::NomadIndex{0};
+            const auto secondReferences = referenceValue ?
+                secondSource[referenceOffset].getObjectValue()->getReferenceCount() : nomad::NomadIndex{0};
+            const auto ownerId = runtime.registerStruct("BenchmarkAssignmentOwner");
+            const auto outerId = runtime.registerStruct("BenchmarkAssignmentOuter");
+            if (ownerId.isInvalid() || outerId.isInvalid()) {
+                throw std::runtime_error("Failed to register assignment benchmark receivers");
+            }
+
+            const auto beforeId = manager.registerScriptStructProperty(
+                ownerId,
+                "before",
+                runtime.getIntegerType()
+            );
+            const auto valueId = manager.registerScriptStructProperty(ownerId, "value", type);
+            const auto afterId = manager.registerScriptStructProperty(
+                ownerId,
+                "after",
+                runtime.getIntegerType()
+            );
+            manager.finalizeCompositeFieldLayout(ownerId);
+            const auto* ownerType = runtime.getType(ownerId).value()->asStructType();
+            const auto outerBeforeId = manager.registerScriptStructProperty(
+                outerId,
+                "before",
+                runtime.getIntegerType()
+            );
+            const auto innerId = manager.registerScriptStructProperty(outerId, "inner", ownerType);
+            const auto outerAfterId = manager.registerScriptStructProperty(
+                outerId,
+                "after",
+                runtime.getIntegerType()
+            );
+            if (
+                beforeId.isInvalid() || valueId.isInvalid() || afterId.isInvalid() ||
+                outerBeforeId.isInvalid() || innerId.isInvalid() || outerAfterId.isInvalid()
+            ) {
+                throw std::runtime_error("Failed to register assignment benchmark receiver fields");
+            }
+
+            manager.finalizeCompositeFieldLayout(outerId);
+            const auto* outerType = runtime.getType(outerId).value()->asStructType();
+            std::vector<nomad::RuntimeValue> outerStorage(outerType->getSize());
+            const nomad::RuntimeValueGuard outerOwner(*outerType, outerStorage.data());
+            outerType->initValue(outerStorage.data());
+            const auto innerOffset = outerType->getFieldOffset(innerId);
+            const auto ownerStorage = std::span{outerStorage}.subspan(innerOffset, ownerType->getSize());
+            const auto valueOffset = ownerType->getFieldOffset(valueId);
+            auto* destination = valueSize == 0 ? nullptr : ownerStorage.data() + valueOffset;
+            const auto beforeOffset = ownerType->getFieldOffset(beforeId);
+            const auto afterOffset = ownerType->getFieldOffset(afterId);
+            const auto outerBeforeOffset = outerType->getFieldOffset(outerBeforeId);
+            const auto outerAfterOffset = outerType->getFieldOffset(outerAfterId);
+            ownerStorage[beforeOffset].setIntegerValue(107);
+            ownerStorage[afterOffset].setIntegerValue(109);
+            outerStorage[outerBeforeOffset].setIntegerValue(101);
+            outerStorage[outerAfterOffset].setIntegerValue(103);
+            std::vector<nomad::RuntimeValue> preparedScratch(scratchSize);
+            std::optional<nomad::RuntimeValueGuard> scratchOwner;
+            if (scratchSize != 0) {
+                scratchOwner.emplace(*type, preparedScratch.data());
+            }
+
+            nomad::RuntimeValue receiver{nomad::NomadString{"borrowed assignment receiver"}};
+            const nomad::RuntimeValueGuard receiverOwner(*runtime.getStringType(), &receiver);
+            runtime.initializeScripts();
+            auto machine = runtime.createVirtualMachine();
+            machine->pushInteger(91);
+            machine->enterNativeFrame(receiver);
+            machine->setIntegerResult(42);
+            machine->setIntegerIntermediate(79);
+            const nomad::Interpreter interpreter(*machine);
+            const auto before = machine->captureExecutionState();
+            const auto guardsMatch = [&] {
+
+                return ownerStorage[beforeOffset].getIntegerValue() == 107 &&
+                    ownerStorage[afterOffset].getIntegerValue() == 109 &&
+                    outerStorage[outerBeforeOffset].getIntegerValue() == 101 &&
+                    outerStorage[outerAfterOffset].getIntegerValue() == 103;
+            };
+            const auto matches = [&](const nomad::InterpreterValue& expected) {
+                const auto storage = expected.getStorage();
+                for (auto index = nomad::NomadIndex{0}; index < valueSize; ++index) {
+                    if (referenceValue && index == referenceOffset) {
+                        if (destination[index].getObjectValue() != storage[index].getObjectValue()) {
+
+                            return false;
+                        }
+                    } else if (destination[index].getIntegerValue() != storage[index].getIntegerValue()) {
+
+                        return false;
+                    }
+                }
+
+                return guardsMatch();
+            };
+            const auto constructScratch = [&] {
+                const std::vector<nomad::RuntimeValue> scratch(scratchSize);
+                if (scratch.size() != scratchSize || !guardsMatch()) {
+                    throw std::runtime_error("Scratch construction changed receiver bounds or storage size");
+                }
+            };
+            latencySamples[0].push_back(measureHostCall(*machine, constructScratch, iterations));
+            if (const auto allocations = countHostCallAllocations(constructScratch, allocationIterations)) {
+                allocationSamples[0].push_back(
+                    static_cast<double>(*allocations) / static_cast<double>(allocationIterations)
+                );
+            }
+
+            const auto recordAssignment = [&](const nomad::NomadIndex operation, const auto& assign) {
+                auto visits = nomad::NomadIndex{0};
+                const auto invoke = [&] {
+                    const auto& value = visits++ % 2 == 0 ? first : second;
+                    assign(value);
+                    if (!matches(value)) {
+                        throw std::runtime_error("Field assignment changed values or receiver bounds");
+                    }
+                };
+                latencySamples[operation].push_back(measureHostCall(*machine, invoke, iterations));
+                const auto allocations = countHostCallAllocations(invoke, allocationIterations);
+                if (allocations.has_value()) {
+                    allocationSamples[operation].push_back(
+                        static_cast<double>(*allocations) / static_cast<double>(allocationIterations)
+                    );
+                }
+
+                const auto expectedVisits = iterations + 32 +
+                    (allocations.has_value() ? allocationIterations : nomad::NomadIndex{0});
+                if (visits != expectedVisits || !matches(second)) {
+                    throw std::runtime_error("Assignment benchmark did not complete every expected write");
+                }
+            };
+            recordAssignment(1, [&](const nomad::InterpreterValue& value) {
+                type->assignValue(
+                    value.getStorage().data(),
+                    destination,
+                    preparedScratch.empty() ? nullptr : preparedScratch.data()
+                );
+            });
+            recordAssignment(2, [&](const nomad::InterpreterValue& value) {
+                interpreter.setProperty(*ownerType, ownerStorage, valueId, value);
+            });
+            recordAssignment(3, [&](const nomad::InterpreterValue& value) {
+                interpreter.setProperty(*outerType, outerStorage, "inner.value", value);
+            });
+
+            type->assignValue(
+                destination,
+                destination,
+                preparedScratch.empty() ? nullptr : preparedScratch.data()
+            );
+            if (!matches(second)) {
+                throw std::runtime_error("Aliased Type assignment changed the stored value");
+            }
+
+            {
+                const nomad::InterpreterValue snapshot(
+                    type,
+                    std::span<const nomad::RuntimeValue>{destination, valueSize}
+                );
+                interpreter.setProperty(*ownerType, ownerStorage, valueId, snapshot);
+                if (!matches(snapshot)) {
+                    throw std::runtime_error("Public self-assignment changed stored values or bounds");
+                }
+            }
+
+            for (const auto& slot : preparedScratch) {
+                if (slot.getIntegerValue() != 0) {
+                    throw std::runtime_error("Prepared assignment scratch retained an owned value");
+                }
+            }
+
+            const auto after = machine->captureExecutionState();
+            if (
+                after.instructionIndex != before.instructionIndex ||
+                after.stackIndex != before.stackIndex ||
+                after.parameterIndex != before.parameterIndex ||
+                after.variableIndex != before.variableIndex ||
+                after.running != before.running ||
+                after.receiver.getObjectValue() != before.receiver.getObjectValue() ||
+                machine->getIntegerResult() != 42 || machine->getIntegerIntermediate() != 79 ||
+                machine->peekStack(0).getIntegerValue() != 91 ||
+                receiver.getObjectValue()->getReferenceCount() != 1 ||
+                (referenceValue &&
+                    (firstSource[referenceOffset].getObjectValue()->getReferenceCount() != firstReferences ||
+                     secondSource[referenceOffset].getObjectValue()->getReferenceCount() != secondReferences + 1))
+            ) {
+                throw std::runtime_error("Assignment benchmark changed reference ownership or enclosing VM state");
+            }
+        }
+
+        std::cout << "assignment_case=" << cases[query] << " value_slots=" << valueSize
+            << " scratch_slots=" << scratchSize << " iterations=" << iterations;
+        for (auto operation = nomad::NomadIndex{0}; operation < labels.size(); ++operation) {
+            const auto timeLabel = std::format("{}_us", labels[operation]);
+            printSamples(timeLabel.c_str(), latencySamples[operation]);
+            const auto allocationLabel = std::format("{}_allocations", labels[operation]);
+            if (!allocationSamples[operation].empty()) {
+                printSamples(allocationLabel.c_str(), allocationSamples[operation]);
+            } else {
+                std::cout << ' ' << allocationLabel << "=unavailable";
+            }
+        }
+
+        std::cout << std::endl;
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Assignment scratch benchmark leaked owned values or receivers");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -1566,6 +1859,7 @@ int main() {
         runNativePropertyBenchmark();
         runHostCallBenchmark();
         runFrameResultBenchmark();
+        runAssignmentScratchBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

@@ -82,3 +82,8 @@ It reports preparation/check/destruction costs and the frame object's size.
 
 Closure workloads include zero, one, two, and eight arguments plus captured
 values, so inline metadata and heap-spill costs can be compared separately.
+
+Assignment workloads compare scratch construction, assignment with prepared
+scratch, and public ID/nested-path field setters. Values alternate and checks
+cover field contents, bounds, aliasing, references, and enclosing VM state;
+receiver and value preparation is excluded.
