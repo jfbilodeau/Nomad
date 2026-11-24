@@ -1676,6 +1676,76 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(argument_snapshot_capacity_counts_logical_values_instead_of_storage_slots) {
+    Runtime runtime;
+    const auto emptyId = runtime.registerStruct("SnapshotEmpty");
+    const auto pairId = runtime.registerStruct("SnapshotPair");
+    BOOST_REQUIRE(emptyId.isValid() && pairId.isValid());
+    auto& manager = runtime.getTypeManager();
+    BOOST_REQUIRE(manager.registerScriptStructProperty(pairId, "first", runtime.getIntegerType()).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(pairId, "second", runtime.getIntegerType()).isValid());
+    manager.finalizeCompositeFieldLayout(emptyId);
+    manager.finalizeCompositeFieldLayout(pairId);
+    const std::array<const Type*, 3> types{
+        runtime.getIntegerType(), runtime.getType(emptyId).value(), runtime.getType(pairId).value()
+    };
+    const std::array storage{RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadInteger{25}}};
+    VirtualMachine machine(&runtime, 64);
+    machine.pushInteger(91);
+    machine.setIntegerResult(71);
+    machine.setIntegerIntermediate(83);
+    for (const auto* type : types) {
+        const auto size = type->getSize();
+        const InterpreterValue value(type, std::span<const RuntimeValue>{storage.data(), size});
+        for (const auto count : {NomadIndex{0}, NomadIndex{1}, NomadIndex{2}}) {
+            std::vector<Parameter> parameters;
+            for (auto index = NomadIndex{0}; index < count; ++index) {
+                parameters.push_back(defParameter("value" + std::to_string(index), type, ""));
+            }
+
+            const auto id = runtime.registerNativeFunction(
+                "snapshot" + std::to_string(type->getId().id) + "_" + std::to_string(count),
+                [](VirtualMachine*) {},
+                parameters,
+                runtime.getVoidType(),
+                ""
+            );
+            const auto* callable = runtime.getCallable(id);
+            BOOST_REQUIRE(callable != nullptr);
+            const std::vector<InterpreterValue> arguments(count, value);
+            {
+                const InterpreterCallFrame frame(machine, *callable, arguments, runtime.getVoidType());
+            }
+
+            auto completedFrames = NomadIndex{0};
+            const auto* returnType = runtime.getVoidType();
+            callAllocations = 0;
+            previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+            {
+                const auto previousHook = previousAllocationHook;
+                BOOST_SCOPE_EXIT_ALL(=) {
+                    _CrtSetAllocHook(previousHook);
+                };
+
+                for (auto iteration = 0; iteration < 100; ++iteration) {
+                    const InterpreterCallFrame frame(machine, *callable, arguments, returnType);
+                    const auto expectedTop = size == 0 || count == 0 ? NomadInteger{91} :
+                        storage[size - 1].getIntegerValue();
+                    completedFrames += frame.getResult() == nullptr &&
+                        machine.peekStack(0).getIntegerValue() == expectedTop;
+                }
+            }
+
+            BOOST_TEST(callAllocations == (count <= 1 ? 0U : 100U));
+            BOOST_TEST(completedFrames == 100U);
+            BOOST_TEST(machine.peekStack(0).getIntegerValue() == 91);
+            BOOST_TEST(machine.captureExecutionState().stackIndex == 1U);
+            BOOST_TEST(machine.getIntegerResult() == 71);
+            BOOST_TEST(machine.getIntegerIntermediate() == 83);
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(frame_result_allocation_excludes_unused_result_containers) {
     Runtime runtime;
     std::vector<const Type*> types{
@@ -1730,7 +1800,7 @@ BOOST_AUTO_TEST_CASE(frame_result_allocation_excludes_unused_result_containers) 
             }
         }
 
-        BOOST_TEST(callAllocations == (nonemptyAggregate ? 200U : 100U));
+        BOOST_TEST(callAllocations == (nonemptyAggregate ? 100U : 0U));
         BOOST_TEST(completedFrames == 100U);
         BOOST_TEST(machine.getIntegerResult() == 71);
         BOOST_TEST(machine.getIntegerIntermediate() == 83);

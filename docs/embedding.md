@@ -1519,6 +1519,11 @@ restoring the borrowed registers. Low-level callers outside a call frame must
 preserve any register contents they need across execution and release owned
 temporary values before restoring them.
 
+Argument cleanup metadata has one inline entry, with heap fallback for larger
+lists. This counts logical arguments plus captures, including empty values,
+not their storage slots; a multi-slot struct uses one entry. It does not limit
+supported argument or capture counts.
+
 `getResult()` borrows writable storage until frame destruction. Scalar/reference
 results use the VM result register; nonempty struct results have independent,
 cleared storage whose address remains stable through nested calls. Void and

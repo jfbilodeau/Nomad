@@ -4,7 +4,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**V16:** Closure-frame result storage now uses an owned array and is validated. Frame objects are smaller and Debug allocation requests drop by one; argument metadata remains unchanged for a separate design review.
+**V16:** The approved one-record inline argument container is implemented and validated, completing the measured host-bookkeeping changes with heap fallback retained. Next reviewable scope: measure I11's struct-field assignment scratch allocations.
 
 ## Component contract
 
@@ -1468,10 +1468,130 @@ Measure each change before and after on the same workload.
   or Release allocation reduction is claimed. These remain checked warm
   microbenchmarks on a shared machine, without timing thresholds, full-suite
   rerun, manual gameplay, allocator fault injection, or cross-platform results.
-- The result-buffer-only step is complete. Next reviewable scope: review the
-  remaining argument type/offset/size snapshots and their allocation cost.
-  Keep the vector until a separate capacity/stack-budget and fallback decision
-  is approved; do not extend the raw inline-four choice automatically.
+- The result-buffer-only step is complete. The separate argument snapshot
+  design below is approved; the raw inline-four capacity was not carried over.
+
+#### V16 approved inline-one argument snapshot design
+
+- The user selected `inline-one-with-fallback`: replace InterpreterCallFrame's
+  argument metadata vector with
+  `boost::container::small_vector<ArgumentStorage, 1>`. Keep each invocation's
+  type/offset/size cleanup snapshots, existing copy/release algorithm, and
+  independent nested-frame ownership.
+- One is a targeted budget for the measured zero/one-record paths, not a proven
+  optimal capacity or a claim about production argument-count distributions.
+  Each record has three machine words, or 24 bytes of payload on the measured
+  x64 platform. Measure the complete frame-object cost and latency before
+  accepting the implementation; do not equate payload with full native-stack
+  usage or extrapolate the raw runner's four-pointer budget.
+- Capacity counts logical explicit arguments plus captures, including zero-sized
+  values. A multi-slot struct argument still uses one metadata record; its value
+  remains in the existing VM argument storage. Larger record lists retain heap
+  fallback with no argument/capture limit. Do not drop empty-value records or
+  change concrete call-site slot counts as part of this storage change.
+- Reserve the callable's record capacity before mutating VM argument storage
+  or registers, as today. Record type/offset/size before calling `Type::copyValue`,
+  including the cleared destination of a failed copy, and advance the value-slot
+  offset only after success. Preserve cleanup order, complete struct/reference
+  release, hidden pointers, saved registers, and restoration during exceptions
+  and reentry. Do not reconstruct cleanup types from live metadata afterward.
+- The existing container already tracks initialized records, avoiding a separate
+  copied-record counter. A fixed owned metadata array was considered but not
+  selected: it retains a heap allocation for every nonempty list and needs
+  explicit initialized-record progress for partial-copy cleanup.
+- Keep the owned result array and raw-runner bookkeeping unchanged. Reuse the
+  existing public Boost.Container dependency; no new dependency, result buffer,
+  shared pool, cache/index, ownership flag, declaration seal, or public signature
+  change is needed. The C++ frame object layout changes, so consumers must rebuild.
+- Current Debug Closure empty/integer/captured paths make 1/2/4 allocation
+  requests, and scalar Closure-frame preparation makes two. The captured case
+  has three records and therefore exercises fallback under the selected budget.
+  These baseline counts include other work and Debug instrumentation; measure
+  the new paths rather than promising every Closure call will be allocation-free.
+  Release allocation counts remain unavailable.
+- The design review was source-only. Implementation and checked measurements
+  are recorded below.
+
+#### V16 inline-one argument snapshot implementation and validation
+
+- The only production change is InterpreterCallFrame's argument-record container:
+  `small_vector<ArgumentStorage, 1>` replaces the vector. Copy, reserve, and
+  release algorithms are unchanged, including recording type/offset/size before
+  copying a value. The owned result array, raw-runner storage, concrete call-site
+  widths, public signatures, and existing Boost dependency remain unchanged.
+- A focused allocation regression covers zero/one/two logical arguments with
+  integer, empty-struct, and two-slot struct values. It proves one multi-slot
+  struct stays inline, while two zero-slot values still spill. Updated
+  result-frame allocation expectations and this boundary test first reproduced
+  15 old allocation failures; all now pass. Existing scalar/aggregate/reference
+  capture partial-copy failures, fallback cleanup, reentry, and stable result
+  pointer/snapshot tests remain green.
+- Four selected Windows Debug CTests pass after rebuilding frame consumers:
+  `nomad_test_language`, `nomad_test_remaining`, `nomad_compiler_exports`, and
+  `nomad_module_runtime_integration`. No argument count, initialization, or
+  ownership restriction was added.
+- The benchmark added two/eight-integer Closure cases before production edits,
+  capturing fresh Debug/Release spill baselines. Existing host/frame workloads
+  and checks remain unchanged afterward: five samples, 32 warmups, 50,000
+  timing calls, and separate 1,000-call Debug allocation passes. Builds and
+  checked executions pass with current library hashes, including all earlier
+  workloads. One unchanged Release repeat characterizes mixed timing samples;
+  all median `[min,max]` microsecond ranges are retained.
+
+| Closure case | Debug before (us) | Debug after (us) | Debug requests before/after |
+| --- | --- | --- | --- |
+| Empty | 1.411 [1.211,1.626] | 0.793 [0.770,0.919] | 1 / 0 |
+| Integer | 2.272 [2.089,2.935] | 1.041 [0.996,1.234] | 2 / 0 |
+| Captured | 6.125 [5.992,6.774] | 5.082 [4.662,5.670] | 4 / 3 |
+| Two integers | 2.577 [2.267,3.281] | 2.181 [1.893,2.624] | 2 / 1 |
+| Eight integers | 4.579 [4.198,5.311] | 3.759 [3.634,4.242] | 2 / 1 |
+
+| Closure case | Release before (us) | Release after 1 (us) | Release after 2 (us) |
+| --- | --- | --- | --- |
+| Empty | 0.101 [0.087,0.129] | 0.105 [0.082,0.144] | 0.109 [0.079,0.149] |
+| Integer | 0.174 [0.168,0.219] | 0.129 [0.115,0.166] | 0.141 [0.106,0.198] |
+| Captured | 0.512 [0.425,0.647] | 0.493 [0.465,0.567] | 0.476 [0.406,0.606] |
+| Two integers | 0.208 [0.199,0.241] | 0.245 [0.213,0.265] | 0.211 [0.199,0.285] |
+| Eight integers | 0.595 [0.526,0.668] | 0.549 [0.540,0.700] | 0.584 [0.474,0.706] |
+
+- Debug allocation counts have identical minimum/median/maximum across all
+  samples. Scalar Closure-frame preparation drops from two requests to zero.
+  Parameter classification remains 45, integer signature layout remains zero,
+  and unrelated raw-call allocation controls are unchanged. Captured and
+  multi-argument bodies still allocate elsewhere or spill; no universal
+  allocation-free host-call claim is made.
+
+| Direct result frame | Debug before (us) | Debug after (us) | Debug requests before/after |
+| --- | --- | --- | --- |
+| Void | 0.713 [0.645,0.998] | 0.414 [0.301,0.548] | 1 / 0 |
+| Integer | 0.682 [0.631,0.919] | 0.342 [0.334,0.474] | 1 / 0 |
+| String | 0.806 [0.648,0.894] | 0.367 [0.314,0.490] | 1 / 0 |
+| Empty struct | 0.810 [0.747,0.939] | 0.393 [0.364,0.507] | 1 / 0 |
+| Two-slot struct | 1.412 [1.127,1.629] | 0.877 [0.726,1.000] | 2 / 1 |
+| Eight-slot struct | 1.512 [1.358,1.679] | 1.015 [0.787,1.034] | 2 / 1 |
+
+| Direct result frame | Release before (us) | Release after 1 (us) | Release after 2 (us) |
+| --- | --- | --- | --- |
+| Void | 0.037 [0.036,0.044] | 0.048 [0.040,0.061] | 0.061 [0.034,0.061] |
+| Integer | 0.063 [0.042,0.083] | 0.055 [0.044,0.085] | 0.058 [0.042,0.060] |
+| String | 0.055 [0.043,0.074] | 0.053 [0.039,0.078] | 0.050 [0.042,0.060] |
+| Empty struct | 0.070 [0.048,0.119] | 0.063 [0.049,0.065] | 0.055 [0.050,0.069] |
+| Two-slot struct | 0.121 [0.115,0.150] | 0.115 [0.099,0.124] | 0.098 [0.095,0.142] |
+| Eight-slot struct | 0.181 [0.158,0.196] | 0.168 [0.140,0.175] | 0.145 [0.124,0.148] |
+
+- The frame object grows from 96 to 112 bytes in Debug and from 88 to 112 in
+  Release, a 16/24-byte object-size cost. These are not compiler-generated native
+  stack-frame measurements. One is a measured-path budget, not a tuned optimum;
+  production record-count distributions and other platforms remain unprofiled.
+- Release scalar Closure medians improve from 0.174 to 0.129/0.141 us, but
+  empty calls and two-record spills have mixed results, including 0.208 to
+  0.245/0.211 us for two integers. Untouched controls also vary. No universal
+  latency improvement, Release allocation count, timing threshold, full-suite
+  rerun, manual gameplay, or allocator fault injection is claimed.
+- This completes the approved V16 host-bookkeeping scope with larger-call heap
+  fallback intentionally retained. Next reviewable scope: measure I11's
+  per-struct-field assignment scratch allocation and latency before proposing
+  a buffer or assignment change. Other step-8 findings remain separate.
 
 ## Corrections to earlier review notes
 
@@ -1600,7 +1720,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V13 | P3 | const-correctness | getCurrentFunction() const returns a non-const ScriptFunction*; receiver validation repeats on copies and binding | `VirtualMachine.hpp`: getCurrentScript; `VirtualMachine.cpp`: getThis, bindThisFromStack, copyThisToResult, copyThisToIntermediate | Fixed: const script getter and unchecked bound-receiver copies; host/receiver-binding null checks intentionally retained | 2 (done), 4 (done) |
 | V14 | P3 | naming | `stack_size` parameter; `integer_value` and `float_value` locals; memberId used for both CallableId and PropertyId; get*Function*VariableValue and set*VariableValue are asymmetric | `VirtualMachine.hpp/cpp`: constructor, scalar operand readers, native method/property parameters and function-variable accessors | Complete: remaining parameter/local names normalized; obsolete accessor asymmetry resolved by review with APIs unchanged | 7 |
 | V15 | P2 | quality | runNativeIndexer uses magic offsets (+2, +3) and convoluted release index arithmetic; duplicates the m_result reset in callNativeIndexer | `VirtualMachine.cpp`: runNativeIndexer, callNativeIndexer | Implemented: named receiver slot count and position, explicit copied-argument count; early reset retained for copy failures | 4 |
-| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `VirtualMachine.cpp`: local inline cleanup; `InterpreterCallFrame.cpp`: owned result array/typed metadata; RuntimeLookupBenchmark host/frame workloads | Width/call-site, raw cleanup and result-array steps validated; result frame shrinks and one Debug request is removed; argument-metadata design remains pending | 8 |
+| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `VirtualMachine.cpp`: inline-four cleanup; `InterpreterCallFrame.cpp`: owned result array/inline-one metadata; RuntimeLookupBenchmark host/frame workloads | Approved bounded storage/width changes implemented and measured; four Debug CTests and checked Debug/Release comparisons pass; heap fallback retained | 8 (done) |
 | V17 | P3 | quality | fault() is not `[[noreturn]]`; many fault-then-continue patterns | `VirtualMachine.hpp`: fault declaration | Fixed: `[[noreturn]]` | 4 |
 
 ### Compiler

@@ -79,3 +79,6 @@ also gives cleanup-container object sizes, not complete native-stack frame sizes
 A separate frame-result workload checks void, scalar, reference, empty-struct,
 two-slot, and eight-slot results without executing bodies or copying snapshots.
 It reports preparation/check/destruction costs and the frame object's size.
+
+Closure workloads include zero, one, two, and eight arguments plus captured
+values, so inline metadata and heap-spill costs can be compared separately.

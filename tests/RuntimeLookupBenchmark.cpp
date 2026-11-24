@@ -1163,7 +1163,7 @@ void runHostCallBenchmark() {
     constexpr auto labels = std::array{
         "prepared_empty", "raw_empty", "raw_integer", "raw_four_integers",
         "raw_two_strings", "raw_capture_vector", "closure_empty", "closure_integer", "closure_captured",
-        "raw_eight_integers"
+        "raw_eight_integers", "closure_two_integers", "closure_eight_integers"
     };
     constexpr auto probeLabels = std::array{
         "integer_parameter_shape", "integer_call_layout", "integer_closure_frame", "raw_empty_explicit_captures"
@@ -1171,6 +1171,7 @@ void runHostCallBenchmark() {
     const auto source = nomad::NomadString{
         "fun benchmarkHostEmpty\nreturn 42\nend\n"
         "fun benchmarkHostInteger value:int\nreturn value\nend\n"
+        "fun benchmarkHostTwo first:int second:int\nreturn first + second\nend\n"
         "fun benchmarkHostFour first:int second:int third:int fourth:int\n"
         "return first + second + third + fourth\nend\n"
         "fun benchmarkHostEight first:int second:int third:int fourth:int fifth:int sixth:int seventh:int eighth:int\n"
@@ -1240,10 +1241,11 @@ void runHostCallBenchmark() {
 
         const auto* empty = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostEmpty"));
         const auto* integer = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostInteger"));
+        const auto* two = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostTwo"));
         const auto* four = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostFour"));
         const auto* eight = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostEight"));
         const auto* strings = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostStrings"));
-        for (const auto* function : {empty, integer, four, eight, strings}) {
+        for (const auto* function : {empty, integer, two, four, eight, strings}) {
             if (
                 function == nullptr ||
                 !function->isCompiled() ||
@@ -1287,6 +1289,10 @@ void runHostCallBenchmark() {
         const nomad::RuntimeValueGuard receiverOwner(*runtime.getStringType(), &receiver);
         const std::vector<nomad::RuntimeValue> noArguments;
         const std::vector integerArguments{nomad::RuntimeValue{nomad::NomadInteger{42}}};
+        const std::vector twoArguments{
+            nomad::RuntimeValue{nomad::NomadInteger{17}},
+            nomad::RuntimeValue{nomad::NomadInteger{25}}
+        };
         const std::vector fourArguments{
             nomad::RuntimeValue{nomad::NomadInteger{3}},
             nomad::RuntimeValue{nomad::NomadInteger{7}},
@@ -1299,6 +1305,8 @@ void runHostCallBenchmark() {
         const std::vector captureArguments{nomad::RuntimeValue{nomad::NomadInteger{21}}};
         const nomad::Closure emptyClosure(empty);
         const nomad::Closure integerClosure(integer);
+        const nomad::Closure twoClosure(two);
+        const nomad::Closure eightClosure(eight);
         machine->pushInteger(91);
         machine->enterNativeFrame(receiver);
         const auto before = machine->captureExecutionState();
@@ -1370,6 +1378,8 @@ void runHostCallBenchmark() {
         record(7, [&] { machine->run(integerClosure, integerArguments); });
         record(8, [&] { machine->run(*captured, captureArguments); });
         record(9, [&] { machine->run(eight, eightArguments); });
+        record(10, [&] { machine->run(twoClosure, twoArguments); });
+        record(11, [&] { machine->run(eightClosure, eightArguments); });
     }
 
     for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {

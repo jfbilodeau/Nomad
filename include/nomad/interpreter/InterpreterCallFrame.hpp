@@ -4,9 +4,10 @@
 
 #include <nomad/script/RuntimeValue.hpp>
 
+#include <boost/container/small_vector.hpp>
+
 #include <memory>
 #include <span>
-#include <vector>
 
 namespace nomad {
 
@@ -73,7 +74,8 @@ private:
     RuntimeValue m_savedIntermediate;
     std::unique_ptr<RuntimeValue[]> m_resultStorage;
     std::span<RuntimeValue> m_argumentStorage;
-    std::vector<ArgumentStorage> m_arguments;
+    // Inline capacity counts logical arguments/captures, not their value-storage slots.
+    boost::container::small_vector<ArgumentStorage, 1> m_arguments;
     NomadIndex m_argumentOffset = 0;
 };
 
