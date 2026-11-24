@@ -1676,6 +1676,141 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(stored_field_assignment_allocates_scratch_only_for_multi_slot_values) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    std::vector<const Type*> valueTypes{runtime.getIntegerType(), runtime.getStringType()};
+    for (const auto size : {NomadIndex{0}, NomadIndex{2}, NomadIndex{8}}) {
+        const auto id = runtime.registerStruct("ScratchValue" + std::to_string(size));
+        BOOST_REQUIRE(id.isValid());
+        for (auto index = NomadIndex{0}; index < size; ++index) {
+            const auto* fieldType = index + 1 == size ? runtime.getStringType() : runtime.getIntegerType();
+            BOOST_REQUIRE(manager.registerScriptStructProperty(
+                id,
+                "field" + std::to_string(index),
+                fieldType
+            ).isValid());
+        }
+
+        manager.finalizeCompositeFieldLayout(id);
+        valueTypes.push_back(runtime.getType(id).value());
+    }
+
+    VirtualMachine machine(&runtime, 64);
+    const Interpreter interpreter(machine);
+    machine.pushInteger(91);
+    machine.setIntegerResult(71);
+    machine.setIntegerIntermediate(83);
+    for (const auto* type : valueTypes) {
+        const auto size = type->getSize();
+        const auto referenceValue = type == runtime.getStringType() || size > 1;
+        std::vector<RuntimeValue> source(size);
+        const RuntimeValueGuard sourceOwner(*type, source.empty() ? nullptr : source.data());
+        for (auto index = NomadIndex{0}; index < size; ++index) {
+            if (referenceValue && index + 1 == size) {
+                source[index].setStringValue("owned assignment source");
+            } else {
+                source[index].setIntegerValue(static_cast<NomadInteger>(index) + 17);
+            }
+        }
+
+        const InterpreterValue replacement(type, source);
+        const auto suffix = std::to_string(type->getId().id);
+        const auto ownerId = runtime.registerStruct("ScratchOwner" + suffix);
+        BOOST_REQUIRE(ownerId.isValid());
+        BOOST_REQUIRE(manager.registerScriptStructProperty(
+            ownerId,
+            "before",
+            runtime.getIntegerType()
+        ).isValid());
+        const auto propertyId = manager.registerScriptStructProperty(ownerId, "value", type);
+        BOOST_REQUIRE(propertyId.isValid());
+        BOOST_REQUIRE(manager.registerScriptStructProperty(
+            ownerId,
+            "after",
+            runtime.getIntegerType()
+        ).isValid());
+        manager.finalizeCompositeFieldLayout(ownerId);
+        const auto* owner = runtime.getType(ownerId).value()->asStructType();
+        const auto outerId = runtime.registerStruct("ScratchOuter" + suffix);
+        BOOST_REQUIRE(outerId.isValid());
+        BOOST_REQUIRE(manager.registerScriptStructProperty(
+            outerId,
+            "before",
+            runtime.getIntegerType()
+        ).isValid());
+        const auto innerId = manager.registerScriptStructProperty(outerId, "inner", owner);
+        BOOST_REQUIRE(innerId.isValid());
+        BOOST_REQUIRE(manager.registerScriptStructProperty(
+            outerId,
+            "after",
+            runtime.getIntegerType()
+        ).isValid());
+        manager.finalizeCompositeFieldLayout(outerId);
+        const auto* outer = runtime.getType(outerId).value()->asStructType();
+        std::vector<RuntimeValue> receiver(outer->getSize());
+        const RuntimeValueGuard receiverOwner(*outer, receiver.data());
+        outer->initValue(receiver.data());
+        const auto ownerStorage = std::span{receiver}.subspan(
+            outer->getFieldOffset(innerId),
+            owner->getSize()
+        );
+        const auto valueStorage = ownerStorage.subspan(owner->getFieldOffset(propertyId), size);
+        receiver.front().setIntegerValue(101);
+        receiver.back().setIntegerValue(103);
+        ownerStorage.front().setIntegerValue(107);
+        ownerStorage.back().setIntegerValue(109);
+        const auto expectedAllocations = type->getAssignmentScratchSize() == 0 ? 0U : 100U;
+        for (const auto nested : {false, true}) {
+            const auto assign = [&] {
+                if (nested) {
+                    interpreter.setProperty(*outer, receiver, "inner.value", replacement);
+                } else {
+                    interpreter.setProperty(*owner, ownerStorage, propertyId, replacement);
+                }
+            };
+            assign();
+            auto completedAssignments = NomadIndex{0};
+            callAllocations = 0;
+            previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+            {
+                const auto previousHook = previousAllocationHook;
+                BOOST_SCOPE_EXIT_ALL(=) {
+                    _CrtSetAllocHook(previousHook);
+                };
+
+                for (auto iteration = 0; iteration < 100; ++iteration) {
+                    assign();
+                    auto matches = true;
+                    for (auto index = NomadIndex{0}; index < size; ++index) {
+                        if (referenceValue && index + 1 == size) {
+                            matches &= valueStorage[index].getObjectValue() == source[index].getObjectValue();
+                        } else {
+                            matches &= valueStorage[index].getIntegerValue() == source[index].getIntegerValue();
+                        }
+                    }
+
+                    completedAssignments += matches;
+                }
+            }
+
+            BOOST_TEST(callAllocations == expectedAllocations);
+            BOOST_TEST(completedAssignments == 100U);
+            BOOST_TEST(receiver.front().getIntegerValue() == 101);
+            BOOST_TEST(receiver.back().getIntegerValue() == 103);
+            BOOST_TEST(ownerStorage.front().getIntegerValue() == 107);
+            BOOST_TEST(ownerStorage.back().getIntegerValue() == 109);
+            BOOST_TEST(machine.peekStack(0).getIntegerValue() == 91);
+            BOOST_TEST(machine.captureExecutionState().stackIndex == 1U);
+            BOOST_TEST(machine.getIntegerResult() == 71);
+            BOOST_TEST(machine.getIntegerIntermediate() == 83);
+            if (referenceValue) {
+                BOOST_TEST(source.back().getObjectValue()->getReferenceCount() == 3U);
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(argument_snapshot_capacity_counts_logical_values_instead_of_storage_slots) {
     Runtime runtime;
     const auto emptyId = runtime.registerStruct("SnapshotEmpty");

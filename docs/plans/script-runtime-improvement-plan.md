@@ -4,7 +4,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**I11:** Checked assignment scratch baselines are recorded; production assignment behavior is unchanged. Next reviewable scope: review scratch storage while preserving aliasing and copy-failure guarantees.
+**I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples. Next reviewable scope: measure R30's event-definition snapshot-copy costs.
 
 ## Component contract
 
@@ -1655,12 +1655,121 @@ Measure each change before and after on the same workload.
   representative field-size distributions, whole-script/gameplay performance,
   cross-platform results, or an allocator-failure benchmark. No timing threshold
   or full-suite rerun is claimed.
-- Next reviewable scope: discuss scratch storage for zero/one-slot and multi-slot
-  assignments using the measured evidence. Preserve Type's copy-before-release
-  ordering, unchanged destination on copy failure, shared reference behavior,
-  exact type/storage validation, and aliasing. Do not introduce an inline
-  threshold, shared pool/cache, ownership discriminator, or assignment/API change
-  without approving the design first.
+- The conditional owned-array scratch design below is approved. These checked
+  measurements remain the pre-implementation baseline.
+
+#### I11 approved conditional owned-array scratch design
+
+- The user selected `conditional-owned-array`: replace only the local scratch
+  vector in the shared `assignStoredProperty` path with
+  `std::unique_ptr<RuntimeValue[]>`. Read `getAssignmentScratchSize()` and allocate
+  cleared slots with `std::make_unique<RuntimeValue[]>` only when that count is
+  nonzero. Pass the owned array's pointer to the existing `Type::assignValue`.
+- Empty, scalar, and reference fields require zero external scratch slots.
+  Leave the pointer null and use Type's existing zero/single-slot behavior.
+  Multi-slot fields still receive a fresh, disjoint, fully cleared array for
+  each synchronous assignment. There is no inline threshold or size limit,
+  shared scratch buffer, cache, pool, extra ownership flag, or new API.
+- This reuses the owned-array mechanism already present in InterpreterContext
+  parameter and frame-variable writes. Do not extract a generalized scratch
+  abstraction or change other scratch consumers, argument/result containers,
+  Type metadata, VM behavior, or public signatures in this bounded step.
+- Preserve the public setters' receiver-size validation, selector resolution,
+  and exact-type validation before allocating scratch. Allocation still precedes
+  assignment; allocation failures propagate without modifying the destination.
+  Do not bypass assignments or value evaluation merely because storage is empty.
+- Leave `Type::assignValue` unchanged: copy into scratch before releasing the
+  destination, transfer completed slots, and clear scratch afterward.
+  `copyValue` failures retain their existing contract of releasing resources
+  and clearing scratch. Array destruction releases only the allocation; it does
+  not replace Type-driven value cleanup or add rollback of callback side effects.
+  Preserve source/destination aliasing, independent snapshots, shared reference
+  identity, and the unchanged-destination guarantee on copy failure.
+- The intended optimization removes unused vector state and its measured Debug
+  request. It does not remove multi-slot scratch allocation. Current public
+  ID/path setters make one Debug request for empty/scalar/reference values and
+  two for multi-slot values; verify actual post-change counts rather than
+  treating these as Release allocation evidence.
+- The owned pointer adds no inline payload budget or dependency. Exact latency
+  effects remain unmeasured, and no Release speedup is promised. Keep the
+  benchmark's vector-construction and prepared-assignment controls unchanged;
+  compare the public setter metrics directly against the recorded baseline,
+  without subtracting unlike timing loops.
+- The design review was source-only. Implementation and checked results are
+  recorded below; other scratch consumers remain unchanged.
+
+#### I11 conditional owned-array implementation and validation
+
+- The shared stored-field setter now reads the required scratch count and
+  conditionally allocates a cleared `RuntimeValue[]` through `make_unique`.
+  Zero external scratch passes null into Type's existing local-storage path.
+  Multi-slot fields still allocate their full scratch on each assignment.
+  Only this private helper changed in production; existing includes suffice.
+- Type assignment, validation order, selector resolution, signatures, and other
+  scratch consumers are unchanged. No inline threshold, reused buffer, cache,
+  pool, ownership discriminator, generalized helper, or dependency was added.
+  Copy-before-release, aliasing, and failure cleanup remain Type-owned.
+- One focused existing-file allocation regression covers integer, reference,
+  empty, pair, and wide fields through both property-ID and nested-path setters.
+  It first reproduced ten old allocation failures. It now verifies zero Debug
+  requests for zero-scratch fields and one per multi-slot write, with complete
+  value checks, four bounds markers, shared reference counts, and unchanged
+  VM result/intermediate registers and stack marker.
+- Both selected Windows Debug CTests pass: `nomad_test_remaining` and
+  `nomad_test_language`. Existing every-copy-stage failure-before-commit,
+  alias/self-assignment, shared-reference, and receiver/storage/type validation
+  regressions remain green. Allocation-failure ordering was source-reviewed,
+  not allocator-fault-injected.
+- The unchanged opt-in benchmark builds and passes checked Debug/Release runs,
+  with bundled language DLL hashes matched to the current builds. Every earlier
+  benchmark section also passes. The five-shape assignment workload retains five
+  samples, 32 warmups, 50,000 timing operations, and a separate 1,000-operation
+  Debug CRT allocation pass. Value/reference/alias/bounds/state checks remain
+  unchanged. Release was repeated once without edits because timings were mixed;
+  all median `[min,max]` microsecond ranges are retained.
+
+| Case | Debug construction (us) | Debug prepared (us) | Debug ID setter (us) | Debug nested setter (us) | Debug requests construction/prepared/ID/path |
+| --- | --- | --- | --- | --- | --- |
+| Empty | 0.378 [0.365,0.496] | 0.113 [0.060,0.136] | 1.086 [0.941,1.305] | 2.797 [2.597,3.144] | 1 / 0 / 0 / 0 |
+| Integer | 0.420 [0.368,0.550] | 0.216 [0.133,0.243] | 1.197 [1.038,1.435] | 3.094 [2.725,3.574] | 1 / 0 / 0 / 0 |
+| String | 0.472 [0.355,0.556] | 0.287 [0.260,0.319] | 1.214 [1.072,1.569] | 3.233 [2.791,3.803] | 1 / 0 / 0 / 0 |
+| Pair | 0.838 [0.554,0.900] | 0.388 [0.246,0.495] | 1.725 [1.600,2.294] | 3.604 [3.474,3.973] | 2 / 0 / 1 / 1 |
+| Wide | 0.773 [0.637,0.953] | 0.534 [0.463,0.743] | 2.121 [1.620,2.435] | 3.894 [3.562,4.249] | 2 / 0 / 1 / 1 |
+
+| Release run | Case | Construction (us) | Prepared (us) | ID setter (us) | Nested setter (us) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Empty | 0.010 [0.009,0.031] | 0.019 [0.019,0.043] | 0.066 [0.057,0.087] | 0.144 [0.108,0.150] |
+| 1 | Integer | 0.011 [0.010,0.015] | 0.034 [0.026,0.039] | 0.118 [0.058,0.134] | 0.120 [0.112,0.143] |
+| 1 | String | 0.010 [0.009,0.013] | 0.035 [0.032,0.038] | 0.072 [0.063,0.087] | 0.115 [0.109,0.133] |
+| 1 | Pair | 0.044 [0.034,0.049] | 0.067 [0.062,0.076] | 0.152 [0.133,0.225] | 0.194 [0.172,0.251] |
+| 1 | Wide | 0.072 [0.047,0.080] | 0.166 [0.139,0.187] | 0.287 [0.235,0.309] | 0.417 [0.332,0.469] |
+| 2 | Empty | 0.009 [0.009,0.012] | 0.020 [0.019,0.020] | 0.061 [0.057,0.065] | 0.102 [0.101,0.112] |
+| 2 | Integer | 0.009 [0.009,0.011] | 0.031 [0.027,0.035] | 0.069 [0.061,0.110] | 0.109 [0.096,0.130] |
+| 2 | String | 0.010 [0.009,0.029] | 0.049 [0.036,0.139] | 0.068 [0.065,0.144] | 0.124 [0.108,0.152] |
+| 2 | Pair | 0.039 [0.035,0.060] | 0.073 [0.057,0.088] | 0.157 [0.135,0.212] | 0.214 [0.177,0.220] |
+| 2 | Wide | 0.045 [0.042,0.049] | 0.160 [0.158,0.250] | 0.287 [0.248,0.340] | 0.387 [0.271,0.411] |
+
+- Each Debug allocation value has identical minimum/median/maximum across all
+  five samples. Both public selectors change from one request to zero for
+  empty/scalar/reference values and from two to one for multi-slot fields.
+  The vector-construction control remains at one/two requests and prepared
+  assignment remains at zero; neither control was optimized in this step.
+- Debug ID-setter medians change from 1.492/1.750/1.841/2.283/2.732 to
+  1.086/1.197/1.214/1.725/2.121 us across the five cases. Release results do not
+  establish a general latency improvement. In particular, wide-field ID setters
+  rise from 0.245 to 0.287/0.287 us, and nested wide-field setters rise from
+  0.312 to 0.417/0.387 us. Integer ID-setter samples vary from baseline 0.063
+  to 0.118/0.069 us. These increases and the mixed controls are retained rather
+  than discarded; no Release speedup or allocation reduction is claimed.
+- Timings include their respective checks on a shared Windows/MSVC machine.
+  Controls have different work and are not an exact subtractive decomposition.
+  Nonempty multi-slot scratch still allocates; no production field-size profile,
+  full native-stack measurement, full-suite rerun, manual gameplay,
+  cross-platform result, or timing threshold is claimed.
+- This completes the approved bounded I11 storage change. Next reviewable scope:
+  measure R30's event-definition metadata copying and its consumers before
+  considering a borrowed-access contract. Do not extend the scratch change to
+  other consumers or add more storage strategies automatically.
 
 ## Corrections to earlier review notes
 
@@ -1755,7 +1864,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | I8 | P3 | redundancy | Compiled-body range check repeated at host boundaries and accepts an unset end sentinel | `ScriptCallableBase.cpp`: hasCompiledBody; `Interpreter.cpp`: callable entry points; `VirtualMachine.cpp`: run(Closure); `FormatString.cpp`: appendFunction | Fixed: shared range predicate rejects unset endpoints, empty/reversed ranges; no new prepared-VM readiness check | 5 |
 | I9 | P2 | correctness | getStoredProperty's subspan has no local receiver-range guard | `Interpreter.cpp`: getStoredProperty; `InterpreterValue.cpp`: constructor; `StructType.cpp`: getSize; `CompositeType.cpp`: finalizeFieldLayout, registerProperty | Resolved by review: complete owned receiver storage and finalized nested layouts establish the range; no supported reproducer or extra guard | 5 |
 | I10 | P2 | consistency | Stored-property assignment requires exact type equality; call arguments use acceptsArgument. Verify against the Compiler's assignability rules | `Interpreter.cpp`: validateStoredPropertyAssignment, validateCallArgument; `SyntaxTree.cpp`: MemberAssignmentStatement::onResolve; `Compiler.cpp`: resolveStructField/resolveObjectField; `Argument.cpp`: ExpressionArgument::onResolve | Resolved by review: Compiler and Interpreter both use exact descriptor identity for stored-field assignments and acceptsArgument for calls; no behavior change | 5 |
-| I11 | P2 | perf | assignStoredProperty constructs a std::vector scratch buffer on every struct field write | `Interpreter.cpp`: assignStoredProperty; RuntimeLookupBenchmark assignment controls | Checked Debug/Release construction/prepared/ID/path baselines and existing failure/alias tests pass; scratch-storage design pending | 8 |
+| I11 | P2 | perf | assignStoredProperty constructs a std::vector scratch buffer on every struct field write | `Interpreter.cpp`: conditional scratch; RuntimeLookupBenchmark assignment controls | Approved conditional array implemented; two Debug CTests and checked Debug/Release runs pass; one fewer Debug request, mixed Release timings recorded | 8 (done) |
 | I12 | P3 | redundancy | Stored-property path lookup copies each segment into a NomadString; per-owner validation is required | `CompositeType.cpp`: getProperty(NomadStringView); `Interpreter.cpp`: resolveStoredPropertyPath; `InterpreterReceiver.cpp`: resolveProperty | Name-copy removal implemented using existing borrowed-view lookup; required segment/owner checks and diagnostics retained | 5 |
 | I13 | P2 | api | setProperty name shared by a test-only functional API and production in-place API; size-check order differs between PropertyId and path variants | `Interpreter.cpp`: in-place setProperty overloads; `Interpreter.hpp`; `InterpreterStructAssignmentTest.cpp`: validation-order regression | Fixed: functional API removed; both retained setters use approved storage-first validation, preserving valid mutation behavior | 5 |
 | I14 | P3 | redundancy | Free function formatDynamicString forwards to Interpreter::formatString | `Interpreter.cpp`: formatDynamicString; `FormatString.hpp`:34 | verified | 1 (done) |

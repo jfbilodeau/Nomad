@@ -87,3 +87,5 @@ Assignment workloads compare scratch construction, assignment with prepared
 scratch, and public ID/nested-path field setters. Values alternate and checks
 cover field contents, bounds, aliasing, references, and enclosing VM state;
 receiver and value preparation is excluded.
+Scratch construction remains a vector-based control; compare setter timings
+directly when changing the setter's storage implementation.

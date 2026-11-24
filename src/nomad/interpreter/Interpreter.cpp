@@ -238,11 +238,12 @@ void assignStoredProperty(
     const InterpreterValue& value
 ) {
     const auto* type = property.type;
-    std::vector<RuntimeValue> scratch(type->getAssignmentScratchSize());
+    const auto scratchSize = type->getAssignmentScratchSize();
+    auto scratch = scratchSize != 0 ? std::make_unique<RuntimeValue[]>(scratchSize) : nullptr;
     type->assignValue(
         value.getStorage().data(),
         type->getSize() == 0 ? nullptr : receiverStorage.data() + property.offset,
-        scratch.empty() ? nullptr : scratch.data()
+        scratch.get()
     );
 }
 
