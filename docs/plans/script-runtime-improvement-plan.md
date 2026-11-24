@@ -4,7 +4,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**V16:** Plain fixed type contributions and concrete call-site frame widths are implemented and validated. Parser classification and signature-only dispatch guards remain intact; bookkeeping vectors still need a separate design review.
+**V16:** Raw-runner inline cleanup snapshots and a borrowed capture span are implemented and validated. Closure-frame containers remain unchanged and are the next separate design-review scope.
 
 ## Component contract
 
@@ -1240,9 +1240,117 @@ Measure each change before and after on the same workload.
   API/contract simplification with preserved allocation gains, not a claimed new
   speedup. No Release allocation count, full-suite rerun, manual gameplay,
   cross-platform result, or timing threshold is claimed.
-- This follow-up is complete. Next reviewable scope remains the separate
-  host-call bookkeeping-vector design review; retain partial-copy cleanup and
-  raw/typed ownership contracts before changing those structures.
+- This follow-up is complete. The raw-runner bookkeeping design below is
+  approved; partial-copy cleanup and raw/typed ownership contracts remain intact.
+
+#### V16 approved raw-runner bookkeeping design
+
+- The user approved optimizing only the raw ScriptFunction runner next.
+  Retain the per-invocation cleanup records rather than reconstructing them
+  after execution: they record the exact types and partial-copy progress for
+  the stack values owned by that invocation.
+- Replace the local argument-type `std::vector` with
+  `boost::container::small_vector<const Type*, 4>`. Four inline pointer entries
+  cover every measured raw argument/capture count. Larger calls retain heap
+  fallback; no argument limit or silent fallback is added.
+  The inline payload is four pointers, with container bookkeeping in addition;
+  exact native-stack/frame overhead remains unmeasured.
+- Boost is already the pinned dependency and C++20 has no equivalent standard
+  small vector. Declare Container explicitly in the existing Boost selection
+  and target linkage, without a new dependency manager or version change.
+  Keep this local snapshot independent for every invocation and nested reentry,
+  not a VM member, shared buffer, cache, index, or global mutable state.
+- Change only the optional raw capture parameter from a vector reference to
+  `std::span<const RuntimeValue>` with an empty default. The explicit argument
+  vector stays unchanged. The span borrows capture storage for the synchronous
+  call; captures are still copied/retained onto the VM stack under their types.
+  Existing vector-based capture callers can supply a view, while capture
+  initializer-list callers must prepare a vector or array. Update the known
+  test caller and document the C++ signature/rebuild requirement without a shim.
+- Preserve argument-count and expanded-input validation, reverse capture/argument
+  copy order, stack preflight, saved enclosing state, result ownership, and
+  caller-owned input lifetime. Reserve fallback capacity before copying values.
+  Record the cleanup type before `copyValue`, retaining cleanup of a cleared
+  destination if that copy throws. Resource side effects are not rolled back.
+- The measured Debug raw empty/one-integer/four-integer paths make 2/3/3
+  allocation requests. The raw empty call with an explicitly prepared capture
+  vector makes one request, identifying default-vector construction separately.
+  These are Debug CRT requests, not measured Release allocation counts; no
+  speedup or total allocation elimination is claimed before implementation.
+- Closure InterpreterCallFrame argument metadata and result storage remain
+  unchanged. Their sizes, aggregate/capture support, snapshots, and allocation
+  costs require a separate review after this bounded raw-runner change.
+- The design review was source-only. Its bounded implementation and checked
+  measurements are recorded below.
+
+#### V16 raw inline cleanup implementation and measurements
+
+- Raw ScriptFunction invocation now keeps cleanup type records in a local
+  `small_vector<const Type*, 4>` and borrows optional captures through a span.
+  Explicit argument vectors, reverse capture/argument copying, reserve-before-copy,
+  record-before-copy, and normal/exception cleanup remain intact. The count
+  validation uses guarded subtraction to avoid overflowing a sum of input sizes.
+  No VM member, shared pool, cache, index, or argument cap was introduced.
+- Container is explicit in the existing pinned Boost component selection and
+  public language linkage, matching its use in the VM header. The known capture
+  initializer-list caller now prepares an array. Vector capture callers remain
+  compatible through span views; C++ consumers must rebuild for the signature
+  change. Closure-frame argument and result containers are unchanged.
+- Before production edits, the benchmark added one eight-integer workload to
+  measure heap fallback, retaining the existing ten-case timing/check protocol.
+  An untimed size report was added afterward without changing timed operations.
+- The allocation regression first reproduced four failures at zero, one, four,
+  and eight arguments. It now verifies zero allocation requests for small raw
+  calls and one per eight-argument fallback call. A second focused case retains
+  reference arguments plus captures through nested fallback calls, copy failure
+  in the outer and inner invocation, and body failure. It verifies exact reference
+  counts, stack markers, caller state, and borrowed receiver restoration.
+- Five selected Windows Debug CTests pass: `nomad_test_language`,
+  `nomad_test_remaining`, `nomad_compiler_exports`,
+  `nomad_module_runtime_integration`, and `nomad_package_integration`.
+  Existing expanded-input rejection, ownership, typed/Closure, and reentry tests
+  remain green. Package consumers were rebuilt and executed with the dependency
+  and C++ signature changes.
+- Checked Debug and Release benchmark builds/runs pass before and after, with
+  bundled language DLL hashes matched to their current builds. All preceding
+  workloads pass. Values are five-sample median `[min,max]` microseconds per
+  invocation. The separate Debug allocation pass uses 1,000 calls per sample.
+
+| Case | Debug before (us) | Debug after (us) | Release before (us) | Release after (us) | Debug requests before/after |
+| --- | --- | --- | --- | --- | --- |
+| Prepared empty | 0.402 [0.280,0.421] | 0.264 [0.247,0.347] | 0.031 [0.029,0.045] | 0.049 [0.029,0.066] | 0 / 0 |
+| Raw empty | 1.341 [0.848,2.984] | 0.559 [0.492,0.574] | 0.048 [0.046,0.060] | 0.046 [0.041,0.087] | 2 / 0 |
+| Raw integer | 2.026 [1.281,3.506] | 0.677 [0.621,0.826] | 0.107 [0.098,0.115] | 0.076 [0.070,0.094] | 3 / 0 |
+| Raw four integers | 2.512 [2.183,8.320] | 1.328 [1.272,1.350] | 0.223 [0.213,0.225] | 0.193 [0.185,0.243] | 3 / 0 |
+| Raw two strings | 15.319 [6.916,37.525] | 4.910 [4.801,5.226] | 0.468 [0.418,0.549] | 0.413 [0.356,0.587] | 7 / 4 |
+| Raw capture vector | 5.041 [3.886,7.685] | 3.139 [2.832,4.571] | 0.302 [0.299,0.335] | 0.273 [0.252,0.296] | 4 / 2 |
+| Closure empty | 1.423 [1.234,2.501] | 1.265 [1.191,1.599] | 0.084 [0.082,0.100] | 0.083 [0.079,0.095] | 2 / 2 |
+| Closure integer | 2.222 [1.774,4.554] | 2.035 [1.687,2.135] | 0.149 [0.137,0.176] | 0.143 [0.135,0.149] | 3 / 3 |
+| Closure captured | 5.397 [4.756,11.688] | 4.698 [4.340,4.983] | 0.393 [0.379,0.452] | 0.385 [0.355,0.417] | 5 / 5 |
+| Raw eight integers | 4.325 [3.566,10.686] | 2.570 [2.404,2.890] | 0.407 [0.394,0.480] | 0.406 [0.379,0.426] | 3 / 1 |
+
+- Each Debug request count has identical minimum/median/maximum across all five
+  samples. Raw empty calls with explicitly prepared empty captures change from
+  one request to zero. Parser classification, integer signature layout, and
+  scalar Closure-frame preparation remain 45, zero, and three requests.
+  The legacy `raw_capture_vector` label remains because input storage is still
+  prepared as a vector; invocation now borrows it through a span.
+- The cleanup container's measured object size is 56 bytes in both configurations,
+  versus 32-byte Debug and 24-byte Release vectors: 24/32 additional bytes in
+  that local object. The capture span is 16 bytes. These are object sizes,
+  not complete compiler-generated native-stack frame measurements; VM stack
+  layout and script-frame slot count are unchanged.
+- Release raw integer and four-integer medians change from 0.107/0.223 to
+  0.076/0.193 us; the eight-argument fallback remains about 0.407/0.406 us.
+  Untouched controls and the shared-machine Debug runs vary, so no gain is
+  attributed to Closure or prepared execution. Reference/string bodies still
+  incur other allocations; this is not a claim that every raw call is allocation
+  free. Release allocation counts, full-suite rerun, allocation fault injection,
+  manual gameplay, and cross-platform performance remain unmeasured.
+- The raw-only sub-step is complete. Next reviewable scope: review the remaining
+  Closure InterpreterCallFrame argument metadata and result-storage allocations,
+  preserving capture/aggregate support, cleanup snapshots, reentry, and borrowed
+  VM-state contracts before choosing another storage change.
 
 ## Corrections to earlier review notes
 
@@ -1371,7 +1479,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V13 | P3 | const-correctness | getCurrentFunction() const returns a non-const ScriptFunction*; receiver validation repeats on copies and binding | `VirtualMachine.hpp`: getCurrentScript; `VirtualMachine.cpp`: getThis, bindThisFromStack, copyThisToResult, copyThisToIntermediate | Fixed: const script getter and unchecked bound-receiver copies; host/receiver-binding null checks intentionally retained | 2 (done), 4 (done) |
 | V14 | P3 | naming | `stack_size` parameter; `integer_value` and `float_value` locals; memberId used for both CallableId and PropertyId; get*Function*VariableValue and set*VariableValue are asymmetric | `VirtualMachine.hpp/cpp`: constructor, scalar operand readers, native method/property parameters and function-variable accessors | Complete: remaining parameter/local names normalized; obsolete accessor asymmetry resolved by review with APIs unchanged | 7 |
 | V15 | P2 | quality | runNativeIndexer uses magic offsets (+2, +3) and convoluted release index arithmetic; duplicates the m_result reset in callNativeIndexer | `VirtualMachine.cpp`: runNativeIndexer, callNativeIndexer | Implemented: named receiver slot count and position, explicit copied-argument count; early reset retained for copy failures | 4 |
-| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `Type.cpp`, `BaseTypes.cpp`, `Callable.cpp`: fixed contributions/signature guards; `InterpreterCallFrame.cpp`: concrete call-site widths; RuntimeLookupBenchmark host workloads/probes | Plain widths/call-site layouts implemented with preserved allocation gains; four Debug CTests and checked Debug/Release runs pass; bookkeeping-vector design pending | 8 |
+| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `VirtualMachine.cpp`: local inline cleanup; `InterpreterCallFrame.cpp`: separate typed metadata; RuntimeLookupBenchmark host workloads/probes | Width/call-site and raw-only inline/span changes validated; five Debug CTests and checked Debug/Release comparisons pass; Closure-container design remains pending | 8 |
 | V17 | P3 | quality | fault() is not `[[noreturn]]`; many fault-then-continue patterns | `VirtualMachine.hpp`: fault declaration | Fixed: `[[noreturn]]` | 4 |
 
 ### Compiler

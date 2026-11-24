@@ -251,17 +251,21 @@ void VirtualMachine::enterNativeFrame(const RuntimeValue& receiver) {
 void VirtualMachine::run(
     const ScriptFunction* function,
     const std::vector<RuntimeValue>& args,
-    const std::vector<RuntimeValue>& closures
+    const std::span<const RuntimeValue> captures
 ) {
     const auto state = beginScriptRun();
-    std::vector<const Type*> argumentTypes;
+    HostArgumentTypes argumentTypes;
     BOOST_SCOPE_EXIT_ALL(&, this) {
         restoreExecutionState(state);
         freeHostArguments(state.stackIndex + 2, argumentTypes);
     };
 
-    if (function == nullptr || args.size() + closures.size() != function->getParameterCount() ||
-        closures.size() != function->getCaptureCount()) {
+    if (
+        function == nullptr ||
+        args.size() > function->getParameterCount() ||
+        captures.size() != function->getParameterCount() - args.size() ||
+        captures.size() != function->getCaptureCount()
+    ) {
         fault("Incorrect script argument or capture count");
     }
 
@@ -277,10 +281,10 @@ void VirtualMachine::run(
 
     pushThis();
     argumentTypes.reserve(function->getParameterCount());
-    for (auto index = closures.size(); index > 0; --index) {
+    for (auto index = captures.size(); index > 0; --index) {
         pushHostArgument(
             function->getParameters()[args.size() + index - 1],
-            closures[index - 1],
+            captures[index - 1],
             argumentTypes
         );
     }
@@ -385,7 +389,7 @@ void VirtualMachine::executeScript() {
 void VirtualMachine::pushHostArgument(
     const Parameter& parameter,
     const RuntimeValue& value,
-    std::vector<const Type*>& argumentTypes
+    HostArgumentTypes& argumentTypes
 ) {
     const auto* type = parameter.type;
     if (type == nullptr) {
@@ -406,7 +410,7 @@ void VirtualMachine::pushHostArgument(
 
 void VirtualMachine::freeHostArguments(
     const NomadIndex firstIndex,
-    const std::vector<const Type*>& argumentTypes
+    const HostArgumentTypes& argumentTypes
 ) {
     for (auto index = NomadIndex{0}; index < argumentTypes.size(); ++index) {
         argumentTypes[index]->freeValue(&m_stack[firstIndex + index]);

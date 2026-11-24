@@ -13,6 +13,7 @@
 #include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/container/small_vector.hpp>
 #include <boost/scope_exit.hpp>
 
 #include <algorithm>
@@ -25,6 +26,7 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -1160,7 +1162,8 @@ void runHostCallBenchmark() {
     constexpr auto allocationIterations = nomad::NomadIndex{1000};
     constexpr auto labels = std::array{
         "prepared_empty", "raw_empty", "raw_integer", "raw_four_integers",
-        "raw_two_strings", "raw_capture_vector", "closure_empty", "closure_integer", "closure_captured"
+        "raw_two_strings", "raw_capture_vector", "closure_empty", "closure_integer", "closure_captured",
+        "raw_eight_integers"
     };
     constexpr auto probeLabels = std::array{
         "integer_parameter_shape", "integer_call_layout", "integer_closure_frame", "raw_empty_explicit_captures"
@@ -1170,6 +1173,8 @@ void runHostCallBenchmark() {
         "fun benchmarkHostInteger value:int\nreturn value\nend\n"
         "fun benchmarkHostFour first:int second:int third:int fourth:int\n"
         "return first + second + third + fourth\nend\n"
+        "fun benchmarkHostEight first:int second:int third:int fourth:int fifth:int sixth:int seventh:int eighth:int\n"
+        "return first + second + third + fourth + fifth + sixth + seventh + eighth\nend\n"
         "fun benchmarkHostStrings first:string second:string\nreturn first.length + second.length\nend\n"
         "fun benchmarkPrepareHostCapture\nprefix = \"captured\"\nbase = 13\n"
         "benchmarkKeepHostCapture fun value\nreturn value + base + prefix.length\nend\nend\n"
@@ -1182,6 +1187,9 @@ void runHostCallBenchmark() {
         << "Latency includes execution and result checksum; compilation and argument/capture preparation are excluded.\n"
         << "Allocation counts use a separate untimed MSVC Debug CRT pass; other builds report unavailable.\n"
         << std::flush;
+    std::cout << "host_bookkeeping vector_bytes=" << sizeof(std::vector<const nomad::Type*>)
+        << " inline_four_bytes=" << sizeof(boost::container::small_vector<const nomad::Type*, 4>)
+        << " capture_span_bytes=" << sizeof(std::span<const nomad::RuntimeValue>) << std::endl;
     const auto controlAllocations = countHostCallAllocations([] {
 #if defined(_MSC_VER) && defined(_DEBUG)
         auto* control = _malloc_dbg(16, _NORMAL_BLOCK, __FILE__, __LINE__);
@@ -1233,8 +1241,9 @@ void runHostCallBenchmark() {
         const auto* empty = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostEmpty"));
         const auto* integer = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostInteger"));
         const auto* four = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostFour"));
+        const auto* eight = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostEight"));
         const auto* strings = runtime.getScriptFunction(runtime.getScriptFunctionId("benchmarkHostStrings"));
-        for (const auto* function : {empty, integer, four, strings}) {
+        for (const auto* function : {empty, integer, four, eight, strings}) {
             if (
                 function == nullptr ||
                 !function->isCompiled() ||
@@ -1284,6 +1293,8 @@ void runHostCallBenchmark() {
             nomad::RuntimeValue{nomad::NomadInteger{13}},
             nomad::RuntimeValue{nomad::NomadInteger{19}}
         };
+        auto eightArguments = fourArguments;
+        eightArguments.resize(8);
         const std::vector textArguments{firstText, secondText};
         const std::vector captureArguments{nomad::RuntimeValue{nomad::NomadInteger{21}}};
         const nomad::Closure emptyClosure(empty);
@@ -1358,6 +1369,7 @@ void runHostCallBenchmark() {
         record(6, [&] { machine->run(emptyClosure, noArguments); });
         record(7, [&] { machine->run(integerClosure, integerArguments); });
         record(8, [&] { machine->run(*captured, captureArguments); });
+        record(9, [&] { machine->run(eight, eightArguments); });
     }
 
     for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {

@@ -5,6 +5,7 @@ include(FetchContent)
 set(
     BOOST_INCLUDE_LIBRARIES
     algorithm
+    container
     dll
     exception
     json

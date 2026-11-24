@@ -72,3 +72,6 @@ and script/host calls. Workloads and checks are defined in
 Compare the same workload and configuration before and after a change. Treat
 Debug and Release separately; timings are not pass/fail thresholds. Allocation
 counts are available only on MSVC Debug and include Debug-library overhead.
+
+Host-call workloads include an eight-argument heap-fallback case. The report
+also gives cleanup-container object sizes, not complete native-stack frame sizes.

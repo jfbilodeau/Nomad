@@ -1555,7 +1555,168 @@ BOOST_AUTO_TEST_CASE(calls_need_only_existing_frames_and_requested_pointer_slots
     BOOST_TEST(emptyCall.peekStack(0).getIntegerValue() == 0);
 }
 
+BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_during_reentry_and_failure) {
+    auto copyCount = NomadIndex{0};
+    auto failCopyAt = NomadIndex{0};
+    Runtime runtime;
+    const auto typeId = runtime.registerClass<test::FailingArgumentCopyType>(
+        "RawFallbackReference", ClassMode::Closed, copyCount, failCopyAt
+    );
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value();
+    RuntimeValue source;
+    const RuntimeValueGuard sourceOwner(*type, &source);
+    source.setObjectValue(new NomadObject);
+    RuntimeValue receiver{NomadString{"borrowed fallback receiver"}};
+    const RuntimeValueGuard receiverOwner(*runtime.getStringType(), &receiver);
+    const std::vector<RuntimeValue> arguments(6, source);
+    const std::vector<RuntimeValue> captures(2, source);
+    const auto functionId = runtime.registerScriptFunction("rawFallback", "fallback.nomad", "");
+    auto* function = runtime.getScriptFunction(functionId);
+    BOOST_REQUIRE(function != nullptr);
+    for (auto index = NomadIndex{0}; index < arguments.size(); ++index) {
+        function->addParameter("value" + std::to_string(index), type, "");
+    }
+
+    for (auto index = NomadIndex{0}; index < captures.size(); ++index) {
+        function->createCapture(VariableId{toNomadId(index)}, "capture" + std::to_string(index), type);
+    }
+
+    function->setReturnType(runtime.getIntegerType());
+    auto depth = NomadIndex{0};
+    auto throwBody = false;
+    const auto probeId = runtime.registerNativeFunction(
+        "inspectRawFallback",
+        [&](VirtualMachine* active) {
+            ++depth;
+            BOOST_SCOPE_EXIT_ALL(&) {
+                --depth;
+            };
+
+            BOOST_TEST(active->getCurrentCallable() == function);
+            BOOST_TEST(source.getObjectValue()->getReferenceCount() ==
+                1 + depth * (arguments.size() + captures.size()));
+            for (auto index = NomadIndex{0}; index < arguments.size() + captures.size(); ++index) {
+                BOOST_TEST(active->getEnclosingParameter(index).getObjectValue() == source.getObjectValue());
+            }
+
+            if (throwBody) {
+                active->fault("Expected raw fallback failure");
+            }
+
+            if (depth == 1) {
+                const auto before = active->captureExecutionState();
+                active->run(function, arguments, captures);
+                BOOST_TEST(active->getCurrentCallable() == function);
+                BOOST_TEST(active->captureExecutionState().variableIndex == before.variableIndex);
+                BOOST_TEST(source.getObjectValue()->getReferenceCount() == 9U);
+            }
+        },
+        {},
+        runtime.getVoidType(),
+        ""
+    );
+    BOOST_REQUIRE(probeId.isValid());
+    auto compiler = runtime.createCompiler();
+    function->setFunctionStart(runtime.getInstructions().size());
+    compiler->addFunctionEntry(function);
+    compiler->addOpCode(OpCodes::op_call_native_function);
+    compiler->addId(probeId.id);
+    compiler->addLoadIntegerValue(42, ExpressionTarget::Result);
+    compiler->addFunctionReturn(function);
+    function->setFunctionEnd(runtime.getInstructions().size());
+    runtime.initializeScripts();
+    VirtualMachine machine(&runtime, 128);
+    machine.pushInteger(91);
+    machine.enterNativeFrame(receiver);
+    const auto before = machine.captureExecutionState();
+    const auto checkRestored = [&] {
+        const auto after = machine.captureExecutionState();
+        BOOST_TEST(after.instructionIndex == before.instructionIndex);
+        BOOST_TEST(after.stackIndex == before.stackIndex);
+        BOOST_TEST(after.parameterIndex == before.parameterIndex);
+        BOOST_TEST(after.variableIndex == before.variableIndex);
+        BOOST_TEST(after.running == before.running);
+        BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+        BOOST_TEST(machine.peekStack(0).getIntegerValue() == 91);
+        BOOST_TEST(source.getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(depth == 0U);
+    };
+    machine.run(function, arguments, captures);
+    BOOST_TEST(machine.getIntegerResult() == 42);
+    BOOST_TEST(copyCount == 16U);
+    checkRestored();
+    for (const auto failure : {NomadIndex{4}, NomadIndex{9}}) {
+        copyCount = 0;
+        failCopyAt = failure;
+        BOOST_CHECK_EXCEPTION(
+            machine.run(function, arguments, captures),
+            NomadException,
+            [](const auto& error) {
+
+                return NomadString{error.what()} == "Argument copy failed";
+            }
+        );
+        checkRestored();
+    }
+
+    failCopyAt = 0;
+    throwBody = true;
+    BOOST_CHECK_EXCEPTION(
+        machine.run(function, arguments, captures),
+        VirtualMachineException,
+        [](const auto& error) {
+
+            return NomadString{error.what()} == "Expected raw fallback failure";
+        }
+    );
+    checkRestored();
+}
+
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(raw_argument_bookkeeping_uses_inline_storage_and_heap_fallback) {
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    for (const auto count : {NomadIndex{0}, NomadIndex{1}, NomadIndex{4}, NomadIndex{8}}) {
+        const auto functionId = runtime.registerScriptFunction(
+            "rawAllocation" + std::to_string(count), "raw-allocation.nomad", ""
+        );
+        auto* function = runtime.getScriptFunction(functionId);
+        BOOST_REQUIRE(function != nullptr);
+        function->setReturnType(runtime.getIntegerType());
+        for (auto index = NomadIndex{0}; index < count; ++index) {
+            function->addParameter("value" + std::to_string(index), runtime.getIntegerType(), "");
+        }
+
+        function->setFunctionStart(runtime.getInstructions().size());
+        compiler->addFunctionEntry(function);
+        compiler->addLoadIntegerValue(42, ExpressionTarget::Result);
+        compiler->addFunctionReturn(function);
+        function->setFunctionEnd(runtime.getInstructions().size());
+        const std::vector<RuntimeValue> arguments(count, RuntimeValue{NomadInteger{7}});
+        runtime.initializeScripts();
+        VirtualMachine machine(&runtime, 64);
+        machine.run(function, arguments);
+        callAllocations = 0;
+        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+        {
+            const auto previousHook = previousAllocationHook;
+            BOOST_SCOPE_EXIT_ALL(=) {
+                _CrtSetAllocHook(previousHook);
+            };
+
+            for (auto iteration = 0; iteration < 100; ++iteration) {
+                machine.run(function, arguments);
+            }
+        }
+
+        BOOST_TEST(callAllocations == (count <= 4 ? 0U : 100U));
+        BOOST_TEST(machine.getIntegerResult() == 42);
+        BOOST_TEST(machine.captureExecutionState().stackIndex == 0U);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(stored_property_paths_add_no_allocations_beyond_returned_value_storage) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();

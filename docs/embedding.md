@@ -1476,6 +1476,14 @@ Use the typed Interpreter invocation APIs for host function and method calls.
 The former VM `runScript`, `runNative`, `runNativeFunction`, `runNativeMethod`,
 and `runScriptMethod` wrappers have been removed.
 
+`run(function, args, captures)` keeps explicit arguments in
+`std::vector<RuntimeValue>` and accepts optional captures through
+`std::span<const RuntimeValue>`, defaulting to an empty view. Both inputs remain
+caller-owned and must outlive the synchronous call; the VM copies and retains
+its stack values as before. Supply prepared arrays or vectors instead of a
+capture initializer list. Rebuild C++ consumers of the changed capture signature.
+Larger calls remain supported without an inline-storage argument limit.
+
 The raw `executeFunction` overloads discard results without copying when no
 `returnValue` is supplied. With `returnValue`, the caller receives an owned copy;
 the VM releases its completed result even if that copy throws. Copy failures

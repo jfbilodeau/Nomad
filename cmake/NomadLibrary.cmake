@@ -118,6 +118,7 @@ target_include_directories(nomad-language
 )
 target_link_libraries(nomad-language
     PUBLIC
+    Boost::container
     Boost::exception
     Boost::dll
     Boost::json

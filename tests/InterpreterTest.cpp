@@ -670,7 +670,8 @@ BOOST_AUTO_TEST_CASE(frame_interpreter_reads_live_parameters_locals_and_calls_on
 #ifdef NOMAD_DEBUG
     const auto stringsBefore = RuntimeValue::getLiveStringCount();
 #endif
-    machine->run(function, {RuntimeValue{NomadInteger{40}}, text}, {RuntimeValue{NomadInteger{6}}});
+    const std::array captures{RuntimeValue{NomadInteger{6}}};
+    machine->run(function, {RuntimeValue{NomadInteger{40}}, text}, captures);
 #ifdef NOMAD_DEBUG
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 #endif

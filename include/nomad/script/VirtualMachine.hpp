@@ -12,6 +12,8 @@
 #include <nomad/script/RuntimeValue.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 
+#include <boost/container/small_vector.hpp>
+
 #include <functional>
 #include <span>
 #include <vector>
@@ -101,7 +103,12 @@ public:
         return m_intermediate.getStorageAddress()[offset];
     }
 
-    void run(const ScriptFunction* function, const std::vector<RuntimeValue>& args, const std::vector<RuntimeValue>& closures = {});
+    // Borrows input values for the synchronous call; stack copies retain what they own.
+    void run(
+        const ScriptFunction* function,
+        const std::vector<RuntimeValue>& args,
+        std::span<const RuntimeValue> captures = {}
+    );
     void run(const Closure& closure, std::span<const RuntimeValue> arguments);
     // Caller owns prepared argument/result slots; execution restores the enclosing frame.
     void executeClosure(const Closure& closure);
@@ -285,6 +292,8 @@ public:
     [[nodiscard]] size_t getInstructionIndex() const { return m_instructionIndex; }
 
 private:
+    using HostArgumentTypes = boost::container::small_vector<const Type*, 4>;
+
     [[nodiscard]] const ScriptFunction* runFunction(
         CallableId functionId,
         const std::vector<RuntimeValue>& arguments
@@ -304,9 +313,9 @@ private:
     void pushHostArgument(
         const Parameter& parameter,
         const RuntimeValue& value,
-        std::vector<const Type*>& argumentTypes
+        HostArgumentTypes& argumentTypes
     );
-    void freeHostArguments(NomadIndex firstIndex, const std::vector<const Type*>& argumentTypes);
+    void freeHostArguments(NomadIndex firstIndex, const HostArgumentTypes& argumentTypes);
     void initializeStructStorage(RuntimeValue* destination, const Type* type);
     void executeCreationBody(const ScriptCallableBase* callable, const RuntimeValue& receiver);
     void pushScriptFrame(CallableId callableId, NomadIndex reservedStackSlots);
