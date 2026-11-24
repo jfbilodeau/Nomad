@@ -4,7 +4,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
-**V16:** Raw-runner inline cleanup snapshots and a borrowed capture span are implemented and validated. Closure-frame containers remain unchanged and are the next separate design-review scope.
+**V16:** Closure-frame result storage now uses an owned array and is validated. Frame objects are smaller and Debug allocation requests drop by one; argument metadata remains unchanged for a separate design review.
 
 ## Component contract
 
@@ -1347,10 +1347,131 @@ Measure each change before and after on the same workload.
   incur other allocations; this is not a claim that every raw call is allocation
   free. Release allocation counts, full-suite rerun, allocation fault injection,
   manual gameplay, and cross-platform performance remain unmeasured.
-- The raw-only sub-step is complete. Next reviewable scope: review the remaining
-  Closure InterpreterCallFrame argument metadata and result-storage allocations,
-  preserving capture/aggregate support, cleanup snapshots, reentry, and borrowed
-  VM-state contracts before choosing another storage change.
+- The raw-only sub-step is complete. The Closure-frame storage review below
+  approves only a fixed-size owned result array; argument metadata remains
+  separate.
+
+#### V16 approved Closure-frame result-buffer design
+
+- Source review confirms InterpreterCallFrame sizes its result vector once,
+  before publishing hidden result/constructor receiver pointers. It never grows
+  that buffer afterward. Scalar/reference results use the VM result register;
+  empty struct and void results expose no storage.
+- The user selected `result-buffer-only`: replace the result vector with
+  `std::unique_ptr<RuntimeValue[]>`. Allocate and clear exactly the required
+  slots for a nonempty struct result, using `std::make_unique<RuntimeValue[]>`.
+  Leave the pointer empty for scalar, reference, void, and empty struct results.
+  InterpreterContext already uses this owned-array mechanism for typed storage.
+- Result addresses must remain stable from publication through frame destruction.
+  Keep the existing noncopyable/nonmovable frame, borrowed `getResult()` API,
+  hidden-pointer placement, and independent owned snapshots returned by
+  `getResultValue()`. Do not reuse the VM argument stack, share result buffers,
+  move ownership into RuntimeValue, or change raw/typed result semantics.
+- Array ownership releases only the allocation. Preserve explicit Type-driven
+  cleanup of completed or partial struct results before deleting the array,
+  argument cleanup, and restoration of saved result/intermediate registers.
+  Keep constructor-failure and nested-frame lifetime behavior unchanged.
+  Buffer allocation must still occur before pointers are published or VM
+  argument storage/registers are modified.
+- Leave `m_arguments` and its type/offset/size snapshots as `std::vector`.
+  These records are three machine words each; four inline records would add
+  96 bytes of payload on x64, unlike the raw runner's four pointer entries.
+  Existing measurements do not establish an optimal inline capacity for this
+  larger record. No argument-metadata capacity or native-stack budget is
+  approved in this result-buffer-only step.
+- The existing Debug Closure empty/integer/captured paths make 2/3/5 allocation
+  requests, and scalar Closure-frame preparation makes three. Those are complete
+  measured paths, not counts attributed solely to result storage. Release
+  allocation counts remain unavailable. This design does not eliminate the
+  allocation required by a nonempty aggregate result, nor does it claim a
+  Release speedup before measurement.
+- No new dependency, result-size cache, inline result threshold, ownership flag,
+  declaration seal, or public signature change is needed. The frame's C++ object
+  layout changes, so dependent consumers must rebuild. Raw-runner containers and
+  the fixed-contribution/call-site width contracts remain unchanged.
+- The design review was source-only. The result-buffer implementation and
+  checked measurements are recorded below; argument metadata remains unchanged.
+
+#### V16 owned result-array implementation and validation
+
+- InterpreterCallFrame now owns a `std::unique_ptr<RuntimeValue[]>` instead of
+  a result vector. It allocates cleared storage only for nonempty struct results,
+  before VM argument storage/register mutation or hidden-pointer publication.
+  Scalar/reference results still use the VM result register; empty and void
+  results remain null. `getResult()` keeps its writable borrowed-pointer contract.
+- Explicit Type-driven cleanup still releases completed or partial struct
+  results before the array allocation is deleted. Saved registers, owned
+  snapshots, constructor receiver pointers, argument cleanup, and nonmovable
+  nested-frame lifetimes are unchanged. No argument-metadata container,
+  raw-runner, call-layout, opcode, ownership flag, cache, or dependency changed.
+- A six-shape allocation regression first reproduced six old result-vector
+  overhead failures. It now verifies one Debug request per no-buffer frame
+  and two per nonempty aggregate frame, retaining the unchanged argument-vector
+  request. A wide owned-result regression checks published pointers across
+  nesting, partially populated string results during exception unwinding,
+  snapshots surviving both frames, complete state/register restoration, and
+  final object cleanup.
+- Four selected Windows Debug CTests pass after rebuilding frame consumers:
+  `nomad_test_language`, `nomad_test_remaining`, `nomad_compiler_exports`, and
+  `nomad_module_runtime_integration`. Existing scalar/reference/empty results,
+  struct constructors, partial-copy failures, captures, and reentry remain green.
+- Before changing production storage, the opt-in benchmark added direct
+  parameterless frame-result preparation for void, integer, string, empty struct,
+  two-slot struct, and eight-slot struct results. Five fresh Runtimes per case
+  use 32 warmups, 50,000 timed calls, and a separate 1,000-call Debug CRT probe.
+  Timing includes preparation, cleared-storage checks, writes, destruction,
+  and a saved-result checksum; no script body or owned snapshot copy is timed.
+- The benchmark verifies hidden pointers, cleared complete storage, repeated
+  result-pointer identity, restored execution state/registers/stack marker,
+  and final object counts. Debug/Release builds and checked before/after runs
+  pass with current bundled-library hashes, including all earlier workloads.
+  Release was repeated once unchanged because timings were mixed; both after
+  runs and all ranges are retained. Values are median `[min,max]` microseconds.
+
+| Result | Debug before (us) | Debug after (us) | Debug requests before/after |
+| --- | --- | --- | --- |
+| Void | 1.110 [0.935,1.462] | 0.631 [0.605,0.834] | 2 / 1 |
+| Integer | 0.995 [0.927,1.403] | 0.705 [0.576,0.898] | 2 / 1 |
+| String | 1.006 [0.863,1.176] | 0.686 [0.577,0.881] | 2 / 1 |
+| Empty struct | 1.148 [0.925,1.301] | 0.820 [0.707,0.853] | 2 / 1 |
+| Two-slot struct | 1.629 [1.571,1.903] | 1.306 [1.261,1.854] | 3 / 2 |
+| Eight-slot struct | 1.953 [1.720,2.325] | 1.223 [1.131,1.511] | 3 / 2 |
+
+| Result | Release before (us) | Release after 1 (us) | Release after 2 (us) |
+| --- | --- | --- | --- |
+| Void | 0.038 [0.034,0.047] | 0.038 [0.034,0.039] | 0.047 [0.036,0.059] |
+| Integer | 0.047 [0.041,0.058] | 0.054 [0.050,0.075] | 0.058 [0.041,0.157] |
+| String | 0.046 [0.044,0.052] | 0.058 [0.043,0.090] | 0.060 [0.045,0.077] |
+| Empty struct | 0.056 [0.052,0.067] | 0.058 [0.051,0.067] | 0.070 [0.049,0.083] |
+| Two-slot struct | 0.115 [0.114,0.145] | 0.108 [0.096,0.119] | 0.117 [0.107,0.128] |
+| Eight-slot struct | 0.149 [0.136,0.169] | 0.142 [0.136,0.151] | 0.160 [0.147,0.183] |
+
+- Each Debug allocation value has identical minimum/median/maximum across five
+  samples. Complete Closure empty/integer/captured calls change from 2/3/5
+  to 1/2/4 requests; scalar Closure-frame preparation changes from three to two.
+  Parser classification remains 45, integer signature layout remains zero,
+  and raw-call counts are unchanged.
+
+| Closure call | Debug before (us) | Debug after (us) | Release before (us) | Release after 1 (us) | Release after 2 (us) |
+| --- | --- | --- | --- | --- | --- |
+| Empty | 1.788 [1.177,2.193] | 1.277 [1.169,1.431] | 0.100 [0.089,0.128] | 0.112 [0.093,0.182] | 0.089 [0.079,0.121] |
+| Integer | 2.413 [1.950,2.723] | 2.125 [1.745,2.170] | 0.170 [0.155,0.179] | 0.170 [0.151,0.257] | 0.163 [0.144,0.169] |
+| Captured | 5.877 [5.681,7.230] | 5.052 [4.857,5.566] | 0.448 [0.444,0.478] | 0.542 [0.389,0.674] | 0.470 [0.406,0.534] |
+
+- The frame object's measured size changes from 120 to 96 bytes in Debug and
+  from 104 to 88 in Release. The array owner is eight bytes versus the prior
+  32/24-byte result vector. These are object sizes, not full native-stack frames.
+  Nonempty struct storage still requires an allocation; this step removes
+  unused container state and its measured Debug request, not aggregate storage.
+- Release timings show both increases and decreases, including integer direct
+  frame medians rising from 0.047 to 0.054/0.058 us. No universal Release speedup
+  or Release allocation reduction is claimed. These remain checked warm
+  microbenchmarks on a shared machine, without timing thresholds, full-suite
+  rerun, manual gameplay, allocator fault injection, or cross-platform results.
+- The result-buffer-only step is complete. Next reviewable scope: review the
+  remaining argument type/offset/size snapshots and their allocation cost.
+  Keep the vector until a separate capacity/stack-budget and fallback decision
+  is approved; do not extend the raw inline-four choice automatically.
 
 ## Corrections to earlier review notes
 
@@ -1479,7 +1600,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | V13 | P3 | const-correctness | getCurrentFunction() const returns a non-const ScriptFunction*; receiver validation repeats on copies and binding | `VirtualMachine.hpp`: getCurrentScript; `VirtualMachine.cpp`: getThis, bindThisFromStack, copyThisToResult, copyThisToIntermediate | Fixed: const script getter and unchecked bound-receiver copies; host/receiver-binding null checks intentionally retained | 2 (done), 4 (done) |
 | V14 | P3 | naming | `stack_size` parameter; `integer_value` and `float_value` locals; memberId used for both CallableId and PropertyId; get*Function*VariableValue and set*VariableValue are asymmetric | `VirtualMachine.hpp/cpp`: constructor, scalar operand readers, native method/property parameters and function-variable accessors | Complete: remaining parameter/local names normalized; obsolete accessor asymmetry resolved by review with APIs unchanged | 7 |
 | V15 | P2 | quality | runNativeIndexer uses magic offsets (+2, +3) and convoluted release index arithmetic; duplicates the m_result reset in callNativeIndexer | `VirtualMachine.cpp`: runNativeIndexer, callNativeIndexer | Implemented: named receiver slot count and position, explicit copied-argument count; early reset retained for copy failures | 4 |
-| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `VirtualMachine.cpp`: local inline cleanup; `InterpreterCallFrame.cpp`: separate typed metadata; RuntimeLookupBenchmark host workloads/probes | Width/call-site and raw-only inline/span changes validated; five Debug CTests and checked Debug/Release comparisons pass; Closure-container design remains pending | 8 |
+| V16 | P3 | perf | Host-call bookkeeping allocates per call; Closure argument/layout validation repeatedly classifies parameter types through name scans | `VirtualMachine.cpp`: local inline cleanup; `InterpreterCallFrame.cpp`: owned result array/typed metadata; RuntimeLookupBenchmark host/frame workloads | Width/call-site, raw cleanup and result-array steps validated; result frame shrinks and one Debug request is removed; argument-metadata design remains pending | 8 |
 | V17 | P3 | quality | fault() is not `[[noreturn]]`; many fault-then-continue patterns | `VirtualMachine.hpp`: fault declaration | Fixed: `[[noreturn]]` | 4 |
 
 ### Compiler

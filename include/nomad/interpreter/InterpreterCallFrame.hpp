@@ -4,6 +4,7 @@
 
 #include <nomad/script/RuntimeValue.hpp>
 
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -70,7 +71,7 @@ private:
     const Type* m_resultType;
     RuntimeValue m_savedResult;
     RuntimeValue m_savedIntermediate;
-    mutable std::vector<RuntimeValue> m_resultStorage;
+    std::unique_ptr<RuntimeValue[]> m_resultStorage;
     std::span<RuntimeValue> m_argumentStorage;
     std::vector<ArgumentStorage> m_arguments;
     NomadIndex m_argumentOffset = 0;

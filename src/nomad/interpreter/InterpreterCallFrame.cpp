@@ -186,7 +186,10 @@ InterpreterCallFrame::InterpreterCallFrame(
 {
     const auto layout = callable.getCallStorageLayout(argumentSlotCount);
     if (m_resultType->isStruct()) {
-        m_resultStorage.resize(m_resultType->getSize());
+        const auto size = m_resultType->getSize();
+        if (size != 0) {
+            m_resultStorage = std::make_unique<RuntimeValue[]>(size);
+        }
     }
 
     if (
@@ -225,8 +228,8 @@ InterpreterCallFrame::InterpreterCallFrame(
 
 InterpreterCallFrame::~InterpreterCallFrame() {
     if (m_resultType->isStruct()) {
-        if (!m_resultStorage.empty()) {
-            m_resultType->freeValue(m_resultStorage.data());
+        if (m_resultStorage != nullptr) {
+            m_resultType->freeValue(m_resultStorage.get());
         }
     } else {
         m_resultType->freeValue(&m_machine.getResult());
@@ -242,7 +245,7 @@ RuntimeValue* InterpreterCallFrame::getResult() const {
         return nullptr;
     }
 
-    return m_resultType->isStruct() ? m_resultStorage.data() : &m_machine.getResult();
+    return m_resultType->isStruct() ? m_resultStorage.get() : &m_machine.getResult();
 }
 
 NomadIndex InterpreterCallFrame::getResultSize() const {

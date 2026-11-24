@@ -1519,6 +1519,13 @@ restoring the borrowed registers. Low-level callers outside a call frame must
 preserve any register contents they need across execution and release owned
 temporary values before restoring them.
 
+`getResult()` borrows writable storage until frame destruction. Scalar/reference
+results use the VM result register; nonempty struct results have independent,
+cleared storage whose address remains stable through nested calls. Void and
+empty struct results return `nullptr`. Use `getResultValue()` for an owned
+snapshot that can outlive the frame. Rebuild consumers when updating the frame's
+C++ object layout.
+
 `enterScriptFrame(callable, receiver)` takes a registered, compiled
 `ScriptCallableBase` from the VM's runtime and requires arguments/hidden pointers
 already on the stack. It starts script execution

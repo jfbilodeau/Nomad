@@ -75,3 +75,7 @@ counts are available only on MSVC Debug and include Debug-library overhead.
 
 Host-call workloads include an eight-argument heap-fallback case. The report
 also gives cleanup-container object sizes, not complete native-stack frame sizes.
+
+A separate frame-result workload checks void, scalar, reference, empty-struct,
+two-slot, and eight-slot results without executing bodies or copying snapshots.
+It reports preparation/check/destruction costs and the frame object's size.

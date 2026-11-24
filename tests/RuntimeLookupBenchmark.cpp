@@ -1402,6 +1402,147 @@ void runHostCallBenchmark() {
     }
 }
 
+void runFrameResultBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto iterations = nomad::NomadIndex{50000};
+    constexpr auto allocationIterations = nomad::NomadIndex{1000};
+    constexpr auto labels = std::array{
+        "void", "integer", "string", "empty_struct", "two_slot_struct", "eight_slot_struct"
+    };
+    std::array<std::vector<double>, labels.size()> latencySamples;
+    std::array<std::vector<double>, labels.size()> allocationSamples;
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    std::cout << "Frame results: preparation, cleared storage checks, writes, and destruction; no body or snapshot copies.\n"
+        << "Setup is excluded; allocation requests use the separate untimed MSVC Debug pass.\n"
+        << "frame_result_storage frame_bytes=" << sizeof(nomad::InterpreterCallFrame)
+        << " vector_bytes=" << sizeof(std::vector<nomad::RuntimeValue>)
+        << " array_owner_bytes=" << sizeof(std::unique_ptr<nomad::RuntimeValue[]>) << std::endl;
+
+    for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+        nomad::Runtime runtime;
+        std::array<const nomad::Type*, labels.size()> types{
+            runtime.getVoidType(), runtime.getIntegerType(), runtime.getStringType()
+        };
+        for (auto query = nomad::NomadIndex{3}; query < labels.size(); ++query) {
+            const auto typeId = runtime.registerStruct(std::format("BenchmarkResult{}", query));
+            if (typeId.isInvalid()) {
+                throw std::runtime_error("Failed to register a frame-result benchmark type");
+            }
+
+            const auto fieldCount = query == 3 ? nomad::NomadIndex{0} :
+                query == 4 ? nomad::NomadIndex{2} : nomad::NomadIndex{8};
+            for (auto field = nomad::NomadIndex{0}; field < fieldCount; ++field) {
+                if (
+                    runtime.getTypeManager().registerScriptStructProperty(
+                        typeId,
+                        std::format("field{}", field),
+                        runtime.getIntegerType()
+                    ).isInvalid()
+                ) {
+                    throw std::runtime_error("Failed to register a frame-result benchmark field");
+                }
+            }
+
+            runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
+            types[query] = runtime.getType(typeId).value();
+        }
+
+        runtime.initializeScripts();
+        auto machine = runtime.createVirtualMachine();
+        machine->pushInteger(91);
+        machine->setIntegerResult(42);
+        machine->setIntegerIntermediate(79);
+        const auto before = machine->captureExecutionState();
+        for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+            const auto* type = types[query];
+            const auto callableId = runtime.registerNativeFunction(
+                std::format("benchmarkFrameResult{}", query),
+                [](nomad::VirtualMachine*) {},
+                {},
+                type,
+                ""
+            );
+            const auto* callable = runtime.getCallable(callableId);
+            if (callable == nullptr) {
+                throw std::runtime_error("Failed to register a frame-result benchmark callable");
+            }
+
+            const auto size = type->getSize();
+            const auto structResult = type->isStruct();
+            const auto referenceResult = type == runtime.getStringType();
+            const auto invoke = [&] {
+                const nomad::InterpreterCallFrame frame(*machine, *callable, {}, type);
+                auto* storage = frame.getResult();
+                if (
+                    frame.getResultSize() != size ||
+                    (storage == nullptr) != (size == 0) ||
+                    (size != 0 && !structResult && storage != &machine->getResult()) ||
+                    (size != 0 && structResult &&
+                        machine->getStackAddress(0)->getStorageAddress() != storage)
+                ) {
+                    throw std::runtime_error("Unexpected frame-result storage shape or hidden pointer");
+                }
+
+                if (referenceResult) {
+                    if (storage->getObjectValue() != nullptr) {
+                        throw std::runtime_error("Frame-result reference storage is not cleared");
+                    }
+                } else {
+                    for (auto index = nomad::NomadIndex{0}; index < size; ++index) {
+                        if (storage[index].getIntegerValue() != 0) {
+                            throw std::runtime_error("Frame-result value storage is not cleared");
+                        }
+
+                        storage[index].setIntegerValue(static_cast<nomad::NomadInteger>(index) + 1);
+                    }
+                }
+
+                if (frame.getResult() != storage) {
+                    throw std::runtime_error("Frame-result storage moved after publication");
+                }
+            };
+            latencySamples[query].push_back(measureHostCall(*machine, invoke, iterations));
+            const auto allocations = countHostCallAllocations(invoke, allocationIterations);
+            if (allocations.has_value()) {
+                allocationSamples[query].push_back(
+                    static_cast<double>(*allocations) / static_cast<double>(allocationIterations)
+                );
+            }
+
+            const auto after = machine->captureExecutionState();
+            if (
+                after.instructionIndex != before.instructionIndex ||
+                after.stackIndex != before.stackIndex ||
+                after.parameterIndex != before.parameterIndex ||
+                after.variableIndex != before.variableIndex ||
+                after.running != before.running ||
+                after.receiver.getObjectValue() != before.receiver.getObjectValue() ||
+                machine->getIntegerResult() != 42 ||
+                machine->getIntegerIntermediate() != 79 ||
+                machine->peekStack(0).getIntegerValue() != 91
+            ) {
+                throw std::runtime_error("Frame-result preparation changed enclosing VM state or registers");
+            }
+        }
+    }
+
+    for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+        std::cout << "frame_result=" << labels[query] << " iterations=" << iterations;
+        printSamples("latency_us", latencySamples[query]);
+        if (!allocationSamples[query].empty()) {
+            printSamples("allocations_per_frame", allocationSamples[query]);
+        } else {
+            std::cout << " allocations_per_frame=unavailable";
+        }
+
+        std::cout << std::endl;
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Frame-result benchmark leaked objects");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -1414,6 +1555,7 @@ int main() {
         runNestedScriptCallBenchmark();
         runNativePropertyBenchmark();
         runHostCallBenchmark();
+        runFrameResultBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

@@ -4,6 +4,7 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterCallFrame.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/ExecutionStateGuard.hpp>
@@ -1675,6 +1676,68 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(frame_result_allocation_excludes_unused_result_containers) {
+    Runtime runtime;
+    std::vector<const Type*> types{
+        runtime.getVoidType(), runtime.getIntegerType(), runtime.getStringType()
+    };
+    for (const auto count : {NomadIndex{0}, NomadIndex{2}, NomadIndex{8}}) {
+        const auto id = runtime.registerStruct("AllocationResult" + std::to_string(count));
+        BOOST_REQUIRE(id.isValid());
+        for (auto index = NomadIndex{0}; index < count; ++index) {
+            BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(
+                id,
+                "field" + std::to_string(index),
+                runtime.getIntegerType()
+            ).isValid());
+        }
+
+        runtime.getTypeManager().finalizeCompositeFieldLayout(id);
+        types.push_back(runtime.getType(id).value());
+    }
+
+    VirtualMachine machine(&runtime, 64);
+    machine.setIntegerResult(71);
+    machine.setIntegerIntermediate(83);
+    for (auto index = NomadIndex{0}; index < types.size(); ++index) {
+        const auto* type = types[index];
+        const auto id = runtime.registerNativeFunction(
+            "allocationResult" + std::to_string(index),
+            [](VirtualMachine*) {},
+            {},
+            type,
+            ""
+        );
+        const auto* callable = runtime.getCallable(id);
+        BOOST_REQUIRE(callable != nullptr);
+        {
+            const InterpreterCallFrame frame(machine, *callable, {}, type);
+        }
+
+        const auto nonemptyAggregate = type->isStruct() && type->getSize() != 0;
+        auto completedFrames = NomadIndex{0};
+        callAllocations = 0;
+        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+        {
+            const auto previousHook = previousAllocationHook;
+            BOOST_SCOPE_EXIT_ALL(=) {
+                _CrtSetAllocHook(previousHook);
+            };
+
+            for (auto iteration = 0; iteration < 100; ++iteration) {
+                const InterpreterCallFrame frame(machine, *callable, {}, type);
+                completedFrames += (frame.getResult() != nullptr) == (type->getSize() != 0);
+            }
+        }
+
+        BOOST_TEST(callAllocations == (nonemptyAggregate ? 200U : 100U));
+        BOOST_TEST(completedFrames == 100U);
+        BOOST_TEST(machine.getIntegerResult() == 71);
+        BOOST_TEST(machine.getIntegerIntermediate() == 83);
+        BOOST_TEST(machine.captureExecutionState().stackIndex == 0U);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(raw_argument_bookkeeping_uses_inline_storage_and_heap_fallback) {
     Runtime runtime;
     auto compiler = runtime.createCompiler();

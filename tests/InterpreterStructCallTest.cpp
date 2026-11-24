@@ -185,6 +185,91 @@ BOOST_AUTO_TEST_CASE(call_frame_results_borrow_writable_complete_storage_and_pre
     BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
 }
 
+BOOST_AUTO_TEST_CASE(wide_result_buffers_keep_published_addresses_and_release_values_during_unwinding) {
+    Runtime runtime;
+    const auto id = runtime.registerStruct("WideFrameResult");
+    BOOST_REQUIRE(id.isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(
+        id,
+        "label",
+        runtime.getStringType()
+    ).isValid());
+    for (auto index = NomadIndex{1}; index < 8; ++index) {
+        BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(
+            id,
+            "number" + std::to_string(index),
+            runtime.getIntegerType()
+        ).isValid());
+    }
+
+    runtime.getTypeManager().finalizeCompositeFieldLayout(id);
+    const auto* type = runtime.getType(id).value();
+    const auto callableId = runtime.registerNativeFunction(
+        "wideFrameResult", [](VirtualMachine*) {}, {}, type, ""
+    );
+    const auto* callable = runtime.getCallable(callableId);
+    BOOST_REQUIRE(callable != nullptr);
+    VirtualMachine machine(&runtime, 64);
+    machine.pushInteger(91);
+    machine.setIntegerResult(71);
+    machine.setIntegerIntermediate(83);
+    const auto before = machine.captureExecutionState();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (const auto throws : {false, true}) {
+        std::optional<InterpreterValue> snapshot;
+        auto caught = false;
+        try {
+            const InterpreterCallFrame outer(machine, *callable, {}, type);
+            auto* storage = outer.getResult();
+            BOOST_REQUIRE(storage != nullptr);
+            BOOST_TEST(machine.getStackAddress(0)->getStorageAddress() == storage);
+            BOOST_TEST(storage[0].getObjectValue() == nullptr);
+            storage[0].setStringValue("outer owned result");
+            storage[1].setIntegerValue(17);
+            storage[7].setIntegerValue(31);
+            snapshot.emplace(outer.getResultValue());
+            {
+                const InterpreterCallFrame nested(machine, *callable, {}, type);
+                auto* nestedStorage = nested.getResult();
+                BOOST_REQUIRE(nestedStorage != nullptr);
+                BOOST_TEST(nestedStorage != storage);
+                BOOST_TEST(machine.getStackAddress(0)->getStorageAddress() == nestedStorage);
+                BOOST_TEST(nestedStorage[0].getObjectValue() == nullptr);
+                nestedStorage[0].setStringValue("nested partial result");
+                if (throws) {
+                    throw NomadException("Expected wide-result unwinding");
+                }
+            }
+
+            BOOST_TEST(outer.getResult() == storage);
+            BOOST_TEST(machine.getStackAddress(0)->getStorageAddress() == storage);
+            storage[1].setIntegerValue(29);
+        } catch (const NomadException& error) {
+            BOOST_TEST(NomadString{error.what()} == "Expected wide-result unwinding");
+            caught = true;
+        }
+
+        BOOST_TEST(caught == throws);
+        BOOST_REQUIRE(snapshot.has_value());
+        BOOST_TEST(snapshot->getStorage()[0].getStringValue() == "outer owned result");
+        BOOST_TEST(snapshot->getStorage()[0].getObjectValue()->getReferenceCount() == 1U);
+        BOOST_TEST(snapshot->getStorage()[1].getIntegerValue() == 17);
+        BOOST_TEST(snapshot->getStorage()[7].getIntegerValue() == 31);
+        snapshot.reset();
+        const auto after = machine.captureExecutionState();
+        BOOST_TEST(after.instructionIndex == before.instructionIndex);
+        BOOST_TEST(after.stackIndex == before.stackIndex);
+        BOOST_TEST(after.parameterIndex == before.parameterIndex);
+        BOOST_TEST(after.variableIndex == before.variableIndex);
+        BOOST_TEST(after.running == before.running);
+        BOOST_TEST(after.receiver.getObjectValue() == before.receiver.getObjectValue());
+        BOOST_TEST(machine.peekStack(0).getIntegerValue() == 91);
+        BOOST_TEST(machine.getIntegerResult() == 71);
+        BOOST_TEST(machine.getIntegerIntermediate() == 83);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(script_construction_and_calls_preserve_nested_value_ownership) {
     nomad::test::LanguageTestFixture fixture;
     auto& runtime = fixture.getRuntime();
