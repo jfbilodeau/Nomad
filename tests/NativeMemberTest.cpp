@@ -428,6 +428,65 @@ BOOST_AUTO_TEST_CASE(runtime_native_property_rejections_do_not_publish_members) 
     BOOST_TEST(owner->getPropertyCount() == 1U);
 }
 
+BOOST_AUTO_TEST_CASE(native_catalog_duplicate_checks_preserve_typed_ids_and_same_name_order) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto firstOwnerId = runtime.registerClass("CatalogFirst", ClassMode::Closed);
+    const auto methodOwnerId = runtime.registerClass("CatalogMethod", ClassMode::Closed);
+    const auto lastOwnerId = runtime.registerClass("CatalogLast", ClassMode::Closed);
+    BOOST_REQUIRE(firstOwnerId.isValid());
+    BOOST_REQUIRE(methodOwnerId.isValid());
+    BOOST_REQUIRE(lastOwnerId.isValid());
+    const auto* firstOwner = runtime.getType(firstOwnerId).value()->asClassType();
+    const auto* methodOwner = runtime.getType(methodOwnerId).value()->asClassType();
+    const auto* lastOwner = runtime.getType(lastOwnerId).value()->asClassType();
+    const auto callableId = runtime.getNextCallableId();
+    while (manager.getNextPropertyId().id < callableId.id) {
+        BOOST_REQUIRE(manager.registerScriptClassProperty(
+            firstOwnerId,
+            "padding" + std::to_string(manager.getNextPropertyId().id),
+            runtime.getIntegerType()
+        ).isValid());
+    }
+
+    BOOST_REQUIRE(manager.getNextPropertyId().id == callableId.id);
+    std::vector<MemberReference> expected;
+    runtime.getNativeMembers(expected);
+    const auto firstId = runtime.registerNativeClassProperty(firstOwnerId, {
+        .valueType = runtime.getIntegerType(),
+        .name = "catalogShared",
+        .getter = propertyGetter()
+    });
+    const auto methodId = runtime.registerNativeClassMethod(methodOwnerId, {
+        .name = "catalogShared",
+        .parameters = {},
+        .returnTypeId = runtime.getIntegerType()->getId(),
+        .function = methodFunction()
+    });
+    const auto lastId = runtime.registerNativeClassProperty(lastOwnerId, {
+        .valueType = runtime.getIntegerType(),
+        .name = "catalogShared",
+        .getter = propertyGetter()
+    });
+    BOOST_REQUIRE(firstId.isValid());
+    BOOST_REQUIRE(methodId.isValid());
+    BOOST_REQUIRE(lastId.isValid());
+    BOOST_TEST(firstId.id == methodId.id);
+    const std::vector<MemberReference> named{firstId, methodId, lastId};
+    expected.insert(expected.end(), named.begin(), named.end());
+    BOOST_TEST(runtime.getNativeMemberId(firstOwner, "catalogShared").value() == MemberReference{firstId});
+    BOOST_TEST(runtime.getNativeMemberId(methodOwner, "catalogShared").value() == MemberReference{methodId});
+    BOOST_TEST(runtime.getNativeMemberId(lastOwner, "catalogShared").value() == MemberReference{lastId});
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(firstId), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeMethod(methodId), NomadException);
+    BOOST_CHECK_THROW(runtime.catalogNativeProperty(lastId), NomadException);
+    std::vector<MemberReference> actual;
+    runtime.getNativeMembers(actual);
+    BOOST_TEST((actual == expected));
+    runtime.getNativeMemberOverloads("catalogShared", actual);
+    BOOST_TEST((actual == named));
+}
+
 BOOST_AUTO_TEST_CASE(add_property_rejects_invalid_definitions_without_partial_registration) {
     Runtime runtime;
     const auto typeId = runtime.registerClass("PropertyOwner", ClassMode::Closed);

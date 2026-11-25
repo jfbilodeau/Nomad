@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/DeferredType.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
@@ -13,6 +14,7 @@
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
 #include <nomad/script/Hub.hpp>
+#include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/NomadStringObject.hpp>
@@ -2698,6 +2700,480 @@ void runWellKnownTypeLookupBenchmark() {
     }
 }
 
+void runNativeMemberCatalogBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto batchSize = nomad::NomadIndex{64};
+    constexpr auto noiseCounts = std::array<nomad::NomadIndex, 3>{0, 100, 1000};
+    constexpr auto cases = std::array{"property", "method"};
+    const nomad::NomadString propertyName = "r26Value";
+    const nomad::NomadString methodName = "r26Read";
+    const nomad::NomadString documentation = "Catalog fixture.";
+    const auto populate = [&](
+        nomad::Runtime& runtime,
+        const nomad::NomadIndex count,
+        nomad::NomadIndex& calls
+    ) {
+        for (auto index = nomad::NomadIndex{0}; index < count; ++index) {
+            const auto ownerId = runtime.registerClass(
+                std::format("R26Noise{:04}", index), nomad::ClassMode::Closed
+            );
+            if (ownerId.isInvalid()) {
+                throw std::runtime_error("Failed to prepare a native-catalog noise owner");
+            }
+
+            const auto propertyId = runtime.registerNativeClassProperty(ownerId, {
+                .valueType = runtime.getIntegerType(),
+                .name = std::format("r26V{:04}", index),
+                .getter = [&calls](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
+                    ++calls;
+                    value.setIntegerValue(42);
+                }
+            });
+            const auto methodId = runtime.registerNativeClassMethod(ownerId, {
+                .name = std::format("r26M{:04}", index),
+                .parameters = {},
+                .returnTypeId = runtime.getIntegerType()->getId(),
+                .function = [&calls](nomad::VirtualMachine* machine) {
+                    ++calls;
+                    machine->setIntegerResult(42);
+                }
+            });
+            if (propertyId.isInvalid() || methodId.isInvalid()) {
+                throw std::runtime_error("Failed to populate native-catalog noise members");
+            }
+        }
+    };
+    {
+        auto calls = nomad::NomadIndex{0};
+        nomad::Runtime warmup;
+        populate(warmup, 32, calls);
+        if (calls != 0) {
+            throw std::runtime_error("Native-catalog warmup registration invoked a callback");
+        }
+    }
+
+    std::cout << "Native cataloging: batches of 64 already-owned descriptors on distinct one-member owners.\n"
+        << "Each unrelated owner adds one property and one method with distinct non-target names.\n"
+        << "Five fresh samples and separate Debug allocation passes; 32 separate warmup owner/member pairs.\n"
+        << "Descriptor/owner construction and checks are excluded; catalog guards and both index updates are included.\n"
+        << std::flush;
+    for (const auto noiseCount : noiseCounts) {
+        for (auto query = nomad::NomadIndex{0}; query < cases.size(); ++query) {
+            const auto methodCase = query == 1;
+            const auto& name = methodCase ? methodName : propertyName;
+            std::vector<double> latencySamples;
+            std::vector<double> allocationSamples;
+            auto initialNativeMembers = nomad::NomadIndex{0};
+            auto catalogBefore = nomad::NomadIndex{0};
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                for (auto pass = 0; pass < 2; ++pass) {
+                    const auto allocationPass = pass == 1;
+                    auto calls = nomad::NomadIndex{0};
+                    nomad::Runtime runtime;
+                    auto& manager = runtime.getTypeManager();
+                    std::vector<nomad::MemberReference> before;
+                    runtime.getNativeMembers(before);
+                    if (sample == 0 && !allocationPass) {
+                        initialNativeMembers = before.size();
+                    } else if (before.size() != initialNativeMembers) {
+                        throw std::runtime_error("The initial native catalog changed between samples");
+                    }
+
+                    populate(runtime, noiseCount, calls);
+                    runtime.getNativeMembers(before);
+                    catalogBefore = before.size();
+                    if (
+                        catalogBefore != initialNativeMembers + 2 * noiseCount ||
+                        runtime.getNativeMemberOverloadCount(name) != 0
+                    ) {
+                        throw std::runtime_error("Unexpected native-catalog noise count or shared-name fixture");
+                    }
+
+                    const auto* valueType = runtime.getIntegerType();
+                    std::vector<nomad::MemberReference> expected;
+                    std::vector<const nomad::ClassType*> owners;
+                    std::vector<nomad::PropertyId> propertyIds;
+                    std::vector<nomad::CallableId> methodIds;
+                    expected.reserve(batchSize);
+                    owners.reserve(batchSize);
+                    propertyIds.reserve(batchSize);
+                    methodIds.reserve(batchSize);
+                    for (auto index = nomad::NomadIndex{0}; index < batchSize; ++index) {
+                        const auto ownerId = runtime.registerClass(
+                            std::format("R26Target{:04}", index), nomad::ClassMode::Closed
+                        );
+                        if (ownerId.isInvalid()) {
+                            throw std::runtime_error("Failed to prepare a native-catalog target owner");
+                        }
+
+                        const auto* owner = runtime.getType(ownerId).value()->asClassType();
+                        auto* mutableOwner = manager.getMutableClassType(owner);
+                        owners.push_back(owner);
+                        if (methodCase) {
+                            auto method = std::make_unique<nomad::NativeMethod>(
+                                runtime.getNextCallableId(),
+                                name,
+                                owner,
+                                [&calls](nomad::VirtualMachine* machine) {
+                                    ++calls;
+                                    machine->setIntegerResult(42);
+                                },
+                                std::vector<nomad::Parameter>{},
+                                valueType,
+                                documentation
+                            );
+                            const auto id = runtime.registerMethod(mutableOwner, std::move(method));
+                            if (id.isInvalid()) {
+                                throw std::runtime_error("Failed to prepare an owned native method");
+                            }
+
+                            methodIds.push_back(id);
+                            expected.emplace_back(id);
+                        } else {
+                            auto property = std::make_unique<nomad::NativeProperty>(
+                                manager.getNextPropertyId(),
+                                owner,
+                                name,
+                                valueType,
+                                [&calls](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
+                                    ++calls;
+                                    value.setIntegerValue(42);
+                                },
+                                nomad::NativePropertySetFn{},
+                                documentation
+                            );
+                            const auto id = manager.registerProperty(mutableOwner, std::move(property));
+                            if (id.isInvalid()) {
+                                throw std::runtime_error("Failed to prepare an owned native property");
+                            }
+
+                            propertyIds.push_back(id);
+                            expected.emplace_back(id);
+                        }
+
+                        if (runtime.getNativeMemberId(owner, name).has_value()) {
+                            throw std::runtime_error("A prepared descriptor was cataloged before measurement");
+                        }
+                    }
+
+                    auto index = nomad::NomadIndex{0};
+                    std::optional<nomad::NomadIndex> requests;
+                    const auto measure = [&](const auto& catalog) {
+                        if (allocationPass) {
+                            requests = countHostCallAllocations(catalog, batchSize);
+                        } else {
+                            const auto start = std::chrono::steady_clock::now();
+                            for (auto iteration = nomad::NomadIndex{0}; iteration < batchSize; ++iteration) {
+                                catalog();
+                            }
+
+                            latencySamples.push_back(std::chrono::duration<double, std::micro>{
+                                std::chrono::steady_clock::now() - start
+                            }.count() / static_cast<double>(batchSize));
+                        }
+                    };
+                    if (methodCase) {
+                        measure([&] { runtime.catalogNativeMethod(methodIds[index++]); });
+                    } else {
+                        measure([&] { runtime.catalogNativeProperty(propertyIds[index++]); });
+                    }
+
+                    if (allocationPass) {
+                        if (!requests.has_value()) {
+                            continue;
+                        }
+
+                        allocationSamples.push_back(static_cast<double>(*requests) / static_cast<double>(batchSize));
+                    }
+
+                    std::vector<nomad::MemberReference> after;
+                    runtime.getNativeMembers(after);
+                    if (
+                        index != batchSize ||
+                        calls != 0 ||
+                        after.size() != before.size() + batchSize ||
+                        !std::equal(before.begin(), before.end(), after.begin()) ||
+                        !std::equal(expected.begin(), expected.end(), after.begin() + before.size()) ||
+                        runtime.getNativeMemberOverloadCount(name) != batchSize
+                    ) {
+                        throw std::runtime_error("Native cataloging changed callbacks, catalog order, or publication counts");
+                    }
+
+                    auto machine = runtime.createVirtualMachine();
+                    for (auto entry = nomad::NomadIndex{0}; entry < batchSize; ++entry) {
+                        const auto member = runtime.getNativeMemberId(owners[entry], name);
+                        if (!member.has_value() || *member != expected[entry]) {
+                            throw std::runtime_error("Native cataloging lost owner/name identity");
+                        }
+
+                        if (methodCase) {
+                            const auto* method = runtime.getNativeMethod(methodIds[entry]);
+                            if (
+                                method == nullptr ||
+                                method->getClassType() != owners[entry] ||
+                                method->getName() != name ||
+                                method->getParameterCount() != 0 ||
+                                method->getReturnType() != valueType ||
+                                method->getDoc() != documentation ||
+                                owners[entry]->getMethods().size() != 1
+                            ) {
+                                throw std::runtime_error("Cataloging changed owned native-method metadata");
+                            }
+
+                            method->getFn()(machine.get());
+                            if (machine->getIntegerResult() != 42) {
+                                throw std::runtime_error("A cataloged native-method callback changed behavior");
+                            }
+                        } else {
+                            const auto* property = runtime.getNativeProperty(propertyIds[entry]);
+                            if (
+                                property == nullptr ||
+                                property->getClassType() != owners[entry] ||
+                                property->getName() != name ||
+                                property->getValueType() != valueType ||
+                                property->getDoc() != documentation ||
+                                !property->isTypeResolved() ||
+                                !property->hasGetterCallback() ||
+                                property->hasSetterCallback() ||
+                                owners[entry]->getPropertyCount() != 1
+                            ) {
+                                throw std::runtime_error("Cataloging changed owned native-property metadata");
+                            }
+
+                            nomad::RuntimeValue value;
+                            property->getValue(machine.get(), value);
+                            if (value.getIntegerValue() != 42) {
+                                throw std::runtime_error("A cataloged native-property callback changed behavior");
+                            }
+                        }
+                    }
+
+                    if (calls != batchSize) {
+                        throw std::runtime_error("Cataloged callbacks did not retain their captured state");
+                    }
+                }
+            }
+
+            std::cout << "catalog_kind=" << cases[query] << " noise_pairs=" << noiseCount
+                << " initial_native_members=" << initialNativeMembers << " catalog_before=" << catalogBefore
+                << " batch=" << batchSize << " name_bytes=" << name.size();
+            printSamples("catalog_us", latencySamples);
+            if (!allocationSamples.empty()) {
+                printSamples("catalog_allocations", allocationSamples);
+            } else {
+                std::cout << " catalog_allocations=unavailable";
+            }
+
+            std::cout << std::endl;
+        }
+    }
+}
+
+void runNativePropertyValidationBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto pendingCounts = std::array<nomad::NomadIndex, 2>{100, 1000};
+    constexpr auto storedCounts = std::array<nomad::NomadIndex, 2>{0, 1000};
+    constexpr auto iterations = nomad::NomadIndex{1000};
+    constexpr auto labels = std::array{
+        "public_complete", "prepared_complete", "public_resolved", "prepared_resolved"
+    };
+    std::cout << "Native-property validation: central completion versus a prepared mutable-native-pointer walk.\n"
+        << "First completion is one mutating sweep; resolved sweeps use 32 warmups and 1000 repetitions.\n"
+        << "Five fresh samples, with separate Debug allocation passes; binding and prepared-view construction excluded.\n"
+        << "Completion times are total microseconds per sweep, not per property or whole-compiler resolution.\n"
+        << std::flush;
+    for (const auto pendingCount : pendingCounts) {
+        for (const auto storedCount : storedCounts) {
+            std::array<std::vector<double>, labels.size()> latencySamples;
+            std::array<std::vector<double>, labels.size()> allocationSamples;
+            auto initialProperties = nomad::NomadIndex{0};
+            auto measuredProperties = nomad::NomadIndex{0};
+            auto measuredNative = nomad::NomadIndex{0};
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                for (auto query = nomad::NomadIndex{0}; query < 2; ++query) {
+                    for (auto pass = 0; pass < 2; ++pass) {
+                        const auto allocationPass = pass == 1;
+                        auto calls = nomad::NomadIndex{0};
+                        nomad::Runtime runtime;
+                        auto& manager = runtime.getTypeManager();
+                        const auto original = manager.getProperties();
+                        if (sample == 0 && query == 0 && !allocationPass) {
+                            initialProperties = original.size();
+                        } else if (original.size() != initialProperties) {
+                            throw std::runtime_error("The initial property catalog changed between samples");
+                        }
+
+                        auto compiler = runtime.createCompiler();
+                        const auto* valueType = runtime.getIntegerType();
+                        const auto* placeholder = compiler->deferType({"int"});
+                        const auto ownerId = runtime.registerClass("R26Validation", nomad::ClassMode::Closed);
+                        if (ownerId.isInvalid()) {
+                            throw std::runtime_error("Failed to prepare a native-property validation owner");
+                        }
+
+                        std::vector<nomad::NativeProperty*> pending;
+                        pending.reserve(pendingCount);
+                        for (auto index = nomad::NomadIndex{0}; index < pendingCount; ++index) {
+                            const auto id = runtime.registerNativeClassProperty(ownerId, {
+                                .valueType = placeholder,
+                                .name = std::format("r26Pending{:04}", index),
+                                .getter = [&calls](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
+                                    ++calls;
+                                    value.setIntegerValue(42);
+                                }
+                            });
+                            auto* property = runtime.getMutableNativeProperty(id);
+                            if (
+                                id.isInvalid() ||
+                                property == nullptr ||
+                                property->isTypeResolved() ||
+                                property->getValueType() != placeholder
+                            ) {
+                                throw std::runtime_error("Failed to prepare an unresolved native-property fixture");
+                            }
+
+                            property->resolveValueType(valueType);
+                            if (property->isTypeResolved() || property->getValueType() != valueType) {
+                                throw std::runtime_error("Property binding unexpectedly completed validation");
+                            }
+
+                            pending.push_back(property);
+                        }
+
+                        for (auto index = nomad::NomadIndex{0}; index < storedCount; ++index) {
+                            if (manager.registerScriptClassProperty(
+                                ownerId, std::format("r26Stored{:04}", index), valueType
+                            ).isInvalid()) {
+                                throw std::runtime_error("Failed to prepare stored-property validation noise");
+                            }
+                        }
+
+                        const auto properties = manager.getProperties();
+                        std::vector<nomad::NativeProperty*> prepared;
+                        prepared.reserve(properties.size());
+                        auto nativeCount = nomad::NomadIndex{0};
+                        auto unresolvedCount = nomad::NomadIndex{0};
+                        for (const auto* property : properties) {
+                            auto* native = runtime.getMutableNativeProperty(property->getId());
+                            prepared.push_back(native);
+                            if (native != nullptr) {
+                                ++nativeCount;
+                                unresolvedCount += !native->isTypeResolved();
+                            }
+                        }
+
+                        if (
+                            properties.size() != initialProperties + pendingCount + storedCount ||
+                            unresolvedCount != pendingCount ||
+                            calls != 0 ||
+                            !std::equal(original.begin(), original.end(), properties.begin())
+                        ) {
+                            throw std::runtime_error("Unexpected native/stored property validation fixture");
+                        }
+
+                        if (sample == 0 && query == 0 && !allocationPass) {
+                            measuredProperties = properties.size();
+                            measuredNative = nativeCount;
+                        } else if (properties.size() != measuredProperties || nativeCount != measuredNative) {
+                            throw std::runtime_error("Validation fixture sizes changed between fresh samples");
+                        }
+
+                        const auto measure = [&](const auto& validate) {
+                            for (auto stage = nomad::NomadIndex{0}; stage < 2; ++stage) {
+                                const auto repetitions = stage == 0 ? nomad::NomadIndex{1} : iterations;
+                                const auto metric = query + 2 * stage;
+                                if (stage == 1) {
+                                    for (auto warmup = 0; warmup < 32; ++warmup) {
+                                        validate();
+                                    }
+                                }
+
+                                if (allocationPass) {
+                                    const auto requests = countHostCallAllocations(validate, repetitions);
+                                    if (!requests.has_value()) {
+
+                                        return;
+                                    }
+
+                                    allocationSamples[metric].push_back(
+                                        static_cast<double>(*requests) / static_cast<double>(repetitions)
+                                    );
+                                } else {
+                                    const auto start = std::chrono::steady_clock::now();
+                                    for (auto iteration = nomad::NomadIndex{0}; iteration < repetitions; ++iteration) {
+                                        validate();
+                                    }
+
+                                    latencySamples[metric].push_back(std::chrono::duration<double, std::micro>{
+                                        std::chrono::steady_clock::now() - start
+                                    }.count() / static_cast<double>(repetitions));
+                                }
+
+                                if (calls != 0 || manager.getProperties() != properties) {
+                                    throw std::runtime_error("Validation invoked callbacks or changed descriptor identity");
+                                }
+
+                                for (const auto* native : prepared) {
+                                    if (native != nullptr && !native->isTypeResolved()) {
+                                        throw std::runtime_error("A validation sweep left an incomplete native property");
+                                    }
+                                }
+                            }
+                        };
+                        if (query == 0) {
+                            measure([&] { runtime.validateNativePropertyTypes(); });
+                        } else {
+                            measure([&] {
+                                for (auto* property : prepared) {
+                                    if (property != nullptr && !property->isTypeResolved()) {
+                                        property->completeTypeResolution();
+                                    }
+                                }
+                            });
+                        }
+
+                        if (allocationPass && allocationSamples[query].size() != sample + 1) {
+                            continue;
+                        }
+
+                        for (const auto* property : {pending.front(), pending.back()}) {
+                            if (property->getValueType() != valueType || !property->isTypeResolved()) {
+                                throw std::runtime_error("Completed native-property metadata changed");
+                            }
+
+                            nomad::RuntimeValue value;
+                            property->getValue(nullptr, value);
+                            if (value.getIntegerValue() != 42) {
+                                throw std::runtime_error("A completed native-property callback changed behavior");
+                            }
+                        }
+
+                        if (calls != 2) {
+                            throw std::runtime_error("Completed property callbacks lost their captured state");
+                        }
+                    }
+                }
+            }
+
+            std::cout << "validation_pending=" << pendingCount << " stored_added=" << storedCount
+                << " initial_properties=" << initialProperties << " measured_properties=" << measuredProperties
+                << " measured_native=" << measuredNative << " resolved_iterations=" << iterations;
+            for (auto metric = nomad::NomadIndex{0}; metric < labels.size(); ++metric) {
+                const auto timeLabel = std::format("{}_us", labels[metric]);
+                printSamples(timeLabel.c_str(), latencySamples[metric]);
+                const auto allocationLabel = std::format("{}_allocations", labels[metric]);
+                if (!allocationSamples[metric].empty()) {
+                    printSamples(allocationLabel.c_str(), allocationSamples[metric]);
+                } else {
+                    std::cout << ' ' << allocationLabel << "=unavailable";
+                }
+            }
+
+            std::cout << std::endl;
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -2716,6 +3192,8 @@ int main() {
         runDynamicVariableRegistrationBenchmark();
         runDynamicVariableCopyProbe();
         runWellKnownTypeLookupBenchmark();
+        runNativeMemberCatalogBenchmark();
+        runNativePropertyValidationBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

@@ -421,6 +421,13 @@ Their metadata structures are now named `NativePropertyInfo`,
 `TypeManager::getIterableInfo`;
 `NativeProperty::getInfo()` returns a property snapshot.
 
+The low-level `catalogNativeProperty(id)` and `catalogNativeMethod(id)` calls
+publish an already-owned descriptor for native-member lookup. Failed publication
+leaves native-member enumeration and name lookup unchanged. It does not undo
+earlier type/property/callable registration: after an allocation failure, retry
+cataloging the same descriptor ID rather than registering another descriptor.
+Cataloging an already published ID is rejected without adding another entry.
+
 Fallible metadata snapshot lookups return `std::optional<Info>`. An empty
 optional means the item is absent, invalid, or of the wrong kind. No output
 parameter is retained or reused from an earlier lookup. A getter on an

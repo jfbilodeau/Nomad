@@ -117,3 +117,12 @@ queries, and separate Debug allocation passes. Checks preserve descriptor
 identity through growth and the function lookup's missing-to-first-match
 transition. Prepared IDs exclude name resolution; they are not an implemented
 cache or an exact subtractive control.
+
+Native-member workloads time catalog publication of already-owned properties
+and methods separately from descriptor creation. Batches of 64 one-member owners
+follow 0/100/1,000 unrelated owner pairs. Validation workloads separately report
+one first-completion sweep and 1,000 already-resolved sweeps, with 100/1,000
+pending native properties and 0/1,000 stored properties. A prepared mutable-pointer
+walk excludes snapshot creation and lookup work; it is not a proposed public API
+or an exact cost breakdown. All cases use five fresh samples and separate Debug
+allocation probes.

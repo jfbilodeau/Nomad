@@ -764,6 +764,7 @@ private:
         const NomadString& doc
     );
     CallableId addCallableToTable(std::unique_ptr<Function> function);
+    void appendNativeMember(const NomadString& name, MemberReference member);
     [[nodiscard]] bool canOverloadCallable(
         const NomadString& name,
         const std::vector<Parameter>& parameters,

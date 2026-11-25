@@ -9,6 +9,8 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/InstructionDump.hpp>
+#include <nomad/script/NativeCallable.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
@@ -21,6 +23,7 @@
 
 #include <array>
 #include <limits>
+#include <new>
 #include <optional>
 #include <sstream>
 #include <type_traits>
@@ -60,6 +63,9 @@ const ScriptFunction& registerFrameFunction(Runtime& runtime) {
 
 #if defined(_MSC_VER) && defined(_DEBUG)
 thread_local NomadIndex callAllocations = 0;
+thread_local NomadIndex catalogAllocationRequests = 0;
+thread_local std::optional<NomadIndex> rejectedCatalogAllocation;
+thread_local bool callAllocationRejected = false;
 _CRT_ALLOC_HOOK previousAllocationHook = nullptr;
 
 int countCallAllocations(
@@ -73,6 +79,16 @@ int countCallAllocations(
 ) {
     if (operation == _HOOK_ALLOC || operation == _HOOK_REALLOC) {
         ++callAllocations;
+        // Debug proxies also allocate inside noexcept container constructors.
+        if (rejectedCatalogAllocation.has_value() && size != sizeof(std::_Container_proxy)) {
+            ++catalogAllocationRequests;
+            if (*rejectedCatalogAllocation != 0 && catalogAllocationRequests == *rejectedCatalogAllocation) {
+                callAllocationRejected = true;
+                _CrtSetAllocHook(previousAllocationHook);
+
+                return false;
+            }
+        }
     }
 
     return previousAllocationHook == nullptr ||
@@ -1676,6 +1692,185 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(native_catalog_publication_survives_allocation_failures_and_retries) {
+    constexpr auto batchSize = NomadIndex{16};
+    const NomadString name = "failureCatalog";
+    for (const auto methodCase : {false, true}) {
+        for (const auto seedCount : {NomadIndex{0}, NomadIndex{4}}) {
+            auto allocationCount = NomadIndex{0};
+            for (auto failureAt = NomadIndex{0}; failureAt <= allocationCount; ++failureAt) {
+                BOOST_TEST_CONTEXT("method=" << methodCase << " seeds=" << seedCount << " allocation=" << failureAt) {
+                    auto calls = NomadIndex{0};
+                    Runtime runtime;
+                    auto& manager = runtime.getTypeManager();
+                    std::vector<const ClassType*> owners;
+                    const auto prepare = [&](const NomadString& ownerName) -> MemberReference {
+                        const auto ownerId = runtime.registerClass(ownerName, ClassMode::Closed);
+                        BOOST_REQUIRE(ownerId.isValid());
+                        const auto* owner = runtime.getType(ownerId).value()->asClassType();
+                        owners.push_back(owner);
+                        if (methodCase) {
+                            auto method = std::make_unique<NativeMethod>(
+                                runtime.getNextCallableId(),
+                                name,
+                                owner,
+                                [&calls](VirtualMachine* machine) {
+                                    ++calls;
+                                    machine->setIntegerResult(42);
+                                },
+                                std::vector<Parameter>{},
+                                runtime.getIntegerType(),
+                                ""
+                            );
+                            const auto id = runtime.registerMethod(manager.getMutableClassType(owner), std::move(method));
+                            BOOST_REQUIRE(id.isValid());
+
+                            return id;
+                        }
+
+                        auto property = std::make_unique<NativeProperty>(
+                            manager.getNextPropertyId(),
+                            owner,
+                            name,
+                            runtime.getIntegerType(),
+                            [&calls](VirtualMachine*, RuntimeValue& value) {
+                                ++calls;
+                                value.setIntegerValue(42);
+                            },
+                            NativePropertySetFn{},
+                            ""
+                        );
+                        const auto id = manager.registerProperty(manager.getMutableClassType(owner), std::move(property));
+                        BOOST_REQUIRE(id.isValid());
+
+                        return id;
+                    };
+                    const auto catalog = [&](const MemberReference& member) {
+                        if (const auto* propertyId = std::get_if<PropertyId>(&member)) {
+                            runtime.catalogNativeProperty(*propertyId);
+                        } else {
+                            runtime.catalogNativeMethod(std::get<CallableId>(member));
+                        }
+                    };
+                    for (auto index = NomadIndex{0}; index < seedCount; ++index) {
+                        catalog(prepare("FailureSeed" + std::to_string(index)));
+                    }
+
+                    std::vector<MemberReference> targets;
+                    for (auto index = NomadIndex{0}; index < batchSize; ++index) {
+                        targets.push_back(prepare("FailureTarget" + std::to_string(index)));
+                    }
+
+                    std::vector<MemberReference> before;
+                    std::vector<MemberReference> namedBefore;
+                    runtime.getNativeMembers(before);
+                    runtime.getNativeMemberOverloads(name, namedBefore);
+                    auto completed = NomadIndex{0};
+                    auto failed = false;
+                    callAllocations = 0;
+                    catalogAllocationRequests = 0;
+                    callAllocationRejected = false;
+                    const auto originalChain = previousAllocationHook;
+                    const auto originalRejection = rejectedCatalogAllocation;
+                    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+                    {
+                        const auto previousHook = previousAllocationHook;
+                        BOOST_SCOPE_EXIT_ALL(=) {
+                            _CrtSetAllocHook(previousHook);
+                            previousAllocationHook = originalChain;
+                            rejectedCatalogAllocation = originalRejection;
+                        };
+
+                        rejectedCatalogAllocation = failureAt;
+                        try {
+                            for (; completed < targets.size(); ++completed) {
+                                catalog(targets[completed]);
+                            }
+                        } catch (const std::bad_alloc&) {
+                            failed = true;
+                        }
+                    }
+
+                    if (failureAt == 0) {
+                        allocationCount = catalogAllocationRequests;
+                        BOOST_REQUIRE(allocationCount != 0);
+                    }
+
+                    BOOST_REQUIRE(failed == (failureAt != 0));
+                    BOOST_REQUIRE(callAllocationRejected == (failureAt != 0));
+                    auto expected = before;
+                    expected.insert(expected.end(), targets.begin(), targets.begin() + completed);
+                    auto namedExpected = namedBefore;
+                    namedExpected.insert(namedExpected.end(), targets.begin(), targets.begin() + completed);
+                    std::vector<MemberReference> actual;
+                    runtime.getNativeMembers(actual);
+                    BOOST_REQUIRE_MESSAGE(actual == expected, "Failed publication changed the flat native catalog");
+                    runtime.getNativeMemberOverloads(name, actual);
+                    BOOST_REQUIRE_MESSAGE(actual == namedExpected, "Failed publication changed native name memberships");
+                    BOOST_TEST(runtime.getNativeMemberOverloadCount(name) == namedExpected.size());
+                    BOOST_TEST(calls == 0U);
+                    for (auto index = NomadIndex{0}; index < targets.size(); ++index) {
+                        const auto* owner = owners[seedCount + index];
+                        const auto member = runtime.getNativeMemberId(owner, name);
+                        if (index < completed) {
+                            BOOST_REQUIRE(member.has_value());
+                            BOOST_TEST(*member == targets[index]);
+                        } else {
+                            BOOST_TEST(!member.has_value());
+                        }
+
+                        if (methodCase) {
+                            const auto id = std::get<CallableId>(targets[index]);
+                            const auto* method = runtime.getNativeMethod(id);
+                            BOOST_REQUIRE(method != nullptr);
+                            BOOST_TEST(method->getId() == id);
+                            BOOST_TEST(method->getClassType() == owner);
+                            BOOST_TEST(owner->getMethods().front() == method);
+                        } else {
+                            const auto id = std::get<PropertyId>(targets[index]);
+                            const auto* property = runtime.getNativeProperty(id);
+                            BOOST_REQUIRE(property != nullptr);
+                            BOOST_TEST(property->getId() == id);
+                            BOOST_TEST(property->getClassType() == owner);
+                            BOOST_TEST(owner->getProperty(name) == property);
+                        }
+                    }
+
+                    for (auto index = completed; index < targets.size(); ++index) {
+                        BOOST_REQUIRE_NO_THROW(catalog(targets[index]));
+                    }
+
+                    for (const auto& member : targets) {
+                        BOOST_CHECK_THROW(catalog(member), NomadException);
+                    }
+
+                    expected = before;
+                    expected.insert(expected.end(), targets.begin(), targets.end());
+                    namedExpected = namedBefore;
+                    namedExpected.insert(namedExpected.end(), targets.begin(), targets.end());
+                    runtime.getNativeMembers(actual);
+                    BOOST_TEST((actual == expected));
+                    runtime.getNativeMemberOverloads(name, actual);
+                    BOOST_TEST((actual == namedExpected));
+                    auto machine = runtime.createVirtualMachine();
+                    for (const auto& member : targets) {
+                        if (methodCase) {
+                            runtime.getNativeMethod(std::get<CallableId>(member))->getFn()(machine.get());
+                            BOOST_TEST(machine->getIntegerResult() == 42);
+                        } else {
+                            RuntimeValue value;
+                            runtime.getNativeProperty(std::get<PropertyId>(member))->getValue(machine.get(), value);
+                            BOOST_TEST(value.getIntegerValue() == 42);
+                        }
+                    }
+
+                    BOOST_TEST(calls == batchSize);
+                }
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(fixed_type_getters_do_not_allocate) {
     Runtime runtime;
     constexpr auto getters = std::array{

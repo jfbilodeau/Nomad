@@ -10,7 +10,9 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **R23:** The approved local-registration move is implemented and validated. Per-callback target copies change from two to one for lvalue inputs and one to zero for moved inputs. Large captures and long metadata each save two Debug requests per registration; timings remain mixed. The selected language CTest, unchanged checked Debug/Release benchmarks, and strict documentation build pass.
 
-**R18:** The approved ten fixed-type borrowed views are implemented and validated. Repeated fixed getters make zero Debug allocation requests; Release medians round to 0.001 us and are too small for a precise speedup ratio. Catalog ownership and dynamic function lookup are unchanged. Two selected Debug CTests, checked Debug/Release benchmarks, and strict documentation validation pass. Next reviewable scope: measure R26's native-member cataloging/validation lookups before choosing another optimization.
+**R18:** The approved ten fixed-type borrowed views are implemented and validated. Repeated fixed getters make zero Debug allocation requests; Release medians round to 0.001 us and are too small for a precise speedup ratio. Catalog ownership and dynamic function lookup are unchanged. Two selected Debug CTests, checked Debug/Release benchmarks, and strict documentation validation pass.
+
+**R26:** The approved name-bucket duplicate checks, failure-consistent native publication, and single mutable-property fetch are implemented and validated. Failure/retry coverage and both selected Debug CTests pass; checked Debug/Release comparisons retain mixed validation/small-catalog timings. No new index or validation-snapshot change was added. Next reviewable scope: verify and measure R27's repeated hub lookup in context-prefix resolution before selecting a change.
 
 ## Component contract
 
@@ -2617,6 +2619,348 @@ Measure each change before and after on the same workload.
   dynamic function getter, TypeManager's classifier, or other consumers
   automatically.
 
+#### R26 native-member cataloging and validation baseline
+
+- Extended the existing opt-in benchmark only. No production API, descriptor
+  ownership, registration policy, index, validation rule, or callback behavior
+  changed. No CMake, dependency, or CTest entry was added.
+- Source review confirms that both catalog helpers search the mixed
+  `m_nativeMembers` vector for duplicate IDs before publication. Property
+  cataloging additionally checks the owner's named property; method cataloging
+  obtains a copied owner-method list. The existing `m_nativeMembersByName`
+  index is already used for signatures and owner/name lookup.
+- `validateNativePropertyTypes()` first copies all property pointers through
+  `TypeManager::getProperties()`. For each incomplete native property,
+  `getMutableNativeProperty()` performs a const native lookup followed by a
+  mutable ID lookup before completion. These are indexed reads, not another
+  full catalog scan. Completion itself still checks registered type/property
+  identity and value-type validity.
+- Cataloging is reached from native property/method registration; the central
+  property-validation pass is reached during compiler deferred-type resolution.
+  These measurements do not establish an execution-time/gameplay bottleneck.
+
+##### Catalog publication protocol and results
+
+- Existing low-level public `TypeManager::registerProperty()` and
+  `Runtime::registerMethod()` prepare already-owned, valid descriptors without
+  native-member publication. No benchmark-only production entry point is
+  needed. Timed loops then call the existing catalog helpers directly.
+- Each case has five fresh Runtime samples and a batch of 64 target owners,
+  each with one property or one parameterless integer-returning method.
+  All targets share an eight-byte property name or seven-byte method name.
+  Before measurement, 0/100/1,000 unrelated owners each publish one property
+  and one method with distinct eight-byte non-target names. The initial native
+  catalog has 14 members, giving 14/214/2,014 entries before each target batch.
+  The target name has no indexed entries initially and 64 afterward.
+- Thirty-two separate owner/member pairs warm both paths before measurements.
+  Runtime/owner/descriptor creation, callback/string preparation, metadata
+  checks, and destruction are outside timing. Catalog guards, signature
+  checks, growth, and both flat/name index updates are inside timing.
+  Separate fresh-runtime MSVC Debug passes count requests over the same
+  64 publications; fractional counts are batch averages.
+- Checks validate the unchanged catalog prefix, exact appended IDs/order,
+  overload counts, owner/name lookup, complete owned metadata, one-member
+  owner catalogs, no callback execution during preparation/publication, and
+  retained callback state/results afterward. No duplicate/invalid call is
+  timed; existing rejection regressions remain in the selected CTests.
+- Values are median `[min,max]` microseconds per cataloged member. Request
+  minima/medians/maxima are identical across each case's five Debug probes.
+
+| Configuration | Kind | Unrelated owner pairs | Catalog before | Catalog (us/member) | Debug requests/member |
+| --- | --- | --- | --- | --- | --- |
+| Debug | Property | 0 | 14 | 3.853 [3.433,5.006] | 4.266 |
+| Debug | Method | 0 | 14 | 4.033 [3.902,15.691] | 5.266 |
+| Debug | Property | 100 | 214 | 6.680 [6.545,7.944] | 4.203 |
+| Debug | Method | 100 | 214 | 9.639 [6.789,17.084] | 5.203 |
+| Debug | Property | 1,000 | 2,014 | 56.141 [43.183,95.248] | 4.203 |
+| Debug | Method | 1,000 | 2,014 | 40.973 [31.316,105.272] | 5.203 |
+| Release | Property | 0 | 14 | 0.116 [0.106,0.138] | Unavailable |
+| Release | Method | 0 | 14 | 0.152 [0.147,0.248] | Unavailable |
+| Release | Property | 100 | 214 | 0.222 [0.198,0.233] | Unavailable |
+| Release | Method | 100 | 214 | 0.247 [0.212,0.358] | Unavailable |
+| Release | Property | 1,000 | 2,014 | 1.722 [1.084,1.847] | Unavailable |
+| Release | Method | 1,000 | 2,014 | 0.898 [0.828,1.105] | Unavailable |
+
+- With one-member owner catalogs held fixed, Release property/method medians
+  rise from 0.116/0.152 us to 1.722/0.898 us at 1,000 unrelated pairs.
+  This supports reviewing the global duplicate scan rather than adding an
+  index for owner-local lookup without evidence.
+- The target name bucket grows to 64 entries while unrelated names differ.
+  Very large same-name buckets, many members on one owner, complete public
+  registration/startup latency, and allocation byte volume are not measured.
+  Counts include index growth and Debug-library temporary storage; they do not
+  isolate allocations due to the duplicate check.
+
+##### Property-validation protocol and results
+
+- Each fixture contains 100 or 1,000 native properties on one owner and
+  0 or 1,000 added stored properties. The initial four properties are native
+  and already resolved. Total properties therefore range from 104 to 2,004,
+  with 104 or 1,004 native entries.
+- Real compiler-owned `DeferredType` placeholders for `int` are used during
+  property registration. Existing checked `resolveValueType()` calls bind the
+  actual integer descriptor outside timing, leaving completion pending, as
+  in the compiler's target-binding/central-completion sequence. The benchmark
+  does not time type discovery, target binding, or whole compilation.
+- The public validation pass is compared with a privately prepared pointer
+  array of equal length: native entries borrow mutable descriptors and stored
+  entries are null. The prepared loop performs readiness checks and the same
+  `completeTypeResolution()` calls, but omits snapshot construction, virtual
+  native-category queries, and checked mutable-descriptor retrieval.
+  Its preparation is excluded. It is a reduced-work control, not an
+  implemented optimization or an exact subtractive breakdown.
+- Each operation has five fresh fixtures plus separate fresh Debug allocation
+  fixtures. First completion is one mutating sweep with no same-state warmup.
+  Once resolved, 32 warmup sweeps precede 1,000 timed/probed resolved sweeps.
+  Times below are total microseconds per sweep, not per property.
+- Checks validate catalog sizes and the original pointer prefix, the exact
+  pending count and bound value type, no callback execution, stable descriptor
+  identity through both stages, complete readiness after each measured stage,
+  and first/last callback state/results afterward.
+
+| Debug pending native | Added stored | Total properties | Public completion (us) | Prepared completion (us) | Public resolved (us) | Prepared resolved (us) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 | 0 | 104 | 50.000 [48.700,68.600] | 53.800 [43.900,238.600] | 1.024 [0.898,1.573] | 0.155 [0.128,0.404] |
+| 100 | 1,000 | 1,104 | 59.500 [55.100,167.100] | 114.800 [45.900,126.800] | 4.167 [3.453,5.518] | 0.946 [0.647,1.731] |
+| 1,000 | 0 | 1,004 | 662.100 [478.100,930.400] | 485.700 [450.800,1372.900] | 5.844 [3.974,7.508] | 1.531 [1.274,2.664] |
+| 1,000 | 1,000 | 2,004 | 1109.800 [494.700,1969.300] | 619.000 [446.500,1085.600] | 8.530 [8.059,10.782] | 2.298 [1.974,4.200] |
+
+| Release pending native | Added stored | Total properties | Public completion (us) | Prepared completion (us) | Public resolved (us) | Prepared resolved (us) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 | 0 | 104 | 5.200 [3.100,7.900] | 3.000 [2.400,4.200] | 0.424 [0.294,0.473] | 0.123 [0.083,0.226] |
+| 100 | 1,000 | 1,104 | 7.000 [6.100,9.500] | 3.600 [3.400,4.100] | 2.000 [1.528,2.263] | 0.342 [0.330,0.404] |
+| 1,000 | 0 | 1,004 | 37.300 [30.300,41.800] | 24.300 [23.300,30.500] | 2.149 [2.022,2.653] | 0.683 [0.669,0.864] |
+| 1,000 | 1,000 | 2,004 | 37.400 [33.600,96.400] | 27.100 [25.000,30.900] | 3.325 [3.289,6.180] | 0.958 [0.940,1.115] |
+
+- Debug first-completion requests are `pending + 2` for the public pass
+  (102/1,002) and `pending` for the prepared pass (100/1,000), unchanged
+  by stored-property count. Already-resolved public passes make two requests
+  per sweep; the prepared loop makes zero. Every request value has identical
+  minimum/median/maximum across samples. Release counts are unavailable.
+- The two public-pass requests are consistent with its copied pointer vector.
+  Completion still calls the unchanged `Type::isInternal()` query, which obtains
+  the value-type name by value. Source review points to that path for the
+  remaining per-property Debug requests; allocator call stacks were not
+  captured. The redundant indexed reads themselves are not allocation costs.
+- At 1,000 pending native properties, adding 1,000 stored properties changes
+  Release public completion from 37.300 to 37.400 us and already-resolved
+  passes from 2.149 to 3.325 us. First-completion samples are single sweeps;
+  their ranges and the slower prepared Debug samples are retained.
+- No production change or proposed speedup was measured. A prepared pointer
+  array does not authorize replacing an owned snapshot with live catalog
+  iterators; registration/reentry and lifetime safety require separate review.
+  Do not attribute the full public/prepared difference to repeated ID lookup.
+
+##### Validation and next scope
+
+- Both Windows Debug and Release targets build and all checked benchmark
+  sections pass with bundled language DLL hashes matched to the current
+  builds. The selected Debug `nomad_test_language` and `nomad_test_remaining`
+  CTests pass directly before the separate benchmark builds, including existing
+  catalog rejection and deferred-property completion regressions.
+- These are shared-machine Windows/MSVC microbenchmarks, not production
+  catalog-frequency or compilation/startup/gameplay profiles. No cross-platform
+  result, full-suite rerun, failure injection, thread/reentry validation,
+  allocator call-stack profile, or timing threshold is claimed.
+- The follow-up review approved the bounded duplicate/publication/lookup
+  contract below. The baseline did not implement or measure that optimization.
+
+#### R26 approved native-catalog publication contract
+
+- The user selected existing-name-index duplicate guards with consistent
+  publication and a single mutable-property fetch, rather than doing only the
+  fetch simplification or deferring both changes.
+- Native property and callable member names are owned, private strings exposed
+  through nonvirtual const getters, with no rename API. Their constructors are
+  the only current writers. Use the existing name bucket for duplicate checks;
+  no new naming restriction, declaration seal, or second membership index is
+  needed. A future rename facility would have to maintain the existing index.
+- Match the full typed `MemberReference`, not its numeric ID or just the first
+  member found for an owner/name. Property and callable IDs occupy separate
+  spaces, and same-name buckets can contain multiple entries. The search
+  remains linear in that bucket, not constant time for arbitrarily large
+  same-name sets.
+- Preserve the specialized property/method ownership and category checks,
+  duplicate-before-signature validation order, rejection messages, and
+  successful flat/per-name ordering. Read-only duplicate checks must not
+  insert an empty name entry as a side effect of rejection.
+- Source review found a necessary failure-contract issue: current code appends
+  to the flat vector before updating the name index. If the second update
+  allocates and throws, an ID can remain visible only in the flat catalog.
+  Checking duplicates exclusively through the name index would then be unsafe.
+  This partial-publication case was source-reviewed, not fault-injected during
+  the design step.
+- The approved implementation makes the two native-member publications
+  logically all-or-none for a new ID. Use a narrow shared private append path:
+  append to the name bucket first, then append to the flat catalog. If the
+  latter throws, pop only the newly added name entry and rethrow unchanged.
+  A readable try/catch is appropriate for this exception-only rollback; do not
+  add a commit flag, scope-guard framework, or another membership cache.
+- Existing memberships and order must survive every rejected or failed
+  attempt. An empty private name bucket may remain after allocation failure;
+  no new member ID may remain visible in either native index. Do not promise
+  unchanged capacities, allocation counts, or a full Runtime transaction.
+- This intentionally strengthens failed native-catalog publication. A
+  descriptor may already belong to its type, property table, or callable table
+  before cataloging begins; those earlier registrations are not rolled back.
+  Keep that descriptor/ID intact so cataloging can be retried after failure.
+  This is not atomicity for the whole high-level registration operation, and
+  it introduces no concurrency guarantee.
+- `getMutableNativeProperty()` fetches through the existing checked mutable
+  property query once, validates the native category, and returns the same
+  owned descriptor. Invalid/unregistered IDs and stored properties still
+  return nullptr without logging. Do not expand mutable access or change
+  property ownership, resolution, or callback contracts.
+- Keep `validateNativePropertyTypes()`'s owned pointer snapshot and all
+  completion/type-identity checks unchanged. The prepared-pointer benchmark
+  remains a reduced-work control, not approval for a live catalog view or for
+  removing value-type checks. The remaining name-copy allocation path is
+  outside this scope.
+- The next continuation implements these changes and focused regressions
+  together. Reuse existing same-name, invalid, duplicate, ordering, and
+  deferred-property tests; cover non-first same-name entries and typed-ID
+  distinctions where missing. Add allocation-failure/retry coverage for both
+  catalog kinds, including failures between the two publications and growth
+  cases, using the existing MSVC Debug CRT probe pattern rather than new
+  production hooks or a fault-injection framework.
+- Failure tests must restore the prior hook before assertions or an exception
+  escapes the probe,
+  verify both public catalog views retain their prior memberships/order,
+  preserve the already-owned descriptor/ID, retry successfully once, and
+  reject a subsequent duplicate without adding another entry. Reproduce the
+  old partial-publication gap before applying the fix when feasible.
+- Run the existing language/remaining Debug CTests directly through the
+  workspace integration without a separate pre-test build. Build and execute
+  the unchanged checked Debug/Release benchmarks with current bundled DLLs;
+  compare full catalog/validation ranges and allocation requests to the
+  baseline, retaining noisy/slower samples and unavailable Release counts.
+  Update public documentation only for observable catalog failure/retry
+  contracts, not private index mechanics.
+- Stop after this bounded implementation/validation step for review. No new
+  public API, TypeManager dependency change, mutable catalog range, owner-method
+  snapshot removal, or other optimization is authorized automatically.
+
+#### R26 indexed duplicate guards and consistent publication
+
+- Implemented typed duplicate searches in the existing member-name buckets.
+  Property and method ownership/category checks, duplicate-before-signature
+  validation, rejection messages, and successful flat/per-name order are
+  retained. There is no new index or lookup API. Bucket search remains linear
+  in the number of members sharing that name.
+- Both catalog helpers use one private append path. It appends the name
+  membership first, then the flat membership; if the latter throws, it pops
+  only the new name membership and rethrows. Existing members/order survive.
+  An empty private name bucket may remain. Earlier descriptor/ID registration
+  is not rolled back; failed native publication can be retried for that ID.
+- `getMutableNativeProperty()` now obtains the checked mutable property once,
+  verifies its native category, and returns it. Invalid/unregistered IDs and
+  stored properties still return nullptr without logging. TypeManager,
+  `validateNativePropertyTypes()`'s snapshot, and completion/type-validity
+  checks are unchanged.
+- A focused native-member regression publishes same-name members on three
+  owners, deliberately giving a property and a method equal numeric IDs.
+  It verifies the full typed identities, non-first duplicate rejection, owner
+  lookup, and unchanged flat/name order after rejection.
+- The Debug allocation-failure case prepares batches of 16 already-owned
+  properties or methods, with both a new name bucket and four seeded entries.
+  A successful control counts eligible allocations; fresh fixtures then reject
+  each eligible request in turn, covering publication growth and rollback.
+  Checks verify the successful prefix in both public catalog views, no new
+  failed membership, unchanged owned descriptors/IDs, successful retry exactly
+  once, subsequent duplicate rejection, and retained callback behavior.
+  The prior hook is restored before rejection propagates and before assertions.
+- The initial all-request probe hit termination during MSVC Debug STL
+  bookkeeping, followed by recursive CRT/Boost error reporting and a stack
+  overflow. Temporary local stack tracing was removed after diagnosis.
+  The final fault probe excludes requests the size of `std::_Container_proxy`
+  because Debug proxies can allocate inside noexcept container constructors.
+  Same-sized real buffers are also excluded: those requests are not
+  fault-tested. Normal allocation counting is unchanged. With this boundary,
+  the old implementation reproduced a flat-only native membership on the
+  first eligible name-publication failure; the fixed case passes all retries.
+- Both selected Windows Debug CTests pass: `nomad_test_language` and
+  `nomad_test_remaining`, including existing invalid/category/deferred-property
+  coverage. No CTest entry, production fault hook, or new probe framework was
+  added. The embedding guide describes only observable publication/retry and
+  ownership behavior.
+- The unchanged opt-in benchmark builds and passes every checked section in
+  Debug and Release, with bundled language DLL hashes matched before each
+  execution. Release was repeated once without workload or implementation
+  changes; both runs are retained. The existing five-sample, 64-publication
+  catalog batches and property-validation fixtures/protocol remain as above.
+  Values below are median `[min,max]` microseconds.
+
+| Configuration/run | Kind | Unrelated owner pairs | Catalog (us/member) | Debug requests/member |
+| --- | --- | --- | --- | --- |
+| Debug 1 | Property | 0 | 9.522 [3.987,12.448] | 4.266 |
+| Debug 1 | Method | 0 | 4.531 [3.773,5.406] | 5.266 |
+| Debug 1 | Property | 100 | 4.323 [4.270,8.548] | 4.203 |
+| Debug 1 | Method | 100 | 4.472 [4.078,7.539] | 5.203 |
+| Debug 1 | Property | 1,000 | 7.853 [4.469,11.697] | 4.203 |
+| Debug 1 | Method | 1,000 | 4.319 [4.233,14.125] | 5.203 |
+| Release 1 | Property | 0 | 0.113 [0.111,0.123] | Unavailable |
+| Release 1 | Method | 0 | 0.150 [0.139,0.352] | Unavailable |
+| Release 1 | Property | 100 | 0.159 [0.105,0.258] | Unavailable |
+| Release 1 | Method | 100 | 0.208 [0.141,0.256] | Unavailable |
+| Release 1 | Property | 1,000 | 0.220 [0.191,0.317] | Unavailable |
+| Release 1 | Method | 1,000 | 0.263 [0.230,0.311] | Unavailable |
+| Release 2 | Property | 0 | 0.269 [0.189,0.312] | Unavailable |
+| Release 2 | Method | 0 | 0.314 [0.194,1.389] | Unavailable |
+| Release 2 | Property | 100 | 0.248 [0.192,0.308] | Unavailable |
+| Release 2 | Method | 100 | 0.244 [0.153,0.859] | Unavailable |
+| Release 2 | Property | 1,000 | 0.281 [0.205,1.366] | Unavailable |
+| Release 2 | Method | 1,000 | 0.244 [0.216,0.733] | Unavailable |
+
+| Debug pending native | Added stored | Total properties | Public completion (us) | Prepared completion (us) | Public resolved (us) | Prepared resolved (us) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 | 0 | 104 | 49.900 [47.200,187.900] | 46.000 [44.100,47.400] | 0.881 [0.865,3.619] | 0.136 [0.127,0.193] |
+| 100 | 1,000 | 1,104 | 107.400 [54.400,131.000] | 79.600 [46.600,278.700] | 5.071 [3.517,8.408] | 0.745 [0.599,2.278] |
+| 1,000 | 0 | 1,004 | 1231.300 [459.600,1482.300] | 566.300 [444.900,762.500] | 6.664 [5.146,7.841] | 1.704 [1.438,2.821] |
+| 1,000 | 1,000 | 2,004 | 522.300 [452.400,743.600] | 876.200 [492.000,1559.600] | 8.496 [5.279,12.878] | 3.301 [2.327,4.630] |
+
+| Release run | Pending native | Added stored | Total properties | Public completion (us) | Prepared completion (us) | Public resolved (us) | Prepared resolved (us) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 100 | 0 | 104 | 3.600 [3.300,9.500] | 2.900 [2.600,7.700] | 0.451 [0.243,0.812] | 0.083 [0.075,0.295] |
+| 1 | 100 | 1,000 | 1,104 | 6.400 [5.800,18.800] | 3.800 [3.400,3.900] | 1.714 [1.533,3.528] | 0.339 [0.329,0.371] |
+| 1 | 1,000 | 0 | 1,004 | 33.300 [30.400,51.700] | 28.000 [26.500,82.000] | 2.305 [1.918,4.162] | 0.847 [0.682,1.212] |
+| 1 | 1,000 | 1,000 | 2,004 | 35.600 [33.300,66.900] | 35.000 [26.600,55.000] | 3.549 [3.162,10.367] | 1.884 [0.903,2.696] |
+| 2 | 100 | 0 | 104 | 5.100 [4.500,42.300] | 4.000 [3.400,6.500] | 0.391 [0.303,0.897] | 0.111 [0.093,0.297] |
+| 2 | 100 | 1,000 | 1,104 | 7.700 [6.100,11.000] | 3.500 [3.200,10.900] | 1.869 [1.544,3.031] | 0.670 [0.322,0.756] |
+| 2 | 1,000 | 0 | 1,004 | 31.800 [30.800,39.500] | 40.000 [24.300,71.400] | 2.775 [1.847,3.364] | 0.936 [0.640,2.377] |
+| 2 | 1,000 | 1,000 | 2,004 | 63.400 [37.600,102.400] | 42.400 [25.400,63.200] | 5.652 [3.845,7.983] | 1.433 [0.925,2.892] |
+
+- Debug allocation requests are unchanged from the baseline in every
+  catalog/validation case. Cataloging retains the reported batch-average
+  counts; public/prepared first completion remains `pending + 2` / `pending`
+  and resolved validation remains two/zero requests per sweep. Every Debug
+  request minimum/median/maximum is identical across its five samples.
+  Release counts remain unavailable.
+- At 1,000 unrelated owner pairs, Release property cataloging changes from
+  1.722 to 0.220/0.281 us per member and method cataloging from 0.898 to
+  0.263/0.244 us. The unrelated-catalog scan is removed, not the same-name
+  bucket scan, owner-method snapshot, signature checks, or publication work.
+- Small cases are not uniformly faster. With no unrelated owners, Debug
+  property/method medians change from 3.853/4.033 to 9.522/4.531 us;
+  Release changes from 0.116/0.152 to 0.113/0.150 in run 1 and
+  0.269/0.314 us in run 2. All ranges and both Release runs are retained.
+- The single mutable fetch does not establish a general validation speedup.
+  At 1,000 pending native plus 1,000 stored properties, Release public
+  completion changes from 37.400 to 35.600/63.400 us per sweep; resolved
+  validation changes from 3.325 to 3.549/5.652 us. Debug completion with
+  1,000 pending and no stored properties rises from 662.100 to 1231.300 us.
+  The prepared control is unchanged, also varies, and is not subtracted as
+  an exact lookup-cost decomposition.
+- SDK-backed generation and strict MkDocs validation pass. These are
+  shared-machine Windows/MSVC microbenchmarks, not whole-startup, compilation,
+  gameplay, or cross-platform results. The full 13-entry suite was not rerun.
+  No all-allocation fault guarantee, concurrency/reentry guarantee,
+  allocation-byte measurement, large same-name/owner-local profile, timing
+  threshold, or universal speedup claim is made.
+- This completes the approved bounded R26 implementation. Next reviewable
+  scope: verify and measure R27's repeated hub lookup during context-prefix
+  resolution before selecting a change. Do not remove the validation snapshot
+  or add another catalog optimization automatically.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -2690,7 +3034,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R23 | P3 | perf, correctness | registerDynamicVariable pushes a copy instead of moving; string setters free manually, which is not exception safe | `Runtime.cpp`: dynamic registration/string setters; registry/context lifetime regressions; checked dynamic-registration benchmark | Complete with approval: RAII string setters and local registration move; focused copy-count regressions, selected language CTest, and checked Debug/Release comparisons pass | 6, 8 |
 | R24 | P3 | style | Mixed style: `ScriptFunction *` spacing, reference alignment, brace placement, single-line `if` without braces, trailing whitespace, snake_case loop variable `op_code`, parameter lists not one per line | `Runtime.cpp`: instruction/event/native registration and lookup, constant getter, context registration; removed navigation APIs | Fixed: concrete remaining naming/formatting findings addressed manually and token-checked; concurrent getter rename preserved with approved recursion fix | 7 |
 | R25 | P3 | typing | getNativeMemberId returns a `MemberReference` with a `PropertyId::INVALID` sentinel; `size_t` converts implicitly to `NomadIndex` | `Runtime.hpp/cpp`: native-member lookup; compiler/interpreter callers and native metadata tests; `Nomad.hpp`: NomadIndex alias | Fixed with approval: optional lookup result and caller migration; count-conversion claim dismissed because NomadIndex is std::size_t | 7 |
-| R26 | P3 | perf | catalogNativeProperty and catalogNativeMethod scan `m_nativeMembers` linearly; validateNativePropertyTypes looks up the same property again | `Runtime.cpp`: catalogNativeProperty, catalogNativeMethod, validateNativePropertyTypes | verified | 8 |
+| R26 | P3 | perf | catalogNativeProperty and catalogNativeMethod scan `m_nativeMembers` linearly; validateNativePropertyTypes looks up the same property again | `Runtime.cpp`: existing-name-bucket guards, rollback append, single mutable fetch; duplicate/order/failure-retry regressions and checked benchmarks | Complete with approval: consistent publication and indexed guards implemented; selected Debug CTests, failure/retry coverage with documented proxy-size exclusions, and checked Debug/Release comparisons pass | 8 |
 | R27 | P3 | perf | getVariableContextIdByPrefix computes `getHubId(getContainingHub)` twice | `Runtime.cpp`: getVariableContextIdByPrefix | verified | 8 |
 | R28 | P3 | naming | getCallableId matches only Function type despite its name; getFunctionId, getNativeFunctionId, and getFunctionTableSize (counts all callables) differ from getFunctionCount (script only) | `Runtime.hpp/cpp`: count, script metadata and name-based lookups; compiler/LSP/game consumers and catalog tests | Complete with approval: category-consistent names, specialized function existence/ID/list/count queries, source filters retained and callers migrated | 7 |
 | R29 | — | dismissed | EventType stores `&m_events.back()`. Not a dangling pointer, because EventType copies the definition | `Event.hpp:46` `const EventDefinition m_event` | verified-not-a-bug | — |

@@ -2438,10 +2438,13 @@ const NativeProperty* Runtime::getNativeProperty(const PropertyId id) const {
 }
 
 NativeProperty* Runtime::getMutableNativeProperty(const PropertyId id) {
-    if (getNativeProperty(id) == nullptr) {
+    auto* property = m_typeManager.getMutableProperty(id);
+    if (property == nullptr || property->asNativeProperty() == nullptr) {
+
         return nullptr;
     }
-    return static_cast<NativeProperty*>(m_typeManager.getMutableProperty(id));
+
+    return static_cast<NativeProperty*>(property);
 }
 
 void Runtime::validateNativePropertyTypes() {
@@ -2455,17 +2458,28 @@ void Runtime::validateNativePropertyTypes() {
 
 void Runtime::catalogNativeProperty(const PropertyId id) {
     const auto* property = getNativeProperty(id);
-    if (property == nullptr || !ownsType(property->getClassType()) ||
-        property->getClassType()->getProperty(property->getName()) != property ||
-        std::ranges::find(m_nativeMembers, MemberReference{id}) != m_nativeMembers.end()) {
+    if (
+        property == nullptr ||
+        !ownsType(property->getClassType()) ||
+        property->getClassType()->getProperty(property->getName()) != property
+    ) {
         throw NomadException("Cannot catalog native property: invalid registration or duplicate native member");
     }
+
+    const auto members = m_nativeMembersByName.find(property->getName());
+    if (
+        members != m_nativeMembersByName.end() &&
+        std::ranges::find(members->second, MemberReference{id}) != members->second.end()
+    ) {
+        throw NomadException("Cannot catalog native property: invalid registration or duplicate native member");
+    }
+
     NomadString error;
     if (!canRegisterMemberSignature(property->getName(), MemberType::Property, {}, error)) {
         throw NomadException("Cannot catalog native property '" + property->getName() + "': " + error);
     }
-    m_nativeMembers.push_back(id);
-    m_nativeMembersByName[property->getName()].push_back(id);
+
+    appendNativeMember(property->getName(), id);
 }
 
 void Runtime::catalogNativeMethod(const CallableId id) {
@@ -2478,15 +2492,32 @@ void Runtime::catalogNativeMethod(const CallableId id) {
             [method](const auto* candidate) { return candidate == method; })) {
         throw NomadException("Cannot catalog native method: invalid registration");
     }
-    if (std::ranges::find(m_nativeMembers, MemberReference{id}) != m_nativeMembers.end()) {
+
+    const auto members = m_nativeMembersByName.find(method->getName());
+    if (
+        members != m_nativeMembersByName.end() &&
+        std::ranges::find(members->second, MemberReference{id}) != members->second.end()
+    ) {
         throw NomadException("Cannot catalog native method: duplicate native member");
     }
+
     NomadString error;
     if (!canRegisterMemberSignature(method->getName(), MemberType::Method, method->getParameters(), error)) {
         throw NomadException("Cannot catalog native method '" + method->getName() + "': " + error);
     }
-    m_nativeMembers.push_back(id);
-    m_nativeMembersByName[method->getName()].push_back(id);
+
+    appendNativeMember(method->getName(), id);
+}
+
+void Runtime::appendNativeMember(const NomadString& name, const MemberReference member) {
+    auto& members = m_nativeMembersByName[name];
+    members.push_back(member);
+    try {
+        m_nativeMembers.push_back(member);
+    } catch (...) {
+        members.pop_back();
+        throw;
+    }
 }
 
 std::optional<MemberReference> Runtime::getNativeMemberId(
