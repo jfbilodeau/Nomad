@@ -1676,6 +1676,35 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(fixed_type_getters_do_not_allocate) {
+    Runtime runtime;
+    constexpr auto getters = std::array{
+        &Runtime::getVoidType, &Runtime::getBooleanType, &Runtime::getIntegerType, &Runtime::getFloatType,
+        &Runtime::getStringType, &Runtime::getFileNameType, &Runtime::getFunctionNameType,
+        &Runtime::getLineNumberType, &Runtime::getEventCallbackType, &Runtime::getEventDispatchType
+    };
+    for (const auto getter : getters) {
+        const auto* expected = (runtime.*getter)();
+        BOOST_REQUIRE(expected != nullptr);
+        auto matchingQueries = NomadIndex{0};
+        callAllocations = 0;
+        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+        {
+            const auto previousHook = previousAllocationHook;
+            BOOST_SCOPE_EXIT_ALL(=) {
+                _CrtSetAllocHook(previousHook);
+            };
+
+            for (auto iteration = 0; iteration < 100; ++iteration) {
+                matchingQueries += (runtime.*getter)() == expected;
+            }
+        }
+
+        BOOST_TEST(callAllocations == 0U);
+        BOOST_TEST(matchingQueries == 100U);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(stored_field_assignment_allocates_scratch_only_for_multi_slot_values) {
     Runtime runtime;
     auto& manager = runtime.getTypeManager();

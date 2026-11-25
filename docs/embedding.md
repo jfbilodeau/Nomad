@@ -507,6 +507,16 @@ Event parameter definitions use `TypeId` for their `typeId` field.
 All Runtime convenience type getters, including `getStringType()`, return
 borrowed `const Type*` views. Use the type-category queries above when accessing
 class-specific metadata.
+
+The getters for void, scalar, hidden source-location, and event callback/dispatch
+types are available immediately after construction. They preserve descriptor
+identity through later registrations and remain valid until the owning runtime
+is destroyed.
+
+`getFunctionType()` instead returns the first descriptor named `callback`, or
+`nullptr` if none is registered yet. It does not select a callback signature.
+Use `TypeManager::getCallbackType(parameters, returnType)` for signature lookup.
+
 `getTypes(types)` appends registered descriptors to the supplied vector without
 clearing its existing entries. `getTypeCount()` counts all reserved IDs,
 including IDs that do not yet have a descriptor. `ownsType(type)` checks both

@@ -11,6 +11,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <string>
@@ -70,6 +71,60 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
     const auto addedId = runtime.getTypeId("AddedType");
     BOOST_TEST(addedId.id != integerId.id);
     BOOST_TEST(*runtime.getType(addedId) == runtime.getTypeByName("AddedType"));
+}
+
+BOOST_AUTO_TEST_CASE(fixed_type_getters_preserve_per_runtime_identity_through_registration)
+{
+    constexpr auto getters = std::array{
+        &Runtime::getVoidType, &Runtime::getBooleanType, &Runtime::getIntegerType, &Runtime::getFloatType,
+        &Runtime::getStringType, &Runtime::getFileNameType, &Runtime::getFunctionNameType,
+        &Runtime::getLineNumberType, &Runtime::getEventCallbackType, &Runtime::getEventDispatchType
+    };
+    const auto names = std::array{
+        VOID_TYPE_NAME, BOOLEAN_TYPE_NAME, INTEGER_TYPE_NAME, FLOAT_TYPE_NAME, STRING_TYPE_NAME,
+        FILE_NAME_TYPE_NAME, FUNCTION_NAME_TYPE_NAME, FUNCTION_LINE_NUMBER_TYPE_NAME,
+        EVENT_CALLBACK_TYPE_NAME, EVENT_DISPATCH_TYPE_NAME
+    };
+    Runtime firstRuntime;
+    Runtime secondRuntime;
+    std::array<const Type*, getters.size()> original{};
+    for (auto index = NomadIndex{0}; index < getters.size(); ++index) {
+        const auto* first = (firstRuntime.*getters[index])();
+        const auto* second = (secondRuntime.*getters[index])();
+        BOOST_REQUIRE(first != nullptr);
+        BOOST_REQUIRE(second != nullptr);
+        original[index] = first;
+        BOOST_TEST(first != second);
+        BOOST_TEST(first->getRuntime() == &firstRuntime);
+        BOOST_TEST(second->getRuntime() == &secondRuntime);
+        BOOST_TEST(first->getTypeName() == names[index]);
+        BOOST_TEST(second->getTypeName() == names[index]);
+        BOOST_TEST(firstRuntime.getTypeByName(names[index]) == first);
+        BOOST_TEST(secondRuntime.getTypeByName(names[index]) == second);
+        BOOST_TEST(firstRuntime.getType(first->getId()).value() == first);
+        BOOST_TEST(secondRuntime.getType(second->getId()).value() == second);
+    }
+
+    for (auto index = NomadIndex{0}; index < 64; ++index) {
+        BOOST_REQUIRE(firstRuntime.registerClass(
+            "views.Added" + std::to_string(index),
+            ClassMode::Closed
+        ).isValid());
+    }
+
+    BOOST_REQUIRE(firstRuntime.registerHub("views", HubMode::Opened).isValid());
+    BOOST_REQUIRE(firstRuntime.getTypeManager().getCallbackType({original[2]}, original[0]) != nullptr);
+    for (auto index = NomadIndex{0}; index < getters.size(); ++index) {
+        const auto* first = (firstRuntime.*getters[index])();
+        const auto* second = (secondRuntime.*getters[index])();
+        BOOST_REQUIRE(first != nullptr);
+        BOOST_REQUIRE(second != nullptr);
+        BOOST_TEST(first == original[index]);
+        BOOST_TEST(firstRuntime.getTypeByName(names[index]) == original[index]);
+        BOOST_TEST(firstRuntime.getType(original[index]->getId()).value() == original[index]);
+        BOOST_TEST(secondRuntime.getTypeByName(names[index]) == second);
+        BOOST_TEST(second->getRuntime() == &secondRuntime);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)

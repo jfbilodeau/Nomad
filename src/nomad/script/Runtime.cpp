@@ -47,6 +47,32 @@ Runtime::Runtime():
         throw NomadException("Failed to register built-in types");
     }
 
+    m_voidType = getTypeByName(VOID_TYPE_NAME);
+    m_booleanType = getTypeByName(BOOLEAN_TYPE_NAME);
+    m_integerType = getTypeByName(INTEGER_TYPE_NAME);
+    m_floatType = getTypeByName(FLOAT_TYPE_NAME);
+    m_stringType = getTypeByName(STRING_TYPE_NAME);
+    m_eventCallbackType = getTypeByName(EVENT_CALLBACK_TYPE_NAME);
+    m_eventDispatchType = getTypeByName(EVENT_DISPATCH_TYPE_NAME);
+    m_fileNameType = getTypeByName(FILE_NAME_TYPE_NAME);
+    m_functionNameType = getTypeByName(FUNCTION_NAME_TYPE_NAME);
+    m_lineNumberType = getTypeByName(FUNCTION_LINE_NUMBER_TYPE_NAME);
+    
+    if (
+        m_voidType == nullptr ||
+        m_booleanType == nullptr ||
+        m_integerType == nullptr ||
+        m_floatType == nullptr ||
+        m_stringType == nullptr ||
+        m_eventCallbackType == nullptr ||
+        m_eventDispatchType == nullptr ||
+        m_fileNameType == nullptr ||
+        m_functionNameType == nullptr ||
+        m_lineNumberType == nullptr
+    ) {
+        throw NomadException("Failed to resolve built-in type views");
+    }
+
     if (
         !registerParameterizedType(
             "Iterator",
@@ -2593,23 +2619,23 @@ OpCodeId Runtime::registerInstruction(
 }
 
 const Type* Runtime::getVoidType() const {
-    return getTypeByName(VOID_TYPE_NAME);
+    return m_voidType;
 }
 
 const Type* Runtime::getBooleanType() const {
-    return getTypeByName(BOOLEAN_TYPE_NAME);
+    return m_booleanType;
 }
 
 const Type* Runtime::getIntegerType() const {
-    return getTypeByName(INTEGER_TYPE_NAME);
+    return m_integerType;
 }
 
 const Type* Runtime::getFloatType() const {
-    return getTypeByName(FLOAT_TYPE_NAME);
+    return m_floatType;
 }
 
 const Type* Runtime::getStringType() const {
-    return getTypeByName(STRING_TYPE_NAME);
+    return m_stringType;
 }
 
 const Type* Runtime::getFunctionType() const {
@@ -2617,23 +2643,23 @@ const Type* Runtime::getFunctionType() const {
 }
 
 const Type* Runtime::getEventCallbackType() const {
-    return getTypeByName(EVENT_CALLBACK_TYPE_NAME);
+    return m_eventCallbackType;
 }
 
 const Type* Runtime::getEventDispatchType() const {
-    return getTypeByName(EVENT_DISPATCH_TYPE_NAME);
+    return m_eventDispatchType;
 }
 
 const Type* Runtime::getFileNameType() const {
-    return getTypeByName(FILE_NAME_TYPE_NAME);
+    return m_fileNameType;
 }
 
 const Type* Runtime::getFunctionNameType() const {
-    return getTypeByName(FUNCTION_NAME_TYPE_NAME);
+    return m_functionNameType;
 }
 
 const Type* Runtime::getLineNumberType() const {
-    return getTypeByName(FUNCTION_LINE_NUMBER_TYPE_NAME);
+    return m_lineNumberType;
 }
 
 void Runtime::registerUnaryOperator(

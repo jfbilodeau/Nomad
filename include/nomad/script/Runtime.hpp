@@ -807,6 +807,17 @@ private:
     std::vector<Instruction> m_instructions;
     std::vector<OpCodeDefinition> m_opCodes;
     TypeManager m_typeManager;
+    // These views borrow their descriptors from m_typeManager.
+    const Type* m_voidType = nullptr;
+    const Type* m_booleanType = nullptr;
+    const Type* m_integerType = nullptr;
+    const Type* m_floatType = nullptr;
+    const Type* m_stringType = nullptr;
+    const Type* m_eventCallbackType = nullptr;
+    const Type* m_eventDispatchType = nullptr;
+    const Type* m_fileNameType = nullptr;
+    const Type* m_functionNameType = nullptr;
+    const Type* m_lineNumberType = nullptr;
     std::vector<const Type*> m_namespaceTypes;
     std::vector<TypeFamilyNamespace> m_namespaceTypeFamilies;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;

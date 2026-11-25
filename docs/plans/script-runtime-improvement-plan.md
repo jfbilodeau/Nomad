@@ -2,7 +2,7 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup and measured registration-move optimization are complete. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup and approved fixed-type borrowed views are implemented; the function getter remains dynamic. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup and measured registration-move optimization are complete. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
 **I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples.
 
@@ -10,7 +10,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **R23:** The approved local-registration move is implemented and validated. Per-callback target copies change from two to one for lvalue inputs and one to zero for moved inputs. Large captures and long metadata each save two Debug requests per registration; timings remain mixed. The selected language CTest, unchanged checked Debug/Release benchmarks, and strict documentation build pass.
 
-**R18:** Checked well-known-type lookup baselines are recorded for Debug and Release. The user approved ten Runtime-held borrowed pointer views, initialized once after built-in registration while TypeManager retains descriptor ownership. The function-type getter stays dynamic and name-based. No cache is implemented yet. Next reviewable scope: implement these fixed views, add focused identity/allocation regressions, and compare the unchanged checked workloads.
+**R18:** The approved ten fixed-type borrowed views are implemented and validated. Repeated fixed getters make zero Debug allocation requests; Release medians round to 0.001 us and are too small for a precise speedup ratio. Catalog ownership and dynamic function lookup are unchanged. Two selected Debug CTests, checked Debug/Release benchmarks, and strict documentation validation pass. Next reviewable scope: measure R26's native-member cataloging/validation lookups before choosing another optimization.
 
 ## Component contract
 
@@ -2477,6 +2477,146 @@ Measure each change before and after on the same workload.
   Preserve noisy/slower samples and unavailable Release allocation counts.
   Stop after that bounded implementation/validation step for review.
 
+#### R18 fixed-view implementation and validation
+
+- Implemented ten named, per-Runtime borrowed `const Type*` fields. Existing
+  catalog queries bind them once after the successful built-in registration
+  batch, before iterator/range/core setup. A missing binding fails construction
+  explicitly; allocation exceptions propagate. The ten existing getters now
+  return their fields without lookup, mutation, or per-call checks.
+- TypeManager remains the sole descriptor owner and ID allocator. Its code,
+  generic name/ID queries, parameter classifier, predicate lookup, namespace
+  publication, and registration behavior are unchanged. No catalog API,
+  enum, keyed index, seal, static cache, fallback path, or shared ownership
+  was added.
+- `getFunctionType()` is unchanged and name-based. The checked benchmark still
+  observes initial absence, later first-callback selection, and retention of
+  that first match after another signature and class registration.
+- Focused language coverage checks all ten views against names, IDs, and
+  owners in two distinct runtimes, then repeats the checks after 64 classes,
+  hub rebuilding, and callback registration. A separate case reuses the
+  existing VM-storage allocation hook rather than adding a probe framework.
+  Its 100 calls per getter first reproduced ten old failures:
+  100/500/400/300/600/700/800/900/1,000/1,100 requests. It now checks zero
+  requests and all 100 correct results for each getter.
+- Both selected Windows Debug CTests pass: `nomad_test_language` and
+  `nomad_test_remaining`. No CTest entry was added. Constructor failure
+  propagation was source-reviewed, not allocator-fault-injected.
+- The unchanged opt-in benchmark builds and passes every checked section in
+  Debug and Release with bundled language DLL hashes matched to the current
+  builds. The Debug CLI/compiler tools were also built for SDK-backed
+  documentation generation; strict MkDocs validation passes.
+- Workloads, fixture metadata, five-sample protocol, preparation exclusions,
+  32 warmups, 25,000 fixed queries, scan-budgeted function queries, and separate
+  Debug allocation probes are unchanged from the baseline above. Tables
+  retain median `[min,max]` microseconds per query and all controls.
+  Debug request minima/medians/maxima are identical in each case.
+
+| Debug case | Added types | Convenience (us) | Prepared name (us) | Prepared ID (us) | Requests convenience/name/ID |
+| --- | --- | --- | --- | --- | --- |
+| void | 0 | 0.003 [0.002,0.005] | 0.636 [0.476,0.764] | 0.038 [0.036,0.089] | 0 / 1 / 0 |
+| boolean | 0 | 0.002 [0.002,0.004] | 2.436 [2.134,2.656] | 0.056 [0.042,0.086] | 0 / 5 / 0 |
+| integer | 0 | 0.002 [0.002,0.003] | 1.909 [1.741,2.403] | 0.043 [0.035,0.099] | 0 / 4 / 0 |
+| float | 0 | 0.002 [0.002,0.004] | 1.538 [1.391,1.749] | 0.041 [0.033,0.064] | 0 / 3 / 0 |
+| string | 0 | 0.002 [0.002,0.003] | 2.835 [2.728,3.303] | 0.037 [0.035,0.080] | 0 / 6 / 0 |
+| file_name | 0 | 0.002 [0.002,0.003] | 3.327 [3.105,3.598] | 0.100 [0.035,0.111] | 0 / 7 / 0 |
+| function_name | 0 | 0.004 [0.002,0.005] | 3.648 [3.285,4.322] | 0.046 [0.035,0.131] | 0 / 8 / 0 |
+| line_number | 0 | 0.004 [0.002,0.006] | 4.655 [3.965,4.875] | 0.045 [0.034,0.099] | 0 / 9 / 0 |
+| event_callback | 0 | 0.002 [0.002,0.003] | 5.067 [4.311,5.207] | 0.040 [0.033,0.078] | 0 / 10 / 0 |
+| event_dispatch | 0 | 0.003 [0.002,0.005] | 5.584 [4.541,8.034] | 0.052 [0.035,0.100] | 0 / 11 / 0 |
+| function_missing | 0 | 6.494 [6.363,6.943] | 5.906 [5.591,6.601] | 0.047 [0.029,0.131] | 13 / 13 / 0 |
+| function_late | 0 | 6.792 [5.988,7.444] | 6.510 [5.877,8.267] | 0.046 [0.035,0.085] | 14 / 14 / 0 |
+| void | 100 | 0.002 [0.002,0.002] | 0.492 [0.413,0.742] | 0.035 [0.033,0.067] | 0 / 1 / 0 |
+| boolean | 100 | 0.002 [0.002,0.003] | 2.470 [2.316,2.771] | 0.056 [0.038,0.085] | 0 / 5 / 0 |
+| integer | 100 | 0.006 [0.002,0.014] | 2.016 [1.787,2.567] | 0.035 [0.033,0.050] | 0 / 4 / 0 |
+| float | 100 | 0.002 [0.002,0.003] | 1.544 [1.290,1.694] | 0.048 [0.033,0.069] | 0 / 3 / 0 |
+| string | 100 | 0.003 [0.002,0.004] | 3.075 [2.457,3.274] | 0.042 [0.033,0.045] | 0 / 6 / 0 |
+| file_name | 100 | 0.002 [0.002,0.003] | 3.410 [3.222,4.058] | 0.041 [0.034,0.103] | 0 / 7 / 0 |
+| function_name | 100 | 0.002 [0.002,0.004] | 4.144 [3.584,4.473] | 0.058 [0.034,0.079] | 0 / 8 / 0 |
+| line_number | 100 | 0.002 [0.002,0.004] | 4.066 [3.848,5.189] | 0.037 [0.034,0.049] | 0 / 9 / 0 |
+| event_callback | 100 | 0.002 [0.002,0.003] | 4.942 [4.217,5.197] | 0.038 [0.034,0.059] | 0 / 10 / 0 |
+| event_dispatch | 100 | 0.002 [0.002,0.004] | 5.927 [5.448,6.808] | 0.034 [0.033,0.081] | 0 / 11 / 0 |
+| function_missing | 100 | 86.939 [80.027,91.993] | 90.491 [79.703,97.337] | 0.042 [0.027,0.070] | 213 / 213 / 0 |
+| function_late | 100 | 89.581 [83.000,114.396] | 89.140 [73.599,91.094] | 0.042 [0.033,0.057] | 214 / 214 / 0 |
+| void | 1,000 | 0.004 [0.002,0.013] | 0.530 [0.435,0.840] | 0.039 [0.036,0.055] | 0 / 1 / 0 |
+| boolean | 1,000 | 0.002 [0.002,0.006] | 2.559 [2.331,3.142] | 0.044 [0.035,0.089] | 0 / 5 / 0 |
+| integer | 1,000 | 0.002 [0.002,0.005] | 2.068 [1.855,2.978] | 0.054 [0.036,0.082] | 0 / 4 / 0 |
+| float | 1,000 | 0.002 [0.002,0.003] | 1.727 [1.349,1.836] | 0.034 [0.032,0.085] | 0 / 3 / 0 |
+| string | 1,000 | 0.002 [0.002,0.002] | 3.020 [2.817,3.221] | 0.035 [0.034,0.063] | 0 / 6 / 0 |
+| file_name | 1,000 | 0.002 [0.002,0.002] | 3.650 [3.061,4.052] | 0.044 [0.034,0.126] | 0 / 7 / 0 |
+| function_name | 1,000 | 0.002 [0.002,0.005] | 4.457 [3.170,5.041] | 0.052 [0.034,0.075] | 0 / 8 / 0 |
+| line_number | 1,000 | 0.002 [0.002,0.003] | 4.645 [4.442,4.842] | 0.037 [0.033,0.082] | 0 / 9 / 0 |
+| event_callback | 1,000 | 0.002 [0.002,0.002] | 5.267 [4.674,5.685] | 0.039 [0.034,0.098] | 0 / 10 / 0 |
+| event_dispatch | 1,000 | 0.002 [0.002,0.009] | 5.414 [5.294,6.975] | 0.045 [0.038,0.085] | 0 / 11 / 0 |
+| function_missing | 1,000 | 797.636 [771.821,875.104] | 787.499 [760.522,884.773] | 0.045 [0.029,0.105] | 2,013 / 2,013 / 0 |
+| function_late | 1,000 | 841.535 [824.110,947.569] | 908.867 [876.234,923.061] | 0.041 [0.035,0.073] | 2,014 / 2,014 / 0 |
+
+| Release case | Added types | Convenience (us) | Prepared name (us) | Prepared ID (us) |
+| --- | --- | --- | --- | --- |
+| void | 0 | 0.001 [0.000,0.001] | 0.012 [0.010,0.013] | 0.002 [0.002,0.003] |
+| boolean | 0 | 0.001 [0.000,0.001] | 0.033 [0.029,0.042] | 0.002 [0.002,0.002] |
+| integer | 0 | 0.001 [0.000,0.001] | 0.028 [0.023,0.035] | 0.002 [0.002,0.003] |
+| float | 0 | 0.001 [0.001,0.002] | 0.024 [0.021,0.025] | 0.002 [0.002,0.002] |
+| string | 0 | 0.001 [0.001,0.001] | 0.035 [0.032,0.043] | 0.002 [0.002,0.003] |
+| file_name | 0 | 0.001 [0.000,0.001] | 0.046 [0.043,0.053] | 0.002 [0.002,0.003] |
+| function_name | 0 | 0.001 [0.001,0.002] | 0.051 [0.046,0.055] | 0.002 [0.002,0.005] |
+| line_number | 0 | 0.001 [0.001,0.002] | 0.065 [0.051,0.083] | 0.002 [0.002,0.003] |
+| event_callback | 0 | 0.001 [0.000,0.002] | 0.064 [0.053,0.067] | 0.002 [0.002,0.003] |
+| event_dispatch | 0 | 0.001 [0.001,0.002] | 0.068 [0.060,0.084] | 0.002 [0.002,0.002] |
+| function_missing | 0 | 0.089 [0.065,0.110] | 0.072 [0.055,0.118] | 0.001 [0.001,0.003] |
+| function_late | 0 | 0.076 [0.065,0.111] | 0.070 [0.059,0.082] | 0.002 [0.002,0.002] |
+| void | 100 | 0.001 [0.001,0.001] | 0.015 [0.012,0.033] | 0.003 [0.002,0.006] |
+| boolean | 100 | 0.001 [0.001,0.008] | 0.048 [0.034,0.068] | 0.003 [0.002,0.005] |
+| integer | 100 | 0.001 [0.001,0.002] | 0.033 [0.025,0.041] | 0.002 [0.002,0.003] |
+| float | 100 | 0.001 [0.000,0.001] | 0.028 [0.023,0.052] | 0.003 [0.002,0.004] |
+| string | 100 | 0.001 [0.001,0.002] | 0.043 [0.034,0.070] | 0.002 [0.002,0.004] |
+| file_name | 100 | 0.001 [0.000,0.001] | 0.053 [0.044,0.079] | 0.002 [0.002,0.004] |
+| function_name | 100 | 0.001 [0.000,0.001] | 0.067 [0.054,0.077] | 0.003 [0.002,0.003] |
+| line_number | 100 | 0.001 [0.001,0.001] | 0.086 [0.051,0.118] | 0.003 [0.002,0.019] |
+| event_callback | 100 | 0.001 [0.000,0.001] | 0.074 [0.058,0.082] | 0.002 [0.002,0.003] |
+| event_dispatch | 100 | 0.001 [0.001,0.001] | 0.079 [0.063,0.084] | 0.002 [0.002,0.003] |
+| function_missing | 100 | 4.057 [3.885,5.988] | 4.163 [3.995,4.219] | 0.002 [0.002,0.003] |
+| function_late | 100 | 4.299 [3.426,4.957] | 3.605 [3.460,4.389] | 0.002 [0.002,0.003] |
+| void | 1,000 | 0.001 [0.000,0.002] | 0.013 [0.010,0.023] | 0.002 [0.002,0.004] |
+| boolean | 1,000 | 0.001 [0.000,0.001] | 0.039 [0.031,0.069] | 0.002 [0.002,0.003] |
+| integer | 1,000 | 0.001 [0.000,0.003] | 0.031 [0.023,0.036] | 0.002 [0.002,0.003] |
+| float | 1,000 | 0.001 [0.001,0.002] | 0.024 [0.020,0.030] | 0.002 [0.002,0.003] |
+| string | 1,000 | 0.001 [0.001,0.002] | 0.043 [0.032,0.078] | 0.002 [0.002,0.003] |
+| file_name | 1,000 | 0.001 [0.000,0.002] | 0.060 [0.050,0.084] | 0.003 [0.002,0.004] |
+| function_name | 1,000 | 0.001 [0.000,0.002] | 0.054 [0.040,0.076] | 0.002 [0.002,0.003] |
+| line_number | 1,000 | 0.001 [0.001,0.002] | 0.068 [0.052,0.083] | 0.002 [0.002,0.003] |
+| event_callback | 1,000 | 0.001 [0.001,0.002] | 0.074 [0.065,0.130] | 0.002 [0.002,0.008] |
+| event_dispatch | 1,000 | 0.001 [0.000,0.002] | 0.075 [0.057,0.088] | 0.003 [0.002,0.003] |
+| function_missing | 1,000 | 52.843 [46.093,78.269] | 51.355 [40.914,54.851] | 0.003 [0.003,0.005] |
+| function_late | 1,000 | 44.868 [42.408,51.189] | 52.265 [40.969,59.218] | 0.002 [0.002,0.005] |
+
+- Every fixed-getter Debug case now makes zero requests, down from
+  1/5/4/3/6/7/8/9/10/11 by case. Prepared-name counts retain those original
+  values, prepared-ID counts remain zero, and dynamic missing/late function
+  counts remain 13/213/2,013 and 14/214/2,014. Release allocation counts remain
+  unavailable, not inferred from Debug.
+- Fixed Release getter medians change from the baseline range
+  0.011-0.090 us to values rounded to 0.001 us. Some minima round to
+  0.000 us; these are not zero-duration results. The operations are near the
+  report's precision/measurement limits, so no precise ratio or application
+  speedup is inferred. At 1,000 additions, Debug integer/event-dispatch
+  medians change from 1.664/4.794 us to 0.002/0.002 us.
+- All controls and slower samples are retained. The unchanged missing-function
+  Release median at 1,000 additions rises from 46.101 to 52.843 us, while
+  late-function lookup changes from 45.548 to 44.868 us. Prepared-name/ID
+  controls also vary; no benefit is attributed to their incidental timing
+  changes and no unlike controls are subtracted.
+- The ten new pointer fields have 80 bytes of payload on x64. Total Runtime
+  object-size change, constructor/setup cost, production frequency, and startup
+  effects were not measured. These are shared-machine Windows/MSVC lookup
+  measurements, not cross-platform, whole-compilation, or gameplay results.
+  The full 13-entry CTest suite was not rerun.
+- This completes the approved bounded R18 implementation. Next reviewable
+  scope: verify and measure R26's native-member cataloging/validation lookups
+  before choosing another optimization. Do not extend these views to the
+  dynamic function getter, TypeManager's classifier, or other consumers
+  automatically.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -2542,7 +2682,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R15 | P2 | perf | Registration makes several full passes over callables (quadratic startup) | `Runtime.cpp`: registerNativeFunction, getFunctionOverloadCount, canOverloadCallable; RuntimeLookupBenchmark | Same-name free-function scans replaced by the shared index and distinct-name registration measured; broader startup/large-overload workloads not measured | 8 |
 | R16 | P2 | redundancy | Duplicate lookup pairs: getScriptCallableAtLine vs getFunctionAtLine; getScriptCallableAtInstructionIndex vs getFunctionAtInstructionIndex; getScriptCallableByStartAddress vs getFunctionByStartAddress | `Runtime.hpp/cpp`, `VirtualMachine.hpp/cpp`; catalog, source-navigation, and frame tests | Fixed: function-only navigation APIs and the test-only current-script getter removed; general callable navigation and function-only ID views retained | 2, 7 |
 | R17 | P2 | const-correctness | Const methods return mutable pointers or mutate state: getFormatString, getFunctions, getVariableContext, setContextVariable* | `Runtime.hpp/cpp`; documentation reader; registry/catalog constness tests; context contracts | Complete with approval: owned format/function metadata has const-correct views; test-only navigation removed under R16; mutable live-context facade intentionally retained and documented | 7 |
-| R18 | P3 | typing | Well-known type getters perform string-keyed lookups on every call (about 490 call sites, mostly registration); getStringType returns a different pointer type; unchecked `static_cast` downcasts where other code uses `asX()` | `Runtime.hpp/cpp`: convenience getters; TypeManager name lookup; checked well-known-type benchmark; category/type tests | Step 7 typing cleanup complete; checked baselines recorded; ten Runtime-held borrowed pointer views approved with constructor-time binding and unchanged dynamic function lookup; bounded implementation/validation is next | 7, 8 |
+| R18 | P3 | typing | Well-known type getters perform string-keyed lookups on every call (about 490 call sites, mostly registration); getStringType returns a different pointer type; unchecked `static_cast` downcasts where other code uses `asX()` | `Runtime.hpp/cpp`: fixed views; checked type-lookup benchmark; identity/allocation/category tests | Complete with approval: typing cleanup and ten constructor-bound Runtime views; dynamic function lookup retained; two selected Debug CTests and checked Debug/Release comparisons pass | 7, 8 |
 | R19 | P3 | redundancy | getParameterShape mirrors the parser's parameter classification; drift risk | `TypeManager.cpp`: shared getParameterShape; `Runtime.cpp`: query facade; `Parser.cpp`: parseCallableArguments | Fixed: parser, Runtime registration, and inference share the catalog classifier; token consumption, diagnostics, and callback/predicate precedence retained | 7 |
 | R20 | P3 | redundancy | Six context-variable accessors repeat the same log-and-return pattern | `Runtime.cpp`: context-variable accessors and private lookup; `LanguageContextVariableTest.cpp`: invalid-handle regression | Fixed with approval: shared lookup owns one unchanged error per rejection with common provenance; specialized returns, context state and ownership retained | 7 |
 | R21 | P3 | correctness | `getConstantValue` silently returns on an invalid id, leaving the value unchanged | `Runtime.cpp`: getConstantValue; `LanguageRegistryIdTest.cpp`: constant lookup regression | Fixed under R6: host reads throw without logging or changing output; compiler-resolved VM reads use unchecked access | 6 |
