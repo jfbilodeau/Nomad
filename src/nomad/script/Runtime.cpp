@@ -540,6 +540,7 @@ void Runtime::rebuildHubMembers() {
             add(hub.m_variables->getVariableName(id), id);
         }
     }
+    
     for (const auto* callable : m_callables) {
         if (
             callable->getType() == CallableType::Function &&
