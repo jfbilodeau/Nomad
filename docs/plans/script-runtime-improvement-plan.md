@@ -6,7 +6,9 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples.
 
-**R30:** The approved stable-definition pointer lookup is implemented and validated. Borrowed metadata survives registration growth/reentry; checked direct-ID lookup makes no Debug allocation requests. Explicit snapshots remain ordinary copies, measured separately in Debug and Release. Two selected Debug CTests and checked benchmarks pass. Next reviewable scope: measure R23's remaining dynamic-variable registration-copy cost before selecting its optimization.
+**R30:** The approved stable-definition pointer lookup is implemented and validated. Borrowed metadata survives registration growth/reentry; checked direct-ID lookup makes no Debug allocation requests. Explicit snapshots remain ordinary copies, measured separately in Debug and Release. Two selected Debug CTests and checked benchmarks pass.
+
+**R23:** Checked dynamic-variable registration baselines are recorded for Debug and Release. Constructor probes confirm two target copies per getter/setter for lvalue inputs and one even for moved inputs. No production optimization was applied. Next reviewable scope: approve the local registration's copy-to-move append, including its observable copy-construction/exception differences, before implementation.
 
 ## Component contract
 
@@ -2015,6 +2017,125 @@ Measure each change before and after on the same workload.
   choosing a copy-to-move edit. R18 caching and R26/R27 lookup work remain in
   the measured sweep; do not implement another optimization automatically.
 
+#### R23 dynamic-variable registration-copy baseline
+
+- Extended the existing opt-in benchmark and its target-only support files.
+  No production API, registration policy, storage, callable lifetime, or callback
+  execution behavior changed. Runtime.cpp was not edited by this scope.
+  The benchmark remains excluded from default builds and CTest;
+  no dependency or CTest entry was added.
+- Source review confirms that `registerDynamicVariable` takes callbacks by
+  value, moves them into a local registration, then copies that registration
+  into the vector. The final copy includes both callable targets and owned
+  name/documentation strings. Existing checked host invocation and compiler
+  permission contracts are outside this measurement-only change.
+- Three fixtures use integer read/write callbacks and a single opened `bench`
+  hub. Unique qualified names and documentation are prepared outside timing.
+  Large callbacks capture a 128-integer array plus the state pointer; post-run
+  checks read the complete array. Actual capture sizes are reported, not
+  inferred from an allocation count.
+
+| Case | Name bytes | Documentation bytes | Setter/getter capture bytes |
+| --- | --- | --- | --- |
+| Small capture | 11 | 9 | 8 / 8 |
+| Large capture | 11 | 9 | 1,032 / 1,032 |
+| Long metadata | 128 | 512 | 8 / 8 |
+
+- Each fixture registers batches of 100 or 1,000 variables. Five fresh samples
+  are collected per metric, with 32 separate warmup registrations before fresh
+  measurement instances. Runtime/VM/hub construction, callback/input preparation,
+  output-buffer allocation, post-run validation, and destruction of retained
+  entries are outside timing. Internal temporary destruction remains part of
+  the public registration call.
+- Lvalue and rvalue metrics pass prebuilt `std::function` inputs by copy or
+  move respectively. The callback-copy control copies pairs into presized
+  buffers and retains them until validation. It does not construct metadata,
+  grow the catalog, or publish hub members. These different workloads and
+  ownership-transfer costs must not be subtracted as an exact decomposition.
+- Separate fresh-runtime MSVC Debug allocation passes repeat the same batch
+  operations. Counts include Debug-library instrumentation and catalog/hash
+  growth, so requests per registration can be fractional. Release counts are
+  unavailable, not zero. No allocation byte-volume estimate is inferred.
+- Checks cover contiguous IDs, full names/types/capabilities, first/middle/last
+  name lookup and hub publication, initial/terminal iteration, no callback
+  execution during registration/copying, captured values, complete read/write
+  behavior, invocation counts, and forwarded VM identity. Documentation is
+  supplied but not read back by this harness; its retention was source-reviewed.
+- Debug and Release target builds and complete checked benchmark executions
+  pass with matching current bundled language DLL hashes. Every earlier
+  benchmark section also passes. The selected Windows Debug
+  `nomad_test_language` CTest passes directly, before the separate benchmark
+  build. Release was repeated once without edits because timings varied
+  substantially; neither run is discarded.
+- Tables report median `[min,max]` microseconds per registration or copied
+  callback pair. Debug request minima/medians/maxima are identical across all
+  five samples in each case.
+
+| Debug case | Registrations | Lvalue registration (us) | Rvalue registration (us) | Prepared callback copy (us) | Lvalue requests | Rvalue requests | Copy requests |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Small capture | 100 | 11.652 [8.187,21.441] | 9.087 [6.915,18.974] | 0.250 [0.236,0.619] | 17.830 | 17.830 | 0.000 |
+| Small capture | 1,000 | 11.067 [7.740,17.894] | 9.576 [7.436,13.739] | 0.272 [0.212,0.696] | 16.295 | 16.295 | 0.000 |
+| Large capture | 100 | 9.125 [7.725,12.104] | 7.936 [7.111,30.738] | 1.070 [0.800,1.521] | 21.830 | 19.830 | 2.000 |
+| Large capture | 1,000 | 12.419 [10.835,15.558] | 9.471 [8.718,17.759] | 1.537 [0.949,2.988] | 20.295 | 18.295 | 2.000 |
+| Long metadata | 100 | 18.258 [10.475,21.930] | 15.103 [12.496,28.077] | 0.249 [0.240,0.406] | 26.830 | 26.830 | 0.000 |
+| Long metadata | 1,000 | 15.200 [13.307,19.532] | 15.523 [14.956,24.420] | 0.388 [0.223,0.407] | 25.295 | 25.295 | 0.000 |
+
+| Release run | Case | Registrations | Lvalue registration (us) | Rvalue registration (us) | Prepared callback copy (us) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Small capture | 100 | 0.376 [0.335,0.464] | 0.418 [0.358,0.421] | 0.024 [0.021,0.026] |
+| 1 | Small capture | 1,000 | 0.411 [0.329,0.839] | 0.433 [0.374,0.860] | 0.026 [0.020,0.050] |
+| 1 | Large capture | 100 | 0.694 [0.441,1.559] | 0.476 [0.458,2.028] | 0.213 [0.133,0.490] |
+| 1 | Large capture | 1,000 | 1.222 [0.982,3.308] | 0.532 [0.486,0.535] | 0.948 [0.566,1.007] |
+| 1 | Long metadata | 100 | 1.015 [0.828,1.050] | 0.897 [0.855,1.952] | 0.022 [0.020,0.025] |
+| 1 | Long metadata | 1,000 | 1.141 [1.056,2.019] | 1.778 [1.062,2.757] | 0.033 [0.021,0.064] |
+| 2 | Small capture | 100 | 0.672 [0.361,0.958] | 0.411 [0.404,0.783] | 0.039 [0.023,0.044] |
+| 2 | Small capture | 1,000 | 0.471 [0.349,4.146] | 0.582 [0.352,5.496] | 0.025 [0.020,0.034] |
+| 2 | Large capture | 100 | 1.105 [0.765,1.734] | 0.511 [0.481,0.672] | 0.369 [0.342,0.510] |
+| 2 | Large capture | 1,000 | 3.142 [0.549,4.301] | 0.824 [0.520,2.521] | 0.751 [0.638,1.578] |
+| 2 | Long metadata | 100 | 0.849 [0.842,1.486] | 1.455 [0.844,4.512] | 0.022 [0.021,0.037] |
+| 2 | Long metadata | 1,000 | 1.748 [1.061,3.655] | 3.879 [1.105,14.759] | 0.021 [0.020,0.036] |
+
+- A separate five-sample constructor probe uses an eight-byte instrumented
+  callable target. Input preparation is excluded and both callbacks are
+  checked after publication. This target's nontrivial copy/move constructors
+  can change `std::function` storage eligibility, so it is not substituted into
+  the timing/allocation cases. Values below are target constructions per
+  registration, identical in Debug and both Release runs, including ranges.
+
+| Input | Registrations | Setter copies | Getter copies | Setter moves | Getter moves |
+| --- | --- | --- | --- | --- | --- |
+| Lvalue | 100 | 2.000 [2.000,2.000] | 2.000 [2.000,2.000] | 3.840 [3.840,3.840] | 3.840 [3.840,3.840] |
+| Rvalue | 100 | 1.000 [1.000,1.000] | 1.000 [1.000,1.000] | 4.840 [4.840,4.840] | 4.840 [4.840,4.840] |
+| Lvalue | 1,000 | 2.000 [2.000,2.000] | 2.000 [2.000,2.000] | 3.137 [3.137,3.137] | 3.137 [3.137,3.137] |
+| Rvalue | 1,000 | 1.000 [1.000,1.000] | 1.000 [1.000,1.000] | 4.137 [4.137,4.137] | 4.137 [4.137,4.137] |
+
+- Both entry modes retain one copy of each target at the local-registration
+  append. Lvalues additionally copy targets into the by-value API arguments.
+  Move counts include parameter/local transfers and catalog growth; they are
+  standard-library-specific, not a portable target-move guarantee.
+- At 1,000 registrations, the large-capture Debug lvalue/rvalue batches make
+  20.295/18.295 requests per registration, while copying a prepared pair makes
+  two. Small captures make 16.295 requests in either entry mode and zero for
+  the pair control; long metadata makes 25.295 in either entry mode. This
+  confirms copy-related work but does not measure a proposed append fix.
+- Release timing does not justify a universal lvalue-to-rvalue speedup claim.
+  Large-capture 1,000-entry medians are 1.222/0.532 us in run 1 and
+  3.142/0.824 us in run 2, whereas long-metadata medians are 1.141/1.778 us
+  and 1.748/3.879 us. The 14.759-us rvalue maximum is retained.
+  No optimized production path was executed, no controls are subtracted,
+  and no precise speedup ratio or timing threshold is inferred.
+- These are shared-machine Windows/MSVC microbenchmarks, not a production
+  registration-frequency profile or whole-startup/gameplay/cross-platform
+  result. Read-only/write-only cases, copy/allocation failure injection,
+  reentrant registration, allocation byte volume, and the full 13-entry suite
+  are not covered by this baseline.
+- Next reviewable scope: approve changing the local registration append from
+  copy to move, including removal of extra observable target-copy construction
+  and its exception points. Preserve the public by-value signatures, namespace
+  publication policy, and callback ownership/lifetime. Implementation and
+  before/after validation require a later continuation; do not optimize another
+  registration or introduce an index/storage redesign automatically.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -2085,7 +2206,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R20 | P3 | redundancy | Six context-variable accessors repeat the same log-and-return pattern | `Runtime.cpp`: context-variable accessors and private lookup; `LanguageContextVariableTest.cpp`: invalid-handle regression | Fixed with approval: shared lookup owns one unchanged error per rejection with common provenance; specialized returns, context state and ownership retained | 7 |
 | R21 | P3 | correctness | `getConstantValue` silently returns on an invalid id, leaving the value unchanged | `Runtime.cpp`: getConstantValue; `LanguageRegistryIdTest.cpp`: constant lookup regression | Fixed under R6: host reads throw without logging or changing output; compiler-resolved VM reads use unchecked access | 6 |
 | R22 | P3 | consistency | `dynamic_cast` in registration code (isDeferred, validateNativeFunctionSignatures) while other code uses `asX()` | `Runtime.cpp`: registerNativeFunction, validateNativeFunctionSignatures; deferred-native/category tests | Resolved with approval: native validator reuses the mutable category lookup; compiler-placeholder RTTI intentionally retained without Type API expansion | 7 |
-| R23 | P3 | perf, correctness | registerDynamicVariable pushes a copy instead of moving; string setters free manually, which is not exception safe | `Runtime.cpp`: registerDynamicVariable, setStringDynamicVariable, setStringContextVariableValue; registry/context lifetime regressions | Correctness fixed: both string setters use RAII and preserve retained values on throw; registration-copy optimization remains for measured step 8 | 6, 8 |
+| R23 | P3 | perf, correctness | registerDynamicVariable pushes a copy instead of moving; string setters free manually, which is not exception safe | `Runtime.cpp`: dynamic registration/string setters; registry/context lifetime regressions; checked dynamic-registration benchmark | Correctness fixed; checked Debug/Release registration-copy baselines recorded; copy-to-move contract review is next, with no production optimization yet | 6, 8 |
 | R24 | P3 | style | Mixed style: `ScriptFunction *` spacing, reference alignment, brace placement, single-line `if` without braces, trailing whitespace, snake_case loop variable `op_code`, parameter lists not one per line | `Runtime.cpp`: instruction/event/native registration and lookup, constant getter, context registration; removed navigation APIs | Fixed: concrete remaining naming/formatting findings addressed manually and token-checked; concurrent getter rename preserved with approved recursion fix | 7 |
 | R25 | P3 | typing | getNativeMemberId returns a `MemberReference` with a `PropertyId::INVALID` sentinel; `size_t` converts implicitly to `NomadIndex` | `Runtime.hpp/cpp`: native-member lookup; compiler/interpreter callers and native metadata tests; `Nomad.hpp`: NomadIndex alias | Fixed with approval: optional lookup result and caller migration; count-conversion claim dismissed because NomadIndex is std::size_t | 7 |
 | R26 | P3 | perf | catalogNativeProperty and catalogNativeMethod scan `m_nativeMembers` linearly; validateNativePropertyTypes looks up the same property again | `Runtime.cpp`: catalogNativeProperty, catalogNativeMethod, validateNativePropertyTypes | verified | 8 |

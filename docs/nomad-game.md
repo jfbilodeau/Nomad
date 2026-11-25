@@ -62,4 +62,5 @@ this.setText font "Hello"
 
 `Font` objects cannot be created with `new`. Assignments share the same font,
 which remains alive while a variable or entity references it.
-For C++ resource ownership, see [embedding](embedding.md#game-resources).
+For C++ object ownership, see
+[object reference helpers](embedding.md#object-reference-helpers).

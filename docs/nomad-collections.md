@@ -10,7 +10,7 @@ modules = ["collections"]
 
 Add other modules to the same list when needed; for example, use
 `["game", "collections"]` in a game. See [Runtime modules](modules.md) for setup
-and [C++ collections](embedding.md#c-collections) for host integration.
+and [C++ embedding](embedding.md) for host integration.
 
 ## Read-only collections
 

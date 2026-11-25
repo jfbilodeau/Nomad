@@ -99,3 +99,12 @@ allocation pass. Checks cover metadata, misses, detached-copy independence, and
 borrowed address stability after catalog growth. Compare explicit snapshots
 against earlier snapshot workloads; borrowed access intentionally does less
 work. The controls are not an exact subtractive breakdown of lookup and copying.
+
+Dynamic-variable workloads compare registration from prebuilt lvalue/rvalue
+callbacks with copying callback pairs into presized buffers. They vary capture
+and metadata sizes at 100/1,000 registrations per batch, using five fresh samples
+and 32 separate warmup registrations. Registration includes catalog growth and
+hub publication; input preparation and destruction of retained entries are
+excluded. Debug allocation passes use fresh runtimes. A separate instrumented
+target reports constructor copies/moves without contaminating the timing cases;
+its storage behavior is not a latency or allocation control.

@@ -165,7 +165,13 @@ endif()
 
 nomad_copy_runtime_dependencies(nomad_test)
 
-add_executable(nomad-lookup-benchmark EXCLUDE_FROM_ALL RuntimeLookupBenchmark.cpp)
+add_executable(
+    nomad-lookup-benchmark EXCLUDE_FROM_ALL
+    DynamicVariableCopyProbe.cpp
+    DynamicVariableCopyProbe.hpp
+    RuntimeLookupBenchmark.cpp
+)
+target_include_directories(nomad-lookup-benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(nomad-lookup-benchmark PRIVATE Nomad::Language Boost::scope_exit)
 nomad_configure_runtime_target(nomad-lookup-benchmark)
 target_compile_definitions(nomad-lookup-benchmark PRIVATE NOMAD_BENCHMARK_CONFIGURATION="$<CONFIG>")

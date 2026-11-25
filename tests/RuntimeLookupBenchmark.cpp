@@ -1,3 +1,5 @@
+#include <DynamicVariableCopyProbe.hpp>
+
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
 
@@ -7,7 +9,9 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/NomadStringObject.hpp>
@@ -28,6 +32,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -68,6 +73,13 @@ struct PropertyBenchmarkState {
     nomad::NomadIndex reads = 0;
     nomad::NomadIndex writes = 0;
     nomad::NomadObject* receiver = nullptr;
+};
+
+struct DynamicVariableBenchmarkState {
+    nomad::NomadInteger value = 0;
+    nomad::NomadIndex reads = 0;
+    nomad::NomadIndex writes = 0;
+    nomad::VirtualMachine* machine = nullptr;
 };
 
 double measureLookup(
@@ -2075,6 +2087,369 @@ void runEventSnapshotBenchmark() {
     }
 }
 
+void runDynamicVariableRegistrationBenchmark() {
+    using Callbacks = std::pair<nomad::DynamicVariableSetFn, nomad::DynamicVariableGetFn>;
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto batchSizes = std::array<nomad::NomadIndex, 2>{100, 1000};
+    constexpr auto cases = std::array{"small_capture", "large_capture", "long_metadata"};
+    constexpr auto labels = std::array{"registration_lvalue", "registration_rvalue", "prepared_callback_copy"};
+    std::cout << "Dynamic-variable registration: prebuilt lvalue/rvalue callbacks and a prepared callback-pair copy control.\n"
+        << "Five fresh samples per batch; 32 separate warmup registrations; Runtime, inputs, and buffers excluded.\n"
+        << "Registration includes catalog growth and hub publication; copied callback buffers are retained until validation.\n"
+        << "Debug allocation requests use separate fresh-runtime passes; controls are not a subtractive cost breakdown.\n"
+        << std::flush;
+
+    for (const auto* caseName : cases) {
+        const auto largeCapture = nomad::NomadStringView{caseName} == "large_capture";
+        const auto longMetadata = nomad::NomadStringView{caseName} == "long_metadata";
+        const auto prefix = longMetadata ? nomad::NomadString(118, 'v') : nomad::NomadString{"v"};
+        const auto documentation = longMetadata ? nomad::NomadString(512, 'd') : nomad::NomadString{"benchmark"};
+        std::array<nomad::NomadInteger, 128> payload;
+        std::iota(payload.begin(), payload.end(), nomad::NomadInteger{1});
+        const auto expectedBias = largeCapture ?
+            std::accumulate(payload.begin(), payload.end(), nomad::NomadInteger{0}) : nomad::NomadInteger{0};
+        auto setterCaptureBytes = nomad::NomadIndex{0};
+        auto getterCaptureBytes = nomad::NomadIndex{0};
+        const auto createCallbacks = [&](DynamicVariableBenchmarkState& state) -> Callbacks {
+            if (largeCapture) {
+                auto setter = [&state, payload](nomad::VirtualMachine* machine, const nomad::RuntimeValue& value) {
+                    ++state.writes;
+                    state.machine = machine;
+                    state.value = value.getIntegerValue() -
+                        std::accumulate(payload.begin(), payload.end(), nomad::NomadInteger{0});
+                };
+                auto getter = [&state, payload](nomad::VirtualMachine* machine, nomad::RuntimeValue& value) {
+                    ++state.reads;
+                    state.machine = machine;
+                    value.setIntegerValue(state.value +
+                        std::accumulate(payload.begin(), payload.end(), nomad::NomadInteger{0}));
+                };
+                setterCaptureBytes = sizeof(setter);
+                getterCaptureBytes = sizeof(getter);
+
+                return {std::move(setter), std::move(getter)};
+            }
+
+            auto setter = [&state](nomad::VirtualMachine* machine, const nomad::RuntimeValue& value) {
+                ++state.writes;
+                state.machine = machine;
+                state.value = value.getIntegerValue();
+            };
+            auto getter = [&state](nomad::VirtualMachine* machine, nomad::RuntimeValue& value) {
+                ++state.reads;
+                state.machine = machine;
+                value.setIntegerValue(state.value);
+            };
+            setterCaptureBytes = sizeof(setter);
+            getterCaptureBytes = sizeof(getter);
+
+            return {std::move(setter), std::move(getter)};
+        };
+        for (const auto batchSize : batchSizes) {
+            std::vector<nomad::NomadString> names;
+            names.reserve(batchSize);
+            for (auto index = nomad::NomadIndex{0}; index < batchSize; ++index) {
+                names.push_back(std::format("bench.{}{:04}", prefix, index));
+            }
+
+            std::array<std::vector<double>, labels.size()> latencySamples;
+            std::array<std::vector<double>, labels.size()> allocationSamples;
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                {
+                    DynamicVariableBenchmarkState state;
+                    nomad::Runtime warmup;
+                    if (warmup.registerHub("bench", nomad::HubMode::Opened).isInvalid()) {
+                        throw std::runtime_error("Failed to prepare dynamic-variable registration warmups");
+                    }
+
+                    const auto callbacks = createCallbacks(state);
+                    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+                        const auto id = warmup.registerDynamicVariable(
+                            names[index],
+                            callbacks.first,
+                            callbacks.second,
+                            warmup.getIntegerType(),
+                            documentation
+                        );
+                        if (id != nomad::DynamicVariableId{nomad::toNomadId(index)}) {
+                            throw std::runtime_error("Unexpected dynamic-variable warmup registration");
+                        }
+                    }
+                }
+
+                for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+                    for (auto pass = 0; pass < 2; ++pass) {
+                        const auto allocationPass = pass == 1;
+                        DynamicVariableBenchmarkState state;
+                        nomad::Runtime runtime;
+                        const auto hubId = runtime.registerHub("bench", nomad::HubMode::Opened);
+                        if (hubId.isInvalid() || runtime.getFirstDynamicVariableId().isValid()) {
+                            throw std::runtime_error("Unexpected initial dynamic-variable benchmark catalog");
+                        }
+
+                        const auto* type = runtime.getIntegerType();
+                        auto machine = runtime.createVirtualMachine();
+                        const auto callbacks = createCallbacks(state);
+                        std::vector<Callbacks> inputs(batchSize, callbacks);
+                        std::vector<Callbacks> copied(query == 2 ? batchSize : 0);
+                        std::vector<nomad::DynamicVariableId> ids(batchSize);
+                        auto index = nomad::NomadIndex{0};
+                        auto checksum = std::uint64_t{0};
+                        std::optional<nomad::NomadIndex> allocationRequests;
+                        const auto measure = [&](const auto& invoke) {
+                            if (allocationPass) {
+                                allocationRequests = countHostCallAllocations(invoke, batchSize);
+                            } else {
+                                const auto start = std::chrono::steady_clock::now();
+                                for (auto iteration = nomad::NomadIndex{0}; iteration < batchSize; ++iteration) {
+                                    invoke();
+                                }
+
+                                latencySamples[query].push_back(std::chrono::duration<double, std::micro>{
+                                    std::chrono::steady_clock::now() - start
+                                }.count() / static_cast<double>(batchSize));
+                            }
+                        };
+                        if (query == 0) {
+                            measure([&] {
+                                ids[index] = runtime.registerDynamicVariable(
+                                    names[index],
+                                    inputs[index].first,
+                                    inputs[index].second,
+                                    type,
+                                    documentation
+                                );
+                                checksum += static_cast<std::uint64_t>(ids[index].id + 1);
+                                ++index;
+                            });
+                        } else if (query == 1) {
+                            measure([&] {
+                                ids[index] = runtime.registerDynamicVariable(
+                                    names[index],
+                                    std::move(inputs[index].first),
+                                    std::move(inputs[index].second),
+                                    type,
+                                    documentation
+                                );
+                                checksum += static_cast<std::uint64_t>(ids[index].id + 1);
+                                ++index;
+                            });
+                        } else {
+                            measure([&] {
+                                copied[index] = inputs[index];
+                                checksum += static_cast<std::uint64_t>(static_cast<bool>(copied[index].first)) +
+                                    static_cast<std::uint64_t>(static_cast<bool>(copied[index].second));
+                                ++index;
+                            });
+                        }
+
+                        if (allocationPass) {
+                            if (!allocationRequests.has_value()) {
+                                continue;
+                            }
+
+                            allocationSamples[query].push_back(
+                                static_cast<double>(*allocationRequests) / static_cast<double>(batchSize)
+                            );
+                        }
+
+                        const auto expectedChecksum = query == 2 ? std::uint64_t{2} * batchSize :
+                            static_cast<std::uint64_t>(batchSize) * (batchSize + 1) / 2;
+                        if (
+                            index != batchSize ||
+                            checksum != expectedChecksum ||
+                            state.reads != 0 ||
+                            state.writes != 0
+                        ) {
+                            throw std::runtime_error("Dynamic-variable registration/copy invoked callbacks or changed results");
+                        }
+
+                        for (auto entry = nomad::NomadIndex{0}; entry < batchSize; ++entry) {
+                            if (
+                                query != 2 &&
+                                (
+                                    ids[entry] != nomad::DynamicVariableId{nomad::toNomadId(entry)} ||
+                                    runtime.getDynamicVariableName(ids[entry]) != names[entry] ||
+                                    runtime.getDynamicVariableType(ids[entry]) != type ||
+                                    !runtime.canGetDynamicVariable(ids[entry]) ||
+                                    !runtime.canSetDynamicVariable(ids[entry])
+                                )
+                            ) {
+                                throw std::runtime_error("Dynamic-variable registration lost identity, metadata, or capabilities");
+                            }
+
+                            state.value = 0;
+                            nomad::RuntimeValue result;
+                            const auto value = nomad::RuntimeValue{static_cast<nomad::NomadInteger>(entry) + 37};
+                            if (query == 2) {
+                                copied[entry].second(machine.get(), result);
+                            } else {
+                                runtime.getDynamicVariableValue(machine.get(), ids[entry], result);
+                            }
+
+                            if (result.getIntegerValue() != expectedBias) {
+                                throw std::runtime_error("A dynamic-variable callback copy lost captured values");
+                            }
+
+                            if (query == 2) {
+                                copied[entry].first(machine.get(), value);
+                                copied[entry].second(machine.get(), result);
+                            } else {
+                                runtime.setDynamicVariable(machine.get(), ids[entry], value);
+                                runtime.getDynamicVariableValue(machine.get(), ids[entry], result);
+                            }
+
+                            if (result.getIntegerValue() != value.getIntegerValue()) {
+                                throw std::runtime_error("Registered/copied dynamic-variable callbacks changed behavior");
+                            }
+                        }
+
+                        if (
+                            state.reads != 2 * batchSize ||
+                            state.writes != batchSize ||
+                            state.machine != machine.get()
+                        ) {
+                            throw std::runtime_error("Dynamic-variable callback invocation counts or VM identity changed");
+                        }
+
+                        if (query == 2) {
+                            if (runtime.getFirstDynamicVariableId().isValid()) {
+                                throw std::runtime_error("The callback-copy control unexpectedly registered a variable");
+                            }
+                        } else {
+                            const auto* hub = runtime.getHub(hubId);
+                            for (const auto entry : {nomad::NomadIndex{0}, batchSize / 2, batchSize - 1}) {
+                                const auto* member = hub->getMember(names[entry].substr(hub->getName().size() + 1));
+                                const auto* publishedId = member == nullptr ? nullptr :
+                                    std::get_if<nomad::DynamicVariableId>(member);
+                                if (
+                                    runtime.getDynamicVariableId(names[entry]) != ids[entry] ||
+                                    publishedId == nullptr ||
+                                    *publishedId != ids[entry]
+                                ) {
+                                    throw std::runtime_error("Dynamic-variable name lookup or hub publication changed");
+                                }
+                            }
+
+                            if (
+                                runtime.getFirstDynamicVariableId() != ids.front() ||
+                                runtime.getNextDynamicVariableId(ids.back()).isValid()
+                            ) {
+                                throw std::runtime_error("Dynamic-variable registration order or terminal iteration changed");
+                            }
+                        }
+                    }
+                }
+            }
+
+            std::cout << "dynamic_case=" << caseName << " registrations=" << batchSize
+                << " name_bytes=" << names.front().size() << " documentation_bytes=" << documentation.size()
+                << " setter_capture_bytes=" << setterCaptureBytes << " getter_capture_bytes=" << getterCaptureBytes;
+            for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+                const auto timeLabel = std::format("{}_us", labels[query]);
+                printSamples(timeLabel.c_str(), latencySamples[query]);
+                const auto allocationLabel = std::format("{}_allocations", labels[query]);
+                if (!allocationSamples[query].empty()) {
+                    printSamples(allocationLabel.c_str(), allocationSamples[query]);
+                } else {
+                    std::cout << ' ' << allocationLabel << "=unavailable";
+                }
+            }
+
+            std::cout << std::endl;
+        }
+    }
+}
+
+void runDynamicVariableCopyProbe() {
+    using Callbacks = std::pair<nomad::DynamicVariableSetFn, nomad::DynamicVariableGetFn>;
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto batchSizes = std::array<nomad::NomadIndex, 2>{100, 1000};
+    constexpr auto inputs = std::array{"lvalue", "rvalue"};
+    constexpr auto labels = std::array{"setter_copies", "getter_copies", "setter_moves", "getter_moves"};
+    std::cout << "Callback constructor counts use a separate instrumented target, not a latency/allocation control.\n"
+        << "Input preparation is excluded; std::function target moves/storage depend on the standard library.\n"
+        << std::flush;
+    for (const auto batchSize : batchSizes) {
+        std::vector<nomad::NomadString> names;
+        for (auto index = nomad::NomadIndex{0}; index < batchSize; ++index) {
+            names.push_back(std::format("bench.probe{:04}", index));
+        }
+
+        for (auto input = nomad::NomadIndex{0}; input < inputs.size(); ++input) {
+            std::array<std::vector<double>, labels.size()> samples;
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                nomad::test::DynamicVariableCopyCounts setterCounts;
+                nomad::test::DynamicVariableCopyCounts getterCounts;
+                nomad::Runtime runtime;
+                if (runtime.registerHub("bench", nomad::HubMode::Opened).isInvalid()) {
+                    throw std::runtime_error("Failed to register the dynamic-variable copy-probe hub");
+                }
+
+                const auto* type = runtime.getIntegerType();
+                const Callbacks callbacks{
+                    nomad::test::DynamicVariableCopyProbe{setterCounts},
+                    nomad::test::DynamicVariableCopyProbe{getterCounts}
+                };
+                std::vector<Callbacks> prepared(batchSize, callbacks);
+                setterCounts = {};
+                getterCounts = {};
+                for (auto index = nomad::NomadIndex{0}; index < batchSize; ++index) {
+                    const auto id = input == 0 ?
+                        runtime.registerDynamicVariable(
+                            names[index],
+                            prepared[index].first,
+                            prepared[index].second,
+                            type,
+                            ""
+                        ) :
+                        runtime.registerDynamicVariable(
+                            names[index],
+                            std::move(prepared[index].first),
+                            std::move(prepared[index].second),
+                            type,
+                            ""
+                        );
+                    if (id != nomad::DynamicVariableId{nomad::toNomadId(index)}) {
+                        throw std::runtime_error("The dynamic-variable copy probe changed registration identity");
+                    }
+                }
+
+                if (setterCounts.invocations != 0 || getterCounts.invocations != 0) {
+                    throw std::runtime_error("Dynamic-variable registration invoked an instrumented callback");
+                }
+
+                samples[0].push_back(static_cast<double>(setterCounts.copies) / static_cast<double>(batchSize));
+                samples[1].push_back(static_cast<double>(getterCounts.copies) / static_cast<double>(batchSize));
+                samples[2].push_back(static_cast<double>(setterCounts.moves) / static_cast<double>(batchSize));
+                samples[3].push_back(static_cast<double>(getterCounts.moves) / static_cast<double>(batchSize));
+                auto machine = runtime.createVirtualMachine();
+                for (const auto index : {nomad::NomadIndex{0}, batchSize - 1}) {
+                    const auto id = nomad::DynamicVariableId{nomad::toNomadId(index)};
+                    nomad::RuntimeValue value;
+                    runtime.setDynamicVariable(machine.get(), id, value);
+                    runtime.getDynamicVariableValue(machine.get(), id, value);
+                    if (value.getIntegerValue() != 0) {
+                        throw std::runtime_error("The registered instrumented getter returned an unexpected value");
+                    }
+                }
+
+                if (setterCounts.invocations != 2 || getterCounts.invocations != 2) {
+                    throw std::runtime_error("Registered instrumented callbacks did not retain their target state");
+                }
+            }
+
+            std::cout << "dynamic_copy_probe input=" << inputs[input] << " registrations=" << batchSize
+                << " instrumented_target_bytes=" << sizeof(nomad::test::DynamicVariableCopyProbe);
+            for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+                printSamples(labels[query], samples[query]);
+            }
+
+            std::cout << std::endl;
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -2090,6 +2465,8 @@ int main() {
         runFrameResultBenchmark();
         runAssignmentScratchBenchmark();
         runEventSnapshotBenchmark();
+        runDynamicVariableRegistrationBenchmark();
+        runDynamicVariableCopyProbe();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 
