@@ -2,13 +2,13 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup is exception-safe; its registration-copy optimization remains in step 8. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
+**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup is implemented; caching remains in step 8. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup and measured registration-move optimization are complete. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
 
 **I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples.
 
 **R30:** The approved stable-definition pointer lookup is implemented and validated. Borrowed metadata survives registration growth/reentry; checked direct-ID lookup makes no Debug allocation requests. Explicit snapshots remain ordinary copies, measured separately in Debug and Release. Two selected Debug CTests and checked benchmarks pass.
 
-**R23:** Checked dynamic-variable registration baselines are recorded for Debug and Release. Constructor probes confirm two target copies per getter/setter for lvalue inputs and one even for moved inputs. No production optimization was applied. Next reviewable scope: approve the local registration's copy-to-move append, including its observable copy-construction/exception differences, before implementation.
+**R23:** The approved local-registration move is implemented and validated. Per-callback target copies change from two to one for lvalue inputs and one to zero for moved inputs. Large captures and long metadata each save two Debug requests per registration; timings remain mixed. The selected language CTest, unchanged checked Debug/Release benchmarks, and strict documentation build pass. Next reviewable scope: measure R18's well-known-type lookups before considering caching.
 
 ## Component contract
 
@@ -2129,12 +2129,142 @@ Measure each change before and after on the same workload.
   result. Read-only/write-only cases, copy/allocation failure injection,
   reentrant registration, allocation byte volume, and the full 13-entry suite
   are not covered by this baseline.
-- Next reviewable scope: approve changing the local registration append from
-  copy to move, including removal of extra observable target-copy construction
-  and its exception points. Preserve the public by-value signatures, namespace
-  publication policy, and callback ownership/lifetime. Implementation and
-  before/after validation require a later continuation; do not optimize another
-  registration or introduce an index/storage redesign automatically.
+- The follow-up review approved the bounded copy-to-move contract below.
+  The baseline itself did not change production registration.
+
+#### R23 approved local-registration move contract
+
+- The user approved changing only the prepared registration's append to
+  `m_dynamicVariables.push_back(std::move(definition))`. The local entry is not
+  read afterward. Retain its construction and the existing publication sequence;
+  do not replace them with a new registration abstraction.
+- Public setter/getter arguments remain by value. Passing lvalue wrappers still
+  copies them into the API; moved inputs transfer their wrappers. Runtime owns
+  the registered callbacks and metadata. Names/documentation still copy from
+  caller inputs into the prepared entry; the type pointer remains borrowed.
+  IDs, capability queries, name resolution, and hub publication are unchanged.
+- Removing the final entry copy intentionally changes observable custom
+  callable copy/move-constructor side effects and eliminates that copy's
+  possible exceptions. This is approved, not a compatibility guarantee for
+  deliberate constructor side effects. The existing probe should show one
+  target copy per getter/setter for lvalues and zero for moved inputs.
+  Do not assert portable target-move counts or promise a universal allocation
+  or latency reduction.
+- Callback execution exceptions and their side effects retain their current
+  propagation contract. Keep existing rejection diagnostics and construction,
+  allocation, and publication-failure policies; do not add rollback guards,
+  shared storage, a seal, an index, or changes to another registration path.
+- Reuse the existing constructor probe in focused registry tests for lvalue
+  and moved callback inputs, including successful invocation after registration
+  returns. Add its existing support files to the unit-test target as needed.
+  Retain existing coverage for metadata, capabilities, invalid IDs, hub
+  conflicts, and throwing callbacks rather than duplicating it or introducing
+  another probe framework.
+- Update the public embedding description of callback ownership when the change
+  lands, without exposing vector internals or constructor-count measurements as
+  host API guarantees.
+- The next continuation implements and validates this scope. Run the relevant
+  existing language CTest directly without a separate pre-test build, then
+  build/run the unchanged checked benchmark in Debug and Release with current
+  bundled DLLs. Compare constructor counts, Debug requests, and full timing
+  ranges with the baseline; preserve noisy/slower samples and unavailable
+  Release allocation counts. Stop after that bounded implementation step for
+  review rather than starting another optimization.
+
+#### R23 local-registration move implementation and validation
+
+- The only production edit moves the prepared dynamic-variable registration
+  into its existing vector. Construction, public by-value arguments, names,
+  documentation, borrowed type pointer, IDs, capabilities, and hub publication
+  remain unchanged. No registration abstraction, cache, index, rollback
+  guard, or other registration path was added or changed.
+- As approved, the extra callable-target copy and its possible exceptions are
+  removed. Custom constructor side effects can differ; callback execution
+  exceptions and their side effects still propagate under the existing
+  contract. No construction/allocation-failure injection is claimed.
+- Two focused registry tests reuse the existing constructor probe and its
+  matching support files. They first reproduced four failures with the old
+  append, then passed after the move. They check one target copy per callback
+  for lvalues, zero for moved inputs, no execution during registration, and
+  successful getter/setter invocation after caller wrappers leave scope.
+  Portable target-move counts are not asserted.
+- The selected Windows Debug `nomad_test_language` CTest passes directly,
+  without a separate pre-test build. Existing invalid-ID, capability, hub
+  conflict, and throwing-callback coverage remains green. No CTest entry was
+  added. The embedding guide now describes callback-wrapper and captured-state
+  ownership without exposing internal storage or copy counts as API guarantees.
+- The unchanged opt-in benchmark builds and passes every checked section in
+  Debug and Release. Bundled language DLL hashes match the corresponding
+  builds. Release was repeated once without edits to retain timing variability;
+  both runs are recorded. Fixture sizes, 100/1,000-entry batches, five fresh
+  samples, 32 separate warmups, preparation exclusions, and separate fresh
+  Debug allocation passes remain as in the baseline above.
+- Values below are median `[min,max]` microseconds per registration or copied
+  callback pair. Debug request counts have identical minimum/median/maximum
+  across the five samples in each case.
+
+| Debug case | Registrations | Lvalue registration (us) | Rvalue registration (us) | Prepared callback copy (us) | Lvalue requests | Rvalue requests | Copy requests |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Small capture | 100 | 6.750 [6.547,18.552] | 9.433 [7.900,15.881] | 0.235 [0.233,0.241] | 17.830 | 17.830 | 0.000 |
+| Small capture | 1,000 | 8.797 [6.625,36.261] | 7.892 [7.039,9.419] | 0.221 [0.210,0.366] | 16.295 | 16.295 | 0.000 |
+| Large capture | 100 | 9.604 [7.681,13.861] | 7.391 [6.562,9.945] | 0.795 [0.560,1.186] | 19.830 | 17.830 | 2.000 |
+| Large capture | 1,000 | 8.751 [8.082,21.471] | 8.555 [7.585,10.297] | 1.816 [0.883,3.183] | 18.295 | 16.295 | 2.000 |
+| Long metadata | 100 | 20.378 [9.123,23.192] | 9.665 [9.360,36.320] | 0.368 [0.229,0.494] | 24.830 | 24.830 | 0.000 |
+| Long metadata | 1,000 | 32.435 [21.657,44.272] | 31.983 [14.939,65.029] | 0.220 [0.203,0.258] | 23.295 | 23.295 | 0.000 |
+
+| Release run | Case | Registrations | Lvalue registration (us) | Rvalue registration (us) | Prepared callback copy (us) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Small capture | 100 | 0.399 [0.342,0.526] | 0.394 [0.230,0.440] | 0.024 [0.022,0.026] |
+| 1 | Small capture | 1,000 | 0.332 [0.306,0.433] | 0.357 [0.343,0.584] | 0.021 [0.020,0.032] |
+| 1 | Large capture | 100 | 0.649 [0.440,1.168] | 0.448 [0.304,1.770] | 0.345 [0.248,0.488] |
+| 1 | Large capture | 1,000 | 3.646 [1.141,5.709] | 0.358 [0.320,1.122] | 0.695 [0.612,0.925] |
+| 1 | Long metadata | 100 | 0.971 [0.782,1.038] | 0.857 [0.779,6.367] | 0.021 [0.021,0.303] |
+| 1 | Long metadata | 1,000 | 1.003 [0.764,3.293] | 1.829 [1.111,3.302] | 0.021 [0.020,0.043] |
+| 2 | Small capture | 100 | 0.374 [0.308,0.403] | 0.366 [0.361,0.644] | 0.021 [0.020,0.092] |
+| 2 | Small capture | 1,000 | 0.407 [0.308,2.365] | 0.350 [0.299,3.273] | 0.020 [0.019,0.021] |
+| 2 | Large capture | 100 | 0.722 [0.661,0.776] | 0.997 [0.388,11.926] | 0.325 [0.300,0.338] |
+| 2 | Large capture | 1,000 | 1.394 [0.495,7.066] | 1.218 [0.237,1.623] | 0.747 [0.685,0.845] |
+| 2 | Long metadata | 100 | 0.966 [0.780,11.046] | 0.996 [0.790,2.845] | 0.030 [0.021,0.040] |
+| 2 | Long metadata | 1,000 | 1.165 [0.976,10.735] | 2.121 [1.042,5.314] | 0.021 [0.020,0.021] |
+
+- Separate instrumented target-constructor counts below are per registration,
+  identical in Debug and both Release runs, including their ranges.
+  Input preparation is excluded. Target moves include catalog growth and are
+  MSVC-specific; these counts do not describe the storage/allocation behavior
+  of the non-instrumented timing fixtures.
+
+| Input | Registrations | Setter copies | Getter copies | Setter moves | Getter moves |
+| --- | --- | --- | --- | --- | --- |
+| Lvalue | 100 | 1.000 [1.000,1.000] | 1.000 [1.000,1.000] | 4.840 [4.840,4.840] | 4.840 [4.840,4.840] |
+| Rvalue | 100 | 0.000 [0.000,0.000] | 0.000 [0.000,0.000] | 5.840 [5.840,5.840] | 5.840 [5.840,5.840] |
+| Lvalue | 1,000 | 1.000 [1.000,1.000] | 1.000 [1.000,1.000] | 4.137 [4.137,4.137] | 4.137 [4.137,4.137] |
+| Rvalue | 1,000 | 0.000 [0.000,0.000] | 0.000 [0.000,0.000] | 5.137 [5.137,5.137] | 5.137 [5.137,5.137] |
+
+- Each setter/getter target loses exactly one measured copy: lvalue inputs
+  change from two to one and moved inputs from one to zero. Observed target
+  moves increase by one per callback in this standard library.
+- Large-capture Debug requests fall by two for both entry modes at each batch
+  size: 21.830/19.830 to 19.830/17.830 at 100 and 20.295/18.295 to
+  18.295/16.295 at 1,000 for lvalue/rvalue inputs. Long metadata also loses
+  two requests: 26.830 to 24.830 at 100 and 25.295 to 23.295 at 1,000.
+  Small-capture requests remain 17.830/16.295 at 100/1,000, and callback-copy
+  control counts remain zero/two/zero by shape. Release counts remain
+  unavailable; no byte-volume or Release allocation estimate is inferred.
+- Timing does not establish a general speedup. At 1,000 entries the Debug
+  long-metadata lvalue/rvalue medians increase from 15.200/15.523 us to
+  32.435/31.983 us. Release large-capture lvalues change from
+  1.222/3.142 us in the two baseline runs to 3.646/1.394 us; moved-input
+  medians change from 0.532/0.824 us to 0.358/1.218 us. Unchanged controls
+  also vary. All slower/noisy samples and both runs are retained rather than
+  selecting favorable results or subtracting unlike controls.
+- SDK-backed documentation generation and `mkdocs build --strict` pass after
+  the embedding update. The full 13-entry suite, production startup profile,
+  manual gameplay, cross-platform behavior, and allocator fault injection were
+  not run. No timing threshold or universal latency claim is made.
+- This completes the approved bounded R23 change. Next reviewable scope:
+  measure R18's repeated well-known-type lookups before deciding whether a
+  cache is warranted. R26/R27 and other remaining step-8 work stay separate;
+  do not implement another optimization automatically.
 
 ## Corrections to earlier review notes
 
@@ -2206,7 +2336,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R20 | P3 | redundancy | Six context-variable accessors repeat the same log-and-return pattern | `Runtime.cpp`: context-variable accessors and private lookup; `LanguageContextVariableTest.cpp`: invalid-handle regression | Fixed with approval: shared lookup owns one unchanged error per rejection with common provenance; specialized returns, context state and ownership retained | 7 |
 | R21 | P3 | correctness | `getConstantValue` silently returns on an invalid id, leaving the value unchanged | `Runtime.cpp`: getConstantValue; `LanguageRegistryIdTest.cpp`: constant lookup regression | Fixed under R6: host reads throw without logging or changing output; compiler-resolved VM reads use unchecked access | 6 |
 | R22 | P3 | consistency | `dynamic_cast` in registration code (isDeferred, validateNativeFunctionSignatures) while other code uses `asX()` | `Runtime.cpp`: registerNativeFunction, validateNativeFunctionSignatures; deferred-native/category tests | Resolved with approval: native validator reuses the mutable category lookup; compiler-placeholder RTTI intentionally retained without Type API expansion | 7 |
-| R23 | P3 | perf, correctness | registerDynamicVariable pushes a copy instead of moving; string setters free manually, which is not exception safe | `Runtime.cpp`: dynamic registration/string setters; registry/context lifetime regressions; checked dynamic-registration benchmark | Correctness fixed; checked Debug/Release registration-copy baselines recorded; copy-to-move contract review is next, with no production optimization yet | 6, 8 |
+| R23 | P3 | perf, correctness | registerDynamicVariable pushes a copy instead of moving; string setters free manually, which is not exception safe | `Runtime.cpp`: dynamic registration/string setters; registry/context lifetime regressions; checked dynamic-registration benchmark | Complete with approval: RAII string setters and local registration move; focused copy-count regressions, selected language CTest, and checked Debug/Release comparisons pass | 6, 8 |
 | R24 | P3 | style | Mixed style: `ScriptFunction *` spacing, reference alignment, brace placement, single-line `if` without braces, trailing whitespace, snake_case loop variable `op_code`, parameter lists not one per line | `Runtime.cpp`: instruction/event/native registration and lookup, constant getter, context registration; removed navigation APIs | Fixed: concrete remaining naming/formatting findings addressed manually and token-checked; concurrent getter rename preserved with approved recursion fix | 7 |
 | R25 | P3 | typing | getNativeMemberId returns a `MemberReference` with a `PropertyId::INVALID` sentinel; `size_t` converts implicitly to `NomadIndex` | `Runtime.hpp/cpp`: native-member lookup; compiler/interpreter callers and native metadata tests; `Nomad.hpp`: NomadIndex alias | Fixed with approval: optional lookup result and caller migration; count-conversion claim dismissed because NomadIndex is std::size_t | 7 |
 | R26 | P3 | perf | catalogNativeProperty and catalogNativeMethod scan `m_nativeMembers` linearly; validateNativePropertyTypes looks up the same property again | `Runtime.cpp`: catalogNativeProperty, catalogNativeMethod, validateNativePropertyTypes | verified | 8 |

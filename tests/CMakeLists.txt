@@ -17,6 +17,8 @@ add_executable(
     ./DeclareIdTest.cpp
     ./DeferredNativeFunctionTest.cpp
     ./DeferredNativePropertyTest.cpp
+    ./DynamicVariableCopyProbe.cpp
+    ./DynamicVariableCopyProbe.hpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./EventRegistrationCopyType.cpp

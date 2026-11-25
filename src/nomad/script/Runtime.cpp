@@ -3153,7 +3153,7 @@ DynamicVariableId Runtime::registerDynamicVariable(
     definition.getFn = std::move(getFn);
     definition.doc = doc;
 
-    m_dynamicVariables.push_back(definition);
+    m_dynamicVariables.push_back(std::move(definition));
     registerHubMember(name, id);
 
     return id;

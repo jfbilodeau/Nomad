@@ -874,6 +874,11 @@ For invalid or unregistered IDs, `getDynamicVariableName` throws `NomadException
 `canSetDynamicVariable` return `false`. These metadata and capability queries do
 not log. Registered empty names remain valid results.
 
+Registration takes callback wrappers by value and retains them in the runtime.
+Pass lvalue wrappers to keep caller copies, or move them to transfer ownership.
+The registered callbacks remain usable after the caller's wrappers are destroyed.
+Referenced capture state remains caller-owned and must outlive callback use.
+
 Compiled scripts and interpreter expressions reject reads without a getter and
 assignments without a setter. Format-placeholder identifier resolution also
 requires a getter.
