@@ -90,10 +90,12 @@ receiver and value preparation is excluded.
 Scratch construction remains a vector-based control; compare setter timings
 directly when changing the setter's storage implementation.
 
-Event workloads compare snapshot lookup, a prepared definition copy, the current
-snapshot-based presence query, and a missing-ID query. They vary parameter count,
-text lengths, and unrelated event count; public registration leaves documentation
-empty. Each case uses five fresh samples, 32 warmups, 20,000 timed operations, and
-a separate 1,000-operation Debug allocation pass. Checks cover metadata, misses,
-detached-copy independence, and survival after catalog growth. The controls are
-not an exact subtractive breakdown of lookup and copying.
+Event workloads separately report explicit snapshot lookup-and-copy, a prepared
+definition copy, presence and missing-ID queries, and borrowed metadata lookup.
+They vary parameter count, text lengths, and unrelated event count; public
+registration leaves documentation empty. Each case uses five fresh samples,
+32 warmups, 20,000 timed operations, and a separate 1,000-operation Debug
+allocation pass. Checks cover metadata, misses, detached-copy independence, and
+borrowed address stability after catalog growth. Compare explicit snapshots
+against earlier snapshot workloads; borrowed access intentionally does less
+work. The controls are not an exact subtractive breakdown of lookup and copying.

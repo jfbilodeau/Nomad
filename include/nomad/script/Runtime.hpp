@@ -567,7 +567,9 @@ public:
     // Events
     EventId registerEvent(const NomadString& name, const std::vector<EventParameter>& parameterTypes);
     [[nodiscard]] EventId getEventId(const NomadString& name) const;
-    [[nodiscard]] std::optional<EventDefinition> getEventDefinition(EventId id) const;
+    // Borrows read-only metadata until Runtime destruction, including across event registration.
+    // Invalid or unregistered IDs return nullptr without logging.
+    [[nodiscard]] const EventDefinition* getEventDefinition(EventId id) const;
     [[nodiscard]] EventId getFirstEventId() const;
     [[nodiscard]] EventId getNextEventId(EventId currentId) const;
 
@@ -815,7 +817,7 @@ private:
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;
-    std::vector<EventDefinition> m_events;
+    std::vector<std::unique_ptr<EventDefinition>> m_events;
     // Compile-time only; see `registerString`.
     std::vector<NomadStringObject*> m_strings;
     std::vector<DynamicVariableRegistration> m_dynamicVariables;

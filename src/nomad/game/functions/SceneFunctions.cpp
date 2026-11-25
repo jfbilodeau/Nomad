@@ -380,7 +380,7 @@ void Game::initSceneFunctions() {
             const auto eventId = EventId{interpreter->getIdParameter(0)};
             const auto functionId = interpreter->getCallableIdParameter(1);
 
-            const auto event = m_runtime->getEventDefinition(eventId);
+            const auto* event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
                 log::error(NomadString("Invalid event id for scene.on: ") + toString(eventId.id));
@@ -491,7 +491,7 @@ void Game::initSceneFunctions() {
 
             std::vector<RuntimeValue> args;
 
-            const auto event = m_runtime->getEventDefinition(eventId);
+            const auto* event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
                 log::error(NomadString("Invalid event id for scene.trigger: ") + toString(eventId.id));
@@ -539,7 +539,7 @@ void Game::initSceneFunctions() {
 
             std::vector<RuntimeValue> args;
 
-            const auto event = m_runtime->getEventDefinition(eventId);
+            const auto* event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
                 log::error(NomadString("Invalid event id for scene.trigger.layer: ") + toString(eventId.id));

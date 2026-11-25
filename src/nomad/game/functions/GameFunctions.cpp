@@ -217,7 +217,7 @@ void Game::initGameFunctions() {
 
             std::vector<RuntimeValue> args;
 
-            const auto event = m_runtime->getEventDefinition(eventId);
+            const auto* event = m_runtime->getEventDefinition(eventId);
 
             if (!event) {
                 log::error(NomadString("Invalid event id for game.trigger: ") + toString(eventId.id));

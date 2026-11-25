@@ -557,7 +557,7 @@ void Runtime::rebuildHubMembers() {
         }
     }
     for (const auto& event : m_events) {
-        add(event.name, event.id);
+        add(event->name, event->id);
     }
     for (auto index = NomadIndex{0}; index < m_dynamicVariables.size(); ++index) {
         add(m_dynamicVariables[index].name, DynamicVariableId{toNomadId(index)});
@@ -2981,7 +2981,7 @@ EventId Runtime::registerEvent(
 
     const auto id = EventId{toNomadId(m_events.size())};
 
-    m_events.emplace_back(id, name, parameterTypes);
+    m_events.push_back(std::make_unique<EventDefinition>(id, name, parameterTypes));
 
     // Also register event type.
     if (
@@ -2989,7 +2989,7 @@ EventId Runtime::registerEvent(
             std::make_unique<EventType>(
                 this,
                 m_typeManager.reserveTypeId(),
-                &m_events.back()
+                m_events.back().get()
             )
         ).isInvalid()
     ) {
@@ -3005,24 +3005,23 @@ EventId Runtime::registerEvent(
 }
 
 EventId Runtime::getEventId(const NomadString& name) const {
-    for (auto& event : m_events) {
-        if (event.name == name) {
+    for (const auto& event : m_events) {
+        if (event->name == name) {
 
-            return event.id;
+            return event->id;
         }
     }
 
     return EventId::INVALID;
 }
 
-std::optional<EventDefinition> Runtime::getEventDefinition(EventId id) const {
-    for (const auto& event: m_events) {
-        if (event.id == id) {
-            return event;
-        }
+const EventDefinition* Runtime::getEventDefinition(const EventId id) const {
+    if (isIdOutOfRange(id.id, m_events.size())) {
+
+        return nullptr;
     }
 
-    return std::nullopt;
+    return m_events[toNomadIndex(id.id)].get();
 }
 
 EventId Runtime::getFirstEventId() const {

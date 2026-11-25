@@ -477,8 +477,8 @@ BOOST_AUTO_TEST_CASE(hidden_call_layout_excludes_descriptors_from_explicit_param
         {"number", runtime.getIntegerType()->getId(), "int"}
     });
     BOOST_REQUIRE(eventId.isValid());
-    const auto event = runtime.getEventDefinition(eventId);
-    BOOST_REQUIRE(event.has_value());
+    const auto* event = runtime.getEventDefinition(eventId);
+    BOOST_REQUIRE(event != nullptr);
     ArgumentList arguments;
     arguments.addEventDispatchArgument(1, 0, runtime.getEventDispatchType(), *event);
     arguments.addExpressionArgument(

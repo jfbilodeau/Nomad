@@ -801,8 +801,20 @@ Include `<nomad/script/Event.hpp>` for `EventId`, `EventDefinition`, and
 `EventDispatch`. `Runtime::registerEvent(name, parameters)` returns an `EventId`,
 or `EventId::INVALID` when registration fails. Duplicate names are logged and
 rejected without replacing the original definition. `getEventId(name)` returns
-`EventId::INVALID` when absent; `getEventDefinition(id)` returns a definition
-snapshot, or an empty optional for an invalid or unregistered ID.
+`EventId::INVALID` when absent; `getEventDefinition(id)` borrows a
+`const EventDefinition*`, or returns `nullptr` for an invalid or unregistered ID
+without logging.
+
+Borrowed definitions and their metadata remain read-only and address-stable
+through subsequent event registrations, including reentrant registration from
+host callbacks. They remain valid until the owning Runtime is destroyed; do not
+retain them beyond that lifetime. This does not make concurrent registration
+thread-safe. Check the pointer before reading a name or parameters, or use its
+presence directly when only testing whether an ID is registered.
+
+For independently mutable or longer-lived metadata, explicitly copy the
+definition after checking the pointer: `EventDefinition snapshot = *definition;`.
+The snapshot owns its metadata, but its IDs still belong to the issuing runtime.
 
 `getFirstEventId` and `getNextEventId` enumerate registered events in registration
 order, ending at `EventId::INVALID`. IDs belong to the runtime that issued them

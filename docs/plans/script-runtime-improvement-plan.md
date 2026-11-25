@@ -6,7 +6,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples.
 
-**R30:** Checked event snapshot-copy baselines are recorded for Debug and Release. Current presence queries copy metadata too; both metadata size and catalog scans have measurable costs. Next reviewable scope: settle non-copying event-access contracts, including registration growth and reentry, before implementing the optimization.
+**R30:** The approved stable-definition pointer lookup is implemented and validated. Borrowed metadata survives registration growth/reentry; checked direct-ID lookup makes no Debug allocation requests. Explicit snapshots remain ordinary copies, measured separately in Debug and Release. Two selected Debug CTests and checked benchmarks pass. Next reviewable scope: measure R23's remaining dynamic-variable registration-copy cost before selecting its optimization.
 
 ## Component contract
 
@@ -1860,11 +1860,160 @@ Measure each change before and after on the same workload.
   visible timing variation. No production event-frequency profile, full-suite
   rerun, manual gameplay, cross-platform result, or timing threshold is claimed.
   Documentation-heavy definitions are not represented by these public fixtures.
-- Next reviewable scope: choose the concrete event metadata, presence, and
-  name-access contracts under D5, including safe registration growth and
-  reentry. Discuss direct ID access and any required storage changes before
-  implementation; no additional index, registration freeze, or new borrowed
-  API is authorized by this measurement step.
+- The measurement step did not authorize production changes. The follow-up
+  storage/lifetime review and its approved implementation scope are below.
+
+#### R30 approved stable-definition access contract
+
+- The user selected a vector of uniquely owned definitions over a deque.
+  Replace the value-vector with `std::vector<std::unique_ptr<EventDefinition>>`,
+  following the existing descriptor-catalog pattern. Vector growth moves
+  owners, not definitions. This adds one descriptor allocation per event at
+  registration; no registration-time or memory-use improvement is claimed.
+- Under D5, replace the optional-copy result of `getEventDefinition(EventId)`
+  with `const EventDefinition*`. Successful results borrow read-only metadata
+  until the owning Runtime is destroyed, including across subsequent and
+  reentrant event registrations. This does not introduce concurrent
+  registration/thread-safety guarantees.
+- Use the existing ID-domain/range guard and direct vector indexing. Event IDs
+  are assigned from the vector size; current registration only appends or
+  removes the newly rejected tail. Invalid or unregistered IDs return nullptr
+  without logging. Failed/duplicate registration must not invalidate earlier
+  successful borrows or alter their definitions.
+- Presence-only and name-only consumers use the same checked pointer lookup;
+  no separate existence/name APIs or additional index are needed. Keep current
+  caller diagnostics and queued event-name ownership unchanged. Parameter
+  consumers may retain the borrowed declaration across host-defined copying
+  that reenters registration because the definition and its metadata stay put.
+- Callers needing a detached snapshot explicitly copy the pointed-to
+  `EventDefinition`; do not retain the old optional-copy query as a shim or add
+  a separate snapshot API. Such copies remain independently mutable.
+  `EventType`'s owned definition and the parser's owned dispatch-argument
+  declaration remain copies; removing them is outside this scope.
+- Keep current event/hub publication and registration-failure policies. Do not
+  move declaration ownership between Runtime and TypeManager in this change.
+  No shared ownership, registration freeze, seal, cache, new opcode, or
+  dispatch/queue redesign is approved.
+- The next implementation step updates the storage/query and directly
+  dependent compiler/game/test/benchmark call sites together. Add focused
+  regressions for borrowed address/metadata stability through catalog growth
+  and reentrant registration from a host value-copy operation, misses,
+  rejected registration, and explicit detached-copy independence.
+- Update the embedding contract when the API changes. Validate the relevant
+  existing CTests directly through the workspace integration, without a
+  separate pre-test build. Rebuild and execute the checked opt-in benchmark
+  in Debug and Release with current bundled DLLs.
+- Preserve a comparable explicit snapshot lookup-and-copy metric and the
+  prepared-copy control; add a separately labeled borrowed-definition metric.
+  Presence/missing metrics retain their observable checks. Compare against the
+  recorded baseline, report allocation requests and full timing ranges, and
+  do not call reduced-work borrowed access an equal-work snapshot speedup.
+  Stop after this bounded implementation/validation step for review.
+
+#### R30 stable-definition implementation and validation
+
+- Implemented the approved vector of uniquely owned definitions and checked
+  direct-ID `const EventDefinition*` lookup. Invalid/unregistered IDs return
+  nullptr without logging. Existing name scans, IDs, hub publication, and
+  registration-failure policies remain unchanged. No parallel index, cache,
+  registration freeze, new opcode, or ownership transfer was introduced.
+- Compiler/game consumers now borrow definitions. Presence checks use the same
+  query without materializing metadata; name adapters still copy names into
+  their existing owned registrations/queue payloads. Parser dispatch arguments
+  and `EventType` retain their independent definition copies.
+- Focused regressions first reproduced four old snapshot-identity failures,
+  then passed with the implementation. Existing catalog-growth coverage now
+  checks definition/name/parameter address stability after duplicate/reserved
+  registration rejection, 64 additional events, and hub rebuilding. New cases
+  check detached-copy mutation and survival after Runtime destruction, and
+  borrowed parameter iteration through 128 reentrant registrations made by a
+  host-defined class copy before the remaining integer payload is copied.
+- Both selected Windows Debug CTests pass: `nomad_test_language` and
+  `nomad_test_remaining`. This includes the dependent parser and game/scene
+  coverage. No new CTest entry was added. Construction/allocation exceptions
+  and registration-failure ordering were source-reviewed, not fault-injected.
+- The opt-in benchmark builds and passes in Debug and Release with bundled
+  language DLL hashes matched to the corresponding builds. All earlier
+  benchmark sections also pass. Release was repeated once without edits to
+  retain visible timing variability; both runs are recorded below.
+- Fixtures, five-sample protocol, 32 warmups, 20,000 timed operations, and
+  separate 1,000-operation Debug allocation probes are unchanged. The snapshot
+  metric now explicitly copies the checked query result, preserving detached
+  snapshot work for comparison. The prepared-copy control is unchanged.
+  Borrowed lookup includes the same metadata checksum but deliberately omits
+  copying. Presence/missing retain their observable checks. Values are median
+  `[min,max]` microseconds per operation.
+
+| Debug case | Unrelated events | Explicit snapshot (us) | Prepared copy (us) | Presence (us) | Missing (us) | Borrowed (us) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Empty | 0 | 1.169 [1.062,1.265] | 1.243 [0.919,1.556] | 0.016 [0.013,0.024] | 0.009 [0.008,0.037] | 0.025 [0.024,0.030] |
+| Empty | 100 | 1.055 [0.974,1.267] | 1.101 [1.068,1.199] | 0.014 [0.013,0.018] | 0.009 [0.009,0.010] | 0.026 [0.023,0.036] |
+| Empty | 1,000 | 1.183 [1.042,1.442] | 1.204 [0.928,1.302] | 0.015 [0.013,0.028] | 0.010 [0.009,0.020] | 0.025 [0.022,0.054] |
+| One short | 0 | 2.622 [2.342,2.745] | 2.574 [2.255,3.005] | 0.014 [0.013,0.030] | 0.011 [0.009,0.023] | 0.032 [0.026,0.044] |
+| One short | 100 | 2.396 [2.028,2.850] | 2.459 [1.987,2.464] | 0.014 [0.013,0.014] | 0.008 [0.007,0.010] | 0.028 [0.027,0.037] |
+| One short | 1,000 | 2.256 [1.942,2.485] | 2.200 [2.094,2.268] | 0.015 [0.013,0.044] | 0.010 [0.009,0.018] | 0.053 [0.029,0.076] |
+| Eight short | 0 | 7.932 [7.767,8.464] | 7.712 [7.496,8.303] | 0.013 [0.013,0.036] | 0.009 [0.008,0.009] | 0.061 [0.055,0.093] |
+| Eight short | 100 | 8.057 [7.623,8.420] | 7.786 [7.253,8.925] | 0.029 [0.012,0.035] | 0.019 [0.008,0.024] | 0.061 [0.055,0.101] |
+| Eight short | 1,000 | 7.671 [7.543,8.267] | 7.451 [7.215,9.013] | 0.015 [0.013,0.023] | 0.009 [0.009,0.013] | 0.087 [0.050,0.114] |
+| Eight long | 0 | 14.588 [12.741,14.753] | 13.225 [12.792,14.349] | 0.014 [0.013,0.032] | 0.009 [0.009,0.012] | 0.056 [0.048,0.095] |
+| Eight long | 100 | 12.659 [12.483,14.247] | 14.406 [12.599,15.625] | 0.017 [0.015,0.026] | 0.010 [0.009,0.016] | 0.062 [0.055,0.074] |
+| Eight long | 1,000 | 13.814 [13.380,15.283] | 14.192 [13.122,14.659] | 0.019 [0.013,0.033] | 0.010 [0.009,0.015] | 0.057 [0.048,0.062] |
+
+| Release run | Case | Unrelated events | Explicit snapshot (us) | Prepared copy (us) | Presence (us) | Missing (us) | Borrowed (us) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | Empty | 0 | 0.011 [0.011,0.012] | 0.009 [0.008,0.011] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.002 [0.002,0.002] |
+| 1 | Empty | 100 | 0.012 [0.009,0.014] | 0.010 [0.010,0.011] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.002 [0.002,0.004] |
+| 1 | Empty | 1,000 | 0.011 [0.009,0.025] | 0.009 [0.009,0.014] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.002 [0.002,0.003] |
+| 1 | One short | 0 | 0.044 [0.037,0.078] | 0.044 [0.039,0.086] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.002 [0.002,0.004] |
+| 1 | One short | 100 | 0.053 [0.038,0.091] | 0.044 [0.040,0.074] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.002 [0.002,0.004] |
+| 1 | One short | 1,000 | 0.072 [0.039,0.086] | 0.072 [0.038,0.084] | 0.002 [0.001,0.003] | 0.002 [0.001,0.010] | 0.004 [0.002,0.005] |
+| 1 | Eight short | 0 | 0.149 [0.105,0.218] | 0.142 [0.128,0.219] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.008 [0.005,0.011] |
+| 1 | Eight short | 100 | 0.129 [0.101,0.158] | 0.115 [0.111,0.177] | 0.001 [0.001,0.001] | 0.001 [0.001,0.002] | 0.005 [0.005,0.006] |
+| 1 | Eight short | 1,000 | 0.127 [0.108,0.156] | 0.116 [0.109,0.134] | 0.001 [0.001,0.002] | 0.002 [0.001,0.003] | 0.009 [0.005,0.009] |
+| 1 | Eight long | 0 | 1.169 [0.750,1.650] | 1.378 [0.750,1.570] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.007 [0.005,0.015] |
+| 1 | Eight long | 100 | 0.910 [0.702,1.007] | 0.962 [0.646,1.047] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.006 [0.005,0.011] |
+| 1 | Eight long | 1,000 | 0.767 [0.661,1.236] | 0.913 [0.643,1.010] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.005 [0.005,0.017] |
+| 2 | Empty | 0 | 0.012 [0.010,0.038] | 0.009 [0.008,0.023] | 0.001 [0.001,0.002] | 0.001 [0.001,0.003] | 0.002 [0.002,0.005] |
+| 2 | Empty | 100 | 0.028 [0.009,0.033] | 0.010 [0.009,0.025] | 0.001 [0.001,0.002] | 0.001 [0.001,0.003] | 0.002 [0.002,0.005] |
+| 2 | Empty | 1,000 | 0.010 [0.009,0.017] | 0.010 [0.009,0.031] | 0.001 [0.001,0.003] | 0.001 [0.001,0.002] | 0.002 [0.002,0.004] |
+| 2 | One short | 0 | 0.047 [0.042,0.060] | 0.043 [0.038,0.053] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.002 [0.002,0.003] |
+| 2 | One short | 100 | 0.040 [0.038,0.057] | 0.049 [0.038,0.100] | 0.001 [0.001,0.002] | 0.001 [0.001,0.005] | 0.002 [0.002,0.005] |
+| 2 | One short | 1,000 | 0.044 [0.039,0.052] | 0.043 [0.037,0.069] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.002 [0.002,0.003] |
+| 2 | Eight short | 0 | 0.115 [0.100,0.217] | 0.112 [0.098,0.172] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.005 [0.005,0.005] |
+| 2 | Eight short | 100 | 0.128 [0.118,0.143] | 0.127 [0.107,0.199] | 0.001 [0.001,0.002] | 0.001 [0.001,0.002] | 0.006 [0.005,0.014] |
+| 2 | Eight short | 1,000 | 0.134 [0.106,0.136] | 0.136 [0.105,0.219] | 0.001 [0.001,0.002] | 0.001 [0.001,0.001] | 0.006 [0.005,0.008] |
+| 2 | Eight long | 0 | 1.041 [0.835,1.335] | 1.138 [0.792,1.422] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.005 [0.005,0.011] |
+| 2 | Eight long | 100 | 0.931 [0.638,1.421] | 0.970 [0.689,1.605] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.005 [0.005,0.006] |
+| 2 | Eight long | 1,000 | 1.212 [0.754,1.392] | 1.008 [0.879,1.096] | 0.001 [0.001,0.001] | 0.001 [0.001,0.001] | 0.005 [0.005,0.012] |
+
+- Every borrowed/presence/missing Debug measurement makes zero allocation
+  requests. Explicit snapshots and prepared copies still make 3/6/20/37
+  requests for empty/one-short/eight-short/eight-long definitions, with identical
+  minimum/median/maximum counts across all samples and catalog sizes. Presence
+  therefore removes the old implicit 3/6/20/37 requests; intentionally owned
+  copies do not. Release counts remain unavailable.
+- Direct indexing removes catalog-size scaling without removing explicit
+  metadata-copy work. At 1,000 unrelated events, Release explicit snapshots
+  change from 0.464/0.777/1.667 us to 0.011/0.127/0.767 us in run 1 and
+  0.010/0.134/1.212 us in run 2 for empty/eight-short/eight-long definitions.
+  Borrowed checksum queries for those cases are 0.002/0.009/0.005 us and
+  0.002/0.006/0.005 us; these are reduced-work operations, not equal-work
+  snapshot speedups.
+- The measurements do not establish a universal snapshot latency improvement:
+  with no unrelated events, long-text snapshots change from 1.063 us to
+  1.169/1.041 us, while their unchanged prepared-copy control changes from
+  1.175 us to 1.378/1.138 us. All ranges and both Release runs are retained.
+  Presence/missing timings near 0.001 us are close to measurement resolution;
+  no precise speedup ratio or timing threshold is inferred.
+- Registration now allocates one separate owned descriptor per event as
+  approved. Registration latency, allocation byte volume, production event
+  frequency, concurrent registration, and documentation-heavy definitions were
+  not measured. These are shared-machine Windows/MSVC microbenchmarks, not
+  cross-platform or gameplay results. The full 13-entry suite was not rerun.
+- This completes the bounded R30 implementation. Next reviewable scope:
+  measure R23's remaining dynamic-variable registration-copy cost before
+  choosing a copy-to-move edit. R18 caching and R26/R27 lookup work remain in
+  the measured sweep; do not implement another optimization automatically.
 
 ## Corrections to earlier review notes
 
@@ -1943,7 +2092,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R27 | P3 | perf | getVariableContextIdByPrefix computes `getHubId(getContainingHub)` twice | `Runtime.cpp`: getVariableContextIdByPrefix | verified | 8 |
 | R28 | P3 | naming | getCallableId matches only Function type despite its name; getFunctionId, getNativeFunctionId, and getFunctionTableSize (counts all callables) differ from getFunctionCount (script only) | `Runtime.hpp/cpp`: count, script metadata and name-based lookups; compiler/LSP/game consumers and catalog tests | Complete with approval: category-consistent names, specialized function existence/ID/list/count queries, source filters retained and callers migrated | 7 |
 | R29 | — | dismissed | EventType stores `&m_events.back()`. Not a dangling pointer, because EventType copies the definition | `Event.hpp:46` `const EventDefinition m_event` | verified-not-a-bug | — |
-| R30 | P3 | perf | getEventDefinition returns an optional copy of EventDefinition on each call | `Runtime.cpp`: getEventDefinition; `RuntimeLookupBenchmark.cpp`: event snapshot/copy/presence/missing workloads | Checked Debug/Release baselines recorded; nine production consumers classified; concrete non-copying access/lifetime contract is next | 8 |
+| R30 | P3 | perf | getEventDefinition returns an optional copy of EventDefinition on each call | `Runtime.cpp`: getEventDefinition; stable-growth/reentry regressions; checked event benchmark | Complete with approval: stable vector-owned descriptors, checked direct-ID const-pointer lookup, explicit snapshots, two selected Debug CTests, and checked Debug/Release comparisons | 8 |
 
 ### Interpreter
 

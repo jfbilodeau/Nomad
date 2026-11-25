@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <EventRegistrationCopyType.hpp>
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/compiler/Compiler.hpp>
@@ -102,7 +103,7 @@ void registerCallbackNativeFunctions(Runtime& runtime, CallbackStore& store) {
         "test.trigger",
         [&runtime, &store](VirtualMachine* virtualMachine) {
             const auto eventId = EventId{virtualMachine->getIdParameter(0)};
-            const auto event = runtime.getEventDefinition(eventId);
+            const auto* event = runtime.getEventDefinition(eventId);
 
             store.dispatchedEvents.push_back(eventId);
 
@@ -1358,7 +1359,7 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
     BOOST_TEST(runtime.getEventId("missing") == EventId::INVALID);
     BOOST_TEST(runtime.getFirstEventId() == EventId::INVALID);
     for (const auto id : {EventId::INVALID, EventId{-2}, EventId{0}, EventId{NOMAD_ID_MAX}}) {
-        BOOST_TEST(!runtime.getEventDefinition(id).has_value());
+        BOOST_TEST(runtime.getEventDefinition(id) == nullptr);
     }
 
     BOOST_REQUIRE(runtime.registerHub("example", HubMode::Opened).isValid());
@@ -1367,14 +1368,17 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
     BOOST_REQUIRE(id.isValid());
     BOOST_TEST(runtime.getFirstEventId() == id);
     BOOST_TEST(runtime.getEventId("example.changed") == id);
-    BOOST_TEST(runtime.registerEvent("example.changed", {}) == EventId::INVALID);
-    BOOST_TEST(runtime.registerEvent("example", {}) == EventId::INVALID);
-    const auto definition = runtime.getEventDefinition(id);
-    BOOST_REQUIRE(definition.has_value());
+    const auto* definition = runtime.getEventDefinition(id);
+    BOOST_REQUIRE(definition != nullptr);
     BOOST_TEST(definition->id == id);
     BOOST_TEST(definition->name == "example.changed");
     BOOST_REQUIRE(definition->parameters.size() == 1U);
     BOOST_TEST(definition->parameters.front().typeId == integerId);
+    const auto* nameAddress = &definition->name;
+    const auto* parameterAddress = &definition->parameters.front();
+    BOOST_TEST(runtime.registerEvent("example.changed", {}) == EventId::INVALID);
+    BOOST_TEST(runtime.registerEvent("example", {}) == EventId::INVALID);
+    BOOST_TEST(runtime.getEventDefinition(EventId{id.id + 1}) == nullptr);
 
     auto lastId = id;
     for (auto index = 0; index < 64; ++index) {
@@ -1383,8 +1387,11 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
     }
     BOOST_REQUIRE(runtime.registerHub("example.child", HubMode::Opened).isValid());
     BOOST_TEST(runtime.getEventId("example.changed") == id);
-    const auto afterGrowth = runtime.getEventDefinition(id);
-    BOOST_REQUIRE(afterGrowth.has_value());
+    const auto* afterGrowth = runtime.getEventDefinition(id);
+    BOOST_REQUIRE(afterGrowth != nullptr);
+    BOOST_TEST(afterGrowth == definition);
+    BOOST_TEST(&afterGrowth->name == nameAddress);
+    BOOST_TEST(&afterGrowth->parameters.front() == parameterAddress);
     BOOST_TEST(afterGrowth->id == id);
     BOOST_TEST(afterGrowth->name == definition->name);
     BOOST_REQUIRE(afterGrowth->parameters.size() == 1U);
@@ -1407,7 +1414,7 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
     BOOST_TEST(count == 65U);
     BOOST_TEST(visitedId == lastId);
     BOOST_TEST(runtime.getNextEventId(lastId) == EventId::INVALID);
-    BOOST_TEST(!runtime.getEventDefinition(EventId{NOMAD_ID_MAX - 1}).has_value());
+    BOOST_TEST(runtime.getEventDefinition(EventId{NOMAD_ID_MAX - 1}) == nullptr);
 
     const auto compiler = runtime.createCompiler();
     IdentifierDefinition identifier{};
@@ -1415,6 +1422,89 @@ BOOST_AUTO_TEST_CASE(event_ids_support_registration_lookup_iteration_and_catalog
     compiler->getIdentifierDefinition("example.changed", nullptr, identifier);
     BOOST_TEST((identifier.identifierType == IdentifierType::Event));
     BOOST_TEST(identifier.eventId == id);
+}
+
+BOOST_AUTO_TEST_CASE(event_definition_snapshots_are_explicit_detached_copies)
+{
+    EventDefinition detached;
+    const auto name = NomadString(128, 'e');
+    const auto parameterName = NomadString(64, 'p');
+    {
+        Runtime runtime;
+        const auto integerId = runtime.getIntegerType()->getId();
+        const auto id = runtime.registerEvent(name, {{parameterName, integerId, "int"}});
+        BOOST_REQUIRE(id.isValid());
+        const auto* definition = runtime.getEventDefinition(id);
+        BOOST_REQUIRE(definition != nullptr);
+        detached = *definition;
+        BOOST_TEST(detached.id == id);
+        BOOST_TEST(detached.name == name);
+        BOOST_REQUIRE(detached.parameters.size() == 1U);
+        BOOST_TEST(detached.parameters.front().name == parameterName);
+        detached.id = EventId::INVALID;
+        detached.name = "detached";
+        detached.parameters.front() = {"changed", TypeId::INVALID, "changedType"};
+        detached.doc = "detached documentation";
+        BOOST_TEST(definition->id == id);
+        BOOST_TEST(definition->name == name);
+        BOOST_TEST(definition->parameters.front().name == parameterName);
+        BOOST_TEST(definition->parameters.front().typeId == integerId);
+        BOOST_TEST(definition->parameters.front().typeName == "int");
+        BOOST_TEST(definition->doc.empty());
+    }
+
+    BOOST_TEST(detached.id == EventId::INVALID);
+    BOOST_TEST(detached.name == "detached");
+    BOOST_TEST(detached.parameters.front().name == "changed");
+    BOOST_TEST(detached.parameters.front().typeId == TypeId::INVALID);
+    BOOST_TEST(detached.parameters.front().typeName == "changedType");
+    BOOST_TEST(detached.doc == "detached documentation");
+}
+
+BOOST_AUTO_TEST_CASE(borrowed_event_parameters_survive_reentrant_type_copy)
+{
+    Runtime runtime;
+    auto eventId = EventId::INVALID;
+    const EventDefinition* borrowed = nullptr;
+    auto copyCount = NomadIndex{0};
+    const auto payloadId = runtime.registerClass<EventRegistrationCopyType>(
+        "ReentrantEventPayload",
+        ClassMode::Closed,
+        [&] {
+            ++copyCount;
+            for (auto index = NomadIndex{0}; index < 128; ++index) {
+                BOOST_REQUIRE(runtime.registerEvent("duringCopy" + std::to_string(index), {}).isValid());
+            }
+
+            const auto* afterRegistration = runtime.getEventDefinition(eventId);
+            BOOST_REQUIRE(afterRegistration != nullptr);
+            BOOST_REQUIRE(afterRegistration == borrowed);
+        }
+    );
+    BOOST_REQUIRE(payloadId.isValid());
+    eventId = runtime.registerEvent("reentrantPayload", {
+        {"reference", payloadId, "ReentrantEventPayload"},
+        {"number", runtime.getIntegerType()->getId(), "int"}
+    });
+    BOOST_REQUIRE(eventId.isValid());
+    const auto* definition = runtime.getEventDefinition(eventId);
+    BOOST_REQUIRE(definition != nullptr);
+    borrowed = definition;
+    const auto* parameterAddress = &definition->parameters.front();
+    const std::array<RuntimeValue, 2> source{RuntimeValue{}, RuntimeValue{NomadInteger{37}}};
+    std::array<RuntimeValue, 2> copied{};
+    for (auto index = NomadIndex{0}; index < definition->parameters.size(); ++index) {
+        const auto type = runtime.getType(definition->parameters[index].typeId);
+        BOOST_REQUIRE(type.has_value());
+        (*type)->copyValue(&source[index], &copied[index]);
+        BOOST_TEST(&definition->parameters.front() == parameterAddress);
+    }
+
+    BOOST_TEST(copyCount == 1U);
+    BOOST_TEST(copied.front().getObjectValue() == nullptr);
+    BOOST_TEST(copied.back().getIntegerValue() == 37);
+    BOOST_TEST(definition->name == "reentrantPayload");
+    BOOST_TEST(definition->parameters.back().name == "number");
 }
 
 BOOST_AUTO_TEST_CASE(event_declaration_registers_event)
@@ -1428,8 +1518,8 @@ BOOST_AUTO_TEST_CASE(event_declaration_registers_event)
     const auto eventId = runtime.getEventId("bespokeEvent");
     BOOST_REQUIRE(eventId.isValid());
 
-    const auto event = runtime.getEventDefinition(eventId);
-    BOOST_REQUIRE(event.has_value());
+    const auto* event = runtime.getEventDefinition(eventId);
+    BOOST_REQUIRE(event != nullptr);
     BOOST_REQUIRE(event->parameters.size() == 3u);
     BOOST_TEST(event->parameters[0].name == "x");
     BOOST_TEST(event->parameters[0].typeName == "int");
@@ -1446,8 +1536,8 @@ BOOST_AUTO_TEST_CASE(event_without_parameters)
 
     BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
 
-    const auto event = fixture.getRuntime().getEventDefinition(fixture.getRuntime().getEventId("simpleEvent"));
-    BOOST_REQUIRE(event.has_value());
+    const auto* event = fixture.getRuntime().getEventDefinition(fixture.getRuntime().getEventId("simpleEvent"));
+    BOOST_REQUIRE(event != nullptr);
     BOOST_TEST(event->parameters.empty());
 }
 

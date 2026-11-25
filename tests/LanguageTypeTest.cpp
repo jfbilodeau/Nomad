@@ -59,8 +59,8 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
         "typedEvent", {{"value", integerId, "int"}}
     );
     BOOST_REQUIRE(eventId.isValid());
-    const auto event = runtime.getEventDefinition(eventId);
-    BOOST_REQUIRE(event.has_value());
+    const auto* event = runtime.getEventDefinition(eventId);
+    BOOST_REQUIRE(event != nullptr);
     BOOST_REQUIRE(event->parameters.size() == 1);
     BOOST_TEST(event->parameters.front().typeId.id == integerId.id);
     BOOST_TEST(*runtime.getType(event->parameters.front().typeId) == runtime.getIntegerType());

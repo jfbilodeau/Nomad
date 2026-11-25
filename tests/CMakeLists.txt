@@ -19,6 +19,8 @@ add_executable(
     ./DeferredNativePropertyTest.cpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
+    ./EventRegistrationCopyType.cpp
+    ./EventRegistrationCopyType.hpp
     ./EventRegistrationTest.cpp
     ./ExecutionStateGuardTest.cpp
     ./ExpressionEvaluationTest.cpp

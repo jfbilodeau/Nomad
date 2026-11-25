@@ -1066,7 +1066,7 @@ void Game::triggerEntityEvent(
     const NomadId entityId,
     std::vector<RuntimeValue> args
 ) {
-    if (const auto event = m_runtime->getEventDefinition(eventId)) {
+    if (const auto* event = m_runtime->getEventDefinition(eventId)) {
        triggerEntityEvent(sceneId, entityId, event->name, std::move(args));
     } else {
         log::warning("Event ID " + toString(eventId.id) + " not found");

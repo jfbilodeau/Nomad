@@ -1403,7 +1403,7 @@ bool parseEventDispatch(CompilerContext* context, ScriptCallableBase* function, 
         return false;
     }
 
-    const auto event = context->getRuntime()->getEventDefinition(eventId);
+    const auto* event = context->getRuntime()->getEventDefinition(eventId);
 
     if (!event) {
         context->getCompiler()->reportInternalError("Unknown event declaration '" + eventName + "'");
@@ -1557,7 +1557,7 @@ bool parseCallableArguments(
                 return false;
             }
 
-            const auto event = context->getRuntime()->getEventDefinition(eventId);
+            const auto* event = context->getRuntime()->getEventDefinition(eventId);
 
             if (!event) {
                 context->getCompiler()->reportInternalError("Unknown event declaration '" + eventName + "'");

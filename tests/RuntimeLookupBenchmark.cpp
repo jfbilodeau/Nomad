@@ -1876,8 +1876,8 @@ void runEventSnapshotBenchmark() {
     constexpr auto allocationIterations = nomad::NomadIndex{1000};
     constexpr auto cases = std::array{"empty", "one_short", "eight_short", "eight_long"};
     constexpr auto catalogSizes = std::array<nomad::NomadIndex, 3>{0, 100, 1000};
-    constexpr auto labels = std::array{"snapshot", "prepared_copy", "presence", "missing"};
-    std::cout << "Event definitions: late-ID snapshot lookup, prepared snapshot copy, presence query, and missing ID.\n"
+    constexpr auto labels = std::array{"snapshot", "prepared_copy", "presence", "missing", "borrowed"};
+    std::cout << "Event definitions: late-ID explicit snapshot, prepared copy, presence, missing ID, and borrowed metadata.\n"
         << "Name/type text and parameter count vary independently of unrelated event registrations.\n"
         << "Timing includes the query/copy and checksum; setup, full metadata checks, and growth checks are excluded.\n"
         << "Allocation requests use the separate untimed MSVC Debug pass.\n"
@@ -1939,21 +1939,22 @@ void runEventSnapshotBenchmark() {
                 }
 
                 const nomad::EventDefinition expected{eventId, name, parameters, {}};
-                const auto snapshotBeforeGrowth = runtime.getEventDefinition(eventId);
+                const auto* definitionBeforeGrowth = runtime.getEventDefinition(eventId);
                 const auto missingId = nomad::EventId{nomad::toNomadId(unrelatedCount + 1)};
                 if (
-                    !snapshotBeforeGrowth ||
-                    !eventDefinitionsMatch(*snapshotBeforeGrowth, expected) ||
+                    !definitionBeforeGrowth ||
+                    !eventDefinitionsMatch(*definitionBeforeGrowth, expected) ||
                     runtime.getEventId(name) != eventId ||
-                    runtime.getEventDefinition(nomad::EventId::INVALID).has_value() ||
-                    runtime.getEventDefinition(nomad::EventId{-2}).has_value() ||
-                    runtime.getEventDefinition(missingId).has_value() ||
+                    runtime.getEventDefinition(nomad::EventId::INVALID) != nullptr ||
+                    runtime.getEventDefinition(nomad::EventId{-2}) != nullptr ||
+                    runtime.getEventDefinition(missingId) != nullptr ||
                     runtime.getNextEventId(eventId).isValid()
                 ) {
                     throw std::runtime_error("Unexpected event snapshot metadata, iteration, or lookup bounds");
                 }
 
-                auto detached = runtime.getEventDefinition(eventId).value();
+                const auto snapshotBeforeGrowth = *definitionBeforeGrowth;
+                auto detached = *definitionBeforeGrowth;
                 detached.id = nomad::EventId::INVALID;
                 detached.name = "detachedSnapshot";
                 detached.doc = "detached documentation";
@@ -1963,7 +1964,7 @@ void runEventSnapshotBenchmark() {
                     detached.parameters.front().typeName = "detachedType";
                 }
 
-                if (!eventDefinitionsMatch(runtime.getEventDefinition(eventId).value(), expected)) {
+                if (!eventDefinitionsMatch(*definitionBeforeGrowth, expected)) {
                     throw std::runtime_error("Changing a detached event snapshot modified the registered event");
                 }
 
@@ -2007,12 +2008,14 @@ void runEventSnapshotBenchmark() {
                 };
                 const auto expectedChecksum = eventDefinitionChecksum(expected);
                 record(0, expectedChecksum, [&] {
-                    const auto snapshot = runtime.getEventDefinition(eventId);
-                    if (!snapshot) {
+                    const auto* definition = runtime.getEventDefinition(eventId);
+                    if (!definition) {
                         throw std::runtime_error("The benchmark event snapshot disappeared");
                     }
 
-                    return eventDefinitionChecksum(*snapshot);
+                    const auto snapshot = *definition;
+
+                    return eventDefinitionChecksum(snapshot);
                 });
                 record(1, expectedChecksum, [&] {
                     const auto copy = expected;
@@ -2021,11 +2024,19 @@ void runEventSnapshotBenchmark() {
                 });
                 record(2, 1, [&] {
 
-                    return static_cast<std::uint64_t>(runtime.getEventDefinition(eventId).has_value());
+                    return static_cast<std::uint64_t>(runtime.getEventDefinition(eventId) != nullptr);
                 });
                 record(3, 0, [&] {
 
-                    return static_cast<std::uint64_t>(runtime.getEventDefinition(missingId).has_value());
+                    return static_cast<std::uint64_t>(runtime.getEventDefinition(missingId) != nullptr);
+                });
+                record(4, expectedChecksum, [&] {
+                    const auto* definition = runtime.getEventDefinition(eventId);
+                    if (!definition) {
+                        throw std::runtime_error("The borrowed benchmark event disappeared");
+                    }
+
+                    return eventDefinitionChecksum(*definition);
                 });
                 for (auto index = nomad::NomadIndex{0}; index < 64; ++index) {
                     if (runtime.registerEvent(std::format("snapshotGrowth{}", index), {}).isInvalid()) {
@@ -2034,8 +2045,9 @@ void runEventSnapshotBenchmark() {
                 }
 
                 if (
-                    !eventDefinitionsMatch(*snapshotBeforeGrowth, expected) ||
-                    !eventDefinitionsMatch(runtime.getEventDefinition(eventId).value(), expected) ||
+                    runtime.getEventDefinition(eventId) != definitionBeforeGrowth ||
+                    !eventDefinitionsMatch(snapshotBeforeGrowth, expected) ||
+                    !eventDefinitionsMatch(*definitionBeforeGrowth, expected) ||
                     runtime.getEventId(name) != eventId
                 ) {
                     throw std::runtime_error("Event metadata or detached snapshot changed after catalog growth");

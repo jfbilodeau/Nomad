@@ -817,7 +817,7 @@ void Scene::registerEntityEvent(const NomadString &name, NomadId entityId, Calla
 }
 
 void Scene::registerEntityEvent(const EventId eventId, const NomadId entityId, const CallableId callableId) {
-    if (const auto eventDeclaration = m_game->getRuntime()->getEventDefinition(eventId)) {
+    if (const auto* eventDeclaration = m_game->getRuntime()->getEventDefinition(eventId)) {
         registerEntityEvent(eventDeclaration->name, entityId, callableId);
     } else {
         log::warning("Event ID " + toString(eventId.id) + " not found");
