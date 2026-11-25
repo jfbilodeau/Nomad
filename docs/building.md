@@ -66,7 +66,7 @@ It is excluded from normal builds and is not a CTest entry. Run its executable
 from the build's `tests` directory (`tests/Debug` or `tests/Release` for
 Visual Studio).
 
-It covers registration, name lookup, member resolution, strings, property access,
+It covers registration, callable/type lookup, member resolution, strings, property access,
 script/host calls, and event-definition snapshots. Workloads and checks are defined in
 [RuntimeLookupBenchmark.cpp](https://github.com/jfbilodeau/Nomad/blob/main/tests/RuntimeLookupBenchmark.cpp).
 Compare the same workload and configuration before and after a change. Treat
@@ -108,3 +108,12 @@ hub publication; input preparation and destruction of retained entries are
 excluded. Debug allocation passes use fresh runtimes. A separate instrumented
 target reports constructor copies/moves without contaminating the timing cases;
 its storage behavior is not a latency or allocation control.
+
+Well-known-type workloads compare convenience getters with prepared-name and
+prepared-ID queries after 0/100/1,000 unrelated class registrations. Ten built-ins
+and the function type's missing/late-registration states are reported separately.
+Five fresh samples use 32 warmups, 25,000 built-in queries, scan-budgeted function
+queries, and separate Debug allocation passes. Checks preserve descriptor
+identity through growth and the function lookup's missing-to-first-match
+transition. Prepared IDs exclude name resolution; they are not an implemented
+cache or an exact subtractive control.

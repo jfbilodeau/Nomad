@@ -8,7 +8,9 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **R30:** The approved stable-definition pointer lookup is implemented and validated. Borrowed metadata survives registration growth/reentry; checked direct-ID lookup makes no Debug allocation requests. Explicit snapshots remain ordinary copies, measured separately in Debug and Release. Two selected Debug CTests and checked benchmarks pass.
 
-**R23:** The approved local-registration move is implemented and validated. Per-callback target copies change from two to one for lvalue inputs and one to zero for moved inputs. Large captures and long metadata each save two Debug requests per registration; timings remain mixed. The selected language CTest, unchanged checked Debug/Release benchmarks, and strict documentation build pass. Next reviewable scope: measure R18's well-known-type lookups before considering caching.
+**R23:** The approved local-registration move is implemented and validated. Per-callback target copies change from two to one for lvalue inputs and one to zero for moved inputs. Large captures and long metadata each save two Debug requests per registration; timings remain mixed. The selected language CTest, unchanged checked Debug/Release benchmarks, and strict documentation build pass.
+
+**R18:** Checked well-known-type lookup baselines are recorded for Debug and Release. The user approved ten Runtime-held borrowed pointer views, initialized once after built-in registration while TypeManager retains descriptor ownership. The function-type getter stays dynamic and name-based. No cache is implemented yet. Next reviewable scope: implement these fixed views, add focused identity/allocation regressions, and compare the unchanged checked workloads.
 
 ## Component contract
 
@@ -2266,6 +2268,215 @@ Measure each change before and after on the same workload.
   cache is warranted. R26/R27 and other remaining step-8 work stay separate;
   do not implement another optimization automatically.
 
+#### R18 well-known-type lookup baseline
+
+- Extended the existing opt-in benchmark only. No Runtime/TypeManager API,
+  storage, registration, parser classification, or ownership behavior changed.
+  No dependency, CMake target, or CTest entry was added.
+- All eleven Runtime convenience getters currently delegate to name lookup.
+  TypeManager scans registered descriptors, obtains names by value, and then
+  performs a checked ID lookup. The ten constructor-registered descriptors
+  occupy a fixed prefix, so appending unrelated types does not add scan work
+  for those getters.
+- `getFunctionType()` is different: a fresh Runtime has no descriptor named
+  `callback`. Callback registration creates one lazily; later callback
+  signatures can share that display name. The getter returns the first
+  matching name, not a canonical signature. Its only current production call
+  site is documentation generation, so synthetic late-callback costs are not
+  evidence of a gameplay hot path.
+- Each added-count uses five fresh Runtime samples. In each sample the ten
+  fixed getters are measured first, followed by function-type absence and
+  then a first callback registered after the unrelated classes. The initial
+  catalog has 13 slots. Adding 0/100/1,000 uniquely named classes gives
+  13/113/1,013 slots before the callback and 14/114/1,014 afterward.
+  Unrelated class names are 18 bytes; callback scan costs depend on that
+  fixture, not solely on descriptor count.
+- Fixed getter cases use 25,000 timed queries. Function cases use integer
+  `clamp(500000 / measuredTypes, 500, 25000)`: 25,000 operations at zero
+  additions, 4,424/4,385 for missing/late callbacks at 100 additions, and
+  500 for both at 1,000 additions. All operations have 32 warmups. Separate
+  MSVC Debug allocation passes use `min(1000, iterations)` operations.
+- Convenience getters use direct typed lambdas, not a type-erased callable or
+  member-pointer dispatcher. Name strings and IDs are prepared outside timing.
+  Timed loops include pointer comparison/counting. Runtime construction,
+  registration, initial full metadata checks, and post-growth checks are
+  excluded. Queries must not change catalog size.
+- Checks validate descriptor ownership, full names/IDs, name/ID/convenience
+  agreement, and every timed/probed result. Post-measurement registration of a
+  different callback signature and another class must preserve the first
+  callback match and all ten original built-in pointers.
+- Prepared-ID controls bypass name discovery. The missing-function case uses
+  `TypeId::INVALID` as a known-absence control, not a resolved descriptor.
+  These controls are not an implemented pointer cache, an equal-work
+  replacement for discovery, or an exact subtractive timing decomposition.
+- Both Windows Debug and Release targets build and all checked benchmark
+  sections pass with bundled language DLL hashes matched to the current
+  builds. The selected `nomad_test_language` Debug CTest also passes directly,
+  without a separate pre-test build.
+- Tables retain median `[min,max]` microseconds per query from all five
+  samples. Debug request minima/medians/maxima are identical in each case.
+
+| Debug case | Added types | Convenience (us) | Prepared name (us) | Prepared ID (us) | Requests convenience/name/ID |
+| --- | --- | --- | --- | --- | --- |
+| void | 0 | 0.631 [0.506,0.714] | 0.628 [0.500,0.633] | 0.059 [0.035,0.072] | 1 / 1 / 0 |
+| boolean | 0 | 2.326 [2.111,2.561] | 2.268 [2.087,3.107] | 0.038 [0.034,0.066] | 5 / 5 / 0 |
+| integer | 0 | 1.777 [1.542,2.336] | 1.979 [1.693,2.428] | 0.038 [0.033,0.050] | 4 / 4 / 0 |
+| float | 0 | 1.686 [1.236,1.870] | 1.816 [1.453,1.876] | 0.041 [0.033,0.085] | 3 / 3 / 0 |
+| string | 0 | 3.082 [2.562,3.756] | 2.747 [2.627,3.404] | 0.050 [0.033,0.084] | 6 / 6 / 0 |
+| file_name | 0 | 3.567 [2.765,3.761] | 3.328 [3.037,3.512] | 0.054 [0.050,0.079] | 7 / 7 / 0 |
+| function_name | 0 | 4.295 [3.552,4.485] | 3.617 [3.473,4.086] | 0.047 [0.039,0.077] | 8 / 8 / 0 |
+| line_number | 0 | 4.464 [3.924,4.666] | 4.323 [4.185,5.981] | 0.037 [0.033,0.070] | 9 / 9 / 0 |
+| event_callback | 0 | 5.334 [4.402,5.442] | 5.037 [4.839,6.000] | 0.042 [0.033,0.099] | 10 / 10 / 0 |
+| event_dispatch | 0 | 5.568 [5.185,5.831] | 5.479 [5.192,5.817] | 0.046 [0.033,0.097] | 11 / 11 / 0 |
+| function_missing | 0 | 6.094 [5.872,7.143] | 6.336 [6.194,6.828] | 0.040 [0.028,0.063] | 13 / 13 / 0 |
+| function_late | 0 | 6.860 [6.573,7.410] | 6.760 [5.918,6.841] | 0.065 [0.044,0.069] | 14 / 14 / 0 |
+| void | 100 | 0.532 [0.426,0.608] | 0.490 [0.445,0.652] | 0.049 [0.034,0.056] | 1 / 1 / 0 |
+| boolean | 100 | 2.298 [2.184,2.413] | 2.474 [1.914,2.758] | 0.034 [0.033,0.055] | 5 / 5 / 0 |
+| integer | 100 | 1.934 [1.679,2.768] | 1.827 [1.693,2.536] | 0.045 [0.034,0.049] | 4 / 4 / 0 |
+| float | 100 | 1.618 [1.301,1.734] | 1.562 [1.468,3.915] | 0.036 [0.033,0.056] | 3 / 3 / 0 |
+| string | 100 | 3.098 [2.374,3.798] | 2.640 [2.444,3.116] | 0.038 [0.034,0.058] | 6 / 6 / 0 |
+| file_name | 100 | 3.278 [2.553,3.386] | 2.988 [2.689,3.611] | 0.054 [0.039,0.070] | 7 / 7 / 0 |
+| function_name | 100 | 3.650 [3.023,4.489] | 3.910 [3.505,4.080] | 0.035 [0.034,0.087] | 8 / 8 / 0 |
+| line_number | 100 | 4.514 [4.179,4.876] | 4.177 [3.647,4.633] | 0.046 [0.035,0.071] | 9 / 9 / 0 |
+| event_callback | 100 | 4.546 [4.016,4.972] | 4.891 [3.713,5.578] | 0.043 [0.035,0.063] | 10 / 10 / 0 |
+| event_dispatch | 100 | 5.407 [4.137,6.049] | 5.312 [4.677,5.550] | 0.045 [0.035,0.077] | 11 / 11 / 0 |
+| function_missing | 100 | 79.137 [65.996,87.605] | 79.983 [72.018,86.409] | 0.031 [0.028,0.060] | 213 / 213 / 0 |
+| function_late | 100 | 81.979 [71.612,90.389] | 75.959 [69.768,87.386] | 0.035 [0.034,0.123] | 214 / 214 / 0 |
+| void | 1,000 | 0.519 [0.411,0.675] | 0.538 [0.479,0.736] | 0.041 [0.035,0.065] | 1 / 1 / 0 |
+| boolean | 1,000 | 2.090 [1.980,2.816] | 2.886 [2.202,3.251] | 0.043 [0.041,0.072] | 5 / 5 / 0 |
+| integer | 1,000 | 1.664 [1.558,2.641] | 1.938 [1.578,2.445] | 0.046 [0.035,0.064] | 4 / 4 / 0 |
+| float | 1,000 | 1.352 [1.212,2.000] | 1.262 [1.186,1.652] | 0.053 [0.035,0.063] | 3 / 3 / 0 |
+| string | 1,000 | 3.364 [2.352,23.809] | 2.767 [2.202,9.440] | 0.051 [0.033,0.058] | 6 / 6 / 0 |
+| file_name | 1,000 | 3.473 [2.584,4.252] | 4.181 [2.764,8.044] | 0.044 [0.032,0.055] | 7 / 7 / 0 |
+| function_name | 1,000 | 4.233 [3.204,4.850] | 3.787 [3.275,4.500] | 0.045 [0.034,0.054] | 8 / 8 / 0 |
+| line_number | 1,000 | 4.409 [3.287,10.851] | 5.408 [3.379,49.910] | 0.038 [0.033,0.063] | 9 / 9 / 0 |
+| event_callback | 1,000 | 5.937 [3.832,21.400] | 5.065 [3.729,6.954] | 0.048 [0.035,0.074] | 10 / 10 / 0 |
+| event_dispatch | 1,000 | 4.794 [4.307,27.060] | 5.228 [4.124,33.496] | 0.062 [0.037,0.082] | 11 / 11 / 0 |
+| function_missing | 1,000 | 724.440 [573.083,1615.497] | 752.607 [630.958,1256.393] | 0.030 [0.028,0.098] | 2,013 / 2,013 / 0 |
+| function_late | 1,000 | 760.589 [621.224,890.365] | 654.519 [596.359,764.416] | 0.037 [0.034,0.055] | 2,014 / 2,014 / 0 |
+
+| Release case | Added types | Convenience (us) | Prepared name (us) | Prepared ID (us) |
+| --- | --- | --- | --- | --- |
+| void | 0 | 0.016 [0.011,0.020] | 0.021 [0.010,0.030] | 0.003 [0.002,0.005] |
+| boolean | 0 | 0.042 [0.036,0.052] | 0.049 [0.027,0.062] | 0.003 [0.002,0.004] |
+| integer | 0 | 0.039 [0.020,0.046] | 0.030 [0.028,0.040] | 0.002 [0.002,0.003] |
+| float | 0 | 0.023 [0.019,0.048] | 0.027 [0.019,0.035] | 0.002 [0.002,0.004] |
+| string | 0 | 0.047 [0.028,0.057] | 0.052 [0.031,0.062] | 0.002 [0.002,0.005] |
+| file_name | 0 | 0.067 [0.040,0.097] | 0.047 [0.038,0.056] | 0.002 [0.002,0.003] |
+| function_name | 0 | 0.046 [0.034,0.070] | 0.056 [0.054,0.105] | 0.003 [0.002,0.004] |
+| line_number | 0 | 0.084 [0.060,0.087] | 0.075 [0.044,0.115] | 0.002 [0.002,0.003] |
+| event_callback | 0 | 0.075 [0.048,0.100] | 0.069 [0.053,0.105] | 0.003 [0.002,0.004] |
+| event_dispatch | 0 | 0.090 [0.078,0.092] | 0.096 [0.077,0.100] | 0.003 [0.002,0.004] |
+| function_missing | 0 | 0.083 [0.051,0.151] | 0.081 [0.074,0.117] | 0.003 [0.001,0.003] |
+| function_late | 0 | 0.088 [0.060,0.125] | 0.093 [0.067,0.152] | 0.003 [0.002,0.004] |
+| void | 100 | 0.018 [0.015,0.056] | 0.015 [0.010,0.031] | 0.003 [0.002,0.008] |
+| boolean | 100 | 0.041 [0.026,0.104] | 0.044 [0.029,0.089] | 0.002 [0.002,0.007] |
+| integer | 100 | 0.028 [0.020,0.037] | 0.033 [0.021,0.047] | 0.002 [0.002,0.004] |
+| float | 100 | 0.029 [0.018,0.058] | 0.027 [0.019,0.051] | 0.002 [0.002,0.004] |
+| string | 100 | 0.044 [0.036,0.068] | 0.043 [0.029,0.052] | 0.003 [0.002,0.004] |
+| file_name | 100 | 0.059 [0.036,0.092] | 0.048 [0.037,0.077] | 0.002 [0.002,0.004] |
+| function_name | 100 | 0.048 [0.042,0.075] | 0.054 [0.048,0.065] | 0.003 [0.002,0.008] |
+| line_number | 100 | 0.068 [0.052,0.085] | 0.069 [0.051,0.086] | 0.003 [0.002,0.003] |
+| event_callback | 100 | 0.068 [0.050,0.074] | 0.070 [0.050,0.095] | 0.003 [0.002,0.008] |
+| event_dispatch | 100 | 0.078 [0.059,0.109] | 0.097 [0.081,0.142] | 0.003 [0.002,0.004] |
+| function_missing | 100 | 5.658 [4.631,7.173] | 5.383 [3.504,7.572] | 0.003 [0.001,0.004] |
+| function_late | 100 | 4.865 [3.513,7.481] | 5.834 [3.584,7.611] | 0.002 [0.002,0.003] |
+| void | 1,000 | 0.011 [0.010,0.051] | 0.012 [0.010,0.015] | 0.002 [0.002,0.003] |
+| boolean | 1,000 | 0.044 [0.026,0.050] | 0.036 [0.033,0.055] | 0.003 [0.002,0.003] |
+| integer | 1,000 | 0.023 [0.022,0.033] | 0.033 [0.022,0.037] | 0.002 [0.002,0.003] |
+| float | 1,000 | 0.022 [0.020,0.027] | 0.040 [0.023,0.068] | 0.003 [0.002,0.004] |
+| string | 1,000 | 0.038 [0.031,0.044] | 0.044 [0.029,0.077] | 0.002 [0.002,0.004] |
+| file_name | 1,000 | 0.050 [0.036,0.074] | 0.056 [0.047,0.100] | 0.002 [0.002,0.003] |
+| function_name | 1,000 | 0.058 [0.034,0.070] | 0.043 [0.037,0.076] | 0.003 [0.002,0.011] |
+| line_number | 1,000 | 0.072 [0.062,0.115] | 0.076 [0.062,0.097] | 0.003 [0.002,0.003] |
+| event_callback | 1,000 | 0.067 [0.047,0.105] | 0.090 [0.066,0.169] | 0.003 [0.002,0.003] |
+| event_dispatch | 1,000 | 0.084 [0.062,0.113] | 0.077 [0.056,0.100] | 0.002 [0.002,0.007] |
+| function_missing | 1,000 | 46.101 [37.297,68.599] | 47.146 [41.449,79.214] | 0.003 [0.001,0.004] |
+| function_late | 1,000 | 45.548 [40.938,54.355] | 48.524 [46.450,69.505] | 0.002 [0.002,0.003] |
+
+- In case order, fixed getters/names make 1/5/4/3/6/7/8/9/10/11 Debug requests
+  at every catalog size; prepared IDs make zero. Function-name absence makes
+  13/213/2,013 requests and late lookup makes 14/214/2,014. These include
+  Debug STL overhead and copies of the 18-byte unrelated names. Release
+  request counts are unavailable, not inferred from Debug or from timings.
+- Fixed-prefix Release convenience costs remain in the tens of nanoseconds:
+  integer medians are 0.039/0.028/0.023 us and event-dispatch medians are
+  0.090/0.078/0.084 us at 0/100/1,000 additions. Existing prepared-ID
+  controls are about 0.002-0.003 us. No pointer-cache implementation,
+  initialization cost, memory trade-off, or cache speedup was measured.
+- The absent/late function lookup has different scaling: Release medians
+  grow from 0.083/0.088 us at zero additions to 46.101/45.548 us at 1,000.
+  A cache must not freeze initial absence or substitute the most recently
+  registered callback for the first name match. Multiple callback signatures
+  are checked; arbitrary host-defined mutable display names and nominal name
+  collisions are not exercised by these fixtures.
+- TypeManager's parameter classifier also performs its own name lookups.
+  Caching Runtime wrappers alone would not automatically optimize that
+  separate path. No expansion of that classifier or its policies is approved.
+- All ranges, including Debug outliers, are retained. This is a shared-machine
+  Windows/MSVC lookup microbenchmark, not a production getter-frequency,
+  compilation/startup, or gameplay profile. No cross-platform result,
+  full-suite rerun, allocator-failure injection, timing threshold, or universal
+  latency claim is made.
+- The follow-up review approved the Runtime-held borrowed-pointer contract
+  below. This baseline did not implement a cache or measure its added setup,
+  object-size, or lookup effects.
+
+#### R18 approved fixed-type borrowed views
+
+- The user selected ten named, non-owning `const Type*` fields in Runtime,
+  rather than cached TypeIds, broader TypeManager getter APIs, or deferral.
+  TypeManager remains the sole descriptor owner and ID allocator. Runtime
+  borrows existing descriptors; it does not gain a parallel type catalog.
+- The ten existing getters cover void, boolean, integer, float, string,
+  source-file name, source-function name, source-line number, event callback,
+  and event dispatch types. Keep their names, const-callability, and
+  `const Type*` return views unchanged. Use per-runtime fields, not static or
+  shared storage, hard-coded IDs, a keyed index, or a new type-category enum.
+- Bind the views through existing catalog queries once, immediately after the
+  successful built-in registration batch and before iterator/range,
+  instruction, operator, and native registration setup. The built-in
+  constructor/publication path was source-reviewed: it does not need these
+  Runtime convenience getters before that point.
+- Construction must not succeed with an unbound fixed view. Preserve existing
+  registration-failure diagnostics and exception propagation; do not silently
+  substitute a type, fall back to lazy lookup, or swallow allocation failures.
+  Getters then return their bound fields without per-call lookup, mutation,
+  validation, or new exceptions.
+- The descriptors remain owned by the same runtime's type catalog until its
+  destruction. The existing owned-descriptor storage and registration rules
+  keep their addresses stable through growth; no new registration restriction,
+  seal, freeze, erase policy, shared ownership, or cleanup discriminator is
+  needed.
+- Leave `getFunctionType()` unchanged and name-based. Preserve initial absence
+  and selection of the first matching `callback` display name; do not bind
+  a fixed callback signature, cache initial null, or cache a first non-null
+  result under a new lifetime/name-stability assumption.
+- Generic name/ID queries, TypeManager's parameter classifier and predicate
+  lookup, namespace publication, and registration behavior remain unchanged.
+  Do not add catalog convenience getters, an initialization API on TypeManager,
+  or a TypeManager-to-Runtime call to extend this optimization.
+- The accepted field payload is ten pointers: 80 bytes on x64. This is not a
+  measured total Runtime object-size increase, construction cost, startup
+  improvement, or production-frequency result. Record those limits rather
+  than inferring an aggregate speedup from the lookup controls.
+- The next continuation implements the fields, constructor binding, and ten
+  getter bodies together. Add focused existing-file regressions for per-runtime
+  identity, name/ID agreement through later registration, and zero MSVC Debug
+  allocation requests on repeated fixed-getter calls. Reuse existing allocation
+  probe patterns, not a new framework. Keep the existing benchmark's callback
+  absence/late-signature checks as coverage of the excluded dynamic getter.
+- Describe observable borrowed lifetime and the separate function-lookup
+  contract in public embedding documentation as needed; keep cache internals
+  in this plan rather than the host API guide.
+- Run the relevant language and remaining Debug CTests directly through the
+  workspace integration without a separate pre-test build. Build and execute
+  the unchanged checked lookup workloads in Debug and Release with current
+  bundled DLLs; compare fixed-getter requests and full latency ranges against
+  the baseline while retaining name/ID and dynamic-function controls.
+  Preserve noisy/slower samples and unavailable Release allocation counts.
+  Stop after that bounded implementation/validation step for review.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -2331,7 +2542,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R15 | P2 | perf | Registration makes several full passes over callables (quadratic startup) | `Runtime.cpp`: registerNativeFunction, getFunctionOverloadCount, canOverloadCallable; RuntimeLookupBenchmark | Same-name free-function scans replaced by the shared index and distinct-name registration measured; broader startup/large-overload workloads not measured | 8 |
 | R16 | P2 | redundancy | Duplicate lookup pairs: getScriptCallableAtLine vs getFunctionAtLine; getScriptCallableAtInstructionIndex vs getFunctionAtInstructionIndex; getScriptCallableByStartAddress vs getFunctionByStartAddress | `Runtime.hpp/cpp`, `VirtualMachine.hpp/cpp`; catalog, source-navigation, and frame tests | Fixed: function-only navigation APIs and the test-only current-script getter removed; general callable navigation and function-only ID views retained | 2, 7 |
 | R17 | P2 | const-correctness | Const methods return mutable pointers or mutate state: getFormatString, getFunctions, getVariableContext, setContextVariable* | `Runtime.hpp/cpp`; documentation reader; registry/catalog constness tests; context contracts | Complete with approval: owned format/function metadata has const-correct views; test-only navigation removed under R16; mutable live-context facade intentionally retained and documented | 7 |
-| R18 | P3 | typing | Well-known type getters perform string-keyed lookups on every call (about 490 call sites, mostly registration); getStringType returns a different pointer type; unchecked `static_cast` downcasts where other code uses `asX()` | `Runtime.hpp/cpp`: convenience type getters and iterator initializer; native-member and type-manager tests | Step 7 implemented with approval: consistent const Type* string view and iterator category query; name-based lookup caching remains in step 8 | 7, 8 |
+| R18 | P3 | typing | Well-known type getters perform string-keyed lookups on every call (about 490 call sites, mostly registration); getStringType returns a different pointer type; unchecked `static_cast` downcasts where other code uses `asX()` | `Runtime.hpp/cpp`: convenience getters; TypeManager name lookup; checked well-known-type benchmark; category/type tests | Step 7 typing cleanup complete; checked baselines recorded; ten Runtime-held borrowed pointer views approved with constructor-time binding and unchanged dynamic function lookup; bounded implementation/validation is next | 7, 8 |
 | R19 | P3 | redundancy | getParameterShape mirrors the parser's parameter classification; drift risk | `TypeManager.cpp`: shared getParameterShape; `Runtime.cpp`: query facade; `Parser.cpp`: parseCallableArguments | Fixed: parser, Runtime registration, and inference share the catalog classifier; token consumption, diagnostics, and callback/predicate precedence retained | 7 |
 | R20 | P3 | redundancy | Six context-variable accessors repeat the same log-and-return pattern | `Runtime.cpp`: context-variable accessors and private lookup; `LanguageContextVariableTest.cpp`: invalid-handle regression | Fixed with approval: shared lookup owns one unchanged error per rejection with common provenance; specialized returns, context state and ownership retained | 7 |
 | R21 | P3 | correctness | `getConstantValue` silently returns on an invalid id, leaving the value unchanged | `Runtime.cpp`: getConstantValue; `LanguageRegistryIdTest.cpp`: constant lookup regression | Fixed under R6: host reads throw without logging or changing output; compiler-resolved VM reads use unchecked access | 6 |

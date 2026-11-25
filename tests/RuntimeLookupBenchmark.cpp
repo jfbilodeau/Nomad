@@ -8,6 +8,7 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/DynamicVariable.hpp>
 #include <nomad/script/Event.hpp>
@@ -2450,6 +2451,253 @@ void runDynamicVariableCopyProbe() {
     }
 }
 
+void runWellKnownTypeLookupBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto catalogSizes = std::array<nomad::NomadIndex, 3>{0, 100, 1000};
+    constexpr auto cases = std::array{
+        "void", "boolean", "integer", "float", "string", "file_name", "function_name", "line_number",
+        "event_callback", "event_dispatch", "function_missing", "function_late"
+    };
+    const auto names = std::array{
+        nomad::VOID_TYPE_NAME, nomad::BOOLEAN_TYPE_NAME, nomad::INTEGER_TYPE_NAME, nomad::FLOAT_TYPE_NAME,
+        nomad::STRING_TYPE_NAME, nomad::FILE_NAME_TYPE_NAME, nomad::FUNCTION_NAME_TYPE_NAME,
+        nomad::FUNCTION_LINE_NUMBER_TYPE_NAME, nomad::EVENT_CALLBACK_TYPE_NAME, nomad::EVENT_DISPATCH_TYPE_NAME,
+        nomad::FUNCTION_TYPE_NAME, nomad::FUNCTION_TYPE_NAME
+    };
+    constexpr auto labels = std::array{"convenience", "name", "id"};
+    std::cout << "Well-known types: convenience getters, prepared-name lookups, and prepared-ID queries.\n"
+        << "Ten constructor-registered types and function-type absence/late registration are measured separately.\n"
+        << "Five fresh Runtime samples; 32 warmups; 25000 operations for built-ins, scan-budgeted function queries.\n"
+        << "Debug allocation probes are separate; setup and post-registration identity checks are excluded.\n"
+        << std::flush;
+
+    for (const auto addedCount : catalogSizes) {
+        std::vector<nomad::NomadString> addedNames;
+        addedNames.reserve(addedCount);
+        for (auto index = nomad::NomadIndex{0}; index < addedCount; ++index) {
+            addedNames.push_back(std::format("R18LookupNoise{:04}", index));
+        }
+
+        std::array<std::array<std::vector<double>, labels.size()>, cases.size()> latencySamples;
+        std::array<std::array<std::vector<double>, labels.size()>, cases.size()> allocationSamples;
+        std::array<nomad::NomadIndex, cases.size()> typeCounts{};
+        std::array<nomad::NomadIndex, cases.size()> iterationCounts{};
+        std::array<nomad::NomadIndex, cases.size()> allocationIterationCounts{};
+        std::array<nomad::TypeId, cases.size()> typeIds{};
+        auto initialCount = nomad::NomadIndex{0};
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            nomad::Runtime runtime;
+            auto& manager = runtime.getTypeManager();
+            if (sample == 0) {
+                initialCount = manager.getTypeCount();
+            } else if (manager.getTypeCount() != initialCount) {
+                throw std::runtime_error("The initial type catalog changed between benchmark samples");
+            }
+
+            const auto builtIns = std::array{
+                runtime.getVoidType(), runtime.getBooleanType(), runtime.getIntegerType(), runtime.getFloatType(),
+                runtime.getStringType(), runtime.getFileNameType(), runtime.getFunctionNameType(),
+                runtime.getLineNumberType(), runtime.getEventCallbackType(), runtime.getEventDispatchType()
+            };
+            if (runtime.getFunctionType() != nullptr) {
+                throw std::runtime_error("The fresh type fixture unexpectedly contains a callback type");
+            }
+
+            for (const auto& addedName : addedNames) {
+                if (runtime.registerClass(addedName, nomad::ClassMode::Closed).isInvalid()) {
+                    throw std::runtime_error("Failed to populate the well-known-type benchmark catalog");
+                }
+            }
+
+            if (manager.getTypeCount() != initialCount + addedCount) {
+                throw std::runtime_error("Unexpected type catalog growth before lookup measurements");
+            }
+
+            const auto record = [&](
+                const nomad::NomadIndex query,
+                const nomad::Type* expected,
+                const auto& getConvenience
+            ) {
+                const auto& name = names[query];
+                const auto id = expected == nullptr ? nomad::TypeId::INVALID : expected->getId();
+                const auto typeCount = manager.getTypeCount();
+                const auto iterations = query < builtIns.size() ? nomad::NomadIndex{25000} :
+                    std::clamp(
+                        nomad::NomadIndex{500000} / typeCount,
+                        nomad::NomadIndex{500},
+                        nomad::NomadIndex{25000}
+                    );
+                const auto allocationIterations = std::min(nomad::NomadIndex{1000}, iterations);
+                if (
+                    (expected != nullptr &&
+                        (expected->getRuntime() != &runtime || expected->getTypeName() != name || id.isInvalid())) ||
+                    (query < builtIns.size() && expected == nullptr) ||
+                    runtime.getTypeId(name) != id ||
+                    runtime.getTypeByName(name) != expected
+                ) {
+                    throw std::runtime_error("Unexpected well-known-type identity, ownership, or name resolution");
+                }
+
+                if (sample == 0) {
+                    typeCounts[query] = typeCount;
+                    iterationCounts[query] = iterations;
+                    allocationIterationCounts[query] = allocationIterations;
+                    typeIds[query] = id;
+                } else if (
+                    typeCounts[query] != typeCount ||
+                    iterationCounts[query] != iterations ||
+                    allocationIterationCounts[query] != allocationIterations ||
+                    typeIds[query] != id
+                ) {
+                    throw std::runtime_error("Well-known-type fixtures changed between fresh samples");
+                }
+
+                const auto measure = [&](const nomad::NomadIndex operation, const auto& lookup) {
+                    for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+                        if (lookup() != expected) {
+                            throw std::runtime_error("A well-known-type warmup returned the wrong descriptor");
+                        }
+                    }
+
+                    auto matchingQueries = nomad::NomadIndex{0};
+                    const auto start = std::chrono::steady_clock::now();
+                    for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+                        matchingQueries += lookup() == expected;
+                    }
+
+                    latencySamples[query][operation].push_back(std::chrono::duration<double, std::micro>{
+                        std::chrono::steady_clock::now() - start
+                    }.count() / static_cast<double>(iterations));
+                    if (matchingQueries != iterations) {
+                        throw std::runtime_error("Well-known-type identity changed during timing");
+                    }
+
+                    auto allocationMatches = nomad::NomadIndex{0};
+                    const auto requests = countHostCallAllocations([&] {
+                        allocationMatches += lookup() == expected;
+                    }, allocationIterations);
+                    if (requests.has_value()) {
+                        if (allocationMatches != allocationIterations) {
+                            throw std::runtime_error("A well-known-type allocation probe changed its result");
+                        }
+
+                        allocationSamples[query][operation].push_back(
+                            static_cast<double>(*requests) / static_cast<double>(allocationIterations)
+                        );
+                    }
+                };
+                measure(0, getConvenience);
+                measure(1, [&] {
+
+                    return runtime.getTypeByName(name);
+                });
+                measure(2, [&]() -> const nomad::Type* {
+                    const auto type = runtime.getType(id);
+
+                    return type.has_value() ? *type : nullptr;
+                });
+                if (manager.getTypeCount() != typeCount) {
+                    throw std::runtime_error("A well-known-type query unexpectedly changed the catalog");
+                }
+            };
+            record(0, builtIns[0], [&] {
+
+                return runtime.getVoidType();
+            });
+            record(1, builtIns[1], [&] {
+
+                return runtime.getBooleanType();
+            });
+            record(2, builtIns[2], [&] {
+
+                return runtime.getIntegerType();
+            });
+            record(3, builtIns[3], [&] {
+
+                return runtime.getFloatType();
+            });
+            record(4, builtIns[4], [&] {
+
+                return runtime.getStringType();
+            });
+            record(5, builtIns[5], [&] {
+
+                return runtime.getFileNameType();
+            });
+            record(6, builtIns[6], [&] {
+
+                return runtime.getFunctionNameType();
+            });
+            record(7, builtIns[7], [&] {
+
+                return runtime.getLineNumberType();
+            });
+            record(8, builtIns[8], [&] {
+
+                return runtime.getEventCallbackType();
+            });
+            record(9, builtIns[9], [&] {
+
+                return runtime.getEventDispatchType();
+            });
+            record(10, nullptr, [&] {
+
+                return runtime.getFunctionType();
+            });
+            const auto* firstCallback = manager.getCallbackType({builtIns[2]}, builtIns[0]);
+            if (firstCallback == nullptr || firstCallback->asCallback() == nullptr) {
+                throw std::runtime_error("Failed to register the late callback lookup fixture");
+            }
+
+            record(11, firstCallback, [&] {
+
+                return runtime.getFunctionType();
+            });
+            const auto* secondCallback = manager.getCallbackType({builtIns[3]}, builtIns[2]);
+            if (
+                secondCallback == nullptr ||
+                secondCallback == firstCallback ||
+                runtime.registerClass("R18PostMeasurement", nomad::ClassMode::Closed).isInvalid() ||
+                runtime.getFunctionType() != firstCallback ||
+                runtime.getTypeByName(nomad::FUNCTION_TYPE_NAME) != firstCallback ||
+                runtime.getType(firstCallback->getId()).value() != firstCallback
+            ) {
+                throw std::runtime_error("Late registration changed the first matching callback descriptor");
+            }
+
+            const auto afterGrowth = std::array{
+                runtime.getVoidType(), runtime.getBooleanType(), runtime.getIntegerType(), runtime.getFloatType(),
+                runtime.getStringType(), runtime.getFileNameType(), runtime.getFunctionNameType(),
+                runtime.getLineNumberType(), runtime.getEventCallbackType(), runtime.getEventDispatchType()
+            };
+            if (afterGrowth != builtIns) {
+                throw std::runtime_error("Well-known-type descriptors changed after catalog growth");
+            }
+        }
+
+        for (auto query = nomad::NomadIndex{0}; query < cases.size(); ++query) {
+            std::cout << "well_known_case=" << cases[query] << " added_types=" << addedCount
+                << " initial_types=" << initialCount << " measured_types=" << typeCounts[query]
+                << " type_id=" << typeIds[query].id << " name_bytes=" << names[query].size()
+                << " added_name_bytes=" << (addedNames.empty() ? 0 : addedNames.front().size())
+                << " iterations=" << iterationCounts[query]
+                << " allocation_iterations=" << allocationIterationCounts[query];
+            for (auto operation = nomad::NomadIndex{0}; operation < labels.size(); ++operation) {
+                const auto timeLabel = std::format("{}_us", labels[operation]);
+                printSamples(timeLabel.c_str(), latencySamples[query][operation]);
+                const auto allocationLabel = std::format("{}_allocations", labels[operation]);
+                if (!allocationSamples[query][operation].empty()) {
+                    printSamples(allocationLabel.c_str(), allocationSamples[query][operation]);
+                } else {
+                    std::cout << ' ' << allocationLabel << "=unavailable";
+                }
+            }
+
+            std::cout << std::endl;
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -2467,6 +2715,7 @@ int main() {
         runEventSnapshotBenchmark();
         runDynamicVariableRegistrationBenchmark();
         runDynamicVariableCopyProbe();
+        runWellKnownTypeLookupBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 
