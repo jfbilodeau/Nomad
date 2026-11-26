@@ -2,7 +2,12 @@
 
 #include <nomad/compiler/Compilation.hpp>
 #include <nomad/compiler/Compiler.hpp>
+#include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/DeferredType.hpp>
+#include <nomad/compiler/Expression.hpp>
+#include <nomad/compiler/FormatStringCompiler.hpp>
+#include <nomad/compiler/Parser.hpp>
+#include <nomad/compiler/Tokenizer.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
@@ -42,6 +47,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -4159,6 +4165,449 @@ void runInterpreterRetirementBenchmark() {
     }
 }
 
+void runDynamicFormatBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto warmups = nomad::NomadIndex{32};
+    constexpr auto timingIterations = nomad::NomadIndex{512};
+    constexpr auto allocationIterations = nomad::NomadIndex{128};
+    constexpr auto shapes = std::array{"empty", "literal", "identifier", "repeated", "arithmetic", "reference"};
+    constexpr auto formats = std::array{"", "static text", "{value}", "{value}/{value}", "{value + 7}", "{text}"};
+    constexpr auto placeholderCounts = std::array<nomad::NomadIndex, 6>{0, 0, 1, 2, 1, 1};
+    constexpr auto labels = std::array{"template_scan", "host_format", "compiled_dynamic", "compiled_plain"};
+    const nomad::NomadString sourceName = "benchmark-format.nomad";
+    const nomad::NomadString valueName = "value";
+    const nomad::NomadString textName = "text";
+    const auto allocationSupported = countHostCallAllocations([] {}, 0).has_value();
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    std::cout << "Dynamic formatting: template scanning, live host formatting, and compiled dynamic/plain calls.\n"
+        << "Five fresh samples, 32 warmups, 512 timed calls and separate 128-call Debug probes.\n"
+        << "Inputs alternate; fixture/argument/binding preparation, checks and returned-value destruction are excluded.\n"
+        << "Compiled calls include the checked host wrapper; scanning/plain returns do less work, not exact subtraction.\n"
+        << std::flush;
+    for (auto shape = nomad::NomadIndex{0}; shape < shapes.size(); ++shape) {
+        const nomad::NomadString format = formats[shape];
+        const auto expectedScan = nomad::parseFormatTemplate(format);
+        if (!expectedScan.diagnostics.empty()) {
+            throw std::runtime_error("Dynamic-format fixture has invalid template syntax");
+        }
+
+        const auto placeholders = std::ranges::count_if(expectedScan.segments, [](const auto& segment) {
+            return segment.type == nomad::FormatTemplateSegmentType::Placeholder;
+        });
+        if (static_cast<nomad::NomadIndex>(placeholders) != placeholderCounts[shape]) {
+            throw std::runtime_error("Dynamic-format fixture placeholder count changed");
+        }
+
+        std::array<std::vector<double>, labels.size()> latencySamples;
+        std::array<std::vector<double>, labels.size()> allocationSamples;
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            for (auto pass = 0; pass < 2; ++pass) {
+                const auto allocationPass = pass == 1;
+                if (allocationPass && !allocationSupported) {
+                    continue;
+                }
+
+                nomad::Runtime runtime;
+                auto compiler = runtime.createCompiler();
+                const auto compilation = nomad::compileSources(
+                    {{{"benchmarkFormatMain", {sourceName,
+                        "fun benchmarkFormatDynamic template:string value:int text:string\n"
+                        "return $template\nend\n"
+                        "fun benchmarkFormatPlain template:string value:int text:string\n"
+                        "return template\nend\n"}}}, {}},
+                    *compiler
+                );
+                if (!compilation.succeeded()) {
+                    auto message = nomad::NomadString{"Dynamic-format benchmark compilation failed:\n"};
+                    for (const auto& diagnostic : compilation.diagnostics) {
+                        message += diagnostic.message + "\n";
+                    }
+
+                    throw std::runtime_error(message);
+                }
+
+                const auto dynamicId = runtime.getScriptFunctionId("benchmarkFormatDynamic");
+                const auto plainId = runtime.getScriptFunctionId("benchmarkFormatPlain");
+                if (dynamicId.isInvalid() || plainId.isInvalid()) {
+                    throw std::runtime_error("Dynamic-format benchmark callables are unavailable");
+                }
+
+                runtime.initializeScripts();
+                auto machine = runtime.createVirtualMachine();
+                machine->setIntegerResult(71);
+                machine->setIntegerIntermediate(83);
+                const nomad::Interpreter interpreter(*machine);
+                nomad::InterpreterContext context(interpreter);
+                nomad::RuntimeValue templateValue{format};
+                const nomad::RuntimeValueGuard templateOwner(*runtime.getStringType(), &templateValue);
+                nomad::RuntimeValue firstText{nomad::NomadString(128, 'a')};
+                const nomad::RuntimeValueGuard firstOwner(*runtime.getStringType(), &firstText);
+                nomad::RuntimeValue secondText{nomad::NomadString(128, 'b')};
+                const nomad::RuntimeValueGuard secondOwner(*runtime.getStringType(), &secondText);
+                const std::array arguments{
+                    std::vector<nomad::InterpreterValue>{
+                        {runtime.getStringType(), templateValue},
+                        {runtime.getIntegerType(), nomad::RuntimeValue{nomad::NomadInteger{17}}},
+                        {runtime.getStringType(), firstText}
+                    },
+                    std::vector<nomad::InterpreterValue>{
+                        {runtime.getStringType(), templateValue},
+                        {runtime.getIntegerType(), nomad::RuntimeValue{nomad::NomadInteger{29}}},
+                        {runtime.getStringType(), secondText}
+                    }
+                };
+                context.setVariable(valueName, runtime.getIntegerType(), arguments[0][1].getValue());
+                context.setVariable(textName, runtime.getStringType(), firstText);
+                const auto valueId = context.getCallable()->getVariableId(valueName);
+                const auto textId = context.getCallable()->getVariableId(textName);
+                const auto* valueAddress = context.getVariableStorageById(valueId).data();
+                const auto* textAddress = context.getVariableStorageById(textId).data();
+                const auto templateReferences = templateValue.getObjectValue()->getReferenceCount();
+                const auto instructionCount = runtime.getInstructions().size();
+                const auto callableCount = runtime.getCallableCount();
+                const auto iterations = allocationPass ? allocationIterations : timingIterations;
+                for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+                    auto elapsed = 0.0;
+                    auto requests = nomad::NomadIndex{0};
+                    for (auto iteration = nomad::NomadIndex{0}; iteration < warmups + iterations; ++iteration) {
+                        const auto choice = iteration % 2;
+                        const auto& input = arguments[choice];
+                        context.setVariable(valueName, runtime.getIntegerType(), input[1].getValue());
+                        context.setVariable(textName, runtime.getStringType(), input[2].getValue());
+                        auto expected = format;
+                        if (shape == 2) {
+                            expected = std::to_string(input[1].getValue().getIntegerValue());
+                        } else if (shape == 3) {
+                            expected = std::to_string(input[1].getValue().getIntegerValue());
+                            expected += "/" + expected;
+                        } else if (shape == 4) {
+                            expected = std::to_string(input[1].getValue().getIntegerValue() + 7);
+                        } else if (shape == 5) {
+                            expected = input[2].getValue().getStringObject()->getText();
+                        }
+
+                        std::optional<nomad::FormatTemplate> scanned;
+                        std::optional<nomad::DynamicFormatResult> formatted;
+                        std::optional<nomad::InterpreterValue> returned;
+                        const auto invoke = [&] {
+                            if (query == 0) {
+                                scanned.emplace(nomad::parseFormatTemplate(format));
+                            } else if (query == 1) {
+                                formatted.emplace(interpreter.formatString(context, format, sourceName, 1, 1));
+                            } else {
+                                returned.emplace(interpreter.runFunction(query == 2 ? dynamicId : plainId, input));
+                            }
+                        };
+                        if (iteration < warmups) {
+                            invoke();
+                        } else if (allocationPass) {
+                            requests += countHostCallAllocations(invoke, 1).value();
+                        } else {
+                            const auto start = std::chrono::steady_clock::now();
+                            invoke();
+                            elapsed += std::chrono::duration<double, std::micro>{
+                                std::chrono::steady_clock::now() - start
+                            }.count();
+                        }
+
+                        if (scanned.has_value()) {
+                            if (!scanned->diagnostics.empty() || scanned->segments.size() != expectedScan.segments.size()) {
+                                throw std::runtime_error("Dynamic-format scanning changed diagnostics or segment count");
+                            }
+
+                            for (auto index = nomad::NomadIndex{0}; index < scanned->segments.size(); ++index) {
+                                const auto& actual = scanned->segments[index];
+                                const auto& known = expectedScan.segments[index];
+                                if (
+                                    actual.type != known.type ||
+                                    actual.text != known.text ||
+                                    actual.offset != known.offset ||
+                                    actual.length != known.length ||
+                                    actual.diagnosticIndex != known.diagnosticIndex
+                                ) {
+                                    throw std::runtime_error("Dynamic-format scanning changed a prepared segment");
+                                }
+                            }
+                        } else if (formatted.has_value()) {
+                            if (!formatted->diagnostics.empty() || formatted->text != expected) {
+                                throw std::runtime_error("Host dynamic formatting changed the current output");
+                            }
+                        } else if (
+                            !returned.has_value() ||
+                            returned->getType() != runtime.getStringType() ||
+                            returned->getValue().getStringObject()->getText() != (query == 2 ? expected : format)
+                        ) {
+                            throw std::runtime_error("Compiled dynamic/plain formatting changed the current output");
+                        }
+
+                        if (
+                            context.hasError() ||
+                            context.getResult() != nullptr ||
+                            context.getVariableStorageById(valueId).data() != valueAddress ||
+                            context.getVariableStorageById(textId).data() != textAddress ||
+                            machine->getIntegerResult() != 71 ||
+                            machine->getIntegerIntermediate() != 83 ||
+                            machine->captureExecutionState().stackIndex != 0
+                        ) {
+                            throw std::runtime_error("Dynamic formatting changed bindings, diagnostics, or enclosing VM state");
+                        }
+                    }
+
+                    if (allocationPass) {
+                        allocationSamples[query].push_back(static_cast<double>(requests) / static_cast<double>(iterations));
+                    } else {
+                        latencySamples[query].push_back(elapsed / static_cast<double>(iterations));
+                    }
+
+                    if (
+                        firstText.getObjectValue()->getReferenceCount() != 2U ||
+                        secondText.getObjectValue()->getReferenceCount() != 3U ||
+                        templateValue.getObjectValue()->getReferenceCount() != templateReferences ||
+                        runtime.getInstructions().size() != instructionCount ||
+                        runtime.getCallableCount() != callableCount ||
+                        context.getCallable()->getVariableCount() != 2
+                    ) {
+                        throw std::runtime_error(std::format(
+                            "Dynamic-format {} / {} changed ownership or registrations: "
+                            "text refs={}/{}, template refs={}/{}, instructions={}/{}, callables={}/{}, variables={}",
+                            shapes[shape],
+                            labels[query],
+                            firstText.getObjectValue()->getReferenceCount(),
+                            secondText.getObjectValue()->getReferenceCount(),
+                            templateValue.getObjectValue()->getReferenceCount(),
+                            templateReferences,
+                            runtime.getInstructions().size(),
+                            instructionCount,
+                            runtime.getCallableCount(),
+                            callableCount,
+                            context.getCallable()->getVariableCount()
+                        ));
+                    }
+                }
+            }
+        }
+
+        std::cout << "dynamic_format_case=" << shapes[shape] << " placeholders=" << placeholderCounts[shape]
+            << " template_bytes=" << format.size() << " reference_bytes=128"
+            << " iterations=" << timingIterations << " allocation_iterations=" << allocationIterations;
+        for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+            const auto timeLabel = std::format("{}_us", labels[query]);
+            printSamples(timeLabel.c_str(), latencySamples[query]);
+            const auto requestLabel = std::format("{}_allocations", labels[query]);
+            if (!allocationSamples[query].empty()) {
+                printSamples(requestLabel.c_str(), allocationSamples[query]);
+            } else {
+                std::cout << ' ' << requestLabel << "=unavailable";
+            }
+        }
+
+        std::cout << std::endl;
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Dynamic-format benchmark leaked an owned value");
+    }
+}
+
+void runFormatExpressionPhaseBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto warmups = nomad::NomadIndex{32};
+    constexpr auto timingIterations = nomad::NomadIndex{512};
+    constexpr auto allocationIterations = nomad::NomadIndex{128};
+    constexpr auto shapes = std::array{"identifier", "arithmetic", "reference"};
+    constexpr auto expressions = std::array{"value", "value + 7", "text"};
+    constexpr auto tokenCounts = std::array<nomad::NomadIndex, 3>{1, 3, 1};
+    constexpr auto labels = std::array{
+        "source_copy", "compiler_context", "tokenize", "parse", "resolve", "evaluate", "convert", "cleanup"
+    };
+    const nomad::NomadString sourceName = "benchmark-format.nomad";
+    const nomad::NomadString valueName = "value";
+    const nomad::NomadString textName = "text";
+    const auto allocationSupported = countHostCallAllocations([] {}, 0).has_value();
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    std::cout << "Format expression phases: fresh staged public-API pipeline on live host bindings, not private timers.\n"
+        << "Same five-sample/32-warmup/512-call/128-probe protocol; fresh compiler/context/tokenizer/AST each call.\n"
+        << "Per-phase clocks and returned-value ownership are included; checks, binding changes and outer guard are excluded.\n"
+        << "Compiler-context preparation and cleanup are grouped; phases cannot be subtracted from full formatting exactly.\n"
+        << std::flush;
+    for (auto shape = nomad::NomadIndex{0}; shape < shapes.size(); ++shape) {
+        const nomad::NomadString expressionText = expressions[shape];
+        std::array<std::vector<double>, labels.size()> latencySamples;
+        std::array<std::vector<double>, labels.size()> allocationSamples;
+        for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+            for (auto pass = 0; pass < 2; ++pass) {
+                const auto allocationPass = pass == 1;
+                if (allocationPass && !allocationSupported) {
+                    continue;
+                }
+
+                nomad::Runtime runtime;
+                runtime.createCompiler().reset();
+                auto machine = runtime.createVirtualMachine();
+                machine->setIntegerResult(71);
+                machine->setIntegerIntermediate(83);
+                const nomad::Interpreter interpreter(*machine);
+                nomad::InterpreterContext context(interpreter);
+                nomad::RuntimeValue firstText{nomad::NomadString(128, 'a')};
+                const nomad::RuntimeValueGuard firstOwner(*runtime.getStringType(), &firstText);
+                nomad::RuntimeValue secondText{nomad::NomadString(128, 'b')};
+                const nomad::RuntimeValueGuard secondOwner(*runtime.getStringType(), &secondText);
+                context.setVariable(valueName, runtime.getIntegerType(), nomad::RuntimeValue{nomad::NomadInteger{17}});
+                context.setVariable(textName, runtime.getStringType(), firstText);
+                const auto valueId = context.getCallable()->getVariableId(valueName);
+                const auto textId = context.getCallable()->getVariableId(textName);
+                const auto* valueAddress = context.getVariableStorageById(valueId).data();
+                const auto* textAddress = context.getVariableStorageById(textId).data();
+                const auto instructionCount = runtime.getInstructions().size();
+                const auto callableCount = runtime.getCallableCount();
+                const auto iterations = allocationPass ? allocationIterations : timingIterations;
+                std::array<double, labels.size()> elapsed{};
+                std::array<nomad::NomadIndex, labels.size()> requests{};
+                for (auto iteration = nomad::NomadIndex{0}; iteration < warmups + iterations; ++iteration) {
+                    const auto number = iteration % 2 == 0 ? nomad::NomadInteger{17} : nomad::NomadInteger{29};
+                    const auto& text = iteration % 2 == 0 ? firstText : secondText;
+                    context.setVariable(valueName, runtime.getIntegerType(), nomad::RuntimeValue{number});
+                    context.setVariable(textName, runtime.getStringType(), text);
+                    const auto expected = shape == 2 ? text.getStringObject()->getText() :
+                        std::to_string(number + (shape == 1 ? 7 : 0));
+                    auto* function = context.getCallable();
+                    const auto outer = context.beginEvaluation();
+                    std::optional<nomad::SourceText> source;
+                    std::unique_ptr<nomad::Compiler> compiler;
+                    std::optional<nomad::CompilerContext> compilation;
+                    std::optional<nomad::Tokenizer> tokens;
+                    std::unique_ptr<nomad::Expression> expression;
+                    std::optional<nomad::InterpreterValue> value;
+                    std::optional<nomad::NomadString> rendered;
+                    const auto observe = [&](const nomad::NomadIndex phase, const auto& invoke) {
+                        if (iteration < warmups) {
+                            invoke();
+                        } else if (allocationPass) {
+                            requests[phase] += countHostCallAllocations(invoke, 1).value();
+                        } else {
+                            const auto start = std::chrono::steady_clock::now();
+                            invoke();
+                            elapsed[phase] += std::chrono::duration<double, std::micro>{
+                                std::chrono::steady_clock::now() - start
+                            }.count();
+                        }
+                    };
+                    observe(0, [&] {
+                        source.emplace(nomad::SourceText{sourceName, expressionText});
+                    });
+                    observe(1, [&] {
+                        compiler = runtime.createCompiler();
+                        compilation.emplace(compiler.get(), nomad::CompilerMode::Interpreter, &context);
+                    });
+                    observe(2, [&] {
+                        tokens.emplace(&*compilation, source->sourceName, source->text, 1);
+                        if (compilation->hasError() || tokens->getLineCount() != 1 || !tokens->nextLine()) {
+                            throw std::runtime_error("Format-phase tokenization failed");
+                        }
+                    });
+                    if (tokens->getTokenCount() != tokenCounts[shape]) {
+                        throw std::runtime_error("Format-phase tokenizer produced unexpected tokens");
+                    }
+
+                    observe(3, [&] {
+                        expression = nomad::parser::parseExpression(&*compilation, function, &*tokens);
+                        if (expression == nullptr || !nomad::parser::expectEndOfLine(&*compilation, function, &*tokens)) {
+                            throw std::runtime_error("Format-phase parsing failed");
+                        }
+                    });
+                    observe(4, [&] {
+                        (void)expression->resolve(&*compilation, function);
+                        context.copyCompilerDiagnostic(compilation->getDiagnostics(), source->sourceName);
+                    });
+                    const auto* expectedType = shape == 2 ? runtime.getStringType() : runtime.getIntegerType();
+                    if (compilation->hasError() || context.hasError() || expression->getType() != expectedType) {
+                        throw std::runtime_error("Format-phase resolution failed or changed the expression type");
+                    }
+
+                    observe(5, [&] {
+                        const auto savedResult = machine->getResult();
+                        const auto savedIntermediate = machine->getIntermediate();
+                        BOOST_SCOPE_EXIT_ALL(&) {
+                            machine->setResult(savedResult);
+                            machine->setIntermediate(savedIntermediate);
+                        };
+
+                        value.emplace(expression->evaluate(context));
+                    });
+                    observe(6, [&] {
+                        rendered.emplace(value->getType()->toString(value->getStorage().data()));
+                    });
+                    if (value->getType() != expectedType || *rendered != expected) {
+                        throw std::runtime_error("Format-phase evaluation/conversion changed the current value");
+                    }
+
+                    observe(7, [&] {
+                        rendered.reset();
+                        value.reset();
+                        expression.reset();
+                        tokens.reset();
+                        compilation.reset();
+                        compiler.reset();
+                        source.reset();
+                        context.resetEvaluation();
+                    });
+                    if (
+                        context.hasError() ||
+                        context.getResult() != nullptr ||
+                        context.getVariableStorageById(valueId).data() != valueAddress ||
+                        context.getVariableStorageById(textId).data() != textAddress ||
+                        machine->getIntegerResult() != 71 ||
+                        machine->getIntegerIntermediate() != 83 ||
+                        machine->captureExecutionState().stackIndex != 0
+                    ) {
+                        throw std::runtime_error("Format phases changed bindings, diagnostics, or enclosing VM state");
+                    }
+                }
+
+                if (
+                    firstText.getObjectValue()->getReferenceCount() != 1U ||
+                    secondText.getObjectValue()->getReferenceCount() != 2U ||
+                    runtime.getInstructions().size() != instructionCount ||
+                    runtime.getCallableCount() != callableCount ||
+                    context.getCallable()->getVariableCount() != 2
+                ) {
+                    throw std::runtime_error("Format phases changed source ownership or persistent registrations");
+                }
+
+                for (auto phase = nomad::NomadIndex{0}; phase < labels.size(); ++phase) {
+                    if (allocationPass) {
+                        allocationSamples[phase].push_back(
+                            static_cast<double>(requests[phase]) / static_cast<double>(iterations)
+                        );
+                    } else {
+                        latencySamples[phase].push_back(elapsed[phase] / static_cast<double>(iterations));
+                    }
+                }
+            }
+        }
+
+        std::cout << "format_expression_case=" << shapes[shape] << " expression_bytes=" << expressionText.size()
+            << " tokens=" << tokenCounts[shape] << " reference_bytes=128"
+            << " iterations=" << timingIterations << " allocation_iterations=" << allocationIterations;
+        for (auto phase = nomad::NomadIndex{0}; phase < labels.size(); ++phase) {
+            const auto timeLabel = std::format("{}_us", labels[phase]);
+            printSamples(timeLabel.c_str(), latencySamples[phase]);
+            const auto requestLabel = std::format("{}_allocations", labels[phase]);
+            if (!allocationSamples[phase].empty()) {
+                printSamples(requestLabel.c_str(), allocationSamples[phase]);
+            } else {
+                std::cout << ' ' << requestLabel << "=unavailable";
+            }
+        }
+
+        std::cout << std::endl;
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Format-phase benchmark leaked an owned value");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -4183,6 +4632,8 @@ int main() {
         runHubRegistrationBenchmark();
         runInterpreterStorageBenchmark();
         runInterpreterRetirementBenchmark();
+        runDynamicFormatBenchmark();
+        runFormatExpressionPhaseBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

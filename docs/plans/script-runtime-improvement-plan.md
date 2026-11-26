@@ -18,7 +18,9 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **R13:** Targeted rebuilding remains deferred with approval. The separate exception-rollback fix is implemented and validated: a propagating rebuild exception removes the attempted hub and preserves retry, while logged NomadException rejection and full refreshing remain unchanged. Two selected Debug CTests, checked Debug/Release successful-path benchmarks, and strict docs validation pass.
 
-**C2:** The approved scratch-only conditional array is implemented and checked. Empty/integer/string updates now make zero Debug requests; the two-slot struct makes one. Storage addresses, Type assignment/cleanup, owner/value buffers, and retirement remain unchanged. The regression reproduced four old failures; the selected remaining CTest and checked Debug/Release executions pass. All Release update medians were higher than the earlier baseline in both post-change runs; no Release improvement is claimed. Next reviewable scope: review that timing trade-off and whether matched Release measurements are needed before further storage work.
+**C2:** The approved vector-scratch rollback is implemented and validated. The optimization-specific allocation test is removed; existing storage/lifecycle coverage and all benchmark evidence remain. Restored Debug update requests are one for empty/integer/string and two for the pair. The selected remaining CTest and checked Debug/Release benchmarks pass; ownership, retirement, other scratch consumers, and public APIs are unchanged. The scratch experiment closes without a speedup claim. Further C2 storage redesign remains unapproved; next reviewable scope is I5/Q2's dynamic-format cost breakdown before a caching decision.
+
+**I5/Q2:** The current dynamic-format baseline is measured and checked in Debug and Release. Staged tokenization is the largest phase in all three expressions, followed by Compiler/Context preparation; template scanning alone is much smaller than complete placeholder formatting. Actual host and compiled calls retain live inputs and unchanged ownership/VM state. Two selected Debug CTests and checked benchmarks pass; no production cache, reuse, or behavior change was made. Next reviewable scope: discuss a bounded placeholder-preparation reuse design or defer, including lifetime, live bindings, compiler setup, and diagnostics.
 
 **Validation update:** Before C2, the user reported completing a full rebuild and running all tests. This is user-reported validation, not another assistant-verified full-suite run.
 
@@ -3935,6 +3937,478 @@ is the total for the batch. No exit-allocation or retained-byte claim is made.
   Do not proceed directly to retirement growth, owner/buffer redesign, or
   another optimization.
 
+#### C2 approved matched Release timing comparison
+
+- The timing review confirms higher update medians in all eight Release cases
+  in both post-change runs. Unchanged new-binding controls also have higher
+  medians in eight/seven cases, and prepared-storage controls in six/five.
+  The measured Debug request reduction remains proven, but these earlier
+  comparisons do not isolate the cause of the Release differences.
+- The user selected `matched_release_ab` rather than retaining the cleanup
+  without further timing investigation or approving an immediate rollback.
+  This approves a measurement step, not another production optimization.
+- Prepare isolated vector and conditional-array Release variants from the
+  same current source snapshot and compiler configuration. The vector variant
+  differs only in InterpreterStorage's temporary assignment-scratch
+  implementation; validation, Type calls, ownership layout, and all other
+  code remain the same. Do not temporarily revert the production source,
+  add a permanent configuration/API, or change the active build preset.
+- Use the actual InterpreterContext same-type update path in the existing
+  checked benchmark, not a helper-only substitute presented as end-to-end
+  evidence. Retain the empty/integer/string/pair shapes, 64/256 variables,
+  prepared sources/names, 32 warmups, 4,096 alternating updates, five fresh
+  samples, and unchanged controls/checks.
+- Build and execute sequentially. Run two order-balanced pairs:
+  vector then array, followed by array then vector. Keep variant outputs
+  isolated, verify the bundled language DLL identity before each execution,
+  and record compiler/configuration and source identity so the intended
+  variant is demonstrably loaded.
+- Retain each execution's median/min/max and all behavior checks separately.
+  Do not discard slower samples, subtract unlike controls, or turn the
+  unavailable Release allocation probe into measured allocation evidence.
+  Order balancing reduces one comparison weakness; it does not guarantee
+  elimination of shared-machine timing variation or establish significance.
+- Leave production code, its existing regression, public APIs, storage
+  ownership, and retirement unchanged during the experiment. No owner/buffer
+  redesign, retirement-capacity change, new cache, or unrelated fix is in scope.
+  Only exact experiment-owned temporary artifacts may be cleaned up.
+- This step is source/evidence review and approval only; no C++ build, test,
+  or benchmark rerun is performed here. Next reviewable scope: execute the
+  approved matched comparison, record the results, then stop for the
+  retain/revert decision before further performance work.
+
+#### C2 matched Release comparison results
+
+Isolation and identity:
+
+- Copied the same current 649 tracked working files into two experiment-owned
+  source snapshots, preserving the existing plan edit. The source commit is
+  `bb629c24c1531f3fb48e839ee57fa51b60a3cceb`. Only the vector snapshot's
+  temporary scratch implementation differs; both include groups, validation,
+  Type calls, ownership layout, and all other source files are identical.
+- Snapshot SHA-256:
+  `fb25bfcd81006de2ad87469e8120c5a7272d22c175ef6f6c4ef5a11480f0700b`.
+  Assignment source SHA-256 is
+  `39164b472f93753737dc13a619fc1fdbc3f4dc80dc5d667e24ab4c32a6d59802`
+  for vector and
+  `9ae062aa18ef086f514a7837880923f1bad002180ac80620aae3562f3b2e42c7`
+  for array. Both source trees and all production snapshot files were
+  rechecked unchanged after execution, before recording these results.
+- Configured separate binary trees with CMake 4.4.4, Visual Studio 17 2022
+  x64, MSVC 19.44.35215.0/toolset 14.44.35207, and the same Release
+  `/O2 /Ob2 /DNDEBUG` flags. Verified 101 matching cache settings and the
+  full generated Release target definitions after normalizing variant roots:
+  C++20, MaxSpeed optimization, and the shared CRT match.
+- Reused ten existing pinned FetchContent source caches with explicit source
+  overrides and separate dependency binary directories. Configuration and
+  benchmark/language builds ran sequentially; no dependency installation,
+  active preset change, production edit, or active-tree build was needed.
+- Executed vector, array, array, vector without rebuilding between passes.
+  Each executable retains all existing workloads before C2. The C2 shapes,
+  64/256 variables, 14-byte prepared names, 32 update warmups, 4,096 alternating
+  updates, five fresh samples, controls, and checks remain unchanged.
+- Before every execution, the bundled DLL hash matches its isolated build.
+  The running process's loaded module path and hash are also verified.
+  Vector DLL SHA-256:
+  `e8345d3393ab2297e8a2d2adef54fec4cf69a3ce17320a35fed3135b2f2af25a`.
+  Array DLL SHA-256:
+  `5216ff6352f7ed76ca76290d2dfc6e982e08cb79020a6e4857e2e86b8ed4c1e9`.
+  Each variant uses the same executable/DLL on its repeat; processes do not
+  overlap. All four exit successfully with empty stderr.
+
+All storage results below are Release median `[min,max]` microseconds per
+operation, retained individually in execution order. Allocation probes are
+unavailable; this experiment adds no Release allocation evidence.
+
+| Sequence | Variant | Shape | Variables | Prepared storage (us) | New binding (us) | Same-type update (us) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | vector | empty | 64 | 0.027 [0.025,0.039] | 0.759 [0.536,0.800] | 0.198 [0.194,0.263] |
+| 1 | vector | empty | 256 | 0.022 [0.021,0.037] | 1.592 [1.527,2.605] | 0.772 [0.521,0.871] |
+| 1 | vector | integer | 64 | 0.066 [0.052,0.116] | 0.608 [0.580,0.641] | 0.223 [0.191,0.238] |
+| 1 | vector | integer | 256 | 0.047 [0.044,0.059] | 1.843 [1.582,2.030] | 0.552 [0.526,0.590] |
+| 1 | vector | string | 64 | 0.056 [0.053,0.070] | 0.620 [0.583,0.755] | 0.211 [0.196,0.258] |
+| 1 | vector | string | 256 | 0.050 [0.048,0.098] | 1.590 [1.546,2.594] | 0.787 [0.561,0.901] |
+| 1 | vector | pair | 64 | 0.098 [0.077,0.102] | 0.802 [0.648,0.903] | 0.323 [0.295,0.343] |
+| 1 | vector | pair | 256 | 0.070 [0.064,0.103] | 1.759 [1.539,2.586] | 0.772 [0.600,0.857] |
+| 2 | array | empty | 64 | 0.041 [0.025,0.044] | 0.772 [0.717,1.098] | 0.305 [0.251,0.511] |
+| 2 | array | empty | 256 | 0.038 [0.032,0.083] | 2.504 [2.441,2.772] | 0.856 [0.832,1.475] |
+| 2 | array | integer | 64 | 0.048 [0.047,0.064] | 0.680 [0.652,0.923] | 0.250 [0.235,0.307] |
+| 2 | array | integer | 256 | 0.047 [0.044,0.076] | 1.845 [1.696,4.348] | 0.962 [0.609,1.533] |
+| 2 | array | string | 64 | 0.058 [0.052,0.087] | 0.727 [0.673,0.834] | 0.259 [0.244,0.402] |
+| 2 | array | string | 256 | 0.050 [0.047,0.134] | 1.988 [1.715,2.529] | 0.831 [0.612,1.093] |
+| 2 | array | pair | 64 | 0.073 [0.069,0.075] | 0.741 [0.695,1.122] | 0.333 [0.291,0.627] |
+| 2 | array | pair | 256 | 0.071 [0.070,0.940] | 1.861 [1.750,1.879] | 0.757 [0.722,0.980] |
+| 3 | array | empty | 64 | 0.083 [0.047,0.161] | 0.800 [0.731,1.725] | 0.278 [0.265,0.484] |
+| 3 | array | empty | 256 | 0.037 [0.025,0.042] | 2.404 [1.693,2.556] | 0.983 [0.688,1.594] |
+| 3 | array | integer | 64 | 0.153 [0.087,0.222] | 1.509 [0.809,2.228] | 0.456 [0.260,0.846] |
+| 3 | array | integer | 256 | 0.050 [0.043,0.107] | 1.858 [1.653,4.279] | 0.816 [0.630,0.986] |
+| 3 | array | string | 64 | 0.128 [0.058,0.183] | 0.848 [0.675,0.861] | 0.270 [0.255,0.390] |
+| 3 | array | string | 256 | 0.055 [0.048,0.084] | 1.868 [1.696,3.775] | 0.839 [0.632,0.882] |
+| 3 | array | pair | 64 | 0.116 [0.102,0.205] | 1.231 [0.848,1.295] | 0.433 [0.374,0.578] |
+| 3 | array | pair | 256 | 0.095 [0.070,0.168] | 2.476 [1.751,3.458] | 0.878 [0.817,1.186] |
+| 4 | vector | empty | 64 | 0.041 [0.037,0.086] | 0.773 [0.750,1.144] | 0.263 [0.247,0.296] |
+| 4 | vector | empty | 256 | 0.023 [0.021,0.114] | 1.548 [1.531,1.898] | 0.543 [0.517,0.882] |
+| 4 | vector | integer | 64 | 0.081 [0.075,0.089] | 0.792 [0.780,0.833] | 0.290 [0.259,0.407] |
+| 4 | vector | integer | 256 | 0.087 [0.041,0.107] | 2.462 [1.549,2.950] | 0.778 [0.525,1.512] |
+| 4 | vector | string | 64 | 0.056 [0.048,0.092] | 0.808 [0.572,1.458] | 0.263 [0.193,0.579] |
+| 4 | vector | string | 256 | 0.084 [0.052,0.094] | 1.778 [1.538,3.331] | 0.854 [0.536,0.973] |
+| 4 | vector | pair | 64 | 0.103 [0.097,0.128] | 0.895 [0.720,2.952] | 0.356 [0.324,0.651] |
+| 4 | vector | pair | 256 | 0.082 [0.066,0.124] | 1.607 [1.582,3.090] | 0.977 [0.723,1.093] |
+
+Unchanged retirement controls, Release median `[min,max]` microseconds:
+
+| Sequence | Variant | Mutation | Changes | Mutation (us each) | Outermost exit (us total) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | vector | type_change | 1 | 0.400 [0.300,0.700] | 0.100 [0.100,0.200] |
+| 1 | vector | type_change | 16 | 0.188 [0.175,0.194] | 0.500 [0.500,0.600] |
+| 1 | vector | type_change | 64 | 0.216 [0.214,0.681] | 1.700 [1.600,2.100] |
+| 1 | vector | clear_rebind | 1 | 0.500 [0.400,14.900] | 0.100 [0.100,0.100] |
+| 1 | vector | clear_rebind | 16 | 0.138 [0.131,0.156] | 0.500 [0.400,0.600] |
+| 1 | vector | clear_rebind | 64 | 0.170 [0.166,0.287] | 3.000 [2.900,3.200] |
+| 2 | array | type_change | 1 | 0.300 [0.300,0.600] | 0.100 [0.100,0.200] |
+| 2 | array | type_change | 16 | 0.219 [0.206,0.237] | 0.700 [0.700,0.900] |
+| 2 | array | type_change | 64 | 0.273 [0.264,0.366] | 2.900 [2.800,3.400] |
+| 2 | array | clear_rebind | 1 | 0.700 [0.500,26.900] | 0.300 [0.100,0.400] |
+| 2 | array | clear_rebind | 16 | 0.194 [0.181,0.219] | 0.800 [0.800,0.800] |
+| 2 | array | clear_rebind | 64 | 0.172 [0.163,0.189] | 2.900 [2.900,3.100] |
+| 3 | array | type_change | 1 | 0.300 [0.200,0.500] | 0.100 [0.000,0.100] |
+| 3 | array | type_change | 16 | 0.250 [0.188,0.281] | 0.600 [0.600,0.900] |
+| 3 | array | type_change | 64 | 0.228 [0.212,0.261] | 1.700 [1.700,1.900] |
+| 3 | array | clear_rebind | 1 | 0.500 [0.100,9.300] | 0.100 [0.000,0.200] |
+| 3 | array | clear_rebind | 16 | 0.150 [0.131,0.156] | 0.500 [0.400,0.500] |
+| 3 | array | clear_rebind | 64 | 0.131 [0.120,0.203] | 1.700 [1.700,1.900] |
+| 4 | vector | type_change | 1 | 0.600 [0.300,0.900] | 0.200 [0.100,0.400] |
+| 4 | vector | type_change | 16 | 0.225 [0.212,0.256] | 0.800 [0.800,0.900] |
+| 4 | vector | type_change | 64 | 0.358 [0.273,0.525] | 3.100 [2.900,3.400] |
+| 4 | vector | clear_rebind | 1 | 0.500 [0.300,9.600] | 0.100 [0.100,0.100] |
+| 4 | vector | clear_rebind | 16 | 0.194 [0.181,0.200] | 0.800 [0.700,0.800] |
+| 4 | vector | clear_rebind | 64 | 0.170 [0.164,0.205] | 3.000 [3.000,3.000] |
+
+Interpretation and closeout:
+
+- Pair 1 compares sequence 2 array with sequence 1 vector; pair 2 compares
+  sequence 3 array with sequence 4 vector. Update medians are higher for
+  array in seven/eight and six/eight cases. Pair/256 is lower for array in
+  both pairs: 0.757 versus 0.772 us, and 0.878 versus 0.977 us. No consistent
+  overall Release latency improvement is demonstrated.
+- Unchanged new-binding controls have higher array medians in seven/eight
+  cases in both pairs. Prepared-owner controls are mixed, and retirement
+  timing also varies. These controls do not justify subtracting an exact
+  scratch cost or dismissing update differences entirely as noise.
+- The comparison fixes the stale-baseline and one-way ordering weaknesses.
+  It still uses small batches on a shared machine, separate DLL images, and
+  two execution pairs, not a statistically established performance result.
+  Matching source/settings and checking loaded modules do not isolate the
+  instruction-level cause of higher update timings.
+- All checked workloads pass: actual values, logical IDs, borrowed-address
+  stability, source ownership, unchanged VM state, nested old-slot/string
+  retention, outermost reference release, and final live-object counts remain
+  valid. Old-string/source counts exactly match the earlier baseline.
+  No samples are discarded, no timing threshold is applied, and no
+  last-reference payload destruction, retained-byte, or Release allocation
+  claim is made.
+- No production or permanent benchmark code changed, no new test was added,
+  and no CTest/full-suite/gameplay/cross-platform run is claimed here. This
+  experiment's validation is the isolated Release builds and all four
+  complete checked benchmark executions. The earlier Debug allocation
+  reduction remains separate evidence.
+- This completes the approved measurement scope. Next reviewable scope:
+  decide whether to retain the allocation cleanup despite the unproven
+  Release benefit or revert it. No rollback, third implementation strategy,
+  retirement growth, or owner/buffer redesign is authorized automatically.
+
+#### C2 approved assignment-scratch rollback
+
+- The user selected `revert_scratch_vector` after reviewing the matched
+  Release results. The proven one-request Debug reduction does not establish
+  a Release benefit, and most matched update medians were higher for array.
+  Controls also varied, so restoring the earlier implementation is a
+  conservative choice rather than a claim of an isolated causal regression.
+- Restore only the temporary vector in `InterpreterStorage::assign`, using
+  `getAssignmentScratchSize()` and passing null when scratch is empty.
+  Keep exact source-size validation and the existing `Type::assignValue`
+  call. Remove the array-only include if no longer needed; do not revert a
+  whole commit or other consumers of the conditional-array pattern.
+- Remove only the added
+  `interpreter_same_type_updates_allocate_only_required_assignment_scratch`
+  test, whose allocation targets belong to the abandoned optimization.
+  Do not weaken its expected counts merely to make the vector pass or remove
+  existing storage, aliasing, failed-copy, snapshot, or reentry coverage.
+  Clean directly unnecessary includes without unrelated formatting.
+- Restore the prior scratch-container allocation behavior, including its
+  Debug bookkeeping requests and possible allocation failure points.
+  Type copying, cleanup, source aliasing, stable storage addresses, variable
+  IDs, owned value buffers, and all retirement/publication behavior stay
+  unchanged. No new strategy, scratch reuse, cache, or lifetime restriction
+  is approved.
+- Keep the permanent benchmark workloads, building guide, and all baseline,
+  array, and matched-comparison results. Run the selected remaining CTest
+  directly without a separate pre-test build, then build and execute the
+  unchanged checked Debug/Release benchmark. Verify the restored measured
+  Debug update counts of one for empty/integer/string and two for the pair,
+  while retaining all timing ranges and unchanged lifetime checks.
+- Record the rollback validation without promising a speedup relative to
+  earlier or matched runs. A full-suite, gameplay, cross-platform, or
+  isolated timing-causality claim is not implied by this scope.
+- This step records the decision only; production code remains unchanged
+  here. Next reviewable scope: implement and validate the approved rollback,
+  then stop before resuming other performance work. Retirement growth and
+  owner/value-buffer changes remain unapproved.
+
+#### C2 assignment-scratch rollback implementation and validation
+
+- Restored only the temporary `std::vector<RuntimeValue>` in
+  `InterpreterStorage::assign`, sized by `getAssignmentScratchSize()`.
+  Empty scratch passes null to the existing `Type::assignValue` call.
+  Exact source-size validation still precedes scratch construction.
+  Replaced the now-unused memory include with the directly used vector include.
+- Removed only
+  `interpreter_same_type_updates_allocate_only_required_assignment_scratch`,
+  whose zero/one-request targets belonged to the abandoned optimization.
+  Existing tests still use InterpreterContext and vectors, so those includes
+  remain. No assertion was weakened or unrelated test removed.
+- Type copying, failure cleanup, destination preservation, aliasing,
+  physical-storage addresses, logical variable IDs, owned buffers, and all
+  retirement/publication code remain unchanged. Other conditional-array
+  scratch consumers are untouched. Prior allocation failure points and Debug
+  container overhead are restored as approved.
+- `nomad_test_remaining` passes through the workspace CTest integration,
+  without a separate pre-test build. Existing empty-value, stable-address,
+  independent-snapshot, failed-copy, native-reentry, and nested-retirement
+  coverage remains green. No new CTest entry was added.
+- The unchanged opt-in benchmark builds and all checked sections execute
+  successfully in Debug and Release, sequentially, with bundled language
+  DLL hashes matched to the current configuration before execution.
+  The benchmark, building guide, and all earlier baseline/array/matched
+  comparison evidence are retained.
+- All measured Debug requests match the original baseline across the eight
+  storage cases and six retirement cases. Restored same-type requests are
+  one for empty/integer/string and two for the pair; minimum and maximum
+  equal the shown median across five fresh samples. Release allocation probes
+  remain unavailable. Retirement source/old-string counts also match.
+
+| Shape | Variables | Restored Debug requests per update |
+| --- | --- | --- |
+| empty/integer/string | 64/256 | 1.000 |
+| pair | 64/256 | 2.000 |
+
+Rollback storage timings, median `[min,max]` microseconds per operation,
+using the unchanged C2 protocol:
+
+| Configuration | Shape | Variables | Prepared storage (us) | New binding (us) | Same-type update (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug | empty | 64 | 0.362 [0.330,0.500] | 5.322 [4.292,16.117] | 2.481 [1.332,4.209] |
+| Debug | empty | 256 | 0.345 [0.306,0.678] | 12.544 [10.561,13.651] | 4.719 [4.245,5.525] |
+| Debug | integer | 64 | 1.078 [0.547,1.178] | 5.595 [4.720,21.066] | 1.958 [1.603,2.495] |
+| Debug | integer | 256 | 1.042 [0.527,2.090] | 14.502 [10.617,32.587] | 5.067 [4.452,6.251] |
+| Debug | string | 64 | 1.167 [0.969,1.450] | 5.845 [5.816,7.888] | 2.258 [1.629,2.581] |
+| Debug | string | 256 | 0.887 [0.730,1.270] | 11.537 [11.234,21.076] | 4.620 [4.022,5.210] |
+| Debug | pair | 64 | 1.128 [0.734,1.770] | 6.031 [5.780,8.963] | 2.997 [2.887,3.229] |
+| Debug | pair | 256 | 1.000 [0.983,1.155] | 14.710 [11.346,46.686] | 5.325 [5.310,6.631] |
+| Release | empty | 64 | 0.041 [0.025,0.056] | 1.414 [0.597,116.223] | 0.360 [0.185,1.213] |
+| Release | empty | 256 | 0.042 [0.039,0.044] | 3.034 [2.620,15.089] | 1.020 [0.685,6.167] |
+| Release | integer | 64 | 0.081 [0.062,0.092] | 0.802 [0.616,0.866] | 0.304 [0.264,1.224] |
+| Release | integer | 256 | 0.095 [0.075,0.205] | 3.052 [2.497,3.660] | 1.227 [0.694,3.001] |
+| Release | string | 64 | 0.059 [0.050,0.070] | 0.692 [0.592,1.252] | 0.254 [0.214,0.448] |
+| Release | string | 256 | 0.102 [0.053,0.104] | 3.116 [1.550,3.336] | 1.084 [0.873,1.139] |
+| Release | pair | 64 | 0.106 [0.086,0.144] | 0.822 [0.730,1.434] | 0.344 [0.335,0.485] |
+| Release | pair | 256 | 0.098 [0.070,0.116] | 1.744 [1.599,5.202] | 0.814 [0.772,1.162] |
+
+Unchanged retirement checks and timings, median `[min,max]` microseconds.
+Mutation time includes borrowing the old slot; outermost-exit time is the
+total for the batch. Debug request minimum/maximum equal the shown average.
+No exit-allocation or retained-byte measurement is added.
+
+| Configuration | Mutation | Changes | Source strings | Held old strings | Mutation (us each) | Outermost exit (us total) | Requests each |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Debug | type_change | 1 | 1 | 1 | 5.200 [3.800,51.800] | 1.900 [1.600,4.100] | 4.000 |
+| Debug | type_change | 16 | 9 | 8 | 1.531 [1.469,42.119] | 8.200 [5.900,218.200] | 4.000 |
+| Debug | type_change | 64 | 33 | 32 | 2.095 [1.936,7.291] | 22.700 [21.500,27.100] | 4.000 |
+| Debug | clear_rebind | 1 | 2 | 1 | 4.700 [3.700,4.900] | 1.800 [1.400,1.900] | 4.000 |
+| Debug | clear_rebind | 16 | 17 | 16 | 2.163 [1.394,2.281] | 8.000 [6.500,9.500] | 3.500 |
+| Debug | clear_rebind | 64 | 65 | 64 | 1.952 [1.367,9.931] | 30.500 [26.800,54.200] | 3.188 |
+| Release | type_change | 1 | 1 | 1 | 0.400 [0.400,0.500] | 0.100 [0.100,0.200] | unavailable |
+| Release | type_change | 16 | 9 | 8 | 0.181 [0.163,2.744] | 0.500 [0.400,1.900] | unavailable |
+| Release | type_change | 64 | 33 | 32 | 0.234 [0.198,0.283] | 1.800 [1.600,2.000] | unavailable |
+| Release | clear_rebind | 1 | 2 | 1 | 0.400 [0.200,12.600] | 0.100 [0.100,0.200] | unavailable |
+| Release | clear_rebind | 16 | 17 | 16 | 0.144 [0.131,0.281] | 0.500 [0.400,0.900] | unavailable |
+| Release | clear_rebind | 64 | 65 | 64 | 0.136 [0.136,0.319] | 1.900 [1.700,4.500] | unavailable |
+
+- Checked values, source references, same-type addresses, binding IDs, VM
+  state, old borrowed spans, nested reference retention, outermost release,
+  current binding survival, and final live-object counts all remain valid.
+  Sources are caller-owned, so last-reference payload destruction is not
+  measured.
+- All timing ranges are retained, including the 116.223-us Release
+  new-binding sample and the 218.200-us Debug retirement-exit sample.
+  This is rollback behavior/count validation, not another matched A/B
+  comparison or evidence that the rollback improves Release speed.
+- The selected test and checked builds/executions validate this bounded
+  change. No full-suite rerun, gameplay, cross-platform, concurrency,
+  retained-byte benefit, or isolated timing-causality claim is made.
+- The approved scratch experiment closes with vector restored. Further
+  C2 owner/value-buffer or retirement-capacity work remains unapproved.
+  Next reviewable scope: verify and measure I5/Q2's current dynamic-format
+  parsing/evaluation costs before discussing a compiled-segment cache.
+  Do not implement caching or other storage changes automatically.
+
+#### I5/Q2 dynamic-format and fresh-expression baseline
+
+Verified current path:
+
+- `Interpreter::formatString` scans the complete template on every call,
+  resets transient evaluation state, and evaluates each placeholder against
+  live bindings. Each placeholder creates a Compiler and CompilerContext,
+  tokenizes one expression, parses/resolves it, evaluates an owned value,
+  converts complete storage to text, and releases temporary state.
+- Compiled `$template` uses the same formatter with a fresh frame-backed
+  InterpreterContext that owns copied callable parameter/local metadata.
+  The measured script has three parameters and no local variables. The
+  host path instead uses a pre-existing context with two owned variables.
+  Their complete call costs differ; no exact frame-copy cost is inferred.
+- Runtime still runs registered Compiler setup callbacks when creating a
+  Compiler. This fixture adds no custom setup callbacks. No Compiler,
+  token stream, AST, or resolved-expression cache is introduced.
+
+Bounded protocol:
+
+- Extended only the existing opt-in benchmark, plus its guide and this plan.
+  Production code, public APIs, CMake targets/dependencies, and the prior
+  C2 rollback remain unchanged. No new unit test or CTest entry was added.
+- Six templates: empty, `static text`, `{value}`, `{value}/{value}`,
+  `{value + 7}`, and `{text}`. Their lengths are 0/11/7/15/11/6 bytes;
+  placeholder counts are 0/0/1/2/1/1. Integers alternate between 17 and 29;
+  string inputs alternate between two distinct 128-byte values.
+- Report `template_scan`, `host_format`, `compiled_dynamic`, and
+  `compiled_plain` separately. The compiled paths use the checked
+  Interpreter host wrapper with prepared owned arguments; the plain
+  function returns the template without formatting. Scanning retains its
+  returned segment container. These are reduced-work controls, not a
+  subtractive decomposition of one call.
+- Five fresh fixtures per case/configuration use 32 warmups, 512 timed calls,
+  and separate fresh 128-call Debug allocation fixtures. Runtime, compilation,
+  VM/context/source/argument preparation, live-binding changes, checks, and
+  whole-call returned-value destruction are outside measurement.
+- Each timed invocation uses its own clock pair. Small controls and phases
+  include clock/wrapper overhead; no overhead subtraction or timing threshold
+  is applied. Debug probes count current-thread allocation/reallocation
+  requests, including Debug-library bookkeeping, not retained byte volume.
+  Release probes are unavailable and do not invoke their callback.
+- A separate fresh host expression pipeline follows the existing public
+  operations for `value`, `value + 7`, and `text`: source copy,
+  Compiler plus CompilerContext construction, tokenization/line selection,
+  AST parsing/end-of-line validation, resolution/diagnostic transfer,
+  evaluation with register restoration, text conversion, and grouped cleanup.
+  Expression lengths are 5/9/4 bytes with 1/3/1 tokens.
+- The staged pipeline has the same sample/warmup/iteration/probe counts.
+  It never reuses an AST. Binding changes, the outer evaluation guard, and
+  checks are excluded. Cleanup includes value, AST, tokenizer, compiler
+  context, Compiler, source, and transient evaluation-state release.
+  It is not instrumentation inside the private formatter and omits full
+  template scanning/assembly and frame-context construction. Do not sum or
+  subtract these medians as an exact full-call cost breakdown.
+- Checks verify exact current outputs, segment contents/types/byte positions,
+  expression types/tokens, source reference ownership, stable binding
+  addresses/IDs, unchanged VM registers/stack, no added callable/instruction
+  registrations, clean transient state, and final live-object counts.
+  Empty templates use the process-lifetime shared empty string, so reference
+  conservation is checked against its captured starting count.
+
+Windows x64 MSVC full-call baseline, median `[min,max]` microseconds:
+
+| Configuration | Shape | Template scan (us) | Host format (us) | Compiled dynamic (us) | Compiled plain (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug | empty | 1.534 [0.883,2.007] | 4.199 [2.236,4.891] | 36.734 [24.078,39.362] | 5.263 [4.612,6.272] |
+| Debug | literal | 2.224 [1.701,3.955] | 5.162 [3.278,8.737] | 39.525 [32.757,45.626] | 5.231 [3.146,7.746] |
+| Debug | identifier | 3.688 [2.490,5.602] | 297.536 [286.868,368.516] | 345.342 [300.705,371.751] | 4.483 [3.225,6.043] |
+| Debug | repeated | 9.581 [5.798,12.130] | 598.323 [533.167,667.847] | 606.735 [577.793,697.702] | 4.700 [3.242,7.496] |
+| Debug | arithmetic | 3.755 [2.551,5.710] | 335.376 [307.738,370.815] | 376.969 [340.400,425.681] | 4.115 [3.372,6.253] |
+| Debug | reference | 4.183 [2.383,6.839] | 317.513 [237.938,324.372] | 367.856 [327.469,399.412] | 3.570 [3.399,6.468] |
+| Release | empty | 0.023 [0.021,0.023] | 0.066 [0.064,0.067] | 0.747 [0.744,0.791] | 0.326 [0.313,0.334] |
+| Release | literal | 0.079 [0.055,0.118] | 0.168 [0.115,0.366] | 1.172 [0.864,3.233] | 0.471 [0.357,0.904] |
+| Release | identifier | 0.137 [0.089,0.216] | 7.850 [5.162,8.910] | 10.713 [8.170,11.258] | 0.370 [0.326,0.668] |
+| Release | repeated | 0.289 [0.225,0.874] | 11.912 [10.135,13.579] | 16.105 [12.623,18.523] | 0.464 [0.425,2.025] |
+| Release | arithmetic | 0.150 [0.146,0.228] | 7.587 [5.918,8.915] | 8.232 [7.354,11.323] | 0.458 [0.318,0.512] |
+| Release | reference | 0.123 [0.093,0.141] | 5.563 [4.595,6.255] | 8.796 [6.357,10.399] | 0.357 [0.310,0.627] |
+
+Debug requests per full call. All five samples have equal median/min/max
+for each reported count; Release counts are unavailable.
+
+| Shape | Template scan | Host format | Compiled dynamic | Compiled plain |
+| --- | --- | --- | --- | --- |
+| empty | 4 | 8 | 61 | 4 |
+| literal | 7 | 11 | 67 | 4 |
+| identifier | 9 | 212 | 268 | 4 |
+| repeated | 20 | 422 | 478 | 4 |
+| arithmetic | 9 | 246 | 302 | 4 |
+| reference | 9 | 213 | 270 | 4 |
+
+Fresh expression phases, median `[min,max]` microseconds per placeholder:
+
+| Configuration | Shape | Source copy (us) | Compiler/context (us) | Tokenize (us) | Parse (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug | identifier | 2.645 [2.363,11.303] | 47.634 [40.474,50.695] | 165.891 [155.485,190.412] | 19.050 [18.721,21.106] |
+| Debug | arithmetic | 2.606 [2.190,2.882] | 44.143 [39.614,52.862] | 197.171 [185.236,224.979] | 25.622 [21.641,27.926] |
+| Debug | reference | 2.183 [1.987,2.457] | 42.736 [39.666,44.787] | 157.345 [146.624,172.022] | 19.075 [17.138,21.614] |
+| Release | identifier | 0.057 [0.053,0.112] | 1.405 [1.275,2.591] | 2.408 [1.811,4.342] | 0.775 [0.733,1.559] |
+| Release | arithmetic | 0.072 [0.051,0.130] | 1.533 [1.312,3.131] | 2.927 [1.982,5.223] | 1.474 [0.872,2.051] |
+| Release | reference | 0.062 [0.052,0.075] | 1.663 [1.260,2.098] | 2.431 [1.883,2.826] | 0.910 [0.733,1.136] |
+
+| Configuration | Shape | Resolve (us) | Evaluate (us) | Convert (us) | Cleanup (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug | identifier | 5.172 [4.023,5.601] | 6.317 [5.804,7.295] | 3.299 [3.150,4.425] | 26.384 [20.443,29.081] |
+| Debug | arithmetic | 5.643 [5.186,9.340] | 10.321 [9.763,10.829] | 3.304 [2.898,3.837] | 23.599 [21.241,27.282] |
+| Debug | reference | 4.516 [4.149,4.862] | 6.630 [6.074,7.195] | 3.735 [2.973,4.183] | 23.461 [20.507,28.445] |
+| Release | identifier | 0.177 [0.165,0.310] | 0.233 [0.130,0.252] | 0.042 [0.041,0.090] | 0.680 [0.657,1.408] |
+| Release | arithmetic | 0.251 [0.185,0.508] | 0.322 [0.256,0.629] | 0.065 [0.037,0.124] | 0.864 [0.684,1.655] |
+| Release | reference | 0.206 [0.148,0.258] | 0.190 [0.140,0.252] | 0.102 [0.076,0.148] | 0.941 [0.682,1.111] |
+
+Debug phase requests, with equal median/min/max across five samples:
+
+| Shape | Source copy | Compiler/context | Tokenize | Parse | Resolve | Evaluate | Convert | Cleanup |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| identifier | 5 | 98 | 67 | 23 | 2 | 4 | 3 | 0 |
+| arithmetic | 5 | 98 | 88 | 31 | 2 | 9 | 3 | 0 |
+| reference | 5 | 98 | 67 | 23 | 2 | 4 | 3 | 0 |
+
+Interpretation and validation:
+
+- Tokenization has the largest staged median in every expression/configuration,
+  followed by Compiler/Context preparation. Release tokenization is
+  2.408-2.927 us versus 1.405-1.663 us for preparation. This identifies
+  candidates for review, not a promised cache speedup or exact percentage of
+  the full production call.
+- Template scanning is much smaller than full placeholder formatting in
+  these cases. A cache of template segments alone would not remove the
+  repeated compiler/tokenizer/parser pipeline. Caching bound expressions or
+  reusing Compiler setup would have different lifetime and behavioral
+  implications and is not approved by these measurements.
+- The historical Q2 note recorded approximate Debug plain/literal/two-value
+  call totals of 5-7/33/650 us and attributed about 28 us to context copying.
+  That earlier fixture is not this protocol; the current baseline does not
+  isolate an exact context-copy cost or establish a before/after speedup.
+- Only successful simple expressions and same-type binding changes were
+  timed. Type replacement, native calls, receiver/closure contexts, custom
+  compiler setup, diagnostics/error recovery, metadata growth, wider values,
+  nested formatting/reentry, cache hit/miss behavior, and retained memory
+  are not measured. Existing format/ownership regression tests remain intact.
+- Two initial harness errors (unsupported function return annotations and
+  a fresh-reference assumption for the shared empty string) were corrected
+  before any I5 result rows were emitted. No engine/parser change or
+  optimization was needed to make the checks pass.
+- Both selected Debug CTests pass: `nomad_test_language` and
+  `nomad_test_remaining`, run directly without a separate pre-test build.
+  The final extended benchmark builds and all earlier/new sections execute
+  successfully in Debug and Release with current bundled DLL hashes matched.
+  No full-suite rerun, gameplay, cross-platform, or cache performance claim
+  is made; all captured ranges remain visible.
+- I5/Q2's measurement scope is complete. Next reviewable scope: discuss
+  bounded placeholder-tokenization or Compiler-preparation reuse, broader
+  bound-expression caching, or deferral. Preserve live bindings, mutable
+  metadata, setup-callback semantics, diagnostic coordinates, and ownership;
+  do not freeze declarations or add language restrictions to simplify a
+  cache. No implementation is authorized before that design decision.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -3949,7 +4423,7 @@ is the total for the batch. No exit-allocation or retained-byte claim is made.
 ## Open questions
 
 - **Q1 (resolved):** The debug-only kind check was removed. The accessors are `getUncheckedNative*`, inline in `Runtime.hpp`.
-- **Q2 (step 8):** Cache compiled format-template segments (I5), or keep the Interpreter simpler and accept re-parsing? Measured (Debug build, 20,000 calls each): plain return about 5–7 µs; dynamic format with static text (no placeholders) about 33 µs; dynamic format with two `{value}` placeholders about 650 µs. The context copy accounts for about 28 µs of the static-text cost, so per-placeholder work dominates. Next measurement: break down `Interpreter::evaluateFormatExpression` (compiler creation, tokenizing, parsing, resolving, evaluation) per placeholder.
+- **Q2 (step 8):** Current host/compiled formatting and fresh placeholder phases are measured above. Tokenization and Compiler/Context preparation dominate the staged cases; template-segment caching alone does not remove them. Next: choose a bounded reuse/cache design or defer, preserving live bindings, mutable metadata, setup semantics, diagnostics, and ownership. No cache is approved.
 - **Q3 (step 4):** Resolved. `InterpreterContext` reads the frame indexes through the read-only `getParameterIndex()` and `getVariableIndex()` accessors, and the `friend` declaration is removed.
 - **Q4 (open):** Should the Interpreter or VM reject a runtime whose script compilation did not succeed? The standing rule says script initialization is a host precondition and the VM does not validate readiness. Confirm that rule or change it explicitly.
 - **Q5 (planned hub types):** When hub functions become methods, what are their `this` and unqualified member-lookup semantics? Existing hub functions require fully qualified hub-member references; do not silently change receiver or lexical lookup behavior.
@@ -4022,7 +4496,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | I2 | P2 | consistency | Native function/method stop behavior depends on owner and struct-signature heuristics | `Interpreter.cpp`: runFunction, runStructMethod, runObjectMethod | Fixed with I1: one native function/method restoration policy; duplicate helper/heuristic removed | 5 |
 | I3 | P2 | correctness | Format reset policy differs for expression, literal-only, and empty templates using fresh or live caller contexts | `Interpreter.cpp`: evaluateFormatExpression, formatString; `Expression.cpp`: DynamicFormatExpression/FormatStringLiteral::onEvaluate; `OpCode.cpp`: op_dynamic_format_execute | Fixed under approved disposable-context/current-call-diagnostics policy: boundary/segment resets, live bindings retained, no preservation guard | 5 |
 | I4 | P2 | redundancy | Specialized source and placeholder compilation repeat setup/diagnostic handling; each dynamic expression creates a Compiler and runs setup callbacks | `Interpreter.cpp`: execute, evaluateFormatExpression; `Runtime.cpp`: createCompiler; `LanguageFormatStringFunctionTest.cpp`: compiler-creation regression | Resolved by user decision: keep specialized parsers and modest duplication; retain per-placeholder setup behavior, no shared-session abstraction or reuse | 5 |
-| I5 | P2 | perf | Dynamic format templates are re-tokenized and re-parsed on every execution; no compiled-segment cache | `Interpreter.cpp`: formatString loop; `OpCode.cpp`:1215–1226 | verified | 8 (Q2) |
+| I5 | P2 | perf | Dynamic templates repeat scanning and per-placeholder compiler/tokenizer/parser preparation | `Interpreter.cpp`: formatString/evaluateFormatExpression; `OpCode.cpp`: dynamic-format frame context; checked full-call/staged-phase benchmark | Debug/Release baseline measured; tokenization/preparation dominate staged cases; reuse/cache design review follows, no production change | 8 (Q2) |
 | I6 | P3 | correctness | execute overloads use different catch scopes; the string wrapper dereferences getCallable without a null guard | `Interpreter.cpp`: execute overloads; `InterpreterContext.cpp`: constructors, getCallable, validateFrame; `InterpreterTest.cpp`, `InterpreterReceiverTest.cpp` | Resolved by review: callable is owned/non-null; stale-frame validation throws; both source paths report failures as diagnostics while typed calls propagate | 5 |
 | I7 | P2 | redundancy | Closure count validation is duplicated; raw and typed argument validation have distinct contracts | `Closure.cpp`: acceptsArgumentCount; `Interpreter.cpp`: runFunction(Closure); `VirtualMachine.cpp`: run(Closure) | Shared equivalent count check; specialized runtime/type/storage/result checks retained intentionally | 5 |
 | I8 | P3 | redundancy | Compiled-body range check repeated at host boundaries and accepts an unset end sentinel | `ScriptCallableBase.cpp`: hasCompiledBody; `Interpreter.cpp`: callable entry points; `VirtualMachine.cpp`: run(Closure); `FormatString.cpp`: appendFunction | Fixed: shared range predicate rejects unset endpoints, empty/reversed ranges; no new prepared-VM readiness check | 5 |
@@ -4039,7 +4513,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | ID | Priority | Kind | Finding | Evidence | Status | Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | C1 | P2 | const-correctness | Shared private const storage resolvers return writable variable/parameter/receiver spans | `InterpreterContext.cpp`: getVariableStorageById, getParameterStorage and explicit mutable accessors; `InterpreterContext.hpp` | Fixed internally: reads use existing const storage APIs; writes remain non-const; redundant private resolvers removed, public contracts unchanged | 5 |
-| C2 | P2 | perf | Separate local owner/value-buffer allocations and same-type assignment scratch; retired slots remain valid until outermost evaluation exit | `InterpreterContext.hpp/.cpp`: owned/retired storage; `InterpreterStorage.cpp`: conditional assignment scratch; checked storage/retirement benchmark | Scratch-only array implemented; one fewer measured Debug request and selected CTest/checked runs pass; both Release repeats have higher update medians pending review; owners/retirement unchanged | 8 |
+| C2 | P2 | perf | Separate local owner/value-buffer allocations and same-type assignment scratch; retired slots remain valid until outermost evaluation exit | `InterpreterContext.hpp/.cpp`: owned/retired storage; `InterpreterStorage.cpp`: vector assignment scratch; checked storage/retirement benchmark | Array experiment rolled back with approval; restored Debug counts and selected CTest/checked Debug/Release runs pass; evidence retained, further storage redesign unapproved | 8 |
 | C3 | P3 | api | Diagnostic names obscure append/clear-all behavior; review overlap and deleted temporary-interpreter constructors | `InterpreterContext.hpp`, `InterpreterContext.cpp`: constructors and diagnostics API | Approved renames implemented: addError and clearDiagnostics, no aliases; distinct source/metadata entry points and temporary-lifetime rejection retained | 5 |
 | C4 | P3 | api | Name-keyed host accessors coexist with resolved-ID variable/parameter storage APIs | `InterpreterContext.hpp`, `InterpreterContext.cpp`: name/ID access; `Expression.cpp`: IdentifierExpression::onEvaluate; `SyntaxTree.cpp`: assignment; `DebugConsole.cpp`: console editing | Resolved by review: distinct host/binding and resolved-AST contracts retained, honoring step-2 convenience decisions; no further API or performance change | 2, 5 (done) |
 

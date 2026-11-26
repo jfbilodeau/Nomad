@@ -4,8 +4,8 @@
 
 #include <nomad/script/Type.hpp>
 
-#include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace nomad {
 
@@ -51,9 +51,8 @@ void InterpreterStorage::assign(const std::span<const RuntimeValue> source) {
         throw std::invalid_argument("Interpreter assignment storage must match its type's physical size");
     }
 
-    const auto scratchSize = m_type->getAssignmentScratchSize();
-    auto scratch = scratchSize != 0 ? std::make_unique<RuntimeValue[]>(scratchSize) : nullptr;
-    m_type->assignValue(source.data(), m_storage.data(), scratch.get());
+    std::vector<RuntimeValue> scratch(m_type->getAssignmentScratchSize());
+    m_type->assignValue(source.data(), m_storage.data(), scratch.empty() ? nullptr : scratch.data());
 }
 
 } // namespace nomad

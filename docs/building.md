@@ -160,3 +160,20 @@ spans and string references through nested exit, then release old references
 without changing the current binding. Source strings remain caller-owned:
 retained heap bytes and last-reference payload destruction are not measured.
 These are direct host bookkeeping workloads, not complete evaluation timings.
+
+Dynamic-format workloads compare template scanning, a live host context,
+compiled `$template` calls, and plain compiled returns. Cases cover empty
+and literal text, one/two identifier placeholders, arithmetic, and a 128-byte
+string reference. Five fresh samples use 32 warmups, 512 timed calls, and
+separate 128-call Debug allocation probes. Inputs alternate; fixture and
+argument/binding preparation, checks, and returned-value destruction are
+excluded. Compiled calls include the checked host wrapper and frame context;
+the scanning/plain-return controls do less work.
+
+A separate fresh expression pipeline reports source copying, Compiler/Context
+preparation, tokenization, parsing, resolution, evaluation, conversion, and
+cleanup through existing public APIs. It uses the same protocol and never
+reuses an AST. These are staged host-context measurements, not internal
+timers for full formatting or an exact subtractive cost breakdown. Checks
+cover outputs, segments, references, binding addresses, VM state, and
+persistent registrations. Neither workload implements caching.
