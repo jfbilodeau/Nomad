@@ -795,6 +795,7 @@ private:
     );
     void registerHubMember(const NomadString& name, HubMember member);
     [[nodiscard]] bool canRegisterHubMember(const NomadString& name, bool function = false) const;
+    [[nodiscard]] const Hub* getHubVariableOwner(const NomadString& name) const;
     void rebuildHubMembers();
 
     // Context variables

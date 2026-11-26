@@ -1692,6 +1692,47 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(hub_context_resolution_allocates_no_more_than_membership_lookup) {
+    for (const auto& hubName : std::array{NomadString{"lookup"}, NomadString(96, 'h')}) {
+        for (const auto* localName : {"value", "branch.leaf"}) {
+            const auto name = hubName + "." + localName;
+            Runtime runtime;
+            BOOST_REQUIRE(runtime.registerHub(hubName, HubMode::Opened).isValid());
+            BOOST_REQUIRE(runtime.registerHubVariable(name).isValid());
+            const auto expected = runtime.getContextId(hubName);
+            BOOST_REQUIRE(expected.isValid());
+            const auto& constRuntime = runtime;
+            BOOST_REQUIRE(constRuntime.isHubVariable(name));
+            BOOST_REQUIRE(constRuntime.getVariableContextIdByPrefix(name) == expected);
+            std::array<NomadIndex, 2> requests{};
+            for (auto query = NomadIndex{0}; query < requests.size(); ++query) {
+                auto matchingQueries = NomadIndex{0};
+                callAllocations = 0;
+                previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+                {
+                    const auto previousHook = previousAllocationHook;
+                    BOOST_SCOPE_EXIT_ALL(=) {
+                        _CrtSetAllocHook(previousHook);
+                    };
+
+                    for (auto iteration = 0; iteration < 100; ++iteration) {
+                        matchingQueries += query == 0 ?
+                            constRuntime.isHubVariable(name) :
+                            constRuntime.getVariableContextIdByPrefix(name) == expected;
+                    }
+                }
+
+                requests[query] = callAllocations;
+                BOOST_TEST(matchingQueries == 100U);
+            }
+
+            BOOST_TEST_CONTEXT(name) {
+                BOOST_TEST(requests[1] <= requests[0]);
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(native_catalog_publication_survives_allocation_failures_and_retries) {
     constexpr auto batchSize = NomadIndex{16};
     const NomadString name = "failureCatalog";

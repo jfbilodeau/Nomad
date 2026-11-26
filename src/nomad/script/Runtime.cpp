@@ -363,12 +363,20 @@ NomadString Runtime::getContainingHub(const NomadString& name) const {
 }
 
 bool Runtime::isHubVariable(const NomadString& name) const {
+
+    return getHubVariableOwner(name) != nullptr;
+}
+
+const Hub* Runtime::getHubVariableOwner(const NomadString& name) const {
     const auto* hub = getHub(getHubId(getContainingHub(name)));
     if (hub == nullptr) {
-        return false;
+
+        return nullptr;
     }
+
     const auto* member = hub->getMember(name.substr(hub->getName().size() + 1));
-    return member != nullptr && std::holds_alternative<VariableId>(*member);
+
+    return member != nullptr && std::holds_alternative<VariableId>(*member) ? hub : nullptr;
 }
 
 ContextVariableId Runtime::registerHubVariable(const HubId hubId, const NomadString& name) {
@@ -3421,9 +3429,11 @@ ContextVariableId Runtime::getContextVariableId(const NomadString& variableName)
 }
 
 VariableContextId Runtime::getVariableContextIdByPrefix(const NomadString& variableName) const {
-    if (isHubVariable(variableName)) {
-        return m_hubs[toNomadIndex(getHubId(getContainingHub(variableName)).id)]->m_variableContextId;
+    if (const auto* hub = getHubVariableOwner(variableName)) {
+
+        return hub->m_variableContextId;
     }
+
     for (const auto& context: m_variables) {
         if (variableName.rfind(context.prefix, 0) == 0) {
             return context.id;

@@ -309,6 +309,81 @@ BOOST_AUTO_TEST_CASE(hub_variable_registration_returns_global_handles_but_member
     BOOST_TEST(value.getIntegerValue() == 42);
 }
 
+BOOST_AUTO_TEST_CASE(context_prefix_resolution_preserves_hub_membership_and_first_prefix_precedence)
+{
+    Runtime runtime;
+    const auto parentHub = runtime.registerHub("lookup", HubMode::Opened);
+    const auto childHub = runtime.registerHub("lookup.child", HubMode::Opened);
+    BOOST_REQUIRE(parentHub.isValid());
+    BOOST_REQUIRE(childHub.isValid());
+    const auto parentVariable = runtime.registerHubVariable("lookup.value");
+    const auto dottedVariable = runtime.registerHubVariable("lookup.branch.leaf");
+    const auto childVariable = runtime.registerHubVariable("lookup.child.value");
+    BOOST_REQUIRE(parentVariable.isValid());
+    BOOST_REQUIRE(dottedVariable.isValid());
+    BOOST_REQUIRE(childVariable.isValid());
+    BOOST_REQUIRE(runtime.registerHubConstant(
+        childHub,
+        "constant",
+        RuntimeValue{NomadInteger{17}},
+        runtime.getIntegerType()
+    ).isValid());
+    const auto parentContext = runtime.getContextId("lookup");
+    const auto childContext = runtime.getContextId("lookup.child");
+    const auto broad = runtime.registerVariableContext(
+        "broad",
+        "lookup.",
+        std::make_unique<SimpleVariableContext>()
+    );
+    const auto narrow = runtime.registerVariableContext(
+        "narrow",
+        "lookup.child.",
+        std::make_unique<SimpleVariableContext>()
+    );
+    BOOST_REQUIRE(parentContext.isValid());
+    BOOST_REQUIRE(childContext.isValid());
+    BOOST_REQUIRE(broad.isValid());
+    BOOST_REQUIRE(narrow.isValid());
+    const auto& constRuntime = runtime;
+    const auto checkResolution = [&] {
+        BOOST_TEST(constRuntime.isHubVariable("lookup.value"));
+        BOOST_TEST(constRuntime.isHubVariable("lookup.branch.leaf"));
+        BOOST_TEST(constRuntime.isHubVariable("lookup.child.value"));
+        BOOST_TEST(constRuntime.getContainingHub("lookup.branch.leaf") == "lookup");
+        BOOST_TEST(constRuntime.getContainingHub("lookup.child.value") == "lookup.child");
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.value") == parentContext);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.branch.leaf") == parentContext);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.child.value") == childContext);
+        BOOST_TEST(!constRuntime.isHubVariable("lookup.child.constant"));
+        BOOST_TEST(!constRuntime.isHubVariable("lookup.child.unknown"));
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.child.constant") == broad);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.child.unknown") == broad);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.unknown") == broad);
+        for (const auto* name : {"", "unqualified", "absent.value"}) {
+            BOOST_TEST(!constRuntime.isHubVariable(name));
+            BOOST_TEST(constRuntime.getVariableContextIdByPrefix(name) == VariableContextId::INVALID);
+        }
+
+        BOOST_TEST(runtime.getContextVariableId("lookup.value") == parentVariable);
+        BOOST_TEST(runtime.getContextVariableId("lookup.branch.leaf") == dottedVariable);
+        BOOST_TEST(runtime.getContextVariableId("lookup.child.value") == childVariable);
+        BOOST_TEST(constRuntime.getVariableContext(broad)->getVariableCount() == 0U);
+        BOOST_TEST(constRuntime.getVariableContext(narrow)->getVariableCount() == 0U);
+    };
+    checkResolution();
+    for (auto index = NomadIndex{0}; index < 64; ++index) {
+        const auto name = "later" + std::to_string(index);
+        BOOST_REQUIRE(runtime.registerHub(name, HubMode::Opened).isValid());
+        BOOST_REQUIRE(runtime.registerVariableContext(
+            name,
+            "host." + name + ".",
+            std::make_unique<SimpleVariableContext>()
+        ).isValid());
+    }
+
+    checkResolution();
+}
+
 BOOST_AUTO_TEST_CASE(context_loads_encode_global_handles_for_scalar_and_object_targets)
 {
     Runtime runtime;

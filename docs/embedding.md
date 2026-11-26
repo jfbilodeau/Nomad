@@ -936,6 +936,14 @@ borrowed pointer, or `nullptr` for an invalid or unregistered ID.
 `getFirstVariableContextId` and `getNextVariableContextId` enumerate contexts
 in registration order, ending at `VariableContextId::INVALID`.
 
+`getVariableContextIdByPrefix(variableName)` first checks for an actual variable
+member in the nearest containing hub, including dotted local member names.
+Otherwise it returns the first registered matching context prefix, not the
+longest prefix. This fallback does not require the variable itself to exist.
+`isHubVariable(name)` is false for missing or non-variable hub members, even
+when the name matches a host-context prefix. These queries do not create
+variables or change context storage.
+
 Runtime's context APIs use shallow constness. `getVariableContext` intentionally
 returns a borrowed mutable `VariableContext*` even through a const Runtime.
 Context value and read/write-tracking APIs remain const-callable and may update
