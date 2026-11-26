@@ -363,7 +363,6 @@ NomadString Runtime::getContainingHub(const NomadString& name) const {
 }
 
 bool Runtime::isHubVariable(const NomadString& name) const {
-
     return getHubVariableOwner(name) != nullptr;
 }
 
@@ -674,6 +673,10 @@ HubId Runtime::registerHub(const NomadString& name, const HubMode mode) {
         log::error("Cannot register hub '" + name + "': " + exception.what());
 
         return HubId::INVALID;
+    } catch (...) {
+        m_hubs.resize(previousCount);
+
+        throw;
     }
 
     return getHubId(name);

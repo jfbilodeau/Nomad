@@ -40,6 +40,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -3394,6 +3395,401 @@ void runContextPrefixBenchmark() {
     }
 }
 
+bool hubMembersMatch(const nomad::HubMember& actual, const nomad::HubMember& expected) {
+    if (actual.index() != expected.index()) {
+
+        return false;
+    }
+
+    if (const auto* variable = std::get_if<nomad::VariableId>(&expected)) {
+
+        return std::get<nomad::VariableId>(actual) == *variable;
+    }
+
+    if (const auto* functions = std::get_if<nomad::HubFunctions>(&expected)) {
+
+        return std::get<nomad::HubFunctions>(actual).ids == functions->ids;
+    }
+
+    if (const auto* constant = std::get_if<nomad::ConstantId>(&expected)) {
+
+        return std::get<nomad::ConstantId>(actual) == *constant;
+    }
+
+    if (const auto* type = std::get_if<const nomad::Type*>(&expected)) {
+
+        return std::get<const nomad::Type*>(actual) == *type;
+    }
+
+    if (const auto* event = std::get_if<nomad::EventId>(&expected)) {
+
+        return std::get<nomad::EventId>(actual) == *event;
+    }
+
+    if (const auto* dynamic = std::get_if<nomad::DynamicVariableId>(&expected)) {
+
+        return std::get<nomad::DynamicVariableId>(actual) == *dynamic;
+    }
+
+    return std::get<nomad::HubTypeFamily>(actual).argumentCount ==
+        std::get<nomad::HubTypeFamily>(expected).argumentCount;
+}
+
+void runHubRegistrationBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto batchSize = nomad::NomadIndex{8};
+    constexpr auto reopenIterations = nomad::NomadIndex{5000};
+    constexpr auto allocationReopenIterations = nomad::NomadIndex{1000};
+    constexpr auto hubCounts = std::array<nomad::NomadIndex, 3>{8, 32, 128};
+    constexpr auto shapes = std::array{"empty", "mixed"};
+    constexpr auto additions = std::array{"unrelated", "child"};
+    constexpr auto labels = std::array{"new_hub", "reopen"};
+    constexpr auto declarationNames = std::array{"script", "constant", "Type", "changed", "current", "Box"};
+    using Members = std::unordered_map<nomad::NomadString, nomad::HubMember>;
+    {
+        nomad::Runtime warmup;
+        for (auto index = nomad::NomadIndex{0}; index < 32; ++index) {
+            if (warmup.registerHub(std::format("R13Warmup{:04}", index), nomad::HubMode::Opened).isInvalid()) {
+                throw std::runtime_error("Failed to prepare hub-registration warmups");
+            }
+        }
+    }
+
+    std::cout << "Hub registration: eight new unrelated/child hubs after empty or mixed owner catalogs.\n"
+        << "Five fresh samples; prepared owners, declarations, names, and output buffers are excluded.\n"
+        << "Reopening an existing open hub is a reduced-work control, not a direct rebuild cost measurement.\n"
+        << "Separate Debug probes use fresh fixtures; member identities, native ownership, and variables are checked.\n"
+        << std::flush;
+    for (const auto hubCount : hubCounts) {
+        std::vector<nomad::NomadString> ownerNames;
+        for (auto index = nomad::NomadIndex{0}; index < hubCount; ++index) {
+            ownerNames.push_back(std::format("R13Owner{:04}", index));
+        }
+
+        for (auto shape = nomad::NomadIndex{0}; shape < shapes.size(); ++shape) {
+            const auto populated = shape == 1;
+            for (auto addition = nomad::NomadIndex{0}; addition < additions.size(); ++addition) {
+                const auto childAddition = addition == 1;
+                std::array<nomad::NomadString, batchSize> newNames;
+                for (auto index = nomad::NomadIndex{0}; index < batchSize; ++index) {
+                    newNames[index] = childAddition ? ownerNames[index] + ".child" :
+                        std::format("R13Added{:04}", index);
+                }
+
+                std::array<std::vector<double>, labels.size()> latencySamples;
+                std::array<std::vector<double>, labels.size()> allocationSamples;
+                for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                    for (auto pass = 0; pass < 2; ++pass) {
+                        const auto allocationPass = pass == 1;
+                        auto callbackCalls = nomad::NomadIndex{0};
+                        auto factoryCalls = nomad::NomadIndex{0};
+                        nomad::Runtime runtime;
+                        if (runtime.getHub(nomad::HubId{0}) != nullptr) {
+                            throw std::runtime_error("The fresh hub-registration fixture already has a hub");
+                        }
+
+                        std::vector<const nomad::Hub*> owners;
+                        std::vector<Members> expected(hubCount);
+                        std::vector<nomad::ContextVariableId> variables;
+                        std::vector<nomad::CallableId> freeFunctions;
+                        for (auto index = nomad::NomadIndex{0}; index < hubCount; ++index) {
+                            const auto id = runtime.registerHub(ownerNames[index], nomad::HubMode::Opened);
+                            if (id != nomad::HubId{nomad::toNomadId(index)}) {
+                                throw std::runtime_error("Unexpected initial hub identity/order");
+                            }
+
+                            owners.push_back(runtime.getHub(id));
+                        }
+
+                        const auto* integerType = runtime.getIntegerType();
+                        const auto callback = [&callbackCalls](nomad::VirtualMachine* machine) {
+                            ++callbackCalls;
+                            machine->setIntegerResult(42);
+                        };
+                        if (populated) {
+                            for (auto index = nomad::NomadIndex{0}; index < hubCount; ++index) {
+                                const auto& ownerName = ownerNames[index];
+                                const auto ownerId = nomad::HubId{nomad::toNomadId(index)};
+                                const auto variable = runtime.registerHubVariable(ownerId, "value");
+                                if (
+                                    variable.isInvalid() ||
+                                    runtime.registerOrUpdateContextVariable(ownerName + ".value", integerType) != variable
+                                ) {
+                                    throw std::runtime_error("Failed to prepare an owned hub variable");
+                                }
+
+                                runtime.setContextVariableValue(
+                                    variable,
+                                    nomad::RuntimeValue{static_cast<nomad::NomadInteger>(index) + 31}
+                                );
+                                variables.push_back(variable);
+                                const auto* member = owners[index]->getMember("value");
+                                if (member == nullptr || !std::holds_alternative<nomad::VariableId>(*member)) {
+                                    throw std::runtime_error("The prepared hub variable has no local member ID");
+                                }
+
+                                expected[index].emplace("value", *member);
+                                const auto native = runtime.registerHubNativeFunction(
+                                    ownerId, "child.native", callback, {}, integerType, ""
+                                );
+                                const auto nativeOverload = runtime.registerHubNativeFunction(
+                                    ownerId,
+                                    "child.native",
+                                    callback,
+                                    {nomad::defParameter("value", integerType, "")},
+                                    integerType,
+                                    ""
+                                );
+                                const auto script = runtime.registerScriptFunction(
+                                    ownerName + ".child.script", "hub-benchmark.nomad", "return 17"
+                                );
+                                const auto constant = runtime.registerConstant(
+                                    ownerName + ".child.constant",
+                                    nomad::RuntimeValue{nomad::NomadInteger{37}},
+                                    integerType
+                                );
+                                const auto typeId = runtime.registerClass(
+                                    ownerName + ".child.Type", nomad::ClassMode::Closed
+                                );
+                                const auto event = runtime.registerEvent(ownerName + ".child.changed", {});
+                                const auto dynamic = runtime.registerDynamicVariable(
+                                    ownerName + ".child.current",
+                                    {},
+                                    [&callbackCalls](nomad::VirtualMachine*, nomad::RuntimeValue& value) {
+                                        ++callbackCalls;
+                                        value.setIntegerValue(42);
+                                    },
+                                    integerType,
+                                    ""
+                                );
+                                const auto familyName = ownerName + ".child.Box";
+                                const auto family = runtime.registerParameterizedType(
+                                    familyName,
+                                    1,
+                                    [familyName, &factoryCalls](
+                                        nomad::Runtime* owningRuntime,
+                                        const nomad::TypeId id,
+                                        const std::vector<const nomad::Type*>& arguments
+                                    ) {
+                                        ++factoryCalls;
+
+                                        return std::make_unique<nomad::ClassType>(
+                                            owningRuntime,
+                                            id,
+                                            familyName + "<" + arguments[0]->getTypeName() + ">",
+                                            nomad::ClassMode::Closed,
+                                            arguments
+                                        );
+                                    }
+                                );
+                                const auto freeFunction = runtime.registerNativeFunction(
+                                    ownerName + ".child.free", callback, {}, integerType, ""
+                                );
+                                if (
+                                    native.isInvalid() ||
+                                    nativeOverload.isInvalid() ||
+                                    script.isInvalid() ||
+                                    constant.isInvalid() ||
+                                    typeId.isInvalid() ||
+                                    event.isInvalid() ||
+                                    dynamic.isInvalid() ||
+                                    !family ||
+                                    freeFunction.isInvalid()
+                                ) {
+                                    throw std::runtime_error("Failed to prepare mixed hub declarations");
+                                }
+
+                                expected[index].emplace("child.native", nomad::HubFunctions{{native, nativeOverload}});
+                                expected[index].emplace("child.script", nomad::HubFunctions{{script}});
+                                expected[index].emplace("child.constant", constant);
+                                expected[index].emplace("child.Type", runtime.getType(typeId).value());
+                                expected[index].emplace("child.changed", event);
+                                expected[index].emplace("child.current", dynamic);
+                                expected[index].emplace("child.Box", nomad::HubTypeFamily{1});
+                                freeFunctions.push_back(freeFunction);
+                            }
+                        }
+
+                        const auto checkMembers = [](const nomad::Hub* hub, const Members& wanted) {
+                            if (hub == nullptr || hub->getMembers().size() != wanted.size()) {
+                                throw std::runtime_error("Unexpected hub member count during registration benchmark");
+                            }
+
+                            for (const auto& [name, member] : wanted) {
+                                const auto* actual = hub->getMember(name);
+                                if (actual == nullptr || !hubMembersMatch(*actual, member)) {
+                                    throw std::runtime_error("Hub rebuilding changed declaration identity or overload order");
+                                }
+                            }
+                        };
+                        for (auto index = nomad::NomadIndex{0}; index < hubCount; ++index) {
+                            checkMembers(owners[index], expected[index]);
+                        }
+
+                        const auto existingId = nomad::HubId{nomad::toNomadId(hubCount - 1)};
+                        for (auto warmup = 0; warmup < 32; ++warmup) {
+                            if (runtime.registerHub(ownerNames.back(), nomad::HubMode::Opened) != existingId) {
+                                throw std::runtime_error("Reopening an open hub changed its identity");
+                            }
+                        }
+
+                        const auto record = [&](
+                            const nomad::NomadIndex metric,
+                            const nomad::NomadIndex iterations,
+                            const auto& invoke
+                        ) {
+                            if (allocationPass) {
+                                const auto requests = countHostCallAllocations(invoke, iterations);
+                                if (!requests.has_value()) {
+
+                                    return false;
+                                }
+
+                                allocationSamples[metric].push_back(
+                                    static_cast<double>(*requests) / static_cast<double>(iterations)
+                                );
+                            } else {
+                                const auto start = std::chrono::steady_clock::now();
+                                for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+                                    invoke();
+                                }
+
+                                latencySamples[metric].push_back(std::chrono::duration<double, std::micro>{
+                                    std::chrono::steady_clock::now() - start
+                                }.count() / static_cast<double>(iterations));
+                            }
+
+                            return true;
+                        };
+                        auto checksum = std::uint64_t{0};
+                        const auto repeatedCount = allocationPass ? allocationReopenIterations : reopenIterations;
+                        if (!record(1, repeatedCount, [&] {
+                            checksum += static_cast<std::uint64_t>(
+                                runtime.registerHub(ownerNames.back(), nomad::HubMode::Opened).id + 1
+                            );
+                        })) {
+                            continue;
+                        }
+
+                        if (checksum != static_cast<std::uint64_t>(hubCount) * repeatedCount) {
+                            throw std::runtime_error("Hub reopen results changed during measurement");
+                        }
+
+                        std::array<nomad::HubId, batchSize> addedIds;
+                        auto added = nomad::NomadIndex{0};
+                        record(0, batchSize, [&] {
+                            addedIds[added] = runtime.registerHub(newNames[added], nomad::HubMode::Opened);
+                            ++added;
+                        });
+                        if (
+                            added != batchSize ||
+                            callbackCalls != 0 ||
+                            factoryCalls != 0 ||
+                            runtime.getHub(nomad::HubId{nomad::toNomadId(hubCount + batchSize)}) != nullptr
+                        ) {
+                            throw std::runtime_error("Hub registration changed callbacks, factories, or catalog size");
+                        }
+
+                        for (auto index = nomad::NomadIndex{0}; index < batchSize; ++index) {
+                            if (
+                                addedIds[index] != nomad::HubId{nomad::toNomadId(hubCount + index)} ||
+                                runtime.getHubId(newNames[index]) != addedIds[index]
+                            ) {
+                                throw std::runtime_error("New hub registration changed identity/order");
+                            }
+
+                            Members childMembers;
+                            if (populated && childAddition) {
+                                for (const auto* declaration : declarationNames) {
+                                    const auto key = nomad::NomadString{"child."} + declaration;
+                                    childMembers.emplace(declaration, expected[index].at(key));
+                                    expected[index].erase(key);
+                                }
+                            }
+
+                            checkMembers(runtime.getHub(addedIds[index]), childMembers);
+                        }
+
+                        for (auto index = nomad::NomadIndex{0}; index < hubCount; ++index) {
+                            if (
+                                runtime.getHub(nomad::HubId{nomad::toNomadId(index)}) != owners[index] ||
+                                runtime.getHubId(ownerNames[index]) != nomad::HubId{nomad::toNomadId(index)}
+                            ) {
+                                throw std::runtime_error("Existing hub descriptor identity changed after rebuilding");
+                            }
+
+                            checkMembers(owners[index], expected[index]);
+                            if (populated) {
+                                nomad::RuntimeValue value;
+                                runtime.getContextVariableValue(variables[index], value);
+                                if (
+                                    value.getIntegerValue() != static_cast<nomad::NomadInteger>(index) + 31 ||
+                                    runtime.getContextVariableId(ownerNames[index] + ".value") != variables[index] ||
+                                    runtime.getNativeFunctionId(ownerNames[index] + ".child.free") != freeFunctions[index]
+                                ) {
+                                    throw std::runtime_error("Hub rebuilding changed stored values, handles, or free functions");
+                                }
+                            }
+                        }
+
+                        for (auto index = nomad::NomadIndex{0}; index < batchSize; ++index) {
+                            if (runtime.registerHub(newNames[index], nomad::HubMode::Opened) != addedIds[index]) {
+                                throw std::runtime_error("Reopening a newly added hub changed its ID");
+                            }
+                        }
+
+                        if (populated) {
+                            auto machine = runtime.createVirtualMachine();
+                            for (const auto index : {nomad::NomadIndex{0}, hubCount - 1}) {
+                                const auto& native = std::get<nomad::HubFunctions>(expected[index].at("child.native"));
+                                const auto* pinnedFunction = runtime.getNativeFunction(native.ids.front());
+                                const auto* freeFunction = runtime.getNativeFunction(freeFunctions[index]);
+                                if (pinnedFunction == nullptr || freeFunction == nullptr) {
+                                    throw std::runtime_error("Hub rebuilding lost a registered native callback");
+                                }
+
+                                pinnedFunction->getFn()(machine.get());
+                                if (machine->getIntegerResult() != 42) {
+                                    throw std::runtime_error("A pinned native hub callback changed behavior");
+                                }
+
+                                freeFunction->getFn()(machine.get());
+                                if (machine->getIntegerResult() != 42) {
+                                    throw std::runtime_error("An unowned native callback changed behavior");
+                                }
+                            }
+
+                            if (callbackCalls != 4 || factoryCalls != 0) {
+                                throw std::runtime_error("Hub rebuilding changed callback state or invoked a family factory");
+                            }
+                        }
+                    }
+                }
+
+                std::cout << "hub_registration_case=" << shapes[shape] << " addition=" << additions[addition]
+                    << " existing_hubs=" << hubCount << " members_before=" << (populated ? 8 * hubCount : 0)
+                    << " source_members=" << (populated ? 6 * hubCount : 0)
+                    << " pinned_native_ids=" << (populated ? 2 * hubCount : 0)
+                    << " new_hubs=" << batchSize << " final_hubs=" << hubCount + batchSize
+                    << " new_name_bytes=" << newNames.front().size() << " reopen_iterations=" << reopenIterations
+                    << " allocation_reopen_iterations=" << allocationReopenIterations;
+                for (auto metric = nomad::NomadIndex{0}; metric < labels.size(); ++metric) {
+                    const auto timeLabel = std::format("{}_us", labels[metric]);
+                    printSamples(timeLabel.c_str(), latencySamples[metric]);
+                    const auto allocationLabel = std::format("{}_allocations", labels[metric]);
+                    if (!allocationSamples[metric].empty()) {
+                        printSamples(allocationLabel.c_str(), allocationSamples[metric]);
+                    } else {
+                        std::cout << ' ' << allocationLabel << "=unavailable";
+                    }
+                }
+
+                std::cout << std::endl;
+            }
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -3415,6 +3811,7 @@ int main() {
         runNativeMemberCatalogBenchmark();
         runNativePropertyValidationBenchmark();
         runContextPrefixBenchmark();
+        runHubRegistrationBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

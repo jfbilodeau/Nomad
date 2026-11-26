@@ -2449,6 +2449,13 @@ registering the name. Script hub declarations require a tokenizer-recognized
 identifier; each dotted segment must start with a letter or underscore.
 Native registration does not make otherwise invalid names usable in script
 declarations.
+
+Other exceptions during member rebuilding, including allocation failures, remove
+the attempted new hub and propagate unchanged. Existing hub identities and
+member tables remain intact, and the same name can be retried without consuming
+a hub ID. Earlier declarations and caller-owned side effects are not rolled
+back; this is not a whole-runtime transaction.
+
 Use `Runtime::isHub(name)` to test whether a hub is registered.
 Include `<nomad/script/Runtime.hpp>` for `HubId` and `HubMember`, and
 `<nomad/script/Hub.hpp>` to inspect hubs.

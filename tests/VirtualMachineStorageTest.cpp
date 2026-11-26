@@ -8,6 +8,7 @@
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/ExecutionStateGuard.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/NativeProperty.hpp>
@@ -1692,6 +1693,172 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(failed_hub_rebuilding_rolls_back_the_candidate_and_allows_retry) {
+    for (const auto childAddition : {false, true}) {
+        auto allocationCount = NomadIndex{0};
+        const NomadString candidateName = childAddition ? "rollback.child" : "rollbackUnrelated";
+        for (auto failureAt = NomadIndex{0}; failureAt <= allocationCount; ++failureAt) {
+            BOOST_TEST_CONTEXT("child=" << childAddition << " allocation=" << failureAt) {
+                auto calls = NomadIndex{0};
+                Runtime runtime;
+                const auto parentId = runtime.registerHub("rollback", HubMode::Opened);
+                const auto otherId = runtime.registerHub("other", HubMode::Opened);
+                BOOST_REQUIRE(parentId.isValid());
+                BOOST_REQUIRE(otherId.isValid());
+                const auto candidateId = HubId{otherId.id + 1};
+                const auto* parent = runtime.getHub(parentId);
+                const auto* other = runtime.getHub(otherId);
+                BOOST_REQUIRE(parent != nullptr);
+                BOOST_REQUIRE(other != nullptr);
+                const auto* integerType = runtime.getIntegerType();
+                const auto variable = runtime.registerHubVariable(parentId, "value");
+                BOOST_REQUIRE(variable.isValid());
+                BOOST_REQUIRE(runtime.registerOrUpdateContextVariable("rollback.value", integerType) == variable);
+                runtime.setContextVariableValue(variable, RuntimeValue{NomadInteger{37}});
+                const auto contextId = runtime.getContextId("rollback");
+                const auto* context = runtime.getVariableContext(contextId);
+                BOOST_REQUIRE(context != nullptr);
+                const auto localVariable = context->getVariableId("rollback.value");
+                const NativeFunctionFn callback = [&calls](VirtualMachine* machine) {
+                    ++calls;
+                    machine->setIntegerResult(42);
+                };
+                const auto nativeId = runtime.registerHubNativeFunction(
+                    parentId, "child.read", callback, {}, integerType, ""
+                );
+                const auto overloadId = runtime.registerHubNativeFunction(
+                    parentId,
+                    "child.read",
+                    callback,
+                    {defParameter("value", integerType, "")},
+                    integerType,
+                    ""
+                );
+                const auto freeId = runtime.registerNativeFunction(
+                    "rollback.child.free", callback, {}, integerType, ""
+                );
+                const auto constantId = runtime.registerHubConstant(
+                    parentId, "child.answer", RuntimeValue{NomadInteger{17}}, integerType
+                );
+                const auto typeId = runtime.registerHubClass(parentId, "child.Type", ClassMode::Closed);
+                const auto otherConstant = runtime.registerHubConstant(
+                    otherId, "mark", RuntimeValue{NomadInteger{19}}, integerType
+                );
+                BOOST_REQUIRE(nativeId.isValid());
+                BOOST_REQUIRE(overloadId.isValid());
+                BOOST_REQUIRE(freeId.isValid());
+                BOOST_REQUIRE(constantId.isValid());
+                BOOST_REQUIRE(typeId.isValid());
+                BOOST_REQUIRE(otherConstant.isValid());
+                const auto* type = runtime.getType(typeId).value();
+                const std::vector<CallableId> nativeIds{nativeId, overloadId};
+                const auto checkExisting = [&](const bool redistributed) {
+                    BOOST_TEST(runtime.getHub(parentId) == parent);
+                    BOOST_TEST(runtime.getHub(otherId) == other);
+                    BOOST_TEST(runtime.getHubId("rollback") == parentId);
+                    BOOST_TEST(runtime.getHubId("other") == otherId);
+                    BOOST_TEST(parent->getMembers().size() == (redistributed ? 2U : 4U));
+                    BOOST_TEST(other->getMembers().size() == 1U);
+                    const auto* functions = parent->getMember("child.read");
+                    BOOST_REQUIRE(functions != nullptr);
+                    const auto* overloads = std::get_if<HubFunctions>(functions);
+                    BOOST_REQUIRE(overloads != nullptr);
+                    BOOST_TEST(overloads->ids == nativeIds);
+                    const auto* stored = parent->getMember("value");
+                    BOOST_REQUIRE(stored != nullptr);
+                    BOOST_TEST(std::get<VariableId>(*stored) == localVariable);
+                    const auto* mark = other->getMember("mark");
+                    BOOST_REQUIRE(mark != nullptr);
+                    BOOST_TEST(std::get<ConstantId>(*mark) == otherConstant);
+                    const auto* declarationOwner = redistributed ? runtime.getHub(candidateId) : parent;
+                    BOOST_REQUIRE(declarationOwner != nullptr);
+                    const auto* answer = declarationOwner->getMember(redistributed ? "answer" : "child.answer");
+                    const auto* classMember = declarationOwner->getMember(redistributed ? "Type" : "child.Type");
+                    BOOST_REQUIRE(answer != nullptr);
+                    BOOST_REQUIRE(classMember != nullptr);
+                    BOOST_TEST(std::get<ConstantId>(*answer) == constantId);
+                    BOOST_TEST(std::get<const Type*>(*classMember) == type);
+                    BOOST_TEST(parent->getMember("child.free") == nullptr);
+                    if (redistributed) {
+                        BOOST_TEST(parent->getMember("child.answer") == nullptr);
+                        BOOST_TEST(parent->getMember("child.Type") == nullptr);
+                        BOOST_TEST(declarationOwner->getMembers().size() == 2U);
+                        BOOST_TEST(declarationOwner->getMember("read") == nullptr);
+                        BOOST_TEST(declarationOwner->getMember("free") == nullptr);
+                    }
+
+                    BOOST_TEST(runtime.getVariableContext(contextId) == context);
+                    BOOST_TEST(runtime.getContextVariableId("rollback.value") == variable);
+                    RuntimeValue value;
+                    runtime.getContextVariableValue(variable, value);
+                    BOOST_TEST(value.getIntegerValue() == 37);
+                    BOOST_TEST(runtime.getType(typeId).value() == type);
+                    BOOST_TEST(runtime.getNativeFunctionId("rollback.child.free") == freeId);
+                    BOOST_TEST(calls == 0U);
+                };
+                checkExisting(false);
+                auto failed = false;
+                auto registered = HubId::INVALID;
+                callAllocations = 0;
+                catalogAllocationRequests = 0;
+                callAllocationRejected = false;
+                const auto originalChain = previousAllocationHook;
+                const auto originalRejection = rejectedCatalogAllocation;
+                previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+                {
+                    const auto previousHook = previousAllocationHook;
+                    BOOST_SCOPE_EXIT_ALL(=) {
+                        _CrtSetAllocHook(previousHook);
+                        previousAllocationHook = originalChain;
+                        rejectedCatalogAllocation = originalRejection;
+                    };
+
+                    rejectedCatalogAllocation = failureAt;
+                    try {
+                        registered = runtime.registerHub(candidateName, HubMode::Opened);
+                    } catch (const std::bad_alloc&) {
+                        failed = true;
+                    }
+                }
+
+                if (failureAt == 0) {
+                    allocationCount = catalogAllocationRequests;
+                    BOOST_REQUIRE(allocationCount != 0);
+                }
+
+                BOOST_REQUIRE(failed == (failureAt != 0));
+                BOOST_REQUIRE(callAllocationRejected == (failureAt != 0));
+                if (failed) {
+                    BOOST_REQUIRE_MESSAGE(
+                        runtime.getHubId(candidateName) == HubId::INVALID,
+                        "A propagated rebuild exception left the candidate hub registered"
+                    );
+                    BOOST_TEST(runtime.getHub(candidateId) == nullptr);
+                    checkExisting(false);
+                    registered = runtime.registerHub(candidateName, HubMode::Opened);
+                }
+
+                BOOST_REQUIRE(registered == candidateId);
+                BOOST_TEST(runtime.getHubId(candidateName) == candidateId);
+                BOOST_TEST(runtime.registerHub(candidateName, HubMode::Opened) == candidateId);
+                BOOST_TEST(runtime.getHub(HubId{candidateId.id + 1}) == nullptr);
+                checkExisting(childAddition);
+                if (!childAddition) {
+                    BOOST_REQUIRE(runtime.getHub(candidateId) != nullptr);
+                    BOOST_TEST(runtime.getHub(candidateId)->getMembers().empty());
+                }
+
+                auto machine = runtime.createVirtualMachine();
+                runtime.getNativeFunction(nativeId)->getFn()(machine.get());
+                BOOST_TEST(machine->getIntegerResult() == 42);
+                runtime.getNativeFunction(freeId)->getFn()(machine.get());
+                BOOST_TEST(machine->getIntegerResult() == 42);
+                BOOST_TEST(calls == 2U);
+            }
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE(hub_context_resolution_allocates_no_more_than_membership_lookup) {
     for (const auto& hubName : std::array{NomadString{"lookup"}, NomadString(96, 'h')}) {
         for (const auto* localName : {"value", "branch.leaf"}) {

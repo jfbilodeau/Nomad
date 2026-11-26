@@ -135,3 +135,10 @@ scan-budgeted query counts, and separate 1,000-operation Debug probes. Setup,
 precedence checks, and later-growth checks are excluded. The boolean predicate
 does less work than context resolution; it is not an implemented optimization
 or an exact subtractive control.
+
+Hub-registration workloads add eight unrelated or child hubs after 8/32/128
+empty or mixed existing hubs. Five fresh samples and separate Debug allocation
+passes exclude fixture preparation. Reopening an existing open hub is a
+reduced-work control, not an isolated measurement of rebuilding. Checks cover
+late-child declaration redistribution, explicit native ownership and overload
+order, free-function non-membership, stored values, and hub/variable identities.

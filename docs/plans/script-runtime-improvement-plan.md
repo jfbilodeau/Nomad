@@ -14,7 +14,9 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **R26:** The approved name-bucket duplicate checks, failure-consistent native publication, and single mutable-property fetch are implemented and validated. Failure/retry coverage and both selected Debug CTests pass; checked Debug/Release comparisons retain mixed validation/small-catalog timings. No new index or validation-snapshot change was added.
 
-**R27:** The approved shared hub-variable owner resolver is implemented and validated. Successful context queries now use one discovery and match membership-query Debug allocation counts; fallback precedence and public APIs remain unchanged. Two selected Debug CTests, checked Debug/Release comparisons, and strict documentation validation pass. Next reviewable scope: verify and measure R13's hub-registration rebuilding costs before choosing another optimization.
+**R27:** The approved shared hub-variable owner resolver is implemented and validated. Successful context queries now use one discovery and match membership-query Debug allocation counts; fallback precedence and public APIs remain unchanged. Two selected Debug CTests, checked Debug/Release comparisons, and strict documentation validation pass.
+
+**R13:** Targeted rebuilding remains deferred with approval. The separate exception-rollback fix is implemented and validated: a propagating rebuild exception removes the attempted hub and preserves retry, while logged NomadException rejection and full refreshing remain unchanged. Two selected Debug CTests, checked Debug/Release successful-path benchmarks, and strict docs validation pass. Next reviewable scope: measure C2's InterpreterContext variable-allocation and retired-storage costs before choosing a storage change.
 
 ## Component contract
 
@@ -3338,6 +3340,295 @@ Measure each change before and after on the same workload.
   planned hub type/singleton redesign and its unresolved semantics out of
   that measurement step.
 
+#### R13 hub-registration and member-rebuilding baseline
+
+- Extended only the existing opt-in benchmark and its documentation. No
+  production registration, ownership, member resolution, index, language
+  semantics, or failure policy changed. No CMake, dependency, or CTest entry
+  was added.
+- The reference trace confirms the private rebuild is called only by new-hub
+  registration. An existing opened hub returns its existing ID before
+  rebuilding. New registration validates its name/conflicts, appends the hub,
+  builds replacement member maps for every hub, commits those maps, and
+  resolves the new ID. These public-path costs are measured together.
+- The rebuild retains explicitly published native functions on their actual
+  owner, then resolves variable/script-function/constant/type/event/dynamic/
+  family memberships from names. Late child declarations can therefore
+  redistribute eligible members even when their descriptors/IDs stay put.
+  Ordinary qualified native free functions must not become hub members.
+- The current source catches `NomadException` from rebuilding to reject the
+  new hub; it does not provide an all-exception registration transaction.
+  Failure/conflict behavior was source-reviewed and existing regressions were
+  run, not fault-injected in this measurement step.
+
+##### Fixtures and protocol
+
+- Each case has five fresh Runtime samples with 8/32/128 existing opened
+  owners, then a timed batch of eight new opened hubs. Initial owners are all
+  created before optional fixture members are registered. Setup, prepared
+  names, expected maps, output buffers, full correctness checks, and destruction
+  are outside timing. Each reported new-hub value is the average over that
+  growing batch, not the last insertion or an entire startup.
+- Empty fixtures contain no members. Each mixed owner contains eight map
+  entries: one root stored variable; one explicitly owned native-function
+  group with two overloads; and six `child.*` entries for a script function,
+  constant, class type, event, dynamic variable, and parameterized family.
+  An additional ordinary qualified native function is deliberately not a
+  hub member. Script functions remain uncompiled metadata in these fixtures;
+  no script body is executed.
+- The report's `source_members` counts the six name-resolved `child.*`
+  declaration categories per owner, including declarations created through
+  host APIs, not just source-compiled functions. `pinned_native_ids` counts the
+  two explicit overload IDs in each native group. Initial member-map counts
+  are 0 for empty fixtures and 64/256/1,024 for mixed fixtures.
+- Unrelated additions have distinct 12-byte names. Child additions use
+  18-byte names under the first eight existing owners. In mixed child cases
+  exactly six entries move from each affected parent to its child; the
+  parent's root variable and native overload group stay on the parent.
+  Unrelated additions must leave all existing memberships unchanged.
+- Reopening the last existing owner is a separate control: 32 warmups precede
+  5,000 timed reopen calls. Separate fresh Debug fixtures use 1,000 reopen
+  operations and the same eight new-hub additions for allocation probes.
+  Thirty-two new empty-hub registrations in a separate Runtime warm the
+  mutating path before the fixtures. There is no repeated same-ID warmup for
+  a new hub.
+- New registration includes collision checks, descriptor/context allocation,
+  full rebuilding, name copies, and ID lookup; reopen bypasses most of that.
+  The control cannot be subtracted as an exact rebuild/allocator breakdown
+  or treated as an implemented optimization.
+- Checks compare all typed member alternatives, exact IDs, per-group overload
+  order, member counts, root variable handles and values, old hub pointer/name
+  identity, contiguous new IDs, and repeat-open identity. They verify the
+  first-eight child redistribution, unchanged pinned native membership, and
+  absence of ordinary native free functions from all checked maps.
+  Registration/rebuilding must invoke no callback or family factory.
+  Selected native callbacks are checked afterward for retained state/results.
+- Both Windows Debug and Release targets build and every checked benchmark
+  section passes with bundled language DLL hashes matched before execution.
+  The selected `nomad_test_language` Debug CTest passes directly, before the
+  separate benchmark target build. Release was repeated once without changes
+  to retain timing variability; both runs are recorded.
+- Values below are median `[min,max]` microseconds per new hub or reopen call.
+  Debug new-hub requests are eight-operation averages and include Debug-library
+  instrumentation; all request minima/medians/maxima are identical across the
+  five samples. Release counts are unavailable, not zero.
+
+| Debug shape | Addition | Existing hubs | New hub (us) | Reopen (us) | Requests new/reopen |
+| --- | --- | --- | --- | --- | --- |
+| empty | unrelated | 8 | 58.575 [49.175,144.425] | 0.264 [0.228,0.664] | 140.250 / 0.000 |
+| empty | child | 8 | 55.825 [49.638,156.800] | 0.259 [0.212,0.530] | 146.250 / 0.000 |
+| mixed | unrelated | 8 | 478.812 [296.125,537.663] | 0.340 [0.230,0.423] | 636.250 / 0.000 |
+| mixed | child | 8 | 387.700 [272.738,435.700] | 0.255 [0.207,0.362] | 642.250 / 0.000 |
+| empty | unrelated | 32 | 131.675 [113.450,145.262] | 0.803 [0.784,0.927] | 236.000 / 0.000 |
+| empty | child | 32 | 90.400 [86.037,124.287] | 0.789 [0.711,1.122] | 242.000 / 0.000 |
+| mixed | unrelated | 32 | 1583.537 [1496.412,2037.025] | 0.852 [0.716,1.268] | 2220.000 / 0.000 |
+| mixed | child | 32 | 1497.450 [1420.025,2530.363] | 0.973 [0.809,1.091] | 2226.000 / 0.000 |
+| empty | unrelated | 128 | 252.100 [222.912,317.038] | 3.163 [2.645,4.808] | 620.000 / 0.000 |
+| empty | child | 128 | 304.775 [245.900,528.862] | 3.481 [2.888,3.946] | 626.000 / 0.000 |
+| mixed | unrelated | 128 | 10303.325 [9711.175,10725.800] | 3.041 [2.823,3.205] | 8556.000 / 0.000 |
+| mixed | child | 128 | 12074.475 [10662.163,13581.112] | 3.175 [2.920,5.188] | 8562.000 / 0.000 |
+
+| Release run | Shape | Addition | Existing hubs | New hub (us) | Reopen (us) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | empty | unrelated | 8 | 2.925 [2.650,4.513] | 0.062 [0.055,0.097] |
+| 1 | empty | child | 8 | 5.487 [3.962,8.113] | 0.071 [0.058,0.086] |
+| 1 | mixed | unrelated | 8 | 17.125 [16.538,24.225] | 0.052 [0.047,0.060] |
+| 1 | mixed | child | 8 | 18.712 [17.988,21.962] | 0.049 [0.045,0.054] |
+| 1 | empty | unrelated | 32 | 5.763 [5.500,9.675] | 0.194 [0.187,0.245] |
+| 1 | empty | child | 32 | 6.862 [5.875,55.700] | 0.251 [0.203,0.877] |
+| 1 | mixed | unrelated | 32 | 144.312 [100.338,269.025] | 0.240 [0.159,0.347] |
+| 1 | mixed | child | 32 | 133.762 [109.438,332.438] | 0.188 [0.186,0.209] |
+| 1 | empty | unrelated | 128 | 31.238 [19.438,42.600] | 1.042 [0.714,1.363] |
+| 1 | empty | child | 128 | 18.425 [15.825,31.600] | 0.740 [0.714,1.069] |
+| 1 | mixed | unrelated | 128 | 1392.025 [1182.125,1678.638] | 0.855 [0.606,1.016] |
+| 1 | mixed | child | 128 | 1341.737 [1027.575,1607.575] | 0.860 [0.638,0.955] |
+| 2 | empty | unrelated | 8 | 2.500 [2.362,4.513] | 0.056 [0.054,0.099] |
+| 2 | empty | child | 8 | 5.362 [3.013,28.163] | 0.089 [0.052,0.113] |
+| 2 | mixed | unrelated | 8 | 21.100 [17.988,30.650] | 0.071 [0.054,0.100] |
+| 2 | mixed | child | 8 | 24.100 [18.288,37.675] | 0.056 [0.046,0.076] |
+| 2 | empty | unrelated | 32 | 5.975 [5.013,17.975] | 0.226 [0.205,0.275] |
+| 2 | empty | child | 32 | 5.938 [5.638,6.700] | 0.216 [0.192,0.267] |
+| 2 | mixed | unrelated | 32 | 120.487 [97.638,213.838] | 0.196 [0.172,0.305] |
+| 2 | mixed | child | 32 | 116.800 [105.588,182.300] | 0.225 [0.171,0.309] |
+| 2 | empty | unrelated | 128 | 16.512 [16.312,18.600] | 0.791 [0.728,0.932] |
+| 2 | empty | child | 128 | 16.825 [15.925,17.700] | 0.753 [0.658,1.164] |
+| 2 | mixed | unrelated | 128 | 1123.275 [1048.925,1559.025] | 0.664 [0.605,1.001] |
+| 2 | mixed | child | 128 | 1356.275 [1058.987,1878.088] | 1.183 [0.699,1.402] |
+
+- At 128 existing owners, mixed unrelated additions cost 1392.025/1123.275 us
+  per new hub in the two Release runs, versus 31.238/16.512 us for empty
+  fixtures. Mixed child additions cost 1341.737/1356.275 us. This supports
+  reviewing repeated work on populated catalogs, including additions that do
+  not alter existing memberships; no optimized registration path was measured.
+- Debug mixed unrelated/child cases at 128 owners make 8,556/8,562 requests per
+  new hub, versus 620/626 in empty fixtures. Reopening makes zero Debug
+  requests but still performs hub-name lookup; it is not constant-time by
+  implication. Request differences are not attributed to one internal helper
+  without allocation call-stack profiling.
+- Both Release runs and all ranges are retained, including the 55.700-us
+  empty-child maximum at 32 owners in run 1 and 28.163-us maximum at eight
+  owners in run 2. Unrelated/child cases also have different name lengths and
+  redistribution work; no exact subtractive decomposition or universal
+  latency claim is made.
+- These are shared-machine Windows/MSVC synthetic registration measurements,
+  not a production catalog/startup-frequency profile, a whole-build timing,
+  gameplay validation, or a cross-platform result. Fixture preparation and
+  interleaved real-world member/hub registration patterns are not measured.
+  Failure injection, concurrent/reentrant registration, allocation byte volume,
+  deep hierarchy/large-overload profiles, and the full 13-entry suite were not
+  run. No timing threshold or ownership/exception-policy change is inferred.
+- The follow-up review approved performance deferral and the separate bounded
+  exception-rollback contract below. The baseline did not authorize targeted
+  rebuilding or measure an optimized registration path.
+
+#### R13 approved full-refresh retention and exception rollback
+
+- The user selected deferring the performance optimization while approving
+  the narrow exception-rollback correction, rather than deferring both or
+  continuing targeted-rebuild design now.
+- Retain full member rebuilding on new hub registration. Its scan rereads
+  mutable hub contexts; `getVariableContext()` intentionally exposes the
+  same context storage used by hubs, and hosts can register variables through
+  that interface. Updating only a new hub and its nearest parent would need
+  to account for edits that the current full refresh picks up elsewhere.
+  This source-reviewed behavior was not isolated as a timed fixture.
+- The measured populated-catalog cost warrants attention, but these synthetic
+  registration measurements do not establish production startup impact.
+  Avoid adding invalidation machinery or restrictions to the existing hub
+  model solely from those timings. Revisit targeted rebuilding with a
+  representative startup profile or during the separately planned hub
+  type/singleton redesign; its language/ownership decisions remain unresolved.
+- Add no cache, index, dirty flag, observer, new registration API, declaration
+  seal, or new restriction on mutable metadata. Generic hub-name lookup,
+  name-based adoption/redistribution, explicit native ownership and overload
+  ordering, context handles/values, and successful reopening stay unchanged.
+- Source review found that `registerHub()` appends the candidate before
+  calling `rebuildHubMembers()`, but removes it only in the `NomadException`
+  rejection path. Other exceptions from rebuilding, including allocation
+  failures, currently propagate with the appended candidate still present.
+  This was source-reviewed, not fault-injected in the design step.
+- The next implementation adds exception-only rollback for a propagating
+  non-Nomad rebuild exception, using the existing previous-count rollback
+  pattern and rethrowing the original exception unchanged. Keep the current
+  `NomadException` path's log message and `HubId::INVALID` result.
+  Do not convert propagated exceptions into logged success-shaped results,
+  add a commit flag/scope-guard framework, or extend the catch to earlier
+  validation/descriptor construction with a different failure contract.
+- Recoverable failure while preparing replacement maps must leave the
+  attempted hub absent, existing hub descriptors/members and stored values
+  intact, and the next available hub ID reusable for retry. Existing
+  declarations remain registered; this does not undo caller-owned state or
+  deliberate side effects of custom virtual metadata operations. It is not
+  a whole-Runtime transaction or a new concurrency/reentry guarantee.
+- Add focused existing-file failure/retry regressions, first reproducing the
+  old appended-hub publication gap when feasible. Prefer the existing
+  MSVC Debug CRT failure-probe pattern for allocation coverage, retaining its
+  documented proxy-size exclusions rather than introducing production fault
+  hooks or a new framework. Restore hooks before assertions or exceptions
+  escape the probe.
+- Verify the failed candidate's name/ID is absent, existing hub identities and
+  typed member memberships/order are unchanged, earlier variable handles and
+  values remain valid, and retry succeeds once with the expected ID. Include
+  a late-child case so failed preparation cannot prematurely redistribute
+  declarations or disturb pinned native functions. Retain existing logged
+  conflict-rejection and repeat-open coverage.
+- Preserve `rebuildHubMembers()`'s full temporary-map preparation and commit
+  strategy. Do not remove snapshots, redesign publication, or combine a
+  performance refactor with this correctness fix. Update public embedding
+  documentation only for observable exception/rollback/retry behavior.
+- Run the existing language/remaining Debug CTests directly through the
+  workspace integration without a separate pre-test build. Rebuild and
+  execute the unchanged checked Debug/Release benchmark workloads with current
+  bundled DLLs to preserve the successful registration/adoption/ownership
+  checks; do not claim a performance improvement from exception-only code.
+  Record actual fault-probe coverage/exclusions and validation limits.
+- Stop after that bounded implementation/validation step for review. The
+  deferred R13 optimization and hub redesign are not automatically authorized
+  by approval of the exception correction.
+
+#### R13 exceptional-registration rollback implementation and validation
+
+- Added only previous-count cleanup and rethrow for a non-Nomad exception
+  escaping member rebuilding after the candidate hub was appended. The
+  existing `NomadException` log and `HubId::INVALID` rejection are unchanged.
+  Earlier validation/construction exceptions retain their existing handling.
+  No success flag, guard framework, publication redesign, or performance
+  optimization was introduced.
+- Full temporary-map preparation and rebuilding remain unchanged. Existing
+  declarations stay registered; this does not undo caller-owned state or
+  deliberate side effects elsewhere. The performance deferral and the
+  separately unresolved hub type/singleton redesign remain in effect.
+- One focused existing-file Debug regression prepares two hubs, a root
+  variable/value, a pinned two-overload native group, an ordinary nonmember
+  native function, and child-qualified constant/type declarations. A successful
+  control counts eligible allocations; fresh fixtures then reject each
+  eligible request for unrelated and late-child registration.
+- Before the fix, the regression reproduced an appended candidate remaining
+  registered at the eleventh eligible allocation in the unrelated case.
+  After the fix, every injected failure propagates as `std::bad_alloc` with
+  the attempted name/ID absent, prior hub pointers and typed member maps/order
+  intact, declarations retained, and the original variable handle/value
+  preserved. Retry succeeds with the expected ID and reopening does not add
+  another hub. Late-child success redistributes only the eligible declarations
+  and retains explicit native ownership; failed preparation does not move them.
+- The test reuses the existing MSVC Debug CRT probe. Hooks are restored before
+  assertions and before the injected failure propagates. Proxy-sized requests
+  remain excluded because Debug STL constructors can allocate in noexcept
+  paths; same-sized real buffers are also not fault-tested. This is bounded
+  allocation-failure coverage, not an all-allocation or all-exception-type
+  injection guarantee. No production fault hook or new test framework was added.
+- Both selected Windows Debug CTests pass: `nomad_test_language` and
+  `nomad_test_remaining`, run directly without a separate pre-test build.
+  Existing logged conflict rejection, late declaration/native ownership, and
+  repeat-open tests remain green. No CTest entry was added.
+- The unchanged opt-in benchmark builds and every checked section executes
+  successfully in Debug and Release with current bundled language DLL hashes
+  matched before execution. The twelve R13 empty/mixed unrelated/child cases
+  retain hub/variable identities, exact memberships and overload order,
+  stored values, and callback/factory checks.
+- Successful-path Debug request counts are unchanged from the baseline,
+  including zero for reopening. Release counts remain unavailable. Captured
+  median `[min,max]` microseconds below are retained for run traceability only;
+  exception-only code is not presented as a latency optimization, and no
+  before/after speedup comparison or timing threshold is inferred.
+
+| Configuration | Shape | Addition | Existing hubs | New hub (us) | Reopen (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug | empty | unrelated | 8 | 52.312 [47.850,58.475] | 0.274 [0.218,0.435] |
+| Debug | empty | child | 8 | 59.138 [48.962,436.587] | 0.332 [0.221,0.432] |
+| Debug | mixed | unrelated | 8 | 452.925 [371.613,557.862] | 0.392 [0.233,1.415] |
+| Debug | mixed | child | 8 | 353.038 [299.225,829.250] | 0.339 [0.216,1.033] |
+| Debug | empty | unrelated | 32 | 142.963 [95.700,155.713] | 0.833 [0.788,1.383] |
+| Debug | empty | child | 32 | 140.137 [91.088,226.175] | 0.948 [0.671,1.224] |
+| Debug | mixed | unrelated | 32 | 2375.275 [2003.625,2530.287] | 0.942 [0.764,1.401] |
+| Debug | mixed | child | 32 | 2157.838 [2099.375,3172.000] | 0.968 [0.692,1.195] |
+| Debug | empty | unrelated | 128 | 360.712 [234.700,500.012] | 3.440 [2.908,5.049] |
+| Debug | empty | child | 128 | 303.850 [236.488,495.750] | 3.892 [3.537,4.399] |
+| Debug | mixed | unrelated | 128 | 12152.788 [11431.638,13668.925] | 3.308 [3.214,4.228] |
+| Debug | mixed | child | 128 | 13950.812 [13213.188,15291.625] | 3.936 [3.656,4.555] |
+| Release | empty | unrelated | 8 | 3.750 [3.550,4.950] | 0.058 [0.058,0.162] |
+| Release | empty | child | 8 | 4.162 [3.938,15.488] | 0.095 [0.072,0.127] |
+| Release | mixed | unrelated | 8 | 33.763 [17.262,71.725] | 0.073 [0.048,0.194] |
+| Release | mixed | child | 8 | 37.562 [26.262,219.525] | 0.058 [0.053,0.207] |
+| Release | empty | unrelated | 32 | 8.975 [5.200,10.613] | 0.246 [0.185,0.409] |
+| Release | empty | child | 32 | 7.037 [5.925,13.137] | 0.224 [0.184,0.233] |
+| Release | mixed | unrelated | 32 | 161.137 [127.938,253.512] | 0.235 [0.191,0.240] |
+| Release | mixed | child | 32 | 107.450 [101.763,162.162] | 0.223 [0.182,0.452] |
+| Release | empty | unrelated | 128 | 33.175 [18.012,42.962] | 0.748 [0.657,1.290] |
+| Release | empty | child | 128 | 30.375 [29.625,48.138] | 0.770 [0.680,1.017] |
+| Release | mixed | unrelated | 128 | 1489.662 [1168.037,1792.338] | 0.950 [0.615,1.549] |
+| Release | mixed | child | 128 | 1362.287 [1030.375,1966.362] | 0.917 [0.644,1.070] |
+
+- SDK-backed documentation generation and strict MkDocs validation pass after
+  the observable exception/retry contract update. No full 13-entry suite,
+  manual gameplay, cross-platform fault test, concurrency/reentry guarantee,
+  or whole-Runtime transaction is claimed.
+- This completes the approved bounded correctness fix; R13's performance
+  optimization stays deferred. Next reviewable scope: verify and measure C2's
+  InterpreterContext variable allocations and retired-storage retention before
+  proposing a storage change. Do not revive targeted hub rebuilding
+  automatically.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -3398,7 +3689,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R10 | P2 | redundancy | Hub qualification repeated in registerHubConstant, registerHubEnum, and registerHubNativeFunction instead of `qualifyHubMemberName` | `Runtime.cpp`: registerHub* functions; `LanguageHubTest.cpp`: invalid-owner diagnostic regression | Fixed: existing qualification helper reused; diagnostic normalization explicitly approved; registration results, validation order, and explicit native ownership preserved | 7 |
 | R11 | P2 | redundancy | Name-conflict check chains duplicated (registerHub, registerHubVariable, registerEvent, registerDynamicVariable); publishTypeNamespace repeats canRegisterTypeName | `Runtime.cpp`: canRegisterHubMember and callers; registerHub/registerHubVariable policies; publishTypeNamespace exceptions | Resolved: shared hub/member reservation predicate consolidated; broader category policies and publication rechecks intentionally retained | 7 |
 | R12 | P2 | policy | registerHub validates identifier segments in Runtime. This conflicts with the decision that the Compiler owns identifier syntax validation | `Runtime.cpp`: registerHub; `StatementParsers.cpp`: parseHubHeader; `Tokenizer.cpp`: nextIdentifier; `LanguageHubTest.cpp`: host/source naming regressions | Resolved by review: host names are not restricted to script identifiers; remaining namespace-structure checks are intentional; compiler token validation and existing language tests pass; no C++ change | 6 |
-| R13 | P2 | perf | rebuildHubMembers rebuilds all hub maps on each registerHub, duplicating incremental registerHubMember; per-member linear hub lookups | `Runtime.cpp`: rebuildHubMembers, registerHub | verified | 8 |
+| R13 | P2 | perf | rebuildHubMembers rebuilds all hub maps on each registerHub, duplicating incremental registerHubMember; per-member linear hub lookups | `Runtime.cpp`: new/reopened registration and rebuilding; failure/retry regression; checked empty/mixed unrelated/child benchmark | Performance optimization deferred with approval; full refresh retained; separate exceptional-registration rollback implemented and validated by selected CTests and checked Debug/Release runs | 8 |
 | R14 | P2 | quality | Can-register predicates log errors as side effects; callers log again | `Runtime.cpp`: namespace checks/public declaration entry points; `TypeManager.hpp/cpp`: catalog registration; type-manager rejection/boundary regressions | Fixed and revised with approval: class/catalog rejection returns INVALID without logging; type-name policy and publication moved to Runtime, with opaque catalog names and integrity preserved | 7 |
 | R15 | P2 | perf | Registration makes several full passes over callables (quadratic startup) | `Runtime.cpp`: registerNativeFunction, getFunctionOverloadCount, canOverloadCallable; RuntimeLookupBenchmark | Same-name free-function scans replaced by the shared index and distinct-name registration measured; broader startup/large-overload workloads not measured | 8 |
 | R16 | P2 | redundancy | Duplicate lookup pairs: getScriptCallableAtLine vs getFunctionAtLine; getScriptCallableAtInstructionIndex vs getFunctionAtInstructionIndex; getScriptCallableByStartAddress vs getFunctionByStartAddress | `Runtime.hpp/cpp`, `VirtualMachine.hpp/cpp`; catalog, source-navigation, and frame tests | Fixed: function-only navigation APIs and the test-only current-script getter removed; general callable navigation and function-only ID views retained | 2, 7 |
