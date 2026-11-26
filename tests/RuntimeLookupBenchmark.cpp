@@ -21,6 +21,7 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/StructType.hpp>
+#include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/container/small_vector.hpp>
@@ -3174,6 +3175,225 @@ void runNativePropertyValidationBenchmark() {
     }
 }
 
+void runContextPrefixBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto noiseCounts = std::array<nomad::NomadIndex, 3>{0, 100, 1000};
+    constexpr auto shapes = std::array{"short", "long"};
+    constexpr auto cases = std::array{"hub_early", "hub_late", "hub_dotted", "host_prefix", "missing"};
+    constexpr auto labels = std::array{"prefix", "hub_member"};
+    constexpr auto allocationIterations = nomad::NomadIndex{1000};
+    std::cout << "Context prefixes: current resolution versus the existing hub-variable membership predicate.\n"
+        << "Early/late hubs, dotted local members, host-context fallback and misses; short and long names.\n"
+        << "Five fresh Runtime samples; 32 warmups; scan-budgeted timed queries and 1000 separate Debug probes.\n"
+        << "Setup, precedence checks and later-growth checks are excluded; unlike operations are not subtracted.\n"
+        << std::flush;
+    for (auto shape = nomad::NomadIndex{0}; shape < shapes.size(); ++shape) {
+        const auto earlyName = shape == 0 ? nomad::NomadString{"first"} : nomad::NomadString(96, 'e');
+        const auto lateName = shape == 0 ? nomad::NomadString{"last"} : nomad::NomadString(96, 'l');
+        const auto hostPrefix = (shape == 0 ? nomad::NomadString{"hostValues"} : nomad::NomadString(96, 'v')) + ".";
+        const auto missingName = (shape == 0 ? nomad::NomadString{"absent"} : nomad::NomadString(96, 'm')) + ".value";
+        const auto names = std::array{
+            earlyName + ".value", lateName + ".value", lateName + ".branch.leaf", hostPrefix + "value", missingName
+        };
+        for (const auto noiseCount : noiseCounts) {
+            const auto iterations = std::clamp(
+                nomad::NomadIndex{2000000} / (noiseCount + 1),
+                nomad::NomadIndex{500},
+                nomad::NomadIndex{25000}
+            );
+            std::array<std::array<std::vector<double>, labels.size()>, cases.size()> latencySamples;
+            std::array<std::array<std::vector<double>, labels.size()>, cases.size()> allocationSamples;
+            std::array<nomad::VariableContextId, cases.size()> expectedIds{};
+            auto contextCount = nomad::NomadIndex{0};
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                nomad::Runtime runtime;
+                const auto earlyHub = runtime.registerHub(earlyName, nomad::HubMode::Opened);
+                const auto earlyVariable = runtime.registerHubVariable(names[0]);
+                if (earlyHub != nomad::HubId{0} || earlyVariable.isInvalid()) {
+                    throw std::runtime_error("Failed to prepare the early hub-variable fixture");
+                }
+
+                for (auto index = nomad::NomadIndex{0}; index < noiseCount; ++index) {
+                    if (runtime.registerHub(std::format("R27Noise{:04}", index), nomad::HubMode::Opened).isInvalid()) {
+                        throw std::runtime_error("Failed to populate unrelated prefix-lookup hubs");
+                    }
+                }
+
+                const auto lateHub = runtime.registerHub(lateName, nomad::HubMode::Opened);
+                const auto lateVariable = runtime.registerHubVariable(names[1]);
+                const auto dottedVariable = runtime.registerHubVariable(names[2]);
+                if (
+                    lateHub != nomad::HubId{nomad::toNomadId(noiseCount + 1)} ||
+                    lateVariable.isInvalid() ||
+                    dottedVariable.isInvalid() ||
+                    runtime.registerHubConstant(
+                        lateHub,
+                        "constant",
+                        nomad::RuntimeValue{nomad::NomadInteger{17}},
+                        runtime.getIntegerType()
+                    ).isInvalid()
+                ) {
+                    throw std::runtime_error("Failed to prepare late/dotted hub-variable fixtures");
+                }
+
+                for (auto index = nomad::NomadIndex{0}; index < noiseCount; ++index) {
+                    const auto name = std::format("R27Context{:04}", index);
+                    if (runtime.registerVariableContext(
+                        name,
+                        name + ".",
+                        std::make_unique<nomad::SimpleVariableContext>()
+                    ).isInvalid()) {
+                        throw std::runtime_error("Failed to populate unrelated prefix-lookup contexts");
+                    }
+                }
+
+                const auto host = runtime.registerVariableContext(
+                    "r27Host",
+                    hostPrefix,
+                    std::make_unique<nomad::SimpleVariableContext>()
+                );
+                const auto narrower = runtime.registerVariableContext(
+                    "r27Narrow",
+                    hostPrefix + "deep.",
+                    std::make_unique<nomad::SimpleVariableContext>()
+                );
+                const auto fallback = runtime.registerVariableContext(
+                    "r27Fallback",
+                    lateName + ".",
+                    std::make_unique<nomad::SimpleVariableContext>()
+                );
+                const auto early = runtime.getContextId(earlyName);
+                const auto late = runtime.getContextId(lateName);
+                const auto ids = std::array{early, late, late, host, nomad::VariableContextId::INVALID};
+                auto contextsBefore = nomad::NomadIndex{0};
+                for (auto id = runtime.getFirstVariableContextId(); id.isValid(); id = runtime.getNextVariableContextId(id)) {
+                    ++contextsBefore;
+                }
+
+                if (
+                    early.isInvalid() ||
+                    late.isInvalid() ||
+                    host.isInvalid() ||
+                    narrower.isInvalid() ||
+                    fallback.isInvalid() ||
+                    contextsBefore != noiseCount + 6 ||
+                    runtime.getContainingHub(names[2]) != lateName ||
+                    runtime.getVariableContextIdByPrefix(lateName + ".constant") != fallback ||
+                    runtime.getVariableContextIdByPrefix(lateName + ".unknown") != fallback ||
+                    runtime.isHubVariable(lateName + ".constant") ||
+                    runtime.isHubVariable(lateName + ".unknown") ||
+                    runtime.getVariableContextIdByPrefix(hostPrefix + "deep.value") != host ||
+                    runtime.getVariableContextIdByPrefix("").isValid() ||
+                    runtime.getVariableContextIdByPrefix("unqualified").isValid() ||
+                    runtime.getContextVariableId(names[0]) != earlyVariable ||
+                    runtime.getContextVariableId(names[1]) != lateVariable ||
+                    runtime.getContextVariableId(names[2]) != dottedVariable
+                ) {
+                    throw std::runtime_error("Context-prefix precedence, fallback, membership, or handles changed");
+                }
+
+                if (sample == 0) {
+                    expectedIds = ids;
+                    contextCount = contextsBefore;
+                } else if (ids != expectedIds || contextCount != contextsBefore) {
+                    throw std::runtime_error("Context-prefix fixture identities changed between fresh samples");
+                }
+
+                for (auto query = nomad::NomadIndex{0}; query < cases.size(); ++query) {
+                    const auto record = [&](
+                        const nomad::NomadIndex operation,
+                        const std::uint64_t expected,
+                        const auto& read
+                    ) {
+                        for (auto warmup = 0; warmup < 32; ++warmup) {
+                            if (read() != expected) {
+                                throw std::runtime_error("Unexpected context-prefix warmup result");
+                            }
+                        }
+
+                        auto checksum = std::uint64_t{0};
+                        const auto start = std::chrono::steady_clock::now();
+                        for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+                            checksum += read();
+                        }
+
+                        latencySamples[query][operation].push_back(std::chrono::duration<double, std::micro>{
+                            std::chrono::steady_clock::now() - start
+                        }.count() / static_cast<double>(iterations));
+                        if (checksum != expected * iterations) {
+                            throw std::runtime_error("Context-prefix results changed during timing");
+                        }
+
+                        auto allocationChecksum = std::uint64_t{0};
+                        const auto requests = countHostCallAllocations([&] {
+                            allocationChecksum += read();
+                        }, allocationIterations);
+                        if (requests.has_value()) {
+                            if (allocationChecksum != expected * allocationIterations) {
+                                throw std::runtime_error("Context-prefix allocation probe returned an unexpected result");
+                            }
+
+                            allocationSamples[query][operation].push_back(
+                                static_cast<double>(*requests) / static_cast<double>(allocationIterations)
+                            );
+                        }
+                    };
+                    record(0, static_cast<std::uint64_t>(ids[query].id + 1), [&] {
+
+                        return static_cast<std::uint64_t>(runtime.getVariableContextIdByPrefix(names[query]).id + 1);
+                    });
+                    record(1, query < 3 ? 1 : 0, [&] {
+
+                        return static_cast<std::uint64_t>(runtime.isHubVariable(names[query]));
+                    });
+                }
+
+                if (
+                    runtime.getVariableContext(early)->getVariableCount() != 1 ||
+                    runtime.getVariableContext(late)->getVariableCount() != 2 ||
+                    runtime.getVariableContext(host)->getVariableCount() != 0 ||
+                    runtime.getVariableContext(narrower)->getVariableCount() != 0 ||
+                    runtime.getVariableContext(fallback)->getVariableCount() != 0 ||
+                    runtime.registerHub("R27AfterMeasurement", nomad::HubMode::Opened).isInvalid() ||
+                    runtime.registerVariableContext(
+                        "r27AfterMeasurement",
+                        "afterMeasurement.",
+                        std::make_unique<nomad::SimpleVariableContext>()
+                    ).isInvalid()
+                ) {
+                    throw std::runtime_error("Prefix lookup changed variable storage or prevented later registration");
+                }
+
+                for (auto query = nomad::NomadIndex{0}; query < cases.size(); ++query) {
+                    if (runtime.getVariableContextIdByPrefix(names[query]) != ids[query]) {
+                        throw std::runtime_error("Later catalog growth changed context-prefix resolution");
+                    }
+                }
+            }
+
+            for (auto query = nomad::NomadIndex{0}; query < cases.size(); ++query) {
+                std::cout << "context_case=" << cases[query] << " text=" << shapes[shape]
+                    << " noise_hubs=" << noiseCount << " noise_contexts=" << noiseCount
+                    << " measured_hubs=" << noiseCount + 2 << " measured_contexts=" << contextCount
+                    << " name_bytes=" << names[query].size() << " expected_context=" << expectedIds[query].id
+                    << " iterations=" << iterations << " allocation_iterations=" << allocationIterations;
+                for (auto operation = nomad::NomadIndex{0}; operation < labels.size(); ++operation) {
+                    const auto timeLabel = std::format("{}_us", labels[operation]);
+                    printSamples(timeLabel.c_str(), latencySamples[query][operation]);
+                    const auto allocationLabel = std::format("{}_allocations", labels[operation]);
+                    if (!allocationSamples[query][operation].empty()) {
+                        printSamples(allocationLabel.c_str(), allocationSamples[query][operation]);
+                    } else {
+                        std::cout << ' ' << allocationLabel << "=unavailable";
+                    }
+                }
+
+                std::cout << std::endl;
+            }
+        }
+    }
+}
+
 } // namespace
 
 int main() {
@@ -3194,6 +3414,7 @@ int main() {
         runWellKnownTypeLookupBenchmark();
         runNativeMemberCatalogBenchmark();
         runNativePropertyValidationBenchmark();
+        runContextPrefixBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 

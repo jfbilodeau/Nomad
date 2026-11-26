@@ -126,3 +126,12 @@ pending native properties and 0/1,000 stored properties. A prepared mutable-poin
 walk excludes snapshot creation and lookup work; it is not a proposed public API
 or an exact cost breakdown. All cases use five fresh samples and separate Debug
 allocation probes.
+
+Context-prefix workloads compare current context resolution with the existing
+hub-variable membership predicate. They cover early/late hubs, dotted members,
+host-prefix fallback, and misses with short/long names and 0/100/1,000 unrelated
+hubs plus the same number of host contexts. Five fresh samples use 32 warmups,
+scan-budgeted query counts, and separate 1,000-operation Debug probes. Setup,
+precedence checks, and later-growth checks are excluded. The boolean predicate
+does less work than context resolution; it is not an implemented optimization
+or an exact subtractive control.

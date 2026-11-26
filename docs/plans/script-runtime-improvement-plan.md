@@ -12,7 +12,9 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **R18:** The approved ten fixed-type borrowed views are implemented and validated. Repeated fixed getters make zero Debug allocation requests; Release medians round to 0.001 us and are too small for a precise speedup ratio. Catalog ownership and dynamic function lookup are unchanged. Two selected Debug CTests, checked Debug/Release benchmarks, and strict documentation validation pass.
 
-**R26:** The approved name-bucket duplicate checks, failure-consistent native publication, and single mutable-property fetch are implemented and validated. Failure/retry coverage and both selected Debug CTests pass; checked Debug/Release comparisons retain mixed validation/small-catalog timings. No new index or validation-snapshot change was added. Next reviewable scope: verify and measure R27's repeated hub lookup in context-prefix resolution before selecting a change.
+**R26:** The approved name-bucket duplicate checks, failure-consistent native publication, and single mutable-property fetch are implemented and validated. Failure/retry coverage and both selected Debug CTests pass; checked Debug/Release comparisons retain mixed validation/small-catalog timings. No new index or validation-snapshot change was added.
+
+**R27:** Checked context-prefix baselines are recorded for Debug and Release. The user approved a private shared hub-variable owner resolver to avoid repeated discovery while preserving member checks and first-prefix fallback. It is not implemented yet. Next reviewable scope: implement the bounded helper change, add focused precedence/allocation regressions, and compare the unchanged checked workloads.
 
 ## Component contract
 
@@ -2961,6 +2963,214 @@ Measure each change before and after on the same workload.
   resolution before selecting a change. Do not remove the validation snapshot
   or add another catalog optimization automatically.
 
+#### R27 context-prefix resolution baseline
+
+- Extended only the existing opt-in benchmark and its documentation. No
+  production query, registration, storage, ownership, naming, or precedence
+  behavior changed. No CMake, dependency, or CTest entry was added.
+- Source review confirms that `getVariableContextIdByPrefix()` first calls
+  `isHubVariable()`. On a positive result, it repeats
+  `getHubId(getContainingHub(variableName))` to obtain the hub's context.
+  `getContainingHub()` itself walks dotted prefixes, using linear hub-name
+  lookup at each candidate. On a negative membership result, only the first
+  discovery is performed before the context-prefix scan.
+- Hub variables take priority over host-context prefixes. If the nearest
+  containing hub has no variable member with the supplied local name, the
+  query falls back to the first matching registered context prefix, not the
+  longest prefix. A constant member is not a hub variable; an unknown member
+  can still match a registered host prefix.
+- The reference trace found eleven production call sites: seven compiler/AST
+  resolution or interpreter-evaluation uses and four Runtime registration or
+  context-handle paths. No direct raw-VM caller was found. These lookup
+  measurements are not a compiled-gameplay or whole-compilation profile.
+
+##### Protocol and correctness checks
+
+- Each of two text shapes uses five fresh Runtime samples at 0/100/1,000
+  unrelated hubs and the same number of unrelated host contexts. An early hub
+  is registered first, the unrelated hubs follow, and the target late hub is
+  last. Measured totals are 2/102/1,002 hubs and 6/106/1,006 contexts.
+  The context count includes the existing global context, two hub contexts,
+  and three host fallback/overlap fixtures.
+- Short hub names are `first` and `last`; long names contain 96 repeated
+  characters. The dotted local name is `branch.leaf`, whose intermediate
+  prefix is not a registered hub. Host and missing-name fixtures are disjoint
+  from hub names. Full variable-name lengths are:
+
+| Case | Short bytes | Long bytes | Expected context ID |
+| --- | --- | --- | --- |
+| hub_early | 11 | 102 | 1 |
+| hub_late | 10 | 102 | 2 |
+| hub_dotted | 16 | 108 | 2 |
+| host_prefix | 16 | 102 | Unrelated contexts + 3 |
+| missing | 12 | 102 | INVALID |
+
+- Each metric has 32 warmups followed by integer
+  `clamp(2000000 / (noiseCount + 1), 500, 25000)` timed queries:
+  25,000/19,801/1,998 at the three noise counts. Separate MSVC Debug allocation
+  passes use 1,000 operations. Runtime/name/context preparation, registrations,
+  full precedence checks, and post-measurement growth are outside timing.
+- The `prefix` metric uses the current public context resolver; `hub_member`
+  uses the existing boolean `isHubVariable()` predicate. Timed checksums verify
+  exact context IDs or expected membership results. These operations have
+  different work and outputs: the predicate is a reduced-work control, not an
+  implemented single-discovery resolver or an exact subtractive cost breakdown.
+- Untimed checks exercise actual hub-variable priority despite a matching host
+  prefix, constant/unknown-member fallback, first-prefix selection despite a
+  later longer matching prefix, empty/unqualified misses, existing variable
+  handles, and nearest-containing-hub discovery for a dotted local name.
+  Hub/host variable counts must remain unchanged. Adding a hub and another
+  host context afterward must preserve all five measured query results.
+- Both Windows Debug and Release targets build and every checked benchmark
+  section passes with bundled language DLL hashes matched before execution.
+  The selected `nomad_test_language` Debug CTest passes directly, before the
+  separate benchmark build. Tables retain median `[min,max]` microseconds per
+  query across five samples.
+
+| Debug text | Case | Unrelated hubs/contexts | Prefix (us) | Hub membership (us) | Requests prefix/member |
+| --- | --- | --- | --- | --- | --- |
+| short | hub_early | 0 | 2.616 [2.412,2.817] | 1.570 [1.436,1.818] | 5 / 3 |
+| short | hub_late | 0 | 2.591 [2.274,2.872] | 1.627 [1.385,1.791] | 5 / 3 |
+| short | hub_dotted | 0 | 3.371 [3.030,3.796] | 2.015 [1.889,2.193] | 7 / 4 |
+| short | host_prefix | 0 | 1.285 [1.187,1.418] | 1.154 [1.029,1.254] | 3 / 3 |
+| short | missing | 0 | 1.209 [1.039,1.253] | 0.900 [0.869,1.180] | 2 / 2 |
+| short | hub_early | 100 | 2.455 [2.207,2.944] | 1.522 [1.348,1.828] | 5 / 3 |
+| short | hub_late | 100 | 10.332 [10.010,11.376] | 5.674 [5.024,6.016] | 5 / 3 |
+| short | hub_dotted | 100 | 16.722 [16.360,17.281] | 8.938 [7.694,9.452] | 7 / 4 |
+| short | host_prefix | 100 | 9.224 [7.912,9.921] | 5.243 [4.973,6.781] | 3 / 3 |
+| short | missing | 100 | 6.437 [5.680,7.756] | 5.205 [4.672,6.290] | 2 / 2 |
+| short | hub_early | 1,000 | 2.598 [1.948,3.350] | 1.431 [1.178,1.696] | 5 / 3 |
+| short | hub_late | 1,000 | 87.756 [76.948,92.348] | 42.008 [38.178,44.206] | 5 / 3 |
+| short | hub_dotted | 1,000 | 130.424 [125.272,134.851] | 63.922 [60.928,66.758] | 7 / 4 |
+| short | host_prefix | 1,000 | 73.609 [69.482,82.288] | 41.340 [37.828,48.148] | 3 / 3 |
+| short | missing | 1,000 | 57.325 [52.321,63.554] | 40.946 [35.385,43.217] | 2 / 2 |
+| long | hub_early | 0 | 2.801 [2.762,4.105] | 1.762 [1.656,2.248] | 7 / 4 |
+| long | hub_late | 0 | 2.951 [2.847,3.610] | 1.757 [1.706,1.866] | 7 / 4 |
+| long | hub_dotted | 0 | 3.168 [3.012,3.507] | 1.922 [1.864,2.070] | 7 / 4 |
+| long | host_prefix | 0 | 1.348 [1.285,1.708] | 1.147 [1.094,1.335] | 3 / 3 |
+| long | missing | 0 | 1.426 [1.368,1.852] | 1.257 [1.044,1.482] | 3 / 3 |
+| long | hub_early | 100 | 2.947 [2.662,3.293] | 1.718 [1.583,1.995] | 7 / 4 |
+| long | hub_late | 100 | 11.493 [11.141,12.248] | 6.550 [6.101,7.852] | 7 / 4 |
+| long | hub_dotted | 100 | 15.935 [15.581,16.719] | 8.516 [7.563,16.571] | 7 / 4 |
+| long | host_prefix | 100 | 8.732 [7.766,9.972] | 5.092 [5.025,6.082] | 3 / 3 |
+| long | missing | 100 | 8.529 [8.134,9.420] | 4.913 [4.804,6.264] | 3 / 3 |
+| long | hub_early | 1,000 | 3.762 [2.924,4.478] | 1.853 [1.418,2.322] | 7 / 4 |
+| long | hub_late | 1,000 | 87.045 [79.431,94.824] | 41.809 [40.379,51.062] | 7 / 4 |
+| long | hub_dotted | 1,000 | 131.856 [125.129,135.989] | 64.271 [61.121,71.013] | 7 / 4 |
+| long | host_prefix | 1,000 | 75.133 [70.499,77.461] | 41.461 [40.211,46.094] | 3 / 3 |
+| long | missing | 1,000 | 73.239 [72.363,80.556] | 41.538 [37.736,46.976] | 3 / 3 |
+
+| Release text | Case | Unrelated hubs/contexts | Prefix (us) | Hub membership (us) |
+| --- | --- | --- | --- | --- |
+| short | hub_early | 0 | 0.069 [0.061,0.074] | 0.038 [0.035,0.047] |
+| short | hub_late | 0 | 0.065 [0.065,0.092] | 0.045 [0.041,0.120] |
+| short | hub_dotted | 0 | 0.154 [0.145,0.247] | 0.083 [0.071,0.146] |
+| short | host_prefix | 0 | 0.083 [0.074,0.118] | 0.073 [0.046,0.091] |
+| short | missing | 0 | 0.062 [0.055,0.073] | 0.027 [0.023,0.029] |
+| short | hub_early | 100 | 0.065 [0.059,0.121] | 0.041 [0.037,0.112] |
+| short | hub_late | 100 | 0.698 [0.503,1.525] | 0.349 [0.255,0.379] |
+| short | hub_dotted | 100 | 0.958 [0.799,1.610] | 0.463 [0.448,0.534] |
+| short | host_prefix | 100 | 0.716 [0.679,0.807] | 0.288 [0.269,0.309] |
+| short | missing | 100 | 0.399 [0.363,0.480] | 0.299 [0.222,0.315] |
+| short | hub_early | 1,000 | 0.064 [0.059,0.081] | 0.038 [0.035,0.051] |
+| short | hub_late | 1,000 | 6.657 [5.346,8.578] | 3.642 [2.307,4.932] |
+| short | hub_dotted | 1,000 | 10.682 [8.775,13.717] | 5.482 [4.663,6.457] |
+| short | host_prefix | 1,000 | 8.063 [6.195,8.588] | 3.412 [3.056,4.519] |
+| short | missing | 1,000 | 3.944 [3.524,4.907] | 2.941 [2.201,3.648] |
+| long | hub_early | 0 | 0.156 [0.134,0.183] | 0.089 [0.064,0.115] |
+| long | hub_late | 0 | 0.134 [0.130,0.173] | 0.071 [0.065,0.086] |
+| long | hub_dotted | 0 | 0.169 [0.148,0.207] | 0.087 [0.074,0.099] |
+| long | host_prefix | 0 | 0.089 [0.074,0.162] | 0.062 [0.053,0.081] |
+| long | missing | 0 | 0.112 [0.079,0.134] | 0.060 [0.055,0.104] |
+| long | hub_early | 100 | 0.119 [0.109,0.184] | 0.086 [0.066,0.093] |
+| long | hub_late | 100 | 0.794 [0.603,2.429] | 0.354 [0.302,0.404] |
+| long | hub_dotted | 100 | 0.992 [0.924,1.178] | 0.523 [0.440,0.616] |
+| long | host_prefix | 100 | 0.728 [0.678,0.822] | 0.309 [0.302,0.367] |
+| long | missing | 100 | 0.762 [0.665,4.310] | 0.312 [0.268,1.370] |
+| long | hub_early | 1,000 | 0.115 [0.103,0.140] | 0.064 [0.058,0.713] |
+| long | hub_late | 1,000 | 5.749 [5.303,6.322] | 2.987 [2.510,3.387] |
+| long | hub_dotted | 1,000 | 9.005 [7.443,12.516] | 3.984 [3.763,10.581] |
+| long | host_prefix | 1,000 | 6.427 [6.407,8.271] | 3.306 [2.206,5.399] |
+| long | missing | 1,000 | 6.975 [6.065,7.891] | 3.150 [2.663,5.708] |
+
+- Debug allocation counts are invariant across all five samples and catalog
+  sizes: short direct hub queries make five/three requests for prefix/member,
+  short dotted queries seven/four, short host fallback three/three, and short
+  misses two/two. Long hub cases make seven/four and long fallback/misses
+  three/three. Counts include Debug-library instrumentation; Release counts
+  are unavailable, not inferred from Debug or timings.
+- Short late-hub prefix medians grow from 0.065 to 6.657 us in Release at
+  0 to 1,000 noise entries, and dotted-member medians from 0.154 to 10.682 us.
+  The early-hub case remains 0.069/0.065/0.064 us. Long late/dotted cases
+  reach 5.749/9.005 us. These distinguish early matches from repeated late
+  discovery; no optimized resolver or speedup has been measured.
+- Fallback/miss measurements include both containing-hub discovery and the
+  context scan. Hubs and contexts grow together, so those costs are not
+  independently isolated. The membership control omits the fallback scan
+  and does not return a context ID; its difference is not an exact allocator
+  or discovery-cost decomposition.
+- Full ranges, including outliers, are retained. These are shared-machine
+  Windows/MSVC lookup measurements, not a production frequency, whole-startup,
+  compilation, or gameplay result. Deep registered-hub hierarchies,
+  large same-hub member sets, read/write execution, concurrency/reentry, failure
+  injection, other platforms, and the full 13-entry suite were not measured.
+  No timing threshold or universal latency claim is made.
+- The follow-up review approved the shared internal resolver contract below.
+  This baseline did not implement or measure that optimized path.
+
+#### R27 approved shared hub-variable owner resolver
+
+- The user approved a private `getHubVariableOwner(name)` helper on Runtime.
+  It returns a borrowed `const Hub*` only when the existing nearest containing
+  hub lookup finds an exact local member holding `VariableId`. Missing hubs,
+  unknown members, and non-variable members return nullptr without logging.
+- Move the existing membership resolution into that helper. Keep
+  `getContainingHub()`, `getHubId()`, and their dotted-name walk unchanged;
+  this change removes the second discovery from the successful context-prefix
+  path, not every internal name scan or name copy.
+- `isHubVariable()` tests whether the helper returns a hub.
+  `getVariableContextIdByPrefix()` uses that same result to read the hub's
+  existing context ID, instead of calling the public predicate and repeating
+  discovery. The fallback remains the same registration-ordered prefix scan.
+- Preserve actual hub-variable priority over matching host prefixes, the
+  nearest-hub/exact-local-member checks, and the distinction between variable
+  members and constants/functions/types/events. Unknown or non-variable
+  members may still fall back to a host context. Do not switch to longest-prefix
+  matching, invent prefix normalization, or add language restrictions.
+- The helper borrows an existing Runtime-owned hub only during lookup. It adds
+  no persistent pointer cache, index, shared ownership, public API, friendship,
+  initialization requirement, or concurrency/reentry guarantee.
+  Context/member IDs, storage, registration, initializer ordering, and all
+  existing diagnostics and failure results remain unchanged.
+- As approved, eliminating the repeated name copies also removes their
+  allocation-failure opportunities on a positive match. Other allocation and
+  callback exceptions keep their existing propagation contracts; no new
+  noexcept promise, guard, fallback, or transaction is introduced.
+- The next continuation adds focused existing-file regressions for dotted
+  membership, hub-versus-host priority, unknown/non-variable fallback,
+  overlapping host-prefix order, and stability through later registration.
+  Reuse existing handle/storage/registration coverage instead of duplicating
+  unrelated tests.
+- Add a focused MSVC Debug allocation regression using the existing CRT probe
+  pattern: repeated successful context resolution should require no more
+  requests than the existing membership predicate for the same prepared name,
+  while returning the correct context ID. Cover short, long, and dotted names;
+  do not claim zero allocations or hard-code a portable STL allocation count.
+  Reproduce the old repeated-discovery allocation cost before applying the
+  production fix when feasible.
+- Update public embedding documentation for observable membership precedence,
+  registration-order fallback, and absence results as needed. Keep helper
+  mechanics and measurement details in this plan, not the host API guide.
+- Run the existing language and remaining Debug CTests directly through the
+  workspace integration without a separate pre-test build. Build and execute
+  the unchanged checked Debug/Release benchmarks with current bundled DLLs.
+  Compare full context-prefix/member ranges and Debug requests against the
+  baseline, retaining fallback/missing controls, noisy/slower samples, and
+  unavailable Release allocation counts.
+- Stop after the bounded implementation/validation step for review. No broader
+  hub registration/rebuilding change, cache, index, TypeManager ownership
+  migration, or other optimization is authorized automatically.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -3035,7 +3245,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | R24 | P3 | style | Mixed style: `ScriptFunction *` spacing, reference alignment, brace placement, single-line `if` without braces, trailing whitespace, snake_case loop variable `op_code`, parameter lists not one per line | `Runtime.cpp`: instruction/event/native registration and lookup, constant getter, context registration; removed navigation APIs | Fixed: concrete remaining naming/formatting findings addressed manually and token-checked; concurrent getter rename preserved with approved recursion fix | 7 |
 | R25 | P3 | typing | getNativeMemberId returns a `MemberReference` with a `PropertyId::INVALID` sentinel; `size_t` converts implicitly to `NomadIndex` | `Runtime.hpp/cpp`: native-member lookup; compiler/interpreter callers and native metadata tests; `Nomad.hpp`: NomadIndex alias | Fixed with approval: optional lookup result and caller migration; count-conversion claim dismissed because NomadIndex is std::size_t | 7 |
 | R26 | P3 | perf | catalogNativeProperty and catalogNativeMethod scan `m_nativeMembers` linearly; validateNativePropertyTypes looks up the same property again | `Runtime.cpp`: existing-name-bucket guards, rollback append, single mutable fetch; duplicate/order/failure-retry regressions and checked benchmarks | Complete with approval: consistent publication and indexed guards implemented; selected Debug CTests, failure/retry coverage with documented proxy-size exclusions, and checked Debug/Release comparisons pass | 8 |
-| R27 | P3 | perf | getVariableContextIdByPrefix computes `getHubId(getContainingHub)` twice | `Runtime.cpp`: getVariableContextIdByPrefix | verified | 8 |
+| R27 | P3 | perf | getVariableContextIdByPrefix computes `getHubId(getContainingHub)` twice | `Runtime.cpp`: prefix/membership/containing-hub queries; checked context-prefix benchmark | Checked baselines recorded; private shared owner resolution approved with unchanged membership/first-prefix fallback/public APIs; bounded implementation/validation is next | 8 |
 | R28 | P3 | naming | getCallableId matches only Function type despite its name; getFunctionId, getNativeFunctionId, and getFunctionTableSize (counts all callables) differ from getFunctionCount (script only) | `Runtime.hpp/cpp`: count, script metadata and name-based lookups; compiler/LSP/game consumers and catalog tests | Complete with approval: category-consistent names, specialized function existence/ID/list/count queries, source filters retained and callers migrated | 7 |
 | R29 | — | dismissed | EventType stores `&m_events.back()`. Not a dangling pointer, because EventType copies the definition | `Event.hpp:46` `const EventDefinition m_event` | verified-not-a-bug | — |
 | R30 | P3 | perf | getEventDefinition returns an optional copy of EventDefinition on each call | `Runtime.cpp`: getEventDefinition; stable-growth/reentry regressions; checked event benchmark | Complete with approval: stable vector-owned descriptors, checked direct-ID const-pointer lookup, explicit snapshots, two selected Debug CTests, and checked Debug/Release comparisons | 8 |
