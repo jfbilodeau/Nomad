@@ -16,7 +16,11 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **R27:** The approved shared hub-variable owner resolver is implemented and validated. Successful context queries now use one discovery and match membership-query Debug allocation counts; fallback precedence and public APIs remain unchanged. Two selected Debug CTests, checked Debug/Release comparisons, and strict documentation validation pass.
 
-**R13:** Targeted rebuilding remains deferred with approval. The separate exception-rollback fix is implemented and validated: a propagating rebuild exception removes the attempted hub and preserves retry, while logged NomadException rejection and full refreshing remain unchanged. Two selected Debug CTests, checked Debug/Release successful-path benchmarks, and strict docs validation pass. Next reviewable scope: measure C2's InterpreterContext variable-allocation and retired-storage costs before choosing a storage change.
+**R13:** Targeted rebuilding remains deferred with approval. The separate exception-rollback fix is implemented and validated: a propagating rebuild exception removes the attempted hub and preserves retry, while logged NomadException rejection and full refreshing remain unchanged. Two selected Debug CTests, checked Debug/Release successful-path benchmarks, and strict docs validation pass.
+
+**C2:** The approved scratch-only conditional array is implemented and checked. Empty/integer/string updates now make zero Debug requests; the two-slot struct makes one. Storage addresses, Type assignment/cleanup, owner/value buffers, and retirement remain unchanged. The regression reproduced four old failures; the selected remaining CTest and checked Debug/Release executions pass. All Release update medians were higher than the earlier baseline in both post-change runs; no Release improvement is claimed. Next reviewable scope: review that timing trade-off and whether matched Release measurements are needed before further storage work.
+
+**Validation update:** Before C2, the user reported completing a full rebuild and running all tests. This is user-reported validation, not another assistant-verified full-suite run.
 
 ## Component contract
 
@@ -3629,6 +3633,308 @@ Measure each change before and after on the same workload.
   proposing a storage change. Do not revive targeted hub rebuilding
   automatically.
 
+#### C2 interpreter variable-allocation and retirement baseline
+
+Verified production paths:
+
+- Each owned local uses a separate `InterpreterStorage` owner and a vector of
+  physical slots; nonempty values also need a value-buffer allocation. Empty
+  structs are valid zero-slot bindings, not missing values.
+- A same-type update reuses the existing owner and slot address, but constructs
+  a vector for assignment scratch. The tested empty, integer, and string types
+  require zero external scratch slots; the two-slot struct requires two.
+  Type copying, assignment, and cleanup are unchanged.
+- Type replacement prepares new storage and reserves `retired.size() + 1`
+  before replacing the live owner. Clearing during evaluation instead appends
+  the old owner with ordinary `push_back`. Retired owners are cleared only
+  when the outermost evaluation exits; nested exit must not invalidate old
+  borrowed views.
+
+Bounded protocol:
+
+- Extended only the existing opt-in benchmark; no production API, counter,
+  container, scratch implementation, dependency, or CTest entry was added.
+- Four shapes: empty struct, integer, string, and a two-slot integer/string
+  struct. Creation batches contain 64 or 256 variables with prepared 14-byte
+  names. Source values and their ownership are prepared outside measurement.
+- `prepared_storage` creates retained owners in a presized output buffer;
+  `new_binding` includes context name resolution, metadata publication, and
+  table growth. The prepared control omits that work and cannot be subtracted
+  as an exact cost decomposition.
+- `same_type_update` starts with all bindings populated, performs 32 warmup
+  assignments, then 4,096 updates. Sources alternate once per complete table
+  pass, ending with the original source. Runtime, VM, context construction,
+  source/name preparation, and output buffers are excluded. Creation has no
+  warmups; retained-owner destruction is outside these timings.
+- Every operation uses five fresh timing fixtures and separate fresh Debug
+  allocation fixtures. Requests include Debug STL overhead, not heap byte
+  volume; fractional counts are per-operation averages rounded to three
+  decimals. Release allocation probes are unavailable and do not run their
+  mutation callback.
+- Checks cover exact type, physical size and contents, logical IDs/order,
+  same-type address stability, string reference ownership, empty values,
+  diagnostics/results, unchanged VM registers/stack, and final live-object
+  counts.
+- Retirement uses one binding and 1/16/64 mutations inside two nested public
+  evaluation guards. Type changes alternate string/integer; clear/rebind
+  uses distinct strings. A presized buffer captures the previous borrowed
+  slot before each mutation. Per-mutation timing includes that lookup/capture;
+  outermost-exit timing is the total cleanup for the batch, not per mutation.
+- After inner exit, every old slot retains its contents and every prepared
+  string has one context-owned reference in addition to its source owner.
+  After outer exit, old strings have only their source reference and any
+  current string retains its live binding reference. No private retired-vector
+  introspection is used.
+
+Windows x64 MSVC baseline, median `[min,max]` microseconds per operation:
+
+| Configuration | Shape | Variables | Prepared storage (us) | New binding (us) | Same-type update (us) |
+| --- | --- | --- | --- | --- | --- |
+| Debug | empty | 64 | 0.361 [0.330,0.408] | 6.666 [4.303,9.911] | 1.360 [1.237,2.971] |
+| Debug | empty | 256 | 0.309 [0.291,0.618] | 11.789 [9.846,16.003] | 4.205 [3.571,7.530] |
+| Debug | integer | 64 | 0.577 [0.555,1.248] | 8.317 [5.327,12.853] | 1.728 [1.605,2.690] |
+| Debug | integer | 256 | 0.560 [0.537,1.632] | 13.239 [11.621,18.955] | 4.216 [4.016,6.155] |
+| Debug | string | 64 | 1.250 [0.573,1.808] | 4.691 [4.562,11.239] | 2.019 [1.454,2.587] |
+| Debug | string | 256 | 1.011 [0.509,1.408] | 12.727 [12.705,27.740] | 5.026 [4.110,5.557] |
+| Debug | pair | 64 | 0.644 [0.628,1.533] | 4.609 [4.491,7.223] | 2.375 [2.041,3.045] |
+| Debug | pair | 256 | 0.649 [0.606,2.050] | 18.707 [11.177,33.673] | 5.544 [4.788,5.726] |
+| Release | empty | 64 | 0.064 [0.031,0.089] | 0.856 [0.562,1.014] | 0.214 [0.200,0.288] |
+| Release | empty | 256 | 0.023 [0.022,0.024] | 1.666 [1.564,1.695] | 0.630 [0.561,0.718] |
+| Release | integer | 64 | 0.084 [0.053,0.100] | 0.691 [0.627,1.019] | 0.214 [0.193,0.267] |
+| Release | integer | 256 | 0.049 [0.042,0.098] | 1.774 [1.514,3.380] | 0.771 [0.531,1.001] |
+| Release | string | 64 | 0.138 [0.056,0.227] | 0.834 [0.598,1.022] | 0.257 [0.248,0.333] |
+| Release | string | 256 | 0.068 [0.049,0.409] | 1.565 [1.543,2.709] | 0.654 [0.526,0.937] |
+| Release | pair | 64 | 0.119 [0.089,0.181] | 0.647 [0.606,1.008] | 0.303 [0.255,0.360] |
+| Release | pair | 256 | 0.086 [0.067,0.104] | 1.681 [1.591,2.778] | 0.719 [0.663,0.907] |
+
+Debug allocation-request averages below are identical across all five
+samples, so their minimum and maximum equal the shown median. Integer and
+string rows have the same counts. Release counts are unavailable.
+
+| Shape | Variables | Prepared storage | New binding | Same-type update |
+| --- | --- | --- | --- | --- |
+| empty | 64 | 2.000 | 6.344 | 1.000 |
+| empty | 256 | 2.000 | 5.602 | 1.000 |
+| integer/string | 64 | 3.000 | 7.344 | 1.000 |
+| integer/string | 256 | 3.000 | 6.602 | 1.000 |
+| pair | 64 | 3.000 | 7.344 | 2.000 |
+| pair | 256 | 3.000 | 6.602 | 2.000 |
+
+Retirement baseline, median `[min,max]` microseconds. Old-string counts are
+the distinct source strings held by old slots before outermost exit, verified
+by reference counts; all `changes` old physical slots are checked. Debug
+mutation-request averages have equal median/min/max across five samples.
+No allocation probe measures exit itself.
+
+| Configuration | Mutation | Changes | Source strings | Held old strings | Mutation (us each) | Outermost exit (us total) | Requests each |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Debug | type_change | 1 | 1 | 1 | 4.100 [2.700,10.300] | 1.800 [1.300,4.300] | 4.000 |
+| Debug | type_change | 16 | 9 | 8 | 2.556 [1.456,4.381] | 6.400 [5.900,8.500] | 4.000 |
+| Debug | type_change | 64 | 33 | 32 | 2.642 [1.873,3.136] | 27.400 [20.500,51.000] | 4.000 |
+| Debug | clear_rebind | 1 | 2 | 1 | 3.500 [3.400,4.900] | 1.900 [1.600,2.100] | 4.000 |
+| Debug | clear_rebind | 16 | 17 | 16 | 1.300 [1.256,1.450] | 6.600 [5.800,6.900] | 3.500 |
+| Debug | clear_rebind | 64 | 65 | 64 | 1.945 [1.233,4.559] | 28.500 [23.200,30.500] | 3.188 |
+| Release | type_change | 1 | 1 | 1 | 0.700 [0.600,1.100] | 0.200 [0.200,0.300] | unavailable |
+| Release | type_change | 16 | 9 | 8 | 0.400 [0.169,0.450] | 0.900 [0.500,1.200] | unavailable |
+| Release | type_change | 64 | 33 | 32 | 0.202 [0.191,0.228] | 1.700 [1.500,1.700] | unavailable |
+| Release | clear_rebind | 1 | 2 | 1 | 0.500 [0.300,17.200] | 0.100 [0.100,0.300] | unavailable |
+| Release | clear_rebind | 16 | 17 | 16 | 0.156 [0.144,3.375] | 0.500 [0.400,1.600] | unavailable |
+| Release | clear_rebind | 64 | 65 | 64 | 0.147 [0.128,0.200] | 1.900 [1.800,3.200] | unavailable |
+
+Interpretation and validation:
+
+- Same-type writes already preserve storage addresses; the measured remaining
+  request cost is scratch construction, not another owner allocation. The
+  prepared control distinguishes owning storage from binding work but does
+  not isolate each metadata/name-lookup allocation.
+- Type changes request retired capacity for each append; clear/rebind has
+  different growth behavior. This baseline supports reviewing that cost, not
+  removing lifetime retention or changing exception/publication ordering.
+- Every old string reference is released at outermost exit and the current
+  binding remains valid. Sources stay caller-owned, so exit does not measure
+  last-reference string-payload destruction. Retired pointer-container
+  capacity, peak retained heap bytes, wider values, frame-backed variables,
+  and custom throwing-copy types are not measured.
+- All captured timing ranges are retained, including the 17.200-us single
+  clear/rebind sample. These are small, noisy host bookkeeping batches, not
+  whole evaluation, native reentry, startup, gameplay, cross-platform, or
+  before/after speedup evidence. No timing threshold is used.
+- `nomad_test_remaining` passes through the workspace CTest integration,
+  without a separate pre-test build. Existing actual native-reentry,
+  exception-unwinding, failed-copy, stable-address, and empty-value regressions
+  remain green. No additional unit test is needed for measurement alone.
+- The extended benchmark builds and all checked sections pass in Debug and
+  Release, with bundled language DLL hashes matched to the current builds
+  before execution. The user's reported full rebuild/all-test run precedes
+  this baseline; no assistant full-suite rerun or gameplay check is claimed.
+- C2's measurement scope is complete. Next reviewable scope: review a bounded
+  conditional assignment-scratch allocation or retired-capacity growth
+  change, or defer further work. Any owner/buffer redesign must separately
+  preserve borrowed addresses, nested lifetime, and Type failure contracts;
+  no production optimization is authorized by this baseline.
+
+#### C2 approved conditional owned-array assignment-scratch design
+
+- The user selected `scratch_only`: replace only the temporary assignment
+  vector in `InterpreterStorage::assign` with
+  `std::unique_ptr<RuntimeValue[]>`. Read `getAssignmentScratchSize()` once
+  and allocate cleared slots with `std::make_unique<RuntimeValue[]>` only
+  when the reported count is nonzero. Pass its pointer to the existing
+  `Type::assignValue`.
+- Zero external scratch leaves the pointer null and uses Type's existing
+  zero/single-slot behavior. Multi-slot values still receive a fresh, cleared,
+  disjoint allocation on every assignment. Do not skip Type assignment for
+  empty values, add an inline threshold, or cache/reuse scratch.
+- Reuse the existing owned-array pattern used by the stored-field setter
+  and InterpreterContext writes. Do not extract a generalized helper, change
+  Type metadata or APIs, or extend this optimization to other consumers.
+- Preserve exact source-size validation before scratch allocation. Storage
+  owners and their physical value vectors remain unchanged, so same-type
+  address stability and logical variable identity remain intact.
+- Keep `Type::assignValue` unchanged: copy into scratch before releasing the
+  destination, transfer completed slots, and clear scratch. Valid-metadata
+  copy failures retain Type's resource-release/cleared-scratch contract and
+  preserve the previous destination. Array destruction frees only memory;
+  it does not replace Type-driven cleanup or roll back callback side effects.
+- Required scratch allocation still precedes assignment and propagates
+  failure without changing the destination. Removing the vector removes its
+  bookkeeping and allocation failure points, not Type assignment calls or
+  ownership semantics.
+- InterpreterContext retirement, reserve-before-metadata-publication ordering,
+  nested lifetime, clearing, and retained capacity stay unchanged. The fresh
+  baseline does not measure capacity reuse across evaluations; retirement
+  growth and owner/value-buffer redesign require a separate scope and approval.
+- Expected Debug requests per same-type update are zero for the measured
+  empty/integer/string values and one for the two-slot struct, rather than
+  one/two. Verify those exact targets; multi-slot allocation remains and
+  Release allocation counts are unavailable. No Release speedup is promised,
+  particularly given I11's mixed timings with the same container change.
+- Implementation adds focused allocation coverage using the existing Debug
+  probe and preserves aliasing, reference ownership, failed-copy, stable
+  address, and nested-reentry coverage. Run the selected remaining CTest
+  directly without a separate pre-test build, then build and execute the
+  unchanged checked Debug/Release benchmark. Compare same-type update metrics
+  against C2's baseline; keep prepared-storage and retirement workloads
+  unchanged, retain all ranges, and do not subtract unlike controls.
+- This review changes only the plan, not production code. Next reviewable
+  scope: implement this approved scratch-only design, record checked results,
+  then stop before any further storage change.
+
+#### C2 assignment-scratch implementation and checked comparisons
+
+- Replaced only the local scratch vector in `InterpreterStorage::assign`
+  with the approved conditional, fresh, cleared owned array. Exact source-size
+  validation still precedes allocation; zero external scratch still calls
+  `Type::assignValue` with null scratch. Type code and public APIs are unchanged.
+- Storage owners, their value vectors, metadata/IDs, and all retirement code
+  are unchanged. Array destruction releases memory only; Type retains copy,
+  transfer, and cleanup responsibility and the existing copy-failure contract.
+- One focused existing-probe Debug regression covers empty, integer, string,
+  and two-slot integer/string bindings. Over 100 alternating updates it checks
+  actual contents and address stability, then self-assignment and source
+  references. Hooks are restored before assertions. Before the change it
+  reproduced exactly four failures: three `100 != 0` request totals and one
+  `200 != 100`. Afterward, all exact request targets and behavior checks pass.
+  No new fault hook, rejection coverage, or CTest entry was added.
+- `nomad_test_remaining` passes directly through the workspace CTest
+  integration without a separate pre-test build. Existing failed-copy,
+  empty-value, independent-snapshot, native-reentry, and nested-retirement
+  coverage remains green. This is a selected test run, not a full-suite rerun.
+- The unchanged opt-in benchmark builds and all checked sections execute
+  successfully in Debug and Release. The bundled language DLL hashes match
+  the current configuration before each execution. Release uses the existing
+  multi-config build tree; no build preset or dependency change was made.
+- Every measured same-type Debug update saves one request: empty/integer/string
+  change from one to zero; the two-slot struct changes from two to one.
+  Minimum and maximum equal the shown averages across all five samples.
+  Prepared-owner/new-binding and retirement Debug counts match the baseline.
+  Release allocation probes remain unavailable.
+
+| Shape | Variables | Baseline update requests | Current update requests |
+| --- | --- | --- | --- |
+| empty/integer/string | 64/256 | 1.000 | 0.000 |
+| pair | 64/256 | 2.000 | 1.000 |
+
+Post-change timings below are median `[min,max]` microseconds per operation.
+Run 2 is one unchanged Release repeat, without another build, retained because
+run 1's update medians and several unchanged controls were higher than the
+earlier baseline. No samples are discarded.
+
+| Run | Configuration | Shape | Variables | Prepared storage (us) | New binding (us) | Same-type update (us) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Debug | empty | 64 | 0.494 [0.466,0.656] | 6.733 [5.172,20.847] | 1.727 [1.173,2.141] |
+| 1 | Debug | empty | 256 | 0.446 [0.407,1.150] | 13.691 [11.051,19.034] | 4.222 [3.775,4.769] |
+| 1 | Debug | integer | 64 | 0.908 [0.866,1.609] | 8.700 [4.427,10.961] | 1.372 [1.055,1.702] |
+| 1 | Debug | integer | 256 | 1.046 [0.742,1.577] | 14.326 [11.069,21.145] | 5.127 [4.452,6.733] |
+| 1 | Debug | string | 64 | 1.039 [0.577,3.728] | 5.753 [5.652,9.403] | 2.164 [1.677,2.523] |
+| 1 | Debug | string | 256 | 0.939 [0.879,1.559] | 14.140 [11.318,26.590] | 4.322 [3.751,5.633] |
+| 1 | Debug | pair | 64 | 1.059 [1.008,3.705] | 6.130 [6.042,7.061] | 3.005 [2.448,16.768] |
+| 1 | Debug | pair | 256 | 1.059 [0.977,1.095] | 12.052 [10.966,16.993] | 4.799 [4.737,5.399] |
+| 1 | Release | empty | 64 | 0.083 [0.041,0.170] | 0.858 [0.789,2.286] | 0.292 [0.265,0.840] |
+| 1 | Release | empty | 256 | 0.037 [0.025,0.043] | 2.972 [1.803,4.545] | 1.124 [0.949,2.719] |
+| 1 | Release | integer | 64 | 0.123 [0.087,0.191] | 0.836 [0.791,1.269] | 0.436 [0.288,1.195] |
+| 1 | Release | integer | 256 | 0.075 [0.051,0.108] | 3.072 [2.235,4.015] | 1.075 [0.604,1.564] |
+| 1 | Release | string | 64 | 0.147 [0.073,0.208] | 0.838 [0.738,0.950] | 0.430 [0.292,0.830] |
+| 1 | Release | string | 256 | 0.089 [0.050,0.098] | 2.675 [1.703,3.339] | 0.930 [0.767,1.353] |
+| 1 | Release | pair | 64 | 0.094 [0.070,1.266] | 0.869 [0.717,1.056] | 0.396 [0.329,0.663] |
+| 1 | Release | pair | 256 | 0.067 [0.062,0.102] | 1.779 [1.730,3.742] | 1.081 [0.747,1.901] |
+| 2 | Release | empty | 64 | 0.070 [0.033,0.098] | 0.947 [0.798,1.158] | 0.344 [0.252,0.444] |
+| 2 | Release | empty | 256 | 0.029 [0.022,0.066] | 1.792 [1.716,2.778] | 0.819 [0.679,1.232] |
+| 2 | Release | integer | 64 | 0.078 [0.059,0.103] | 0.705 [0.683,0.812] | 0.362 [0.233,0.537] |
+| 2 | Release | integer | 256 | 0.069 [0.043,0.212] | 2.758 [1.740,6.469] | 0.887 [0.675,1.060] |
+| 2 | Release | string | 64 | 0.075 [0.066,0.155] | 0.714 [0.675,0.861] | 0.303 [0.236,0.457] |
+| 2 | Release | string | 256 | 0.086 [0.049,0.098] | 2.487 [1.721,2.745] | 0.978 [0.700,1.274] |
+| 2 | Release | pair | 64 | 0.133 [0.087,0.222] | 1.244 [0.720,2.234] | 0.480 [0.395,1.029] |
+| 2 | Release | pair | 256 | 0.082 [0.063,0.129] | 1.816 [1.741,2.875] | 1.004 [0.859,2.316] |
+
+Retirement timings are retained as unchanged-workload checks, not optimization
+evidence. Old-string/source counts remain exactly those in the baseline, and
+all old spans/references remain valid through nested exit and release at
+outermost exit. Mutation timing includes borrowing the old slot; exit timing
+is the total for the batch. No exit-allocation or retained-byte claim is made.
+
+| Run | Configuration | Mutation | Changes | Mutation (us each) | Outermost exit (us total) |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Debug | type_change | 1 | 5.000 [4.600,20.500] | 1.900 [1.800,6.300] |
+| 1 | Debug | type_change | 16 | 2.544 [1.512,4.369] | 8.500 [6.100,10.400] |
+| 1 | Debug | type_change | 64 | 3.044 [1.939,9.055] | 22.900 [21.200,30.100] |
+| 1 | Debug | clear_rebind | 1 | 4.700 [3.200,5.200] | 2.000 [1.100,2.100] |
+| 1 | Debug | clear_rebind | 16 | 1.319 [1.306,2.500] | 6.100 [5.900,7.100] |
+| 1 | Debug | clear_rebind | 64 | 1.511 [1.156,1.830] | 25.900 [22.300,29.700] |
+| 1 | Release | type_change | 1 | 0.500 [0.400,0.600] | 0.100 [0.100,0.200] |
+| 1 | Release | type_change | 16 | 0.181 [0.163,0.206] | 0.500 [0.500,0.500] |
+| 1 | Release | type_change | 64 | 0.252 [0.212,0.280] | 1.800 [1.700,2.200] |
+| 1 | Release | clear_rebind | 1 | 0.700 [0.500,17.500] | 0.200 [0.100,0.200] |
+| 1 | Release | clear_rebind | 16 | 0.175 [0.138,0.212] | 0.600 [0.500,0.800] |
+| 1 | Release | clear_rebind | 64 | 0.136 [0.122,0.188] | 1.800 [1.700,3.000] |
+| 2 | Release | type_change | 1 | 0.300 [0.300,0.700] | 0.100 [0.100,0.200] |
+| 2 | Release | type_change | 16 | 0.181 [0.163,0.325] | 0.500 [0.500,0.900] |
+| 2 | Release | type_change | 64 | 0.364 [0.214,0.889] | 2.000 [1.700,2.700] |
+| 2 | Release | clear_rebind | 1 | 0.600 [0.200,6.300] | 0.100 [0.100,0.200] |
+| 2 | Release | clear_rebind | 16 | 0.150 [0.138,0.163] | 0.500 [0.500,0.500] |
+| 2 | Release | clear_rebind | 64 | 0.128 [0.120,0.134] | 1.800 [1.700,1.800] |
+
+- Debug update medians are mixed: five of eight are higher than the baseline.
+  Both Release runs have higher medians in all eight update cases. For example,
+  integer/64 changes from 0.214 us to 0.436/0.362 us; pair/256 changes from
+  0.719 us to 1.081/1.004 us. These results are not presented as a Release gain.
+- Several unchanged control medians also moved. The earlier baseline and
+  current executions are not a matched contemporaneous A/B comparison, so
+  this does not establish the cause of the higher medians. Do not attribute
+  the difference entirely to noise or claim a causal regression was isolated.
+  A timing/retention decision is still appropriate before further performance
+  work; no additional code strategy is automatically authorized.
+- The proven result is one fewer Debug request per measured update, with
+  unchanged checked behavior. Multi-slot scratch still allocates; no caller
+  workload profile, peak-memory, startup, cross-platform, gameplay, or
+  concurrency benefit is claimed. The benchmark and building-guide protocol
+  are unchanged.
+- This completes the approved implementation/verification scope. Next
+  reviewable scope: review the observed Release timing trade-off and whether
+  to obtain matched measurements before retaining or revising this choice.
+  Do not proceed directly to retirement growth, owner/buffer redesign, or
+  another optimization.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -3733,7 +4039,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | ID | Priority | Kind | Finding | Evidence | Status | Step |
 | --- | --- | --- | --- | --- | --- | --- |
 | C1 | P2 | const-correctness | Shared private const storage resolvers return writable variable/parameter/receiver spans | `InterpreterContext.cpp`: getVariableStorageById, getParameterStorage and explicit mutable accessors; `InterpreterContext.hpp` | Fixed internally: reads use existing const storage APIs; writes remain non-const; redundant private resolvers removed, public contracts unchanged | 5 |
-| C2 | P2 | perf | One heap allocation per variable (`vector<unique_ptr<InterpreterStorage>>`); retired storage accumulates until the outermost evaluation ends | `InterpreterContext.hpp`: m_variables, m_retiredStorage | verified-text | 8 |
+| C2 | P2 | perf | Separate local owner/value-buffer allocations and same-type assignment scratch; retired slots remain valid until outermost evaluation exit | `InterpreterContext.hpp/.cpp`: owned/retired storage; `InterpreterStorage.cpp`: conditional assignment scratch; checked storage/retirement benchmark | Scratch-only array implemented; one fewer measured Debug request and selected CTest/checked runs pass; both Release repeats have higher update medians pending review; owners/retirement unchanged | 8 |
 | C3 | P3 | api | Diagnostic names obscure append/clear-all behavior; review overlap and deleted temporary-interpreter constructors | `InterpreterContext.hpp`, `InterpreterContext.cpp`: constructors and diagnostics API | Approved renames implemented: addError and clearDiagnostics, no aliases; distinct source/metadata entry points and temporary-lifetime rejection retained | 5 |
 | C4 | P3 | api | Name-keyed host accessors coexist with resolved-ID variable/parameter storage APIs | `InterpreterContext.hpp`, `InterpreterContext.cpp`: name/ID access; `Expression.cpp`: IdentifierExpression::onEvaluate; `SyntaxTree.cpp`: assignment; `DebugConsole.cpp`: console editing | Resolved by review: distinct host/binding and resolved-AST contracts retained, honoring step-2 convenience decisions; no further API or performance change | 2, 5 (done) |
 

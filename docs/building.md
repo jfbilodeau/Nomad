@@ -67,7 +67,8 @@ from the build's `tests` directory (`tests/Debug` or `tests/Release` for
 Visual Studio).
 
 It covers registration, callable/type lookup, member resolution, strings, property access,
-script/host calls, and event-definition snapshots. Workloads and checks are defined in
+script/host calls, event-definition snapshots, and interpreter variable storage.
+Workloads and checks are defined in
 [RuntimeLookupBenchmark.cpp](https://github.com/jfbilodeau/Nomad/blob/main/tests/RuntimeLookupBenchmark.cpp).
 Compare the same workload and configuration before and after a change. Treat
 Debug and Release separately; timings are not pass/fail thresholds. Allocation
@@ -142,3 +143,20 @@ passes exclude fixture preparation. Reopening an existing open hub is a
 reduced-work control, not an isolated measurement of rebuilding. Checks cover
 late-child declaration redistribution, explicit native ownership and overload
 order, free-function non-membership, stored values, and hub/variable identities.
+
+Interpreter-storage workloads compare prepared owned-storage creation with
+64/256 new context bindings and 4,096 same-type updates. They cover empty,
+integer, string, and two-slot integer/string values, using five fresh samples
+and separate Debug allocation probes. Names, source values, fixture preparation,
+and output buffers are excluded; updates have 32 warmups and alternate sources
+once per complete table pass. Checks preserve values, binding IDs, borrowed
+addresses, reference ownership, and VM state. Prepared storage omits binding
+metadata and is not an exact subtractive control.
+
+Retirement workloads perform 1/16/64 type changes or clear/rebind operations
+under nested evaluation guards. Per-mutation timing includes borrowing the old
+slot; total outermost-exit cleanup is reported separately. Checks retain old
+spans and string references through nested exit, then release old references
+without changing the current binding. Source strings remain caller-owned:
+retained heap bytes and last-reference payload destruction are not measured.
+These are direct host bookkeeping workloads, not complete evaluation timings.

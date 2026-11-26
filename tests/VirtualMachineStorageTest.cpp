@@ -5,6 +5,7 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
 
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/ExecutionStateGuard.hpp>
@@ -29,6 +30,7 @@
 #include <sstream>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #if defined(_MSC_VER) && defined(_DEBUG)
 #include <crtdbg.h>
@@ -2239,6 +2241,87 @@ BOOST_AUTO_TEST_CASE(stored_field_assignment_allocates_scratch_only_for_multi_sl
             if (referenceValue) {
                 BOOST_TEST(source.back().getObjectValue()->getReferenceCount() == 3U);
             }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(interpreter_same_type_updates_allocate_only_required_assignment_scratch) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto emptyId = runtime.registerStruct("InterpreterScratchEmpty");
+    const auto pairId = runtime.registerStruct("InterpreterScratchPair");
+    BOOST_REQUIRE(emptyId.isValid() && pairId.isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(
+        pairId,
+        "number",
+        runtime.getIntegerType()
+    ).isValid());
+    BOOST_REQUIRE(manager.registerScriptStructProperty(
+        pairId,
+        "text",
+        runtime.getStringType()
+    ).isValid());
+    manager.finalizeCompositeFieldLayout(emptyId);
+    manager.finalizeCompositeFieldLayout(pairId);
+    const auto* empty = runtime.getType(emptyId).value();
+    const auto* pair = runtime.getType(pairId).value();
+    const auto valueTypes = std::array{empty, runtime.getIntegerType(), runtime.getStringType(), pair};
+    const NomadString name = "value";
+    VirtualMachine machine(&runtime, 64);
+    const Interpreter interpreter(machine);
+    for (const auto* type : valueTypes) {
+        const auto size = type->getSize();
+        const auto referenceValue = type == runtime.getStringType() || type == pair;
+        std::vector<RuntimeValue> first(size);
+        std::vector<RuntimeValue> second(size);
+        const RuntimeValueGuard firstOwner(*type, first.empty() ? nullptr : first.data());
+        const RuntimeValueGuard secondOwner(*type, second.empty() ? nullptr : second.data());
+        for (auto index = NomadIndex{0}; index < size; ++index) {
+            if (referenceValue && index + 1 == size) {
+                first[index].setStringValue("first scratch source");
+                second[index].setStringValue("second scratch source");
+            } else {
+                first[index].setIntegerValue(17);
+                second[index].setIntegerValue(29);
+            }
+        }
+
+        InterpreterContext context(interpreter);
+        context.setVariable(name, type, first);
+        const auto variableId = context.getCallable()->getVariableId(name);
+        const auto* address = context.getVariableStorageById(variableId).data();
+        const auto expectedAllocations = type == pair ? 100U : 0U;
+        auto completedUpdates = NomadIndex{0};
+        callAllocations = 0;
+        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+        {
+            const auto previousHook = previousAllocationHook;
+            BOOST_SCOPE_EXIT_ALL(=) {
+                _CrtSetAllocHook(previousHook);
+            };
+
+            for (auto iteration = 0; iteration < 100; ++iteration) {
+                const auto& source = iteration % 2 == 0 ? second : first;
+                context.setVariable(name, type, source);
+                const auto storage = context.getVariableStorageById(variableId);
+                auto matches = storage.data() == address && storage.size() == size;
+                for (auto index = NomadIndex{0}; matches && index < size; ++index) {
+                    matches = referenceValue && index + 1 == size ?
+                        storage[index].getObjectValue() == source[index].getObjectValue() :
+                        storage[index].getIntegerValue() == source[index].getIntegerValue();
+                }
+
+                completedUpdates += matches;
+            }
+        }
+
+        BOOST_TEST(callAllocations == expectedAllocations);
+        BOOST_TEST(completedUpdates == 100U);
+        context.setVariable(name, type, context.getVariableStorageById(variableId));
+        BOOST_TEST(context.getVariableStorageById(variableId).data() == address);
+        if (referenceValue) {
+            BOOST_TEST(first.back().getObjectValue()->getReferenceCount() == 2U);
+            BOOST_TEST(second.back().getObjectValue()->getReferenceCount() == 1U);
         }
     }
 }

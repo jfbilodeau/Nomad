@@ -6,6 +6,8 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 #include <nomad/interpreter/InterpreterCallFrame.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+#include <nomad/interpreter/InterpreterStorage.hpp>
 
 #include <nomad/log/Logger.hpp>
 
@@ -3790,6 +3792,373 @@ void runHubRegistrationBenchmark() {
     }
 }
 
+void runInterpreterStorageBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto counts = std::array<nomad::NomadIndex, 2>{64, 256};
+    constexpr auto updateIterations = nomad::NomadIndex{4096};
+    constexpr auto shapes = std::array{"empty", "integer", "string", "pair"};
+    constexpr auto labels = std::array{"prepared_storage", "new_binding", "same_type_update"};
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    std::cout << "Interpreter variables: presized owned-storage creation, new bindings, and in-place same-type updates.\n"
+        << "Five fresh samples; 64/256 creations or 4096 alternating updates, with separate Debug probes.\n"
+        << "Names, values, Runtime/VM/context preparation and output buffers are excluded; retained owners are checked.\n"
+        << "Prepared storage excludes binding metadata; controls are not an exact subtractive allocation breakdown.\n"
+        << std::flush;
+    for (auto shape = nomad::NomadIndex{0}; shape < shapes.size(); ++shape) {
+        for (const auto count : counts) {
+            std::vector<nomad::NomadString> names;
+            for (auto index = nomad::NomadIndex{0}; index < count; ++index) {
+                names.push_back(std::format("storageVar{:04}", index));
+            }
+
+            std::array<std::vector<double>, labels.size()> latencySamples;
+            std::array<std::vector<double>, labels.size()> allocationSamples;
+            auto slots = nomad::NomadIndex{0};
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+                    for (auto pass = 0; pass < 2; ++pass) {
+                        const auto allocationPass = pass == 1;
+                        nomad::Runtime runtime;
+                        const nomad::Type* type = runtime.getIntegerType();
+                        if (shape == 2) {
+                            type = runtime.getStringType();
+                        } else if (shape == 0 || shape == 3) {
+                            const auto id = runtime.registerStruct("C2StorageValue");
+                            if (id.isInvalid()) {
+                                throw std::runtime_error("Failed to prepare interpreter-storage fixture type");
+                            }
+
+                            if (shape == 3) {
+                                const auto number = runtime.getTypeManager().registerScriptStructProperty(
+                                    id,
+                                    "number",
+                                    runtime.getIntegerType()
+                                );
+                                const auto text = runtime.getTypeManager().registerScriptStructProperty(
+                                    id,
+                                    "text",
+                                    runtime.getStringType()
+                                );
+                                if (number.isInvalid() || text.isInvalid()) {
+                                    throw std::runtime_error("Failed to prepare interpreter-storage fixture fields");
+                                }
+                            }
+
+                            runtime.getTypeManager().finalizeCompositeFieldLayout(id);
+                            type = runtime.getType(id).value();
+                        }
+
+                        slots = type->getSize();
+                        const auto referenceValue = shape >= 2;
+                        std::vector<nomad::RuntimeValue> first(slots);
+                        std::vector<nomad::RuntimeValue> second(slots);
+                        const nomad::RuntimeValueGuard firstOwner(*type, first.empty() ? nullptr : first.data());
+                        const nomad::RuntimeValueGuard secondOwner(*type, second.empty() ? nullptr : second.data());
+                        for (auto index = nomad::NomadIndex{0}; index < slots; ++index) {
+                            if (referenceValue && index + 1 == slots) {
+                                first[index].setStringValue("first source");
+                                second[index].setStringValue("second source");
+                            } else {
+                                first[index].setIntegerValue(17);
+                                second[index].setIntegerValue(29);
+                            }
+                        }
+
+                        auto machine = runtime.createVirtualMachine();
+                        machine->setIntegerResult(71);
+                        machine->setIntegerIntermediate(83);
+                        const nomad::Interpreter interpreter(*machine);
+                        nomad::InterpreterContext context(interpreter);
+                        std::vector<std::unique_ptr<nomad::InterpreterStorage>> prepared(count);
+                        std::vector<const nomad::RuntimeValue*> addresses(count);
+                        if (query == 2) {
+                            for (auto index = nomad::NomadIndex{0}; index < count; ++index) {
+                                context.setVariable(names[index], type, first);
+                                addresses[index] = context.getVariableStorage(names[index]).data();
+                            }
+
+                            for (auto warmup = nomad::NomadIndex{0}; warmup < 32; ++warmup) {
+                                context.setVariable(names[warmup % count], type, first);
+                            }
+                        }
+
+                        const auto iterations = query == 2 ? updateIterations : count;
+                        auto completed = nomad::NomadIndex{0};
+                        const auto invoke = [&] {
+                            const auto index = completed % count;
+                            if (query == 0) {
+                                prepared[index] = std::make_unique<nomad::InterpreterStorage>(type, first);
+                            } else {
+                                const auto& source = query == 2 && (completed / count) % 2 == 0 ? second : first;
+                                context.setVariable(names[index], type, source);
+                            }
+
+                            ++completed;
+                        };
+                        if (allocationPass) {
+                            const auto requests = countHostCallAllocations(invoke, iterations);
+                            if (!requests.has_value()) {
+                                continue;
+                            }
+
+                            allocationSamples[query].push_back(
+                                static_cast<double>(*requests) / static_cast<double>(iterations)
+                            );
+                        } else {
+                            const auto start = std::chrono::steady_clock::now();
+                            for (auto index = nomad::NomadIndex{0}; index < iterations; ++index) {
+                                invoke();
+                            }
+
+                            latencySamples[query].push_back(std::chrono::duration<double, std::micro>{
+                                std::chrono::steady_clock::now() - start
+                            }.count() / static_cast<double>(iterations));
+                        }
+
+                        if (completed != iterations) {
+                            throw std::runtime_error("Interpreter-storage operation count changed");
+                        }
+
+                        for (auto index = nomad::NomadIndex{0}; index < count; ++index) {
+                            const auto storage = query == 0 ? prepared[index]->getStorage() :
+                                context.getVariableStorage(names[index]);
+                            const auto* actualType = query == 0 ? prepared[index]->getType() :
+                                context.getVariableType(names[index]);
+                            if (actualType != type || storage.size() != slots) {
+                                throw std::runtime_error("Interpreter variable/storage type or size changed");
+                            }
+
+                            for (auto slot = nomad::NomadIndex{0}; slot < slots; ++slot) {
+                                const auto matches = referenceValue && slot + 1 == slots ?
+                                    storage[slot].getObjectValue() == first[slot].getObjectValue() :
+                                    storage[slot].getIntegerValue() == first[slot].getIntegerValue();
+                                if (!matches) {
+                                    throw std::runtime_error("Interpreter-storage creation/update changed a value");
+                                }
+                            }
+
+                            if (
+                                query != 0 &&
+                                context.getCallable()->getVariableId(names[index]) !=
+                                    nomad::VariableId{nomad::toNomadId(index)}
+                            ) {
+                                throw std::runtime_error("Interpreter binding identity/order changed");
+                            }
+
+                            if (query == 2 && storage.data() != addresses[index]) {
+                                throw std::runtime_error("A same-type update relocated borrowed variable storage");
+                            }
+                        }
+
+                        if (
+                            referenceValue &&
+                            (
+                                first.back().getObjectValue()->getReferenceCount() != count + 1 ||
+                                second.back().getObjectValue()->getReferenceCount() != 1
+                            )
+                        ) {
+                            throw std::runtime_error("Interpreter-storage copying changed source reference ownership");
+                        }
+
+                        if (
+                            context.hasError() ||
+                            context.getResult() != nullptr ||
+                            context.getCallable()->getVariableCount() != (query == 0 ? 0 : count) ||
+                            machine->getIntegerResult() != 71 ||
+                            machine->getIntegerIntermediate() != 83 ||
+                            machine->captureExecutionState().stackIndex != 0
+                        ) {
+                            throw std::runtime_error("Interpreter variable operations changed diagnostics or VM state");
+                        }
+                    }
+                }
+            }
+
+            std::cout << "interpreter_storage_case=" << shapes[shape] << " variables=" << count
+                << " slots=" << slots << " name_bytes=" << names.front().size()
+                << " creation_iterations=" << count << " update_iterations=" << updateIterations;
+            for (auto query = nomad::NomadIndex{0}; query < labels.size(); ++query) {
+                const auto timeLabel = std::format("{}_us", labels[query]);
+                printSamples(timeLabel.c_str(), latencySamples[query]);
+                const auto allocationLabel = std::format("{}_allocations", labels[query]);
+                if (!allocationSamples[query].empty()) {
+                    printSamples(allocationLabel.c_str(), allocationSamples[query]);
+                } else {
+                    std::cout << ' ' << allocationLabel << "=unavailable";
+                }
+            }
+
+            std::cout << std::endl;
+        }
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Interpreter-storage benchmark leaked source or variable values");
+    }
+}
+
+void runInterpreterRetirementBenchmark() {
+    constexpr auto sampleCount = nomad::NomadIndex{5};
+    constexpr auto changeCounts = std::array<nomad::NomadIndex, 3>{1, 16, 64};
+    constexpr auto cases = std::array{"type_change", "clear_rebind"};
+    const auto objectsBefore = nomad::NomadObject::getLiveObjectCount();
+    const nomad::NomadString name = "value";
+    std::cout << "Interpreter retirement: nested guarded host mutations and total outermost-exit cleanup.\n"
+        << "Five fresh samples and separate Debug mutation probes; source values and borrowed-view buffers excluded.\n"
+        << "Mutation timing includes borrowing the previous slot; old spans and reference counts are checked before exit.\n"
+        << "Held old strings are observed references, not private retired-container counts or retained heap bytes.\n"
+        << std::flush;
+    for (auto query = nomad::NomadIndex{0}; query < cases.size(); ++query) {
+        const auto clearing = query == 1;
+        for (const auto changes : changeCounts) {
+            const auto sourceCount = clearing ? changes + 1 : changes / 2 + 1;
+            const auto heldOldStrings = clearing ? changes : (changes + 1) / 2;
+            const auto finalString = clearing || changes % 2 == 0;
+            const auto finalSource = clearing ? changes : changes / 2;
+            std::vector<double> mutationSamples;
+            std::vector<double> exitSamples;
+            std::vector<double> allocationSamples;
+            for (auto sample = nomad::NomadIndex{0}; sample < sampleCount; ++sample) {
+                for (auto pass = 0; pass < 2; ++pass) {
+                    const auto allocationPass = pass == 1;
+                    nomad::Runtime runtime;
+                    auto machine = runtime.createVirtualMachine();
+                    const nomad::Interpreter interpreter(*machine);
+                    const auto* stringType = runtime.getStringType();
+                    std::vector<nomad::RuntimeValue> sources(sourceCount);
+                    BOOST_SCOPE_EXIT_ALL(&) {
+                        for (auto& source : sources) {
+                            stringType->freeValue(&source);
+                        }
+                    };
+
+                    for (auto index = nomad::NomadIndex{0}; index < sourceCount; ++index) {
+                        sources[index].setStringValue(std::format("retained{:04}", index));
+                    }
+
+                    nomad::InterpreterContext context(interpreter);
+                    context.setVariable(name, stringType, sources.front());
+                    const auto variableId = context.getCallable()->getVariableId(name);
+                    std::vector<std::span<const nomad::RuntimeValue>> borrowed(changes);
+                    auto completed = nomad::NomadIndex{0};
+                    std::chrono::steady_clock::time_point exitStart;
+                    {
+                        const auto outer = context.beginEvaluation();
+                        {
+                            const auto inner = context.beginEvaluation();
+                            const auto mutate = [&] {
+                                borrowed[completed] = context.getVariableStorage(name);
+                                if (clearing) {
+                                    context.clearVariableValue(name);
+                                    context.setVariable(name, stringType, sources[completed + 1]);
+                                } else if (completed % 2 == 0) {
+                                    context.setVariable(
+                                        name,
+                                        runtime.getIntegerType(),
+                                        nomad::RuntimeValue{static_cast<nomad::NomadInteger>(completed) + 17}
+                                    );
+                                } else {
+                                    context.setVariable(name, stringType, sources[(completed + 1) / 2]);
+                                }
+
+                                ++completed;
+                            };
+                            if (allocationPass) {
+                                const auto requests = countHostCallAllocations(mutate, changes);
+                                if (!requests.has_value()) {
+                                    continue;
+                                }
+
+                                allocationSamples.push_back(
+                                    static_cast<double>(*requests) / static_cast<double>(changes)
+                                );
+                            } else {
+                                const auto start = std::chrono::steady_clock::now();
+                                for (auto index = nomad::NomadIndex{0}; index < changes; ++index) {
+                                    mutate();
+                                }
+
+                                mutationSamples.push_back(std::chrono::duration<double, std::micro>{
+                                    std::chrono::steady_clock::now() - start
+                                }.count() / static_cast<double>(changes));
+                            }
+                        }
+
+                        if (completed != changes || context.getCallable()->getVariableId(name) != variableId) {
+                            throw std::runtime_error("Retirement changed operation counts or logical variable identity");
+                        }
+
+                        for (const auto& source : sources) {
+                            if (source.getObjectValue()->getReferenceCount() != 2) {
+                                throw std::runtime_error("Nested evaluation exit released still-borrowed retired values");
+                            }
+                        }
+
+                        for (auto index = nomad::NomadIndex{0}; index < changes; ++index) {
+                            if (borrowed[index].size() != 1) {
+                                throw std::runtime_error("A retired variable view has the wrong physical size");
+                            }
+
+                            const auto matches = clearing || index % 2 == 0 ?
+                                borrowed[index][0].getObjectValue() ==
+                                    sources[clearing ? index : index / 2].getObjectValue() :
+                                borrowed[index][0].getIntegerValue() == static_cast<nomad::NomadInteger>(index) + 16;
+                            if (!matches) {
+                                throw std::runtime_error("A retired borrowed slot changed before outermost exit");
+                            }
+                        }
+
+                        exitStart = std::chrono::steady_clock::now();
+                    }
+
+                    const auto exitTime = std::chrono::duration<double, std::micro>{
+                        std::chrono::steady_clock::now() - exitStart
+                    }.count();
+                    if (!allocationPass) {
+                        exitSamples.push_back(exitTime);
+                    }
+
+                    for (auto index = nomad::NomadIndex{0}; index < sourceCount; ++index) {
+                        const auto expectedReferences = finalString && index == finalSource ? 2U : 1U;
+                        if (sources[index].getObjectValue()->getReferenceCount() != expectedReferences) {
+                            throw std::runtime_error("Outermost evaluation exit retained an old string reference");
+                        }
+                    }
+
+                    const auto* expectedType = finalString ? stringType : runtime.getIntegerType();
+                    const auto current = context.getVariableStorage(name);
+                    if (context.getVariableType(name) != expectedType || current.size() != 1) {
+                        throw std::runtime_error("Retirement cleanup changed the current binding");
+                    }
+
+                    const auto valueMatches = finalString ?
+                        current[0].getObjectValue() == sources[finalSource].getObjectValue() :
+                        current[0].getIntegerValue() == static_cast<nomad::NomadInteger>(changes) + 16;
+                    if (!valueMatches || context.hasError() || machine->captureExecutionState().stackIndex != 0) {
+                        throw std::runtime_error("Retirement cleanup changed the current value or VM state");
+                    }
+                }
+            }
+
+            std::cout << "interpreter_retirement_case=" << cases[query] << " changes=" << changes
+                << " source_strings=" << sourceCount << " held_old_strings=" << heldOldStrings;
+            printSamples("mutation_us", mutationSamples);
+            printSamples("outer_exit_us", exitSamples);
+            if (!allocationSamples.empty()) {
+                printSamples("mutation_allocations", allocationSamples);
+            } else {
+                std::cout << " mutation_allocations=unavailable";
+            }
+
+            std::cout << std::endl;
+        }
+    }
+
+    if (nomad::NomadObject::getLiveObjectCount() != objectsBefore) {
+        throw std::runtime_error("Interpreter-retirement benchmark leaked a retained value");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -3812,6 +4181,8 @@ int main() {
         runNativePropertyValidationBenchmark();
         runContextPrefixBenchmark();
         runHubRegistrationBenchmark();
+        runInterpreterStorageBenchmark();
+        runInterpreterRetirementBenchmark();
     } catch (const std::exception& error) {
         std::cerr << "Runtime lookup benchmark failed: " << error.what() << '\n';
 
