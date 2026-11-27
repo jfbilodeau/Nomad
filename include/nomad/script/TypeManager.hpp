@@ -5,6 +5,7 @@
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/EnumType.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/FunctionResolution.hpp>
 #include <nomad/script/Member.hpp>
 #include <nomad/script/NativeMember.hpp>
@@ -66,6 +67,16 @@ public:
         std::vector<EnumValueDefinition> values,
         NomadString documentation = {}
     );
+    // Catalog-only declaration and EventType creation; duplicate names return INVALID without logging.
+    [[nodiscard]] EventId createEvent(
+        const NomadString& name,
+        const std::vector<EventParameter>& parameters
+    );
+    [[nodiscard]] EventId getEventId(const NomadString& name) const;
+    // Borrows stable read-only metadata until catalog destruction; invalid or missing IDs return nullptr.
+    [[nodiscard]] const EventDefinition* getEventDefinition(EventId id) const;
+    [[nodiscard]] EventId getFirstEventId() const;
+    [[nodiscard]] EventId getNextEventId(EventId currentId) const;
     [[nodiscard]] const Type* getCallbackType(
         const std::vector<const Type*>& parameterTypes,
         const Type* returnType
@@ -187,6 +198,7 @@ private:
     );
     Runtime& m_runtime;
     std::vector<std::unique_ptr<Type>> m_types;
+    std::vector<std::unique_ptr<EventDefinition>> m_events;
     std::vector<Property*> m_properties;
     std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
     std::vector<TypeSpecialization> m_typeSpecializations;

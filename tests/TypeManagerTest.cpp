@@ -6,6 +6,7 @@
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/EnumType.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/NativeCallable.hpp>
 #include <nomad/script/Runtime.hpp>
@@ -122,6 +123,131 @@ BOOST_AUTO_TEST_CASE(catalog_only_declarations_do_not_publish_enum_values_or_typ
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     BOOST_REQUIRE(runtime.registerHub("anotherHub", HubMode::Opened).isValid());
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+}
+
+BOOST_AUTO_TEST_CASE(catalog_only_events_keep_opaque_names_without_hub_publication) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto hubId = runtime.registerHub("eventCatalog", HubMode::Opened);
+    BOOST_REQUIRE(hubId.isValid());
+    const auto constantId = runtime.registerHubConstant(
+        hubId,
+        "taken",
+        RuntimeValue{NomadInteger{37}},
+        runtime.getIntegerType()
+    );
+    BOOST_REQUIRE(constantId.isValid());
+    BOOST_TEST(manager.getFirstEventId() == EventId::INVALID);
+    BOOST_TEST(manager.getEventId("missing") == EventId::INVALID);
+    for (const auto id : {EventId::INVALID, EventId{-2}, EventId{0}, EventId{NOMAD_ID_MAX}}) {
+        BOOST_TEST(manager.getEventDefinition(id) == nullptr);
+    }
+
+    auto expectedId = NomadId{0};
+    for (const auto* name : {"", "$opaque", "eventCatalog", "eventCatalog.taken", "eventCatalog.private", "with spaces"}) {
+        const auto typeId = TypeId{toNomadId(manager.getTypeCount())};
+        std::vector<EventParameter> parameters{{"value", runtime.getIntegerType()->getId(), "int"}};
+        const auto id = manager.createEvent(name, parameters);
+        BOOST_REQUIRE(id == EventId{expectedId});
+        const auto* declaration = manager.getEventDefinition(id);
+        BOOST_REQUIRE(declaration != nullptr);
+        BOOST_TEST(runtime.getEventDefinition(id) == declaration);
+        BOOST_TEST(runtime.getEventId(name) == id);
+        BOOST_TEST(declaration->name == name);
+        BOOST_TEST(declaration->doc.empty());
+        BOOST_REQUIRE(declaration->parameters.size() == 1U);
+        const auto* type = manager.getType(typeId).value()->asEvent();
+        BOOST_REQUIRE(type != nullptr);
+        BOOST_TEST(type->getEventName() == name);
+        parameters.front() = {"changed", TypeId::INVALID, "changed"};
+        BOOST_TEST(declaration->parameters.front().name == "value");
+        BOOST_TEST(declaration->parameters.front().typeId == runtime.getIntegerType()->getId());
+        BOOST_TEST(declaration->parameters.front().typeName == "int");
+        RuntimeValue value;
+        type->initValue(&value);
+        NomadString text;
+        type->toString(&value, text);
+        BOOST_TEST(text == NomadString{name} + " value:int");
+        const auto typeCount = manager.getTypeCount();
+        BOOST_TEST(manager.createEvent(name, {}).isInvalid());
+        BOOST_TEST(manager.getTypeCount() == typeCount);
+        BOOST_TEST(manager.getEventDefinition(id) == declaration);
+        ++expectedId;
+    }
+
+    BOOST_REQUIRE(runtime.registerHub("eventCatalog.child", HubMode::Opened).isValid());
+    BOOST_REQUIRE(runtime.registerHub("eventUnrelated", HubMode::Opened).isValid());
+    const auto* hub = runtime.getHub(hubId);
+    BOOST_TEST(hub->getMember("private") == nullptr);
+    BOOST_REQUIRE(hub->getMember("taken") != nullptr);
+    BOOST_TEST(std::get<ConstantId>(*hub->getMember("taken")) == constantId);
+    BOOST_TEST(hub->getMembers().size() == 1U);
+}
+
+BOOST_AUTO_TEST_CASE(public_events_share_catalog_ids_without_adopting_private_declarations) {
+    Runtime runtime;
+    auto& manager = runtime.getTypeManager();
+    const auto first = runtime.registerEvent(
+        "eventOwnership.first",
+        {{"value", runtime.getIntegerType()->getId(), "int"}}
+    );
+    const auto privateId = manager.createEvent("eventOwnership.private", {});
+    const auto child = runtime.registerEvent("eventOwnership.child.changed", {});
+    BOOST_REQUIRE(first == EventId{0});
+    BOOST_REQUIRE(privateId == EventId{1});
+    BOOST_REQUIRE(child == EventId{2});
+    const auto* declaration = manager.getEventDefinition(first);
+    BOOST_REQUIRE(declaration != nullptr);
+    const auto* parameterAddress = &declaration->parameters.front();
+    BOOST_TEST(runtime.getFirstEventId() == manager.getFirstEventId());
+    BOOST_TEST(runtime.getNextEventId(first) == privateId);
+    BOOST_TEST(runtime.registerEvent("eventOwnership.private", {}).isInvalid());
+    const auto ownerId = runtime.registerHub("eventOwnership", HubMode::Opened);
+    BOOST_REQUIRE(ownerId.isValid());
+    const auto childId = runtime.registerHub("eventOwnership.child", HubMode::Opened);
+    BOOST_REQUIRE(childId.isValid());
+    const auto* owner = runtime.getHub(ownerId);
+    const auto* childHub = runtime.getHub(childId);
+    BOOST_TEST(owner->getMember("private") == nullptr);
+    BOOST_TEST(owner->getMember("child.changed") == nullptr);
+    BOOST_REQUIRE(owner->getMember("first") != nullptr);
+    BOOST_REQUIRE(childHub->getMember("changed") != nullptr);
+    BOOST_TEST(std::get<EventId>(*owner->getMember("first")) == first);
+    BOOST_TEST(std::get<EventId>(*childHub->getMember("changed")) == child);
+
+    auto last = child;
+    for (auto index = 0; index < 64; ++index) {
+        const auto name = "eventOwnership.extra" + std::to_string(index);
+        last = index % 2 == 0 ? manager.createEvent(name, {}) : runtime.registerEvent(name, {});
+        BOOST_REQUIRE(last == EventId{toNomadId(index + 3)});
+    }
+
+    BOOST_REQUIRE(runtime.registerHub("eventOwnershipGrowth", HubMode::Opened).isValid());
+    BOOST_TEST(manager.getEventDefinition(first) == declaration);
+    BOOST_TEST(runtime.getEventDefinition(first) == declaration);
+    BOOST_TEST(&declaration->parameters.front() == parameterAddress);
+    BOOST_TEST(declaration->parameters.front().name == "value");
+    for (auto index = 0; index < 64; ++index) {
+        const auto* member = owner->getMember("extra" + std::to_string(index));
+        if (index % 2 == 0) {
+            BOOST_TEST(member == nullptr);
+        } else {
+            BOOST_REQUIRE(member != nullptr);
+            BOOST_TEST(std::get<EventId>(*member) == EventId{toNomadId(index + 3)});
+        }
+    }
+
+    auto count = NomadIndex{0};
+    for (auto id = manager.getFirstEventId(); id.isValid(); id = manager.getNextEventId(id)) {
+        BOOST_REQUIRE(count < 67U);
+        BOOST_TEST(id == EventId{toNomadId(count)});
+        BOOST_TEST(runtime.getEventDefinition(id) == manager.getEventDefinition(id));
+        BOOST_TEST(runtime.getNextEventId(id) == manager.getNextEventId(id));
+        ++count;
+    }
+
+    BOOST_TEST(count == 67U);
+    BOOST_TEST(runtime.getNextEventId(last) == EventId::INVALID);
 }
 
 BOOST_AUTO_TEST_CASE(catalog_only_creation_paths_accept_empty_type_and_family_names) {
@@ -875,7 +1001,7 @@ BOOST_AUTO_TEST_CASE(full_type_registration_validates_reservations_and_namespace
     BOOST_TEST(runtime.registerType(std::make_unique<ClassType>(
         &runtime, id, "catalog.Replacement", ClassMode::Closed)).isInvalid());
     BOOST_TEST(runtime.getHub(hubId)->getMember("Replacement") == nullptr);
-    BOOST_CHECK_THROW(runtime.publishTypeNamespace(*original), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeHub(*original), NomadException);
     const auto unusedId = manager.reserveTypeId();
     BOOST_TEST(runtime.registerType(std::make_unique<ClassType>(
         &runtime, unusedId, "catalog.Registered", ClassMode::Closed)).isInvalid());
@@ -942,9 +1068,9 @@ BOOST_AUTO_TEST_CASE(parameterized_families_keep_templates_namespace_and_special
     BOOST_TEST(names.front() == "existing");
     const auto containsBoxFamily = std::ranges::find(names, "families.Box") != names.end();
     BOOST_TEST(containsBoxFamily);
-    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("families.Box", 2), NomadException);
-    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("families.Box", 1), NomadException);
-    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("Missing", 1), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyHub("families.Box", 2), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyHub("families.Box", 1), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyHub("Missing", 1), NomadException);
     BOOST_TEST(manager.getParameterizedType("families.Box", {}) == nullptr);
     BOOST_TEST(!manager.registerConstructorTemplate("families.Box", {}));
     BOOST_TEST(!runtime.registerMemberTemplate("families.Box", "managedValue", MemberType::Property));
@@ -1321,8 +1447,8 @@ BOOST_AUTO_TEST_CASE(constructor_families_publish_names_and_cache_across_catalog
     BOOST_TEST(manager.getParameterizedConstructorArgumentCount("constructors.Create").value() == 1U);
     BOOST_TEST(runtime.getTypeManager().getParameterizedConstructorArgumentCount("constructors.Create").value() == 1U);
     BOOST_TEST(std::get<HubTypeFamily>(*runtime.getHub(hubId)->getMember("Create")).argumentCount == 1U);
-    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("constructors.Create", 2), NomadException);
-    BOOST_CHECK_THROW(runtime.publishTypeFamilyNamespace("constructors.Create", 1), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyHub("constructors.Create", 2), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeFamilyHub("constructors.Create", 1), NomadException);
     BOOST_TEST(manager.getParameterizedConstructorName("constructors.Create",
         {runtime.getIntegerType()}) == "constructors.Create<int>");
     const auto* original = manager.getTypeByName("constructors.Create<int>");

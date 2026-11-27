@@ -585,18 +585,19 @@ void Runtime::rebuildHubMembers() {
     for (auto id = getFirstConstantId(); id.isValid(); id = getNextConstantId(id)) {
         add(getConstantName(id), id);
     }
-    for (const auto* type : m_namespaceTypes) {
+    for (const auto* type : m_hubTypes) {
         if (getEventId(type->getTypeName()).isInvalid()) {
             add(type->getTypeName(), type);
         }
     }
-    for (const auto& event : m_events) {
+    for (const auto id : m_hubEvents) {
+        const auto* event = m_typeManager.getEventDefinition(id);
         add(event->name, event->id);
     }
     for (auto index = NomadIndex{0}; index < m_dynamicVariables.size(); ++index) {
         add(m_dynamicVariables[index].name, DynamicVariableId{toNomadId(index)});
     }
-    for (const auto& family : m_namespaceTypeFamilies) {
+    for (const auto& family : m_hubTypeFamilies) {
         add(family.name, HubTypeFamily{family.argumentCount});
     }
     for (auto index = NomadIndex{0}; index < m_hubs.size(); ++index) {
@@ -1993,7 +1994,7 @@ TypeId Runtime::registerType(std::unique_ptr<Type> type) {
         return TypeId::INVALID;
     }
 
-    publishTypeNamespace(*registeredType);
+    publishTypeHub(*registeredType);
 
     return id;
 }
@@ -2039,7 +2040,7 @@ TypeId Runtime::createEnum(
     }
 
     const auto* type = getType(id).value()->asEnum();
-    publishTypeNamespace(*type);
+    publishTypeHub(*type);
     for (auto index = NomadIndex{0}; index < type->getValueCount(); ++index) {
         const auto& definition = type->getValue(index);
         const auto constantId = registerConstant(
@@ -2068,7 +2069,7 @@ bool Runtime::registerNativeParameterizedConstructor(
         return false;
     }
 
-    publishTypeFamilyNamespace(name, argumentCount);
+    publishTypeFamilyHub(name, argumentCount);
 
     return true;
 }
@@ -2104,7 +2105,7 @@ bool Runtime::registerParameterizedType(
             return type;
         },
         [this, initializer = std::move(initializer)](Runtime* owner, const TypeId id) {
-            publishTypeNamespace(*m_typeManager.getType(id).value());
+            publishTypeHub(*m_typeManager.getType(id).value());
             if (initializer) {
                 initializer(owner, id);
             }
@@ -2114,7 +2115,7 @@ bool Runtime::registerParameterizedType(
         return false;
     }
 
-    publishTypeFamilyNamespace(name, argumentCount);
+    publishTypeFamilyHub(name, argumentCount);
 
     return true;
 }
@@ -2123,12 +2124,12 @@ bool Runtime::canRegisterTypeName(const NomadString& name) const {
     return !isHubVariable(name) && canRegisterHubMember(name);
 }
 
-void Runtime::publishTypeNamespace(const Type& type) {
+void Runtime::publishTypeHub(const Type& type) {
     if (!m_typeManager.ownsType(&type)) {
         throw NomadException("Cannot publish a type without matching registered catalog identity");
     }
     if (type.asCallback() == nullptr && type.asEvent() == nullptr) {
-        if (std::ranges::find(m_namespaceTypes, &type) != m_namespaceTypes.end()) {
+        if (std::ranges::find(m_hubTypes, &type) != m_hubTypes.end()) {
             throw NomadException("Type namespace '" + type.getTypeName() + "' is already published");
         }
 
@@ -2142,7 +2143,7 @@ void Runtime::publishTypeNamespace(const Type& type) {
             registerHubMember(type.getTypeName(), &type);
         }
 
-        m_namespaceTypes.push_back(&type);
+        m_hubTypes.push_back(&type);
     }
 }
 
@@ -2193,13 +2194,13 @@ void Runtime::registerEnumOperators(const EnumType* type) {
 
 }
 
-void Runtime::publishTypeFamilyNamespace(const NomadString& name, const NomadIndex argumentCount) {
+void Runtime::publishTypeFamilyHub(const NomadString& name, const NomadIndex argumentCount) {
     auto registeredArgumentCount = m_typeManager.getParameterizedTypeArgumentCount(name);
     if (!registeredArgumentCount.has_value()) {
         registeredArgumentCount = m_typeManager.getParameterizedConstructorArgumentCount(name);
     }
     const auto matchesRegistration = registeredArgumentCount.has_value() && *registeredArgumentCount == argumentCount;
-    const auto alreadyPublished = std::ranges::any_of(m_namespaceTypeFamilies, [&](const auto& family) {
+    const auto alreadyPublished = std::ranges::any_of(m_hubTypeFamilies, [&](const auto& family) {
 
         return family.name == name;
     });
@@ -2208,7 +2209,7 @@ void Runtime::publishTypeFamilyNamespace(const NomadString& name, const NomadInd
         throw NomadException("Cannot publish parameterized type '" + name + "': invalid registration or namespace collision");
     }
     registerHubMember(name, HubTypeFamily{argumentCount});
-    m_namespaceTypeFamilies.push_back({name, argumentCount});
+    m_hubTypeFamilies.push_back({name, argumentCount});
 }
 
 bool Runtime::ownsType(const Type* type) const {
@@ -3048,67 +3049,39 @@ EventId Runtime::registerEvent(
         return EventId::INVALID;
     }
 
-    const auto id = EventId{toNomadId(m_events.size())};
-
-    m_events.push_back(std::make_unique<EventDefinition>(id, name, parameterTypes));
-
-    // Also register event type.
-    if (
-        registerType(
-            std::make_unique<EventType>(
-                this,
-                m_typeManager.reserveTypeId(),
-                m_events.back().get()
-            )
-        ).isInvalid()
-    ) {
-        m_events.pop_back();
+    // Reserve publication bookkeeping before mutating the declaration catalog.
+    m_hubEvents.reserve(m_hubEvents.size() + 1);
+    const auto id = m_typeManager.createEvent(name, parameterTypes);
+    if (id.isInvalid()) {
         log::error("Cannot register event '" + name + "': event type registration failed");
 
         return EventId::INVALID;
     }
 
+    m_hubEvents.push_back(id);
     registerHubMember(name, id);
 
     return id;
 }
 
 EventId Runtime::getEventId(const NomadString& name) const {
-    for (const auto& event : m_events) {
-        if (event->name == name) {
 
-            return event->id;
-        }
-    }
-
-    return EventId::INVALID;
+    return m_typeManager.getEventId(name);
 }
 
 const EventDefinition* Runtime::getEventDefinition(const EventId id) const {
-    if (isIdOutOfRange(id.id, m_events.size())) {
 
-        return nullptr;
-    }
-
-    return m_events[toNomadIndex(id.id)].get();
+    return m_typeManager.getEventDefinition(id);
 }
 
 EventId Runtime::getFirstEventId() const {
-    if (m_events.empty()) {
-        return EventId::INVALID;
-    }
 
-    return EventId{0};
+    return m_typeManager.getFirstEventId();
 }
 
 EventId Runtime::getNextEventId(const EventId currentId) const {
-    const auto currentIndex = toNomadIndex(currentId.id);
 
-    if (currentIndex + 1 >= m_events.size()) {
-        return EventId::INVALID;
-    }
-
-    return EventId{currentId.id + 1};
+    return m_typeManager.getNextEventId(currentId);
 }
 
 StringId Runtime::registerString(const NomadString& string) {

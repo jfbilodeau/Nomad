@@ -584,9 +584,9 @@ struct-method calls return explicit updated receiver/result values.
 
 Use `Runtime::registerClass`, `registerStruct`, `createEnum`, and
 `registerOpaqueIdType` when declaring public APIs. They coordinate type
-registration and namespace publication. TypeManager owns the type catalog,
-allocates type/property IDs, and provides catalog-only creation APIs with the
-same names. Callable IDs belong to Runtime.
+registration and namespace publication. TypeManager owns the type and event
+catalogs, allocates type/property/event IDs, and provides catalog-only creation
+APIs. Callable IDs belong to Runtime.
 `TypeManager::getProperty(id)` and `Runtime::getProperty(id)` return the same
 borrowed property descriptor, or `nullptr` for an invalid or unregistered ID.
 For custom member descriptors, construct them with the ID from
@@ -822,12 +822,30 @@ rejected without replacing the original definition. `getEventId(name)` returns
 `const EventDefinition*`, or returns `nullptr` for an invalid or unregistered ID
 without logging.
 
+`TypeManager::createEvent(name, parameters)` creates a catalog-only event and
+its EventType, without publishing hub members. Names are opaque strings;
+duplicate names return `EventId::INVALID` without logging. Use
+`Runtime::registerEvent` for public declarations: catalog-only events are not
+adopted when hubs are registered later, and public registration still rejects
+names already present in the catalog.
+
+Runtime and TypeManager event lookup/enumeration APIs read the same catalog
+and return the same IDs and definition pointers, including catalog-only
+declarations. TypeManager owns the definitions and allocates their EventIds.
+EventType keeps its own detached declaration metadata.
+
 Borrowed definitions and their metadata remain read-only and address-stable
 through subsequent event registrations, including reentrant registration from
 host callbacks. They remain valid until the owning Runtime is destroyed; do not
 retain them beyond that lifetime. This does not make concurrent registration
 thread-safe. Check the pointer before reading a name or parameters, or use its
 presence directly when only testing whether an ID is registered.
+
+Allocation and construction exceptions propagate; event registration is not a
+whole-registration transaction. A definition retained after EventType
+construction fails remains queryable but is not published by later hub
+rebuilding. A completed public declaration retains its publication intent if
+hub insertion subsequently throws, so later rebuilding can still adopt it.
 
 For independently mutable or longer-lived metadata, explicitly copy the
 definition after checking the pointer: `EventDefinition snapshot = *definition;`.

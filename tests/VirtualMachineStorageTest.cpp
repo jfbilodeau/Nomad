@@ -8,6 +8,7 @@
 #include <nomad/interpreter/InterpreterContext.hpp>
 
 #include <nomad/script/Closure.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/ExecutionStateGuard.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/InstructionDump.hpp>
@@ -1695,6 +1696,86 @@ BOOST_AUTO_TEST_CASE(raw_fallback_calls_preserve_reference_captures_and_cleanup_
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
+BOOST_AUTO_TEST_CASE(event_creation_failures_preserve_catalog_data_without_publishing_incomplete_types) {
+    const NomadString hubName = "eventCreationFailure";
+    const NomadString memberName(64, 'e');
+    const auto eventName = hubName + "." + memberName;
+    auto allocationCount = NomadIndex{0};
+    auto incompleteDeclarations = NomadIndex{0};
+    auto completedDeclarations = NomadIndex{0};
+    for (auto failureAt = NomadIndex{0}; failureAt <= allocationCount; ++failureAt) {
+        Runtime runtime;
+        const auto hubId = runtime.registerHub(hubName, HubMode::Opened);
+        BOOST_REQUIRE(hubId.isValid());
+        auto& manager = runtime.getTypeManager();
+        const auto typeId = TypeId{toNomadId(manager.getTypeCount())};
+        const std::vector<EventParameter> parameters{
+            {NomadString(64, 'p'), runtime.getIntegerType()->getId(), "int"}
+        };
+        auto failed = false;
+        auto registered = EventId::INVALID;
+        callAllocations = 0;
+        catalogAllocationRequests = 0;
+        callAllocationRejected = false;
+        const auto originalChain = previousAllocationHook;
+        const auto originalRejection = rejectedCatalogAllocation;
+        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+        {
+            const auto previousHook = previousAllocationHook;
+            BOOST_SCOPE_EXIT_ALL(=) {
+                _CrtSetAllocHook(previousHook);
+                previousAllocationHook = originalChain;
+                rejectedCatalogAllocation = originalRejection;
+            };
+
+            rejectedCatalogAllocation = failureAt;
+            try {
+                registered = runtime.registerEvent(eventName, parameters);
+            } catch (const std::bad_alloc&) {
+                failed = true;
+            }
+        }
+
+        if (failureAt == 0) {
+            allocationCount = catalogAllocationRequests;
+            BOOST_REQUIRE(allocationCount != 0);
+            BOOST_REQUIRE(registered == EventId{0});
+        }
+
+        BOOST_REQUIRE(failed == (failureAt != 0));
+        BOOST_REQUIRE(callAllocationRejected == (failureAt != 0));
+        const auto id = manager.getEventId(eventName);
+        const auto* declaration = manager.getEventDefinition(id);
+        BOOST_TEST(runtime.getEventDefinition(id) == declaration);
+        const auto complete = manager.getType(typeId).has_value();
+        if (declaration != nullptr) {
+            BOOST_TEST(id == EventId{0});
+            BOOST_TEST(declaration->name == eventName);
+            BOOST_REQUIRE(declaration->parameters.size() == 1U);
+            BOOST_TEST(declaration->parameters.front().name == parameters.front().name);
+            if (failed) {
+                incompleteDeclarations += !complete;
+                completedDeclarations += complete;
+            }
+        }
+
+        BOOST_REQUIRE(runtime.registerHub("eventCreationFailureGrowth", HubMode::Opened).isValid());
+        const auto* member = runtime.getHub(hubId)->getMember(memberName);
+        if (complete) {
+            BOOST_REQUIRE(declaration != nullptr);
+            BOOST_REQUIRE(member != nullptr);
+            BOOST_TEST(std::get<EventId>(*member) == id);
+        } else {
+            BOOST_TEST(member == nullptr);
+        }
+
+        BOOST_TEST(manager.getEventDefinition(id) == declaration);
+    }
+
+    BOOST_TEST(incompleteDeclarations != 0U);
+    BOOST_TEST(completedDeclarations != 0U);
+}
+
 BOOST_AUTO_TEST_CASE(failed_hub_rebuilding_rolls_back_the_candidate_and_allows_retry) {
     for (const auto childAddition : {false, true}) {
         auto allocationCount = NomadIndex{0};

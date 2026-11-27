@@ -2,7 +2,19 @@
 
 This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMachine`, and `InterpreterContext`. It holds the approved decisions, the staged work, and every finding with its priority, evidence, verification status, and target step. Update the status as each step lands.
 
-**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Step 8 is in progress: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup and approved fixed-type borrowed views are implemented; the function getter remains dynamic. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup and measured registration-move optimization are complete. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The last full 13-entry run passed after R18's type-view changes. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly; remaining hub/event declaration ownership and the singleton-hub redesign remain separate work.
+**Current scope:** Remaining step 8 performance work is deferred at the user's
+request: "Let's skip the performance stuff for now." This includes the approved
+but unimplemented lexical-grammar prototype and remaining measurements.
+Completed changes, decisions, and benchmark evidence stay intact. Step 8 is
+not marked complete; resuming performance work requires explicit agreement.
+
+**Active non-performance scope:** Event declaration ownership is implemented
+on TypeManager, including EventIds and EventTypes. Runtime retains its public
+facade and namespace/publication responsibilities. The development build and
+all 13 existing CTests pass. Next: review hub declaration ownership separately;
+singleton-hub language decisions and performance work remain out of scope.
+
+**Status:** Decisions D1–D5 are approved. Steps 1 through 7 are implemented or resolved by review. Remaining Step 8 performance work is deferred: the approved free-function name index is implemented and measured against the checked Debug/Release baseline. It is retained as-is after review; method/constructor resolution now collects candidates from existing owner catalogs and is measured without another index. R2's string interning/name-lookup baselines are recorded; string indexing is deferred after confirming current production name lookups are compiler-side. V4 is implemented and measured: callable IDs live in the existing script-frame header and script-call targets use IDs; no VM cache or parallel index was added. R10's qualification cleanup, R11's shared hub/member conflict predicate, R14's registration-boundary work, and R16's navigation cleanup are complete. R17 is complete: owned metadata has const-correct views, and the existing mutable-context facade is explicitly retained and documented. R18's type-view/category cleanup and approved fixed-type borrowed views are implemented; the function getter remains dynamic. R19 is complete: parser argument dispatch shares the catalog-owned parameter classifier through Runtime. R20 is complete: context-variable rejection uses the existing shared lookup and its approved diagnostic origin. R22 is resolved with approval: native signature validation reuses the mutable native lookup, while compiler-placeholder RTTI is intentionally retained. R24's reviewed style cleanup is implemented; the concurrent native-getter rename was preserved with an approved const-overload delegation fix. R25 is complete with an approved optional native-member lookup; its count-conversion claim is a false positive. R28 is complete: count/script metadata and free-function lookup names are aligned, with specialized existence and source-category queries. V14 is complete: remaining VM parameter/local names are normalized; the current function-variable accessors are already symmetric. K5 is resolved by review with approval: existing shared instruction/argument-cleanup helpers and modest specialized emitter duplication are retained. K6 shares reserved-name checks and removes redundant classification from definition lookup, preserving the two distinct resolution contracts with approval. The approved registration-boundary revision is implemented: TypeManager type/family creation is catalog-only with opaque names; Runtime coordinates public namespace publication and enum execution registrations. Stored-property collision validation uses the declaring type's catalog. Global member-template compatibility and public parser lookup belong to Runtime; TypeManager stores local family signatures and owns parameter-shape and predicate-type metadata queries. Class rejection remains non-logging. R3, R4's publication guards, the native free/hub registration split, and class/struct execution-registration orchestration are implemented. R5 is resolved by ownership-contract review without a code change. R6's checked lookups are implemented under the approved failure contracts, with explicit unchecked constant accessors preserving compiler-trusted VM reads. R7's compiler permission checks and checked host callback contract are implemented; trusted VM dispatch remains unchecked. R8's obsolete documentation guards are removed and registration documentation is retained. R12 is resolved by review: source identifier syntax is already compiler-owned. R23's string-setter cleanup and measured registration-move optimization are complete. The extended opt-in benchmark builds and passes checked active-frame and no-query call workloads in Windows Debug and Release. Six selected Windows Debug CTests pass after V4; the existing 13 entries remain. Four targeted Windows Debug CTests passed after owner-catalog candidate narrowing. The full 13-entry run passed after the event declaration ownership move. Callable/type ID exhaustion and allocation-failure ordering were source-reviewed, not fault-injected. C4 retains the approved name-based host conveniences alongside resolved-ID storage APIs. V5's checked storage query is retained after Windows Debug measurements. The declaration seal was removed. TypeManager no longer calls Runtime directly and now owns event declarations and IDs; hub declaration ownership and the singleton-hub redesign remain separate work.
 
 **I11:** Conditional owned-array field-setter scratch is implemented and validated with unchanged Type semantics. Debug requests drop by one; Release timings are mixed, including slower wide-field samples.
 
@@ -20,7 +32,7 @@ This plan records the review of `Runtime`, `Interpreter`, `Compiler`, `VirtualMa
 
 **C2:** The approved vector-scratch rollback is implemented and validated. The optimization-specific allocation test is removed; existing storage/lifecycle coverage and all benchmark evidence remain. Restored Debug update requests are one for empty/integer/string and two for the pair. The selected remaining CTest and checked Debug/Release benchmarks pass; ownership, retirement, other scratch consumers, and public APIs are unchanged. The scratch experiment closes without a speedup claim. Further C2 storage redesign remains unapproved; next reviewable scope is I5/Q2's dynamic-format cost breakdown before a caching decision.
 
-**I5/Q2:** The current dynamic-format baseline is measured and checked in Debug and Release. Staged tokenization is the largest phase in all three expressions, followed by Compiler/Context preparation; template scanning alone is much smaller than complete placeholder formatting. Actual host and compiled calls retain live inputs and unchanged ownership/VM state. Two selected Debug CTests and checked benchmarks pass; no production cache, reuse, or behavior change was made. Next reviewable scope: discuss a bounded placeholder-preparation reuse design or defer, including lifetime, live bindings, compiler setup, and diagnostics.
+**I5/Q2:** The dynamic-format baseline and generic per-thread fixed lexical-grammar design are recorded. The approved prototype is unimplemented and deferred with the remaining performance sweep. No token/AST cache or Compiler reuse is approved. Keep the baseline and design for a possible explicitly agreed resumption; no production code is changed by this deferral.
 
 **Validation update:** Before C2, the user reported completing a full rebuild and running all tests. This is user-reported validation, not another assistant-verified full-suite run.
 
@@ -171,12 +183,123 @@ Step 5's I1/I2 running-state review and approved change are recorded below. Rele
 - Class/struct execution-registration orchestration is implemented on `Runtime`: native/script methods and constructors, native class properties, indexers, and iterable factories. The former `TypeManager` entry points and their private callable builders were moved, not retained as forwarding aliases.
 - Verified with `RunCtest_CMakeTools` after the removal: the build passes and all 13 CTest entries pass. The 26 failures the seal caused (`nomad_test_bindings` 4, `nomad_test_language` 8, `nomad_test_remaining` 14) are gone. Only seal-specific assertions were removed from the tests.
 - Member descriptors still hold their own ownership. Descriptor ownership remains with the declaring type.
-- Stored-property declarations, property ID allocation, and type/property catalogs remain on `TypeManager`. Declaring types still own their member descriptors; `Runtime` allocates and catalogs callable IDs and indexes native members. TypeManager now has no direct Runtime calls or Runtime.hpp source dependency. It retains Runtime identity and callback parameters for descriptor construction. Hub/event declaration ownership and the singleton-hub redesign remain separately approved work; removing these calls does not claim that full architectural migration is complete.
+- Stored-property declarations, property ID allocation, and type/property catalogs remain on `TypeManager`. Declaring types still own their member descriptors; `Runtime` allocates and catalogs callable IDs and indexes native members. TypeManager has no direct Runtime calls or Runtime.hpp source dependency. It retains Runtime identity and callback parameters for descriptor construction and now also owns event declarations and EventIds. Hub declaration ownership and the singleton-hub redesign remain separate work; this does not claim that full architectural migration is complete.
 - Both approved registration-boundary stages are implemented. Class rejection is non-logging, and type/family names are opaque catalog strings, including empty/internal names. TypeManager preserves descriptor/ID integrity and nominal uniqueness; callback/event metadata retain non-nominal display-name behavior. Runtime's public declaration entry points coordinate namespace policy and publication. Source syntax remains compiler-owned, and actual construction/allocation exceptions propagate.
 - Compiler registration, built-in collections, game/audio/log APIs, and existing contract tests now use the Runtime member entry points. Registration keeps the existing validation, diagnostics, callback signatures, owner categories, and layout behavior; it does not execute callbacks or initializers.
-- After review, move the remaining declaration and execution responsibilities, including hub and event declarations, in separately approved steps. Do not revive the superseded name-check-only refactoring.
+- Event declaration ownership is implemented and validated below. Review the remaining hub declaration and execution responsibilities in separately approved steps. Do not revive the superseded name-check-only refactoring.
 - Registration-before-compile setup, Game API setup, and fresh runtimes for language-server analysis batches existed only to satisfy the seal and are dropped. Whether the Interpreter or VM should require successful compilation is an open question (Q4).
 - The earlier blanket V5 `static_cast` and ScriptObject field-table proposals were not implemented. The checked query preserves receiver validation and per-instance layouts; registration ownership changes do not authorize changing those contracts.
+
+#### Approved event declaration ownership move
+
+- The user selected `events_first` as the first non-performance ownership
+  step. At review, Runtime owned the stable event-definition vector and allocated
+  EventIds; TypeManager already owned EventType objects. Consolidate event
+  declaration storage, IDs, catalog creation, and metadata queries on
+  TypeManager before considering hub/singleton changes.
+- Move the existing `vector<unique_ptr<EventDefinition>>` catalog out of
+  Runtime. Keep individually owned definitions so borrowed pointers remain
+  stable through registration growth and reentry until the owning Runtime
+  is destroyed. Do not replace ordinary detached snapshots or EventType's
+  independent const definition copy with shared/borrowed mutable state.
+- TypeManager supplies catalog-only event creation and the current name/ID
+  lookup and first/next enumeration behavior. It allocates EventIds and
+  associated EventType declarations using its existing type-registration
+  machinery. Names remain opaque catalog strings; do not call Runtime
+  namespace policy or publication from TypeManager.
+- Runtime keeps `registerEvent` and the existing public event query/enumeration
+  facade. Registration still performs namespace and duplicate checks,
+  reports the existing errors, delegates catalog creation, and publishes the
+  event's typed HubMember only after a valid registration. These are retained
+  host APIs, not obsolete compatibility shims.
+- Preserve 0-based contiguous EventIds, ordering, duplicate/rejection
+  behavior, checked missing-definition results, parameter/name/doc ownership,
+  non-nominal EventType display names, and existing Type identity rules.
+  No new event-parameter restrictions, syntax, dispatch/callback behavior,
+  initialization requirement, or declaration seal is approved.
+- Retain the current invalid-type rejection cleanup and propagating
+  exception/publication behavior. This step does not introduce a new
+  whole-registration transaction, undo Runtime side effects, or silently
+  strengthen failure guarantees. Discuss any necessary ordering/failure
+  deviation before implementing it.
+- Keep Runtime-to-TypeManager dependency direction. TypeManager may pass its
+  borrowed Runtime identity to an EventType constructor, as existing catalog
+  creation does, but must not call Runtime registration/publication APIs.
+  Use narrow public catalog methods rather than friendship.
+- Hub storage/member maps and current qualified-name behavior remain on
+  Runtime in this step. Do not add HubType/singleton instances, aliases,
+  receiver semantics, parent-child hub relationships, new VM instructions,
+  indexes, or other performance changes. The performance deferral remains
+  in force; no lookup benchmark run is part of this ownership implementation.
+- Add focused catalog/publication/ID-order and stable-definition coverage
+  in existing tests, keeping R30's growth/reentry and detached-copy behavior.
+  Runtime/TypeManager layout changes require dependent consumers to be
+  rebuilt and validated. Run CTest directly through the workspace integration,
+  without a separate pre-test build, and validate the existing full suite
+  before closing this ownership step. Update host/catalog documentation.
+- This design review changed only the plan. The implementation and validation
+  are recorded below. Review hub declaration ownership separately afterward;
+  settle Q5-Q7 before any singleton language changes.
+
+#### Event declaration ownership implementation and validation
+
+- TypeManager owns the individually allocated EventDefinition catalog and
+  allocates EventIds. `createEvent` creates the definition and associated
+  EventType through existing catalog registration. Name/ID queries and
+  first/next enumeration now belong to this catalog. No reverse
+  TypeManager-to-Runtime registration/publication calls or friendship were added.
+- Runtime retains its public event API, namespace/duplicate checks and errors,
+  and typed HubMember publication. Its queries delegate to TypeManager and
+  preserve the existing results and enumeration, including catalog-only events.
+  EventType still owns its detached const definition copy; borrowed definitions
+  and parameter addresses remain stable through growth and reentry.
+- During implementation, review identified that rebuilding all catalog events
+  would incorrectly adopt TypeManager-only declarations into hubs. The user
+  explicitly approved `completed_catalog_only`: Runtime records completed
+  public EventIds separately for namespace rebuilding. Bookkeeping capacity
+  is reserved before creation; publication intent is recorded after catalog
+  and EventType success, before hub insertion.
+- This approval intentionally changes one legacy exception edge: a definition
+  retained by an EventType construction exception stays queryable but is not
+  silently published on a later hub rebuild. A completed public declaration
+  whose hub insertion throws retains publication intent and can be adopted
+  on rebuilding. No whole-registration transaction or new rollback framework
+  is introduced. Invalid EventType registration still removes the attempted
+  definition; ordinary allocation/construction exceptions propagate.
+- Catalog-only names remain opaque, including empty/internal strings and names
+  colliding with hub members. Their creation does not publish namespace members,
+  even when hubs are added later. Public registration still rejects names
+  already in the catalog and uses the existing namespace checks and logging.
+  No new parameter restrictions, ID format, dispatch behavior, declaration seal,
+  or initialization requirement is introduced.
+- Two focused TypeManager tests cover opaque catalog names and metadata/type
+  identity, input ownership, duplicate rejection, mixed public/catalog-only
+  contiguous IDs and enumeration, stable pointers, and late parent/child hub
+  rebuilding without private-event adoption. Existing R30 detached-copy and
+  actual reentrant-registration coverage remain intact.
+- A focused existing-file Debug failure test replays eligible allocation
+  failures with fresh fixtures. It verifies both retained incomplete
+  declarations remaining unpublished and completed declarations retaining
+  publication through later rebuilding. It reuses the existing hook and
+  excludes Debug proxy-sized requests, including same-sized real allocations.
+  This is bounded failure coverage, not all-allocation or cross-platform
+  injection. No performance benchmark or production fault API was added.
+- All 13 existing Windows Debug CTest entries pass, run directly through the
+  workspace integration without a separate pre-test build. Compiler exports,
+  LSP, module/runtime, distribution/package integrations, staged scripts,
+  binding/language/remaining/audio tests, cleanup contracts, and packaged
+  graphical smoke are green. The explicit `nomad-development` workspace build
+  also passes after testing, covering the updated tools, modules, runtime and
+  tests against the changed Runtime/TypeManager layouts.
+- Embedding documentation now describes catalog-only event creation, shared
+  query identity, stable metadata, and the approved exception/publication
+  contract. No manual gameplay, Release suite, concurrent-registration
+  guarantee, or performance improvement is claimed.
+- This completes the bounded events-first implementation. Performance remains
+  deferred, and hub storage/member maps, qualified lookup, singleton instances
+  and VM behavior are unchanged. Next reviewable scope: review hub declaration
+  ownership separately, then obtain decisions on Q5-Q7 before any singleton-hub
+  language changes.
 
 #### Planned hub types and singleton instances
 
@@ -394,9 +517,16 @@ Default: no behavior change. Consolidate duplicated helpers and align names and 
 - K6 validation: the workspace build and existing `nomad_test_language` and `nomad_test_tooling` CTests pass on `windows-debug`, including context-prefix versus exact lookup, lexical receivers in callbacks/formats, source functions, constants, event/dynamic arguments, and compiler diagnostics. No new tests were needed for this behavior-preserving cleanup. No full-suite rerun, manual gameplay validation, or performance measurements were performed; the last full 13-entry run remains R18's validation above.
 - Step 7 is complete. Next reviewable scope: step 8's lookup/registration performance baselines before selecting an indexed-lookup change. R26/R27, R23's remaining optimization, and R18 caching stay in that measured sweep; separately unresolved singleton-hub semantics remain pending.
 
-### Step 8: performance sweep (in progress)
+### Step 8: performance sweep (remaining work deferred)
 
-Measure each change before and after on the same workload.
+The user requested skipping performance work for now. Keep completed changes
+and all measurements; do not start the approved grammar prototype or additional
+benchmarking/optimization until this scope is explicitly resumed.
+Event declaration ownership is the separately approved active non-performance
+scope above. Hub declaration ownership and singleton-hub design remain
+unfinished; their implementation is not authorized by the performance deferral.
+
+If resumed, measure each change before and after on the same workload.
 
 - Lookups: R1, R2, R13, R15, R26, R27 (name and interning indexes).
 - Hot paths: V4 (current callable without scanning), V6 (native property accessors without copying), V16 (no allocation per host call), I11 (no scratch vector per write), R30 (no event copies), R23 (move instead of copy), R18 (cache well-known type IDs).
@@ -4409,6 +4539,57 @@ Interpretation and validation:
   do not freeze declarations or add language restrictions to simplify a
   cache. No implementation is authorized before that design decision.
 
+#### I5/Q2 approved generic lexical-grammar reuse prototype
+
+- The user selected `thread_local_grammar`. Prototype reuse of the existing
+  const `LineGrammar<NomadString::const_iterator>` in
+  `Tokenizer::tokenizeLines` with function-local static thread-local storage,
+  rather than rebuilding it for every Tokenizer. This applies generically
+  to all Tokenizer callers, not just dynamic formatting.
+- The existing grammar contains fixed lexical rules and actions that
+  construct Token values. It does not capture a Runtime, Compiler,
+  InterpreterContext, source, or resolved declaration. Reuse the same grammar
+  type/rules; do not add a new grammar abstraction, configuration, public API,
+  tokenized-source cache, AST cache, or format-specific compiler rule.
+- Keep input iterators, output tokens, columns, line buffers, source names,
+  diagnostics, and parser cursors local to each Tokenizer/call. Current
+  malformed-token reporting still targets that Tokenizer's CompilerContext.
+  Parsing, resolution, evaluation, live types/bindings, and metadata lookup
+  remain fresh; no declaration freeze or new language restriction is approved.
+- Use a const grammar per thread, not one shared mutable process-wide parser.
+  Do not add synchronization or mutable parse state to the grammar. Preserve
+  same-thread reentry and independent source/context state across threads.
+  Context-owned tokens and ordinary Type-driven value ownership stay unchanged.
+- This intentionally retains one fixed grammar until its thread exits,
+  including after any particular Runtime or context is destroyed.
+  First-use construction is not eliminated; do not promise startup or
+  retained-memory improvement. Keep initialization failures visible and
+  introduce no fallback/catch framework. Successful later calls naturally
+  avoid reconstruction-related allocation failure points.
+- Leave Compiler creation and setup callbacks unchanged. Reusing a Compiler
+  could change callback frequency and carry preparation state between
+  placeholders; that separate behavior is not approved by this prototype.
+  Runtime, Interpreter, CompilerContext, and parser APIs remain unchanged.
+- The existing tokenization phase includes grammar construction, source
+  splitting, scanning, and token storage/copies. Its measurements do not
+  isolate the grammar-construction share. No precise saving or Release
+  improvement is promised; compare actual post-change tokenization and
+  full host/compiled formatting results, not an assumed percentage.
+- Add focused coverage through existing public APIs and the existing Debug
+  allocation probe: reproduce repeated construction cost before the change,
+  check cold versus warm tokenization on an isolated thread, and preserve
+  token contents, independent source/diagnostic coordinates, and thread/context
+  isolation. Retain existing lexical, malformed/nested-format, live-binding,
+  and reentry regressions. Do not add production inspection or fault APIs.
+- Run the selected language/remaining CTests directly without a separate
+  pre-test build, then build and execute the unchanged checked Debug/Release
+  benchmark sequentially. Keep all ranges, request counts, first-use/lifetime
+  limitations, and existing controls. The format baseline remains the
+  reference; no token/AST caching or Compiler reuse may be added implicitly.
+- This review edits only the plan. Next reviewable scope: implement and
+  validate the approved grammar-storage-duration prototype, then stop for
+  retention review before any other preparation or caching change.
+
 ## Corrections to earlier review notes
 
 - R25's alleged size conversion is not present: `NomadIndex` is `std::size_t`. Its lookup-result revision is implemented separately.
@@ -4423,7 +4604,7 @@ Interpretation and validation:
 ## Open questions
 
 - **Q1 (resolved):** The debug-only kind check was removed. The accessors are `getUncheckedNative*`, inline in `Runtime.hpp`.
-- **Q2 (step 8):** Current host/compiled formatting and fresh placeholder phases are measured above. Tokenization and Compiler/Context preparation dominate the staged cases; template-segment caching alone does not remove them. Next: choose a bounded reuse/cache design or defer, preserving live bindings, mutable metadata, setup semantics, diagnostics, and ownership. No cache is approved.
+- **Q2 (step 8, deferred):** The generic per-thread fixed lexical-grammar reuse prototype remains approved but unimplemented; performance work is skipped for now. Explicitly agree to resume before implementation/retention review. Token/AST caching and Compiler reuse remain unapproved.
 - **Q3 (step 4):** Resolved. `InterpreterContext` reads the frame indexes through the read-only `getParameterIndex()` and `getVariableIndex()` accessors, and the `friend` declaration is removed.
 - **Q4 (open):** Should the Interpreter or VM reject a runtime whose script compilation did not succeed? The standing rule says script initialization is a host precondition and the VM does not validate readiness. Confirm that rule or change it explicitly.
 - **Q5 (planned hub types):** When hub functions become methods, what are their `this` and unqualified member-lookup semantics? Existing hub functions require fully qualified hub-member references; do not silently change receiver or lexical lookup behavior.
@@ -4496,7 +4677,7 @@ Priority: P1 = correctness or hot-path cost. P2 = correctness risk, API problem,
 | I2 | P2 | consistency | Native function/method stop behavior depends on owner and struct-signature heuristics | `Interpreter.cpp`: runFunction, runStructMethod, runObjectMethod | Fixed with I1: one native function/method restoration policy; duplicate helper/heuristic removed | 5 |
 | I3 | P2 | correctness | Format reset policy differs for expression, literal-only, and empty templates using fresh or live caller contexts | `Interpreter.cpp`: evaluateFormatExpression, formatString; `Expression.cpp`: DynamicFormatExpression/FormatStringLiteral::onEvaluate; `OpCode.cpp`: op_dynamic_format_execute | Fixed under approved disposable-context/current-call-diagnostics policy: boundary/segment resets, live bindings retained, no preservation guard | 5 |
 | I4 | P2 | redundancy | Specialized source and placeholder compilation repeat setup/diagnostic handling; each dynamic expression creates a Compiler and runs setup callbacks | `Interpreter.cpp`: execute, evaluateFormatExpression; `Runtime.cpp`: createCompiler; `LanguageFormatStringFunctionTest.cpp`: compiler-creation regression | Resolved by user decision: keep specialized parsers and modest duplication; retain per-placeholder setup behavior, no shared-session abstraction or reuse | 5 |
-| I5 | P2 | perf | Dynamic templates repeat scanning and per-placeholder compiler/tokenizer/parser preparation | `Interpreter.cpp`: formatString/evaluateFormatExpression; `OpCode.cpp`: dynamic-format frame context; checked full-call/staged-phase benchmark | Debug/Release baseline measured; tokenization/preparation dominate staged cases; reuse/cache design review follows, no production change | 8 (Q2) |
+| I5 | P2 | perf | Dynamic templates repeat scanning and per-placeholder compiler/tokenizer/parser preparation | `Interpreter.cpp`: formatString/evaluateFormatExpression; `Tokenizer.cpp`: fixed grammar reconstruction; checked full-call/staged-phase benchmark | Baseline/design retained; approved grammar prototype unimplemented and deferred at user request; token/AST caches and Compiler reuse unapproved | 8 (Q2, deferred) |
 | I6 | P3 | correctness | execute overloads use different catch scopes; the string wrapper dereferences getCallable without a null guard | `Interpreter.cpp`: execute overloads; `InterpreterContext.cpp`: constructors, getCallable, validateFrame; `InterpreterTest.cpp`, `InterpreterReceiverTest.cpp` | Resolved by review: callable is owned/non-null; stale-frame validation throws; both source paths report failures as diagnostics while typed calls propagate | 5 |
 | I7 | P2 | redundancy | Closure count validation is duplicated; raw and typed argument validation have distinct contracts | `Closure.cpp`: acceptsArgumentCount; `Interpreter.cpp`: runFunction(Closure); `VirtualMachine.cpp`: run(Closure) | Shared equivalent count check; specialized runtime/type/storage/result checks retained intentionally | 5 |
 | I8 | P3 | redundancy | Compiled-body range check repeated at host boundaries and accepts an unset end sentinel | `ScriptCallableBase.cpp`: hasCompiledBody; `Interpreter.cpp`: callable entry points; `VirtualMachine.cpp`: run(Closure); `FormatString.cpp`: appendFunction | Fixed: shared range predicate rejects unset endpoints, empty/reversed ranges; no new prepared-VM readiness check | 5 |

@@ -215,7 +215,7 @@ public:
     void initializeScripts();
 
     // Types
-    // Public declarations coordinate catalog registration and namespace publication.
+    // Public declarations coordinate catalog registration and hubs publication.
     [[nodiscard]] TypeId registerClass(
         NomadString name,
         ClassMode mode,
@@ -269,8 +269,8 @@ public:
     [[nodiscard]] const TypeManager& getTypeManager() const;
     // Checks hub-name and member availability without logging.
     [[nodiscard]] bool canRegisterTypeName(const NomadString& name) const;
-    void publishTypeNamespace(const Type& type);
-    void publishTypeFamilyNamespace(const NomadString& name, NomadIndex argumentCount);
+    void publishTypeHub(const Type& type);
+    void publishTypeFamilyHub(const NomadString& name, NomadIndex argumentCount);
     [[nodiscard]] bool canRegisterMemberSignature(
         const NomadString& name,
         MemberType type,
@@ -820,8 +820,9 @@ private:
     const Type* m_fileNameType = nullptr;
     const Type* m_functionNameType = nullptr;
     const Type* m_lineNumberType = nullptr;
-    std::vector<const Type*> m_namespaceTypes;
-    std::vector<TypeFamilyNamespace> m_namespaceTypeFamilies;
+    std::vector<const Type*> m_hubTypes;
+    std::vector<TypeFamilyNamespace> m_hubTypeFamilies;
+    std::vector<EventId> m_hubEvents;
     std::vector<UnaryOperatorRegistration> m_unaryOperators;
     std::vector<BinaryOperatorRegistration> m_binaryOperators;
     std::vector<std::unique_ptr<Function>> m_functions;
@@ -830,7 +831,6 @@ private:
     std::vector<KeywordDefinition> m_keywords;
     VariableMap m_constantsMap;
     std::vector<RuntimeValue> m_constants;
-    std::vector<std::unique_ptr<EventDefinition>> m_events;
     // Compile-time only; see `registerString`.
     std::vector<NomadStringObject*> m_strings;
     std::vector<DynamicVariableRegistration> m_dynamicVariables;

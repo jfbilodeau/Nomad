@@ -133,7 +133,7 @@ BOOST_AUTO_TEST_CASE(namespace_conflict_checks_do_not_log_and_registration_repor
     sink->clear();
     const auto typeId = runtime.getTypeManager().reserveTypeId();
     ClassType type(&runtime, typeId, "conflicts.taken", ClassMode::Closed);
-    BOOST_CHECK_THROW(runtime.publishTypeNamespace(type), NomadException);
+    BOOST_CHECK_THROW(runtime.publishTypeHub(type), NomadException);
     logger.flush();
     BOOST_TEST(sink->getEntries().empty());
 }

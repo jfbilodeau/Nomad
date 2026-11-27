@@ -7,6 +7,7 @@
 #include <nomad/script/ClassType.hpp>
 #include <nomad/script/CompositeType.hpp>
 #include <nomad/script/EnumType.hpp>
+#include <nomad/script/Event.hpp>
 #include <nomad/script/StructType.hpp>
 
 #include <algorithm>
@@ -756,6 +757,73 @@ TypeId TypeManager::createEnum(
     return registerType(std::make_unique<EnumType>(
         &m_runtime, id, std::move(name), std::move(values), std::move(documentation)
     ));
+}
+
+EventId TypeManager::createEvent(
+    const NomadString& name,
+    const std::vector<EventParameter>& parameters
+) {
+    if (getEventId(name).isValid()) {
+
+        return EventId::INVALID;
+    }
+
+    const auto id = EventId{toNomadId(m_events.size())};
+    m_events.push_back(std::make_unique<EventDefinition>(id, name, parameters));
+    if (
+        registerType(
+            std::make_unique<EventType>(
+                &m_runtime,
+                reserveTypeId(),
+                m_events.back().get()
+            )
+        ).isInvalid()
+    ) {
+        m_events.pop_back();
+
+        return EventId::INVALID;
+    }
+
+    return id;
+}
+
+EventId TypeManager::getEventId(const NomadString& name) const {
+    for (const auto& event : m_events) {
+        if (event->name == name) {
+
+            return event->id;
+        }
+    }
+
+    return EventId::INVALID;
+}
+
+const EventDefinition* TypeManager::getEventDefinition(const EventId id) const {
+    if (isIdOutOfRange(id.id, m_events.size())) {
+
+        return nullptr;
+    }
+
+    return m_events[toNomadIndex(id.id)].get();
+}
+
+EventId TypeManager::getFirstEventId() const {
+    if (m_events.empty()) {
+
+        return EventId::INVALID;
+    }
+
+    return EventId{0};
+}
+
+EventId TypeManager::getNextEventId(const EventId currentId) const {
+    const auto currentIndex = toNomadIndex(currentId.id);
+    if (currentIndex + 1 >= m_events.size()) {
+
+        return EventId::INVALID;
+    }
+
+    return EventId{currentId.id + 1};
 }
 
 const Type* TypeManager::getCallbackType(
