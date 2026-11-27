@@ -8,6 +8,10 @@ but unimplemented lexical-grammar prototype and remaining measurements.
 Completed changes, decisions, and benchmark evidence stay intact. Step 8 is
 not marked complete; resuming performance work requires explicit agreement.
 
+The benchmark harness and performance-only allocation/copy-count checks have
+been removed. Measurements below are retained as historical evidence, not
+instructions for running current tests.
+
 **Active non-performance scope:** Event declaration ownership is implemented
 on TypeManager, including EventIds and EventTypes. Runtime retains its public
 facade and namespace/publication responsibilities. The development build and
@@ -536,10 +540,10 @@ If resumed, measure each change before and after on the same workload.
 #### Callable-name lookup and registration baseline
 
 - The user approved a small reusable benchmark instead of a session-only harness.
-  [RuntimeLookupBenchmark.cpp](../../tests/RuntimeLookupBenchmark.cpp) builds as
-  `nomad-lookup-benchmark`, linked only to `Nomad::Language`. It is excluded from
-  normal builds and is not registered with CTest. The generated `ALL_BUILD` and
-  `nomad-development` dependencies exclude it; the existing 13 tests are unchanged.
+  The former `RuntimeLookupBenchmark.cpp` built as `nomad-lookup-benchmark`,
+  linked only to `Nomad::Language`. It was excluded from normal builds and was
+  not registered with CTest. The generated `ALL_BUILD` and `nomad-development`
+  dependencies excluded it; the existing 13 tests were unchanged.
 - Protocol: five fresh Runtime samples per catalog size, adding 100, 1,000, or
   5,000 uniquely named native free functions, each with one integer parameter.
   The initial catalog contains 14 callables. Registration timing excludes Runtime
@@ -553,7 +557,7 @@ If resumed, measure each change before and after on the same workload.
   existing `out/build/windows-debug` multi-configuration build. Generated project
   settings confirm disabled optimization/debug CRT for Debug and `/O2`/release CRT
   for Release in both the benchmark and language library. Both builds and checked
-  benchmark executions pass. The build guide describes rerunning the same target.
+  benchmark executions passed.
 - Values below are five-sample medians with `[min,max]` ranges. Lookup times are
   microseconds per call; registration times are total milliseconds. These are
   synthetic warm-name measurements on a shared machine, not whole-compilation,

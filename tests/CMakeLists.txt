@@ -17,8 +17,6 @@ add_executable(
     ./DeclareIdTest.cpp
     ./DeferredNativeFunctionTest.cpp
     ./DeferredNativePropertyTest.cpp
-    ./DynamicVariableCopyProbe.cpp
-    ./DynamicVariableCopyProbe.hpp
     ./EntitySpriteAnchorTest.cpp
     ./EntityTextTest.cpp
     ./EventRegistrationCopyType.cpp
@@ -166,18 +164,6 @@ if(NOMAD_ENABLE_SANITIZERS)
 endif()
 
 nomad_copy_runtime_dependencies(nomad_test)
-
-add_executable(
-    nomad-lookup-benchmark EXCLUDE_FROM_ALL
-    DynamicVariableCopyProbe.cpp
-    DynamicVariableCopyProbe.hpp
-    RuntimeLookupBenchmark.cpp
-)
-target_include_directories(nomad-lookup-benchmark PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(nomad-lookup-benchmark PRIVATE Nomad::Language Boost::scope_exit)
-nomad_configure_runtime_target(nomad-lookup-benchmark)
-target_compile_definitions(nomad-lookup-benchmark PRIVATE NOMAD_BENCHMARK_CONFIGURATION="$<CONFIG>")
-nomad_copy_runtime_dependencies(nomad-lookup-benchmark)
 
 add_executable(nomad-value-cleanup-test ValueCleanupContractTest.cpp)
 target_link_libraries(nomad-value-cleanup-test PRIVATE Nomad::Language)

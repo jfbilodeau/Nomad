@@ -1183,46 +1183,33 @@ BOOST_AUTO_TEST_CASE(iterates_members_by_type_and_globally) {
     BOOST_TEST(hasIntegerProperty);
 }
 
-BOOST_AUTO_TEST_CASE(native_metadata_queries_do_not_copy_callbacks) {
-    struct CallbackCapture {
-        explicit CallbackCapture(NomadInteger& copies): copies(copies) {}
-        CallbackCapture(const CallbackCapture& other): copies(other.copies) { ++copies; }
-        NomadInteger& copies;
-    };
-
+BOOST_AUTO_TEST_CASE(native_metadata_queries_resolve_members_and_borrow_indexers) {
     Runtime runtime;
     const auto* type = registerTestType(runtime);
-    auto copies = NomadInteger{0};
     const auto propertyId = runtime.registerNativeClassProperty(type->getId(), {
         .valueType = runtime.getIntegerType(),
-        .name = "copyProbe",
-        .getter = [capture = CallbackCapture(copies)](VirtualMachine*, RuntimeValue& result) {
-            result.setIntegerValue(capture.copies);
-        }
+        .name = "queryProperty",
+        .getter = propertyGetter()
     });
     const auto indexerId = runtime.registerNativeClassIndexer(type->getId(), {
         .valueTypeId = runtime.getIntegerType()->getId(),
         .indexTypes = {runtime.getIntegerType()->getId()},
-        .getter = [capture = CallbackCapture(copies)](VirtualMachine* machine) {
-            machine->setIntegerResult(capture.copies);
-        }
+        .getter = methodFunction()
     });
     BOOST_REQUIRE(propertyId.isValid());
     BOOST_REQUIRE(indexerId.isValid());
-    copies = 0;
-    const auto nativeMember = runtime.getNativeMemberId(type, "copyProbe");
+    const auto nativeMember = runtime.getNativeMemberId(type, "queryProperty");
     BOOST_REQUIRE(nativeMember.has_value());
     BOOST_TEST((*nativeMember == MemberReference{propertyId}));
-    BOOST_TEST(!runtime.getNativeMemberId(runtime.getStringType(), "copyProbe").has_value());
-    BOOST_TEST(!runtime.getNativeMemberId(nullptr, "copyProbe").has_value());
-    BOOST_TEST(!runtime.getNativeMemberId(type, "missingCopyProbe").has_value());
+    BOOST_TEST(!runtime.getNativeMemberId(runtime.getStringType(), "queryProperty").has_value());
+    BOOST_TEST(!runtime.getNativeMemberId(nullptr, "queryProperty").has_value());
+    BOOST_TEST(!runtime.getNativeMemberId(type, "missingProperty").has_value());
     std::vector<MemberReference> members;
     runtime.getNativeMembers(type, members);
     BOOST_REQUIRE(members.size() == 1U);
     BOOST_TEST((members.front() == MemberReference{propertyId}));
     runtime.getNativeMembers(members);
     BOOST_TEST((std::ranges::find(members, MemberReference{propertyId}) != members.end()));
-    BOOST_TEST(copies == 0);
 
     const auto* info = runtime.getNativeIndexerInfo(indexerId);
     BOOST_REQUIRE(info != nullptr);
@@ -1230,11 +1217,9 @@ BOOST_AUTO_TEST_CASE(native_metadata_queries_do_not_copy_callbacks) {
     BOOST_TEST(info == runtime.getNativeIndexers().back());
     BOOST_TEST(runtime.getNativeIndexerId(type, 1) == indexerId);
     BOOST_TEST(runtime.getNativeIndexerInfo(IndexerId::INVALID) == nullptr);
-    BOOST_TEST(copies == 0);
 
     const auto snapshot = runtime.getNativePropertyInfo(propertyId);
     BOOST_REQUIRE(snapshot.has_value());
-    BOOST_TEST(copies > 0);
 }
 
 BOOST_AUTO_TEST_CASE(add_indexer_resolves_ids_and_owns_metadata_and_callbacks) {

@@ -1,6 +1,5 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <DynamicVariableCopyProbe.hpp>
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
@@ -85,17 +84,20 @@ private:
 
 BOOST_AUTO_TEST_SUITE(language_registry_ids)
 
-BOOST_AUTO_TEST_CASE(dynamic_variable_registration_copies_lvalue_callbacks_once)
+BOOST_AUTO_TEST_CASE(dynamic_variable_registration_preserves_lvalue_callbacks_after_input_destruction)
 {
-    DynamicVariableCopyCounts setterCounts;
-    DynamicVariableCopyCounts getterCounts;
+    auto setterInvocations = NomadIndex{0};
+    auto getterInvocations = NomadIndex{0};
     Runtime runtime;
     auto id = DynamicVariableId::INVALID;
     {
-        const DynamicVariableSetFn setter{DynamicVariableCopyProbe{setterCounts}};
-        const DynamicVariableGetFn getter{DynamicVariableCopyProbe{getterCounts}};
-        setterCounts = {};
-        getterCounts = {};
+        const DynamicVariableSetFn setter = [&setterInvocations](VirtualMachine*, const RuntimeValue&) {
+            ++setterInvocations;
+        };
+        const DynamicVariableGetFn getter = [&getterInvocations](VirtualMachine*, RuntimeValue& value) {
+            ++getterInvocations;
+            value.setIntegerValue(0);
+        };
         id = runtime.registerDynamicVariable(
             "registry.lvalueCallbacks",
             setter,
@@ -106,30 +108,31 @@ BOOST_AUTO_TEST_CASE(dynamic_variable_registration_copies_lvalue_callbacks_once)
     }
 
     BOOST_REQUIRE(id.isValid());
-    BOOST_TEST(setterCounts.copies == 1U);
-    BOOST_TEST(getterCounts.copies == 1U);
-    BOOST_TEST(setterCounts.invocations == 0U);
-    BOOST_TEST(getterCounts.invocations == 0U);
+    BOOST_TEST(setterInvocations == 0U);
+    BOOST_TEST(getterInvocations == 0U);
     auto machine = runtime.createVirtualMachine();
     runtime.setDynamicVariable(machine.get(), id, RuntimeValue{NomadInteger{37}});
     auto result = RuntimeValue{NomadInteger{99}};
     runtime.getDynamicVariableValue(machine.get(), id, result);
     BOOST_TEST(result.getIntegerValue() == 0);
-    BOOST_TEST(setterCounts.invocations == 1U);
-    BOOST_TEST(getterCounts.invocations == 1U);
+    BOOST_TEST(setterInvocations == 1U);
+    BOOST_TEST(getterInvocations == 1U);
 }
 
-BOOST_AUTO_TEST_CASE(dynamic_variable_registration_moves_callbacks_without_copying_targets)
+BOOST_AUTO_TEST_CASE(dynamic_variable_registration_preserves_moved_callbacks_after_input_destruction)
 {
-    DynamicVariableCopyCounts setterCounts;
-    DynamicVariableCopyCounts getterCounts;
+    auto setterInvocations = NomadIndex{0};
+    auto getterInvocations = NomadIndex{0};
     Runtime runtime;
     auto id = DynamicVariableId::INVALID;
     {
-        DynamicVariableSetFn setter{DynamicVariableCopyProbe{setterCounts}};
-        DynamicVariableGetFn getter{DynamicVariableCopyProbe{getterCounts}};
-        setterCounts = {};
-        getterCounts = {};
+        DynamicVariableSetFn setter = [&setterInvocations](VirtualMachine*, const RuntimeValue&) {
+            ++setterInvocations;
+        };
+        DynamicVariableGetFn getter = [&getterInvocations](VirtualMachine*, RuntimeValue& value) {
+            ++getterInvocations;
+            value.setIntegerValue(0);
+        };
         id = runtime.registerDynamicVariable(
             "registry.movedCallbacks",
             std::move(setter),
@@ -140,17 +143,15 @@ BOOST_AUTO_TEST_CASE(dynamic_variable_registration_moves_callbacks_without_copyi
     }
 
     BOOST_REQUIRE(id.isValid());
-    BOOST_TEST(setterCounts.copies == 0U);
-    BOOST_TEST(getterCounts.copies == 0U);
-    BOOST_TEST(setterCounts.invocations == 0U);
-    BOOST_TEST(getterCounts.invocations == 0U);
+    BOOST_TEST(setterInvocations == 0U);
+    BOOST_TEST(getterInvocations == 0U);
     auto machine = runtime.createVirtualMachine();
     runtime.setDynamicVariable(machine.get(), id, RuntimeValue{NomadInteger{37}});
     auto result = RuntimeValue{NomadInteger{99}};
     runtime.getDynamicVariableValue(machine.get(), id, result);
     BOOST_TEST(result.getIntegerValue() == 0);
-    BOOST_TEST(setterCounts.invocations == 1U);
-    BOOST_TEST(getterCounts.invocations == 1U);
+    BOOST_TEST(setterInvocations == 1U);
+    BOOST_TEST(getterInvocations == 1U);
 }
 
 BOOST_FIXTURE_TEST_CASE(

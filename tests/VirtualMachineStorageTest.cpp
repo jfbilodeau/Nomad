@@ -4,7 +4,6 @@
 #include <LanguageTestFixture.hpp>
 
 #include <nomad/interpreter/Interpreter.hpp>
-#include <nomad/interpreter/InterpreterCallFrame.hpp>
 #include <nomad/interpreter/InterpreterContext.hpp>
 
 #include <nomad/script/Closure.hpp>
@@ -66,13 +65,12 @@ const ScriptFunction& registerFrameFunction(Runtime& runtime) {
 }
 
 #if defined(_MSC_VER) && defined(_DEBUG)
-thread_local NomadIndex callAllocations = 0;
 thread_local NomadIndex catalogAllocationRequests = 0;
 thread_local std::optional<NomadIndex> rejectedCatalogAllocation;
 thread_local bool callAllocationRejected = false;
 _CRT_ALLOC_HOOK previousAllocationHook = nullptr;
 
-int countCallAllocations(
+int trackCatalogAllocationFailures(
     const int operation,
     void* data,
     const size_t size,
@@ -82,7 +80,6 @@ int countCallAllocations(
     const int line
 ) {
     if (operation == _HOOK_ALLOC || operation == _HOOK_REALLOC) {
-        ++callAllocations;
         // Debug proxies also allocate inside noexcept container constructors.
         if (rejectedCatalogAllocation.has_value() && size != sizeof(std::_Container_proxy)) {
             ++catalogAllocationRequests;
@@ -1714,12 +1711,11 @@ BOOST_AUTO_TEST_CASE(event_creation_failures_preserve_catalog_data_without_publi
         };
         auto failed = false;
         auto registered = EventId::INVALID;
-        callAllocations = 0;
         catalogAllocationRequests = 0;
         callAllocationRejected = false;
         const auto originalChain = previousAllocationHook;
         const auto originalRejection = rejectedCatalogAllocation;
-        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+        previousAllocationHook = _CrtSetAllocHook(trackCatalogAllocationFailures);
         {
             const auto previousHook = previousAllocationHook;
             BOOST_SCOPE_EXIT_ALL(=) {
@@ -1882,12 +1878,11 @@ BOOST_AUTO_TEST_CASE(failed_hub_rebuilding_rolls_back_the_candidate_and_allows_r
                 checkExisting(false);
                 auto failed = false;
                 auto registered = HubId::INVALID;
-                callAllocations = 0;
                 catalogAllocationRequests = 0;
                 callAllocationRejected = false;
                 const auto originalChain = previousAllocationHook;
                 const auto originalRejection = rejectedCatalogAllocation;
-                previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+                previousAllocationHook = _CrtSetAllocHook(trackCatalogAllocationFailures);
                 {
                     const auto previousHook = previousAllocationHook;
                     BOOST_SCOPE_EXIT_ALL(=) {
@@ -1937,47 +1932,6 @@ BOOST_AUTO_TEST_CASE(failed_hub_rebuilding_rolls_back_the_candidate_and_allows_r
                 runtime.getNativeFunction(freeId)->getFn()(machine.get());
                 BOOST_TEST(machine->getIntegerResult() == 42);
                 BOOST_TEST(calls == 2U);
-            }
-        }
-    }
-}
-
-BOOST_AUTO_TEST_CASE(hub_context_resolution_allocates_no_more_than_membership_lookup) {
-    for (const auto& hubName : std::array{NomadString{"lookup"}, NomadString(96, 'h')}) {
-        for (const auto* localName : {"value", "branch.leaf"}) {
-            const auto name = hubName + "." + localName;
-            Runtime runtime;
-            BOOST_REQUIRE(runtime.registerHub(hubName, HubMode::Opened).isValid());
-            BOOST_REQUIRE(runtime.registerHubVariable(name).isValid());
-            const auto expected = runtime.getContextId(hubName);
-            BOOST_REQUIRE(expected.isValid());
-            const auto& constRuntime = runtime;
-            BOOST_REQUIRE(constRuntime.isHubVariable(name));
-            BOOST_REQUIRE(constRuntime.getVariableContextIdByPrefix(name) == expected);
-            std::array<NomadIndex, 2> requests{};
-            for (auto query = NomadIndex{0}; query < requests.size(); ++query) {
-                auto matchingQueries = NomadIndex{0};
-                callAllocations = 0;
-                previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-                {
-                    const auto previousHook = previousAllocationHook;
-                    BOOST_SCOPE_EXIT_ALL(=) {
-                        _CrtSetAllocHook(previousHook);
-                    };
-
-                    for (auto iteration = 0; iteration < 100; ++iteration) {
-                        matchingQueries += query == 0 ?
-                            constRuntime.isHubVariable(name) :
-                            constRuntime.getVariableContextIdByPrefix(name) == expected;
-                    }
-                }
-
-                requests[query] = callAllocations;
-                BOOST_TEST(matchingQueries == 100U);
-            }
-
-            BOOST_TEST_CONTEXT(name) {
-                BOOST_TEST(requests[1] <= requests[0]);
             }
         }
     }
@@ -2058,12 +2012,11 @@ BOOST_AUTO_TEST_CASE(native_catalog_publication_survives_allocation_failures_and
                     runtime.getNativeMemberOverloads(name, namedBefore);
                     auto completed = NomadIndex{0};
                     auto failed = false;
-                    callAllocations = 0;
                     catalogAllocationRequests = 0;
                     callAllocationRejected = false;
                     const auto originalChain = previousAllocationHook;
                     const auto originalRejection = rejectedCatalogAllocation;
-                    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
+                    previousAllocationHook = _CrtSetAllocHook(trackCatalogAllocationFailures);
                     {
                         const auto previousHook = previousAllocationHook;
                         BOOST_SCOPE_EXIT_ALL(=) {
@@ -2162,520 +2115,6 @@ BOOST_AUTO_TEST_CASE(native_catalog_publication_survives_allocation_failures_and
     }
 }
 
-BOOST_AUTO_TEST_CASE(fixed_type_getters_do_not_allocate) {
-    Runtime runtime;
-    constexpr auto getters = std::array{
-        &Runtime::getVoidType, &Runtime::getBooleanType, &Runtime::getIntegerType, &Runtime::getFloatType,
-        &Runtime::getStringType, &Runtime::getFileNameType, &Runtime::getFunctionNameType,
-        &Runtime::getLineNumberType, &Runtime::getEventCallbackType, &Runtime::getEventDispatchType
-    };
-    for (const auto getter : getters) {
-        const auto* expected = (runtime.*getter)();
-        BOOST_REQUIRE(expected != nullptr);
-        auto matchingQueries = NomadIndex{0};
-        callAllocations = 0;
-        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-        {
-            const auto previousHook = previousAllocationHook;
-            BOOST_SCOPE_EXIT_ALL(=) {
-                _CrtSetAllocHook(previousHook);
-            };
-
-            for (auto iteration = 0; iteration < 100; ++iteration) {
-                matchingQueries += (runtime.*getter)() == expected;
-            }
-        }
-
-        BOOST_TEST(callAllocations == 0U);
-        BOOST_TEST(matchingQueries == 100U);
-    }
-}
-
-BOOST_AUTO_TEST_CASE(stored_field_assignment_allocates_scratch_only_for_multi_slot_values) {
-    Runtime runtime;
-    auto& manager = runtime.getTypeManager();
-    std::vector<const Type*> valueTypes{runtime.getIntegerType(), runtime.getStringType()};
-    for (const auto size : {NomadIndex{0}, NomadIndex{2}, NomadIndex{8}}) {
-        const auto id = runtime.registerStruct("ScratchValue" + std::to_string(size));
-        BOOST_REQUIRE(id.isValid());
-        for (auto index = NomadIndex{0}; index < size; ++index) {
-            const auto* fieldType = index + 1 == size ? runtime.getStringType() : runtime.getIntegerType();
-            BOOST_REQUIRE(manager.registerScriptStructProperty(
-                id,
-                "field" + std::to_string(index),
-                fieldType
-            ).isValid());
-        }
-
-        manager.finalizeCompositeFieldLayout(id);
-        valueTypes.push_back(runtime.getType(id).value());
-    }
-
-    VirtualMachine machine(&runtime, 64);
-    const Interpreter interpreter(machine);
-    machine.pushInteger(91);
-    machine.setIntegerResult(71);
-    machine.setIntegerIntermediate(83);
-    for (const auto* type : valueTypes) {
-        const auto size = type->getSize();
-        const auto referenceValue = type == runtime.getStringType() || size > 1;
-        std::vector<RuntimeValue> source(size);
-        const RuntimeValueGuard sourceOwner(*type, source.empty() ? nullptr : source.data());
-        for (auto index = NomadIndex{0}; index < size; ++index) {
-            if (referenceValue && index + 1 == size) {
-                source[index].setStringValue("owned assignment source");
-            } else {
-                source[index].setIntegerValue(static_cast<NomadInteger>(index) + 17);
-            }
-        }
-
-        const InterpreterValue replacement(type, source);
-        const auto suffix = std::to_string(type->getId().id);
-        const auto ownerId = runtime.registerStruct("ScratchOwner" + suffix);
-        BOOST_REQUIRE(ownerId.isValid());
-        BOOST_REQUIRE(manager.registerScriptStructProperty(
-            ownerId,
-            "before",
-            runtime.getIntegerType()
-        ).isValid());
-        const auto propertyId = manager.registerScriptStructProperty(ownerId, "value", type);
-        BOOST_REQUIRE(propertyId.isValid());
-        BOOST_REQUIRE(manager.registerScriptStructProperty(
-            ownerId,
-            "after",
-            runtime.getIntegerType()
-        ).isValid());
-        manager.finalizeCompositeFieldLayout(ownerId);
-        const auto* owner = runtime.getType(ownerId).value()->asStructType();
-        const auto outerId = runtime.registerStruct("ScratchOuter" + suffix);
-        BOOST_REQUIRE(outerId.isValid());
-        BOOST_REQUIRE(manager.registerScriptStructProperty(
-            outerId,
-            "before",
-            runtime.getIntegerType()
-        ).isValid());
-        const auto innerId = manager.registerScriptStructProperty(outerId, "inner", owner);
-        BOOST_REQUIRE(innerId.isValid());
-        BOOST_REQUIRE(manager.registerScriptStructProperty(
-            outerId,
-            "after",
-            runtime.getIntegerType()
-        ).isValid());
-        manager.finalizeCompositeFieldLayout(outerId);
-        const auto* outer = runtime.getType(outerId).value()->asStructType();
-        std::vector<RuntimeValue> receiver(outer->getSize());
-        const RuntimeValueGuard receiverOwner(*outer, receiver.data());
-        outer->initValue(receiver.data());
-        const auto ownerStorage = std::span{receiver}.subspan(
-            outer->getFieldOffset(innerId),
-            owner->getSize()
-        );
-        const auto valueStorage = ownerStorage.subspan(owner->getFieldOffset(propertyId), size);
-        receiver.front().setIntegerValue(101);
-        receiver.back().setIntegerValue(103);
-        ownerStorage.front().setIntegerValue(107);
-        ownerStorage.back().setIntegerValue(109);
-        const auto expectedAllocations = type->getAssignmentScratchSize() == 0 ? 0U : 100U;
-        for (const auto nested : {false, true}) {
-            const auto assign = [&] {
-                if (nested) {
-                    interpreter.setProperty(*outer, receiver, "inner.value", replacement);
-                } else {
-                    interpreter.setProperty(*owner, ownerStorage, propertyId, replacement);
-                }
-            };
-            assign();
-            auto completedAssignments = NomadIndex{0};
-            callAllocations = 0;
-            previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-            {
-                const auto previousHook = previousAllocationHook;
-                BOOST_SCOPE_EXIT_ALL(=) {
-                    _CrtSetAllocHook(previousHook);
-                };
-
-                for (auto iteration = 0; iteration < 100; ++iteration) {
-                    assign();
-                    auto matches = true;
-                    for (auto index = NomadIndex{0}; index < size; ++index) {
-                        if (referenceValue && index + 1 == size) {
-                            matches &= valueStorage[index].getObjectValue() == source[index].getObjectValue();
-                        } else {
-                            matches &= valueStorage[index].getIntegerValue() == source[index].getIntegerValue();
-                        }
-                    }
-
-                    completedAssignments += matches;
-                }
-            }
-
-            BOOST_TEST(callAllocations == expectedAllocations);
-            BOOST_TEST(completedAssignments == 100U);
-            BOOST_TEST(receiver.front().getIntegerValue() == 101);
-            BOOST_TEST(receiver.back().getIntegerValue() == 103);
-            BOOST_TEST(ownerStorage.front().getIntegerValue() == 107);
-            BOOST_TEST(ownerStorage.back().getIntegerValue() == 109);
-            BOOST_TEST(machine.peekStack(0).getIntegerValue() == 91);
-            BOOST_TEST(machine.captureExecutionState().stackIndex == 1U);
-            BOOST_TEST(machine.getIntegerResult() == 71);
-            BOOST_TEST(machine.getIntegerIntermediate() == 83);
-            if (referenceValue) {
-                BOOST_TEST(source.back().getObjectValue()->getReferenceCount() == 3U);
-            }
-        }
-    }
-}
-
-BOOST_AUTO_TEST_CASE(argument_snapshot_capacity_counts_logical_values_instead_of_storage_slots) {
-    Runtime runtime;
-    const auto emptyId = runtime.registerStruct("SnapshotEmpty");
-    const auto pairId = runtime.registerStruct("SnapshotPair");
-    BOOST_REQUIRE(emptyId.isValid() && pairId.isValid());
-    auto& manager = runtime.getTypeManager();
-    BOOST_REQUIRE(manager.registerScriptStructProperty(pairId, "first", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(manager.registerScriptStructProperty(pairId, "second", runtime.getIntegerType()).isValid());
-    manager.finalizeCompositeFieldLayout(emptyId);
-    manager.finalizeCompositeFieldLayout(pairId);
-    const std::array<const Type*, 3> types{
-        runtime.getIntegerType(), runtime.getType(emptyId).value(), runtime.getType(pairId).value()
-    };
-    const std::array storage{RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadInteger{25}}};
-    VirtualMachine machine(&runtime, 64);
-    machine.pushInteger(91);
-    machine.setIntegerResult(71);
-    machine.setIntegerIntermediate(83);
-    for (const auto* type : types) {
-        const auto size = type->getSize();
-        const InterpreterValue value(type, std::span<const RuntimeValue>{storage.data(), size});
-        for (const auto count : {NomadIndex{0}, NomadIndex{1}, NomadIndex{2}}) {
-            std::vector<Parameter> parameters;
-            for (auto index = NomadIndex{0}; index < count; ++index) {
-                parameters.push_back(defParameter("value" + std::to_string(index), type, ""));
-            }
-
-            const auto id = runtime.registerNativeFunction(
-                "snapshot" + std::to_string(type->getId().id) + "_" + std::to_string(count),
-                [](VirtualMachine*) {},
-                parameters,
-                runtime.getVoidType(),
-                ""
-            );
-            const auto* callable = runtime.getCallable(id);
-            BOOST_REQUIRE(callable != nullptr);
-            const std::vector<InterpreterValue> arguments(count, value);
-            {
-                const InterpreterCallFrame frame(machine, *callable, arguments, runtime.getVoidType());
-            }
-
-            auto completedFrames = NomadIndex{0};
-            const auto* returnType = runtime.getVoidType();
-            callAllocations = 0;
-            previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-            {
-                const auto previousHook = previousAllocationHook;
-                BOOST_SCOPE_EXIT_ALL(=) {
-                    _CrtSetAllocHook(previousHook);
-                };
-
-                for (auto iteration = 0; iteration < 100; ++iteration) {
-                    const InterpreterCallFrame frame(machine, *callable, arguments, returnType);
-                    const auto expectedTop = size == 0 || count == 0 ? NomadInteger{91} :
-                        storage[size - 1].getIntegerValue();
-                    completedFrames += frame.getResult() == nullptr &&
-                        machine.peekStack(0).getIntegerValue() == expectedTop;
-                }
-            }
-
-            BOOST_TEST(callAllocations == (count <= 1 ? 0U : 100U));
-            BOOST_TEST(completedFrames == 100U);
-            BOOST_TEST(machine.peekStack(0).getIntegerValue() == 91);
-            BOOST_TEST(machine.captureExecutionState().stackIndex == 1U);
-            BOOST_TEST(machine.getIntegerResult() == 71);
-            BOOST_TEST(machine.getIntegerIntermediate() == 83);
-        }
-    }
-}
-
-BOOST_AUTO_TEST_CASE(frame_result_allocation_excludes_unused_result_containers) {
-    Runtime runtime;
-    std::vector<const Type*> types{
-        runtime.getVoidType(), runtime.getIntegerType(), runtime.getStringType()
-    };
-    for (const auto count : {NomadIndex{0}, NomadIndex{2}, NomadIndex{8}}) {
-        const auto id = runtime.registerStruct("AllocationResult" + std::to_string(count));
-        BOOST_REQUIRE(id.isValid());
-        for (auto index = NomadIndex{0}; index < count; ++index) {
-            BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(
-                id,
-                "field" + std::to_string(index),
-                runtime.getIntegerType()
-            ).isValid());
-        }
-
-        runtime.getTypeManager().finalizeCompositeFieldLayout(id);
-        types.push_back(runtime.getType(id).value());
-    }
-
-    VirtualMachine machine(&runtime, 64);
-    machine.setIntegerResult(71);
-    machine.setIntegerIntermediate(83);
-    for (auto index = NomadIndex{0}; index < types.size(); ++index) {
-        const auto* type = types[index];
-        const auto id = runtime.registerNativeFunction(
-            "allocationResult" + std::to_string(index),
-            [](VirtualMachine*) {},
-            {},
-            type,
-            ""
-        );
-        const auto* callable = runtime.getCallable(id);
-        BOOST_REQUIRE(callable != nullptr);
-        {
-            const InterpreterCallFrame frame(machine, *callable, {}, type);
-        }
-
-        const auto nonemptyAggregate = type->isStruct() && type->getSize() != 0;
-        auto completedFrames = NomadIndex{0};
-        callAllocations = 0;
-        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-        {
-            const auto previousHook = previousAllocationHook;
-            BOOST_SCOPE_EXIT_ALL(=) {
-                _CrtSetAllocHook(previousHook);
-            };
-
-            for (auto iteration = 0; iteration < 100; ++iteration) {
-                const InterpreterCallFrame frame(machine, *callable, {}, type);
-                completedFrames += (frame.getResult() != nullptr) == (type->getSize() != 0);
-            }
-        }
-
-        BOOST_TEST(callAllocations == (nonemptyAggregate ? 100U : 0U));
-        BOOST_TEST(completedFrames == 100U);
-        BOOST_TEST(machine.getIntegerResult() == 71);
-        BOOST_TEST(machine.getIntegerIntermediate() == 83);
-        BOOST_TEST(machine.captureExecutionState().stackIndex == 0U);
-    }
-}
-
-BOOST_AUTO_TEST_CASE(raw_argument_bookkeeping_uses_inline_storage_and_heap_fallback) {
-    Runtime runtime;
-    auto compiler = runtime.createCompiler();
-    for (const auto count : {NomadIndex{0}, NomadIndex{1}, NomadIndex{4}, NomadIndex{8}}) {
-        const auto functionId = runtime.registerScriptFunction(
-            "rawAllocation" + std::to_string(count), "raw-allocation.nomad", ""
-        );
-        auto* function = runtime.getScriptFunction(functionId);
-        BOOST_REQUIRE(function != nullptr);
-        function->setReturnType(runtime.getIntegerType());
-        for (auto index = NomadIndex{0}; index < count; ++index) {
-            function->addParameter("value" + std::to_string(index), runtime.getIntegerType(), "");
-        }
-
-        function->setFunctionStart(runtime.getInstructions().size());
-        compiler->addFunctionEntry(function);
-        compiler->addLoadIntegerValue(42, ExpressionTarget::Result);
-        compiler->addFunctionReturn(function);
-        function->setFunctionEnd(runtime.getInstructions().size());
-        const std::vector<RuntimeValue> arguments(count, RuntimeValue{NomadInteger{7}});
-        runtime.initializeScripts();
-        VirtualMachine machine(&runtime, 64);
-        machine.run(function, arguments);
-        callAllocations = 0;
-        previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-        {
-            const auto previousHook = previousAllocationHook;
-            BOOST_SCOPE_EXIT_ALL(=) {
-                _CrtSetAllocHook(previousHook);
-            };
-
-            for (auto iteration = 0; iteration < 100; ++iteration) {
-                machine.run(function, arguments);
-            }
-        }
-
-        BOOST_TEST(callAllocations == (count <= 4 ? 0U : 100U));
-        BOOST_TEST(machine.getIntegerResult() == 42);
-        BOOST_TEST(machine.captureExecutionState().stackIndex == 0U);
-    }
-}
-
-BOOST_AUTO_TEST_CASE(stored_property_paths_add_no_allocations_beyond_returned_value_storage) {
-    Runtime runtime;
-    auto& manager = runtime.getTypeManager();
-    const auto emptyId = manager.registerStruct("LookupEmpty");
-    const auto nestedId = manager.registerStruct("LookupNested");
-    const auto rootId = manager.registerStruct("LookupRoot");
-    const auto* emptyType = runtime.getTypeByName("LookupEmpty");
-    const auto* nestedType = runtime.getTypeByName("LookupNested");
-    const auto* rootType = runtime.getTypeByName("LookupRoot");
-    const NomadString nestedName = "nested_property_name_longer_than_inline_string_storage";
-    const NomadString leafName = "empty_property_name_longer_than_inline_string_storage";
-    BOOST_REQUIRE(manager.registerScriptStructProperty(nestedId, leafName, emptyType).isValid());
-    BOOST_REQUIRE(manager.registerScriptStructProperty(rootId, nestedName, nestedType).isValid());
-    const auto directId = manager.registerScriptStructProperty(rootId, "direct", emptyType);
-    BOOST_REQUIRE(directId.isValid());
-    manager.finalizeCompositeFieldLayout(rootId);
-    const InterpreterValue receiver(rootType, std::span<const RuntimeValue>{});
-    const NomadString decoratedPath = "[" + nestedName + "." + leafName + "]";
-    const auto path = NomadStringView{decoratedPath}.substr(1, decoratedPath.size() - 2);
-    VirtualMachine machine(&runtime);
-    const Interpreter interpreter(machine);
-    auto completedReads = 0;
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            const auto value = interpreter.getProperty(receiver, directId);
-            completedReads += value.getType() == emptyType && value.getStorage().empty();
-        }
-    }
-
-    const auto resultStorageAllocations = callAllocations;
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            const auto value = interpreter.getProperty(receiver, path);
-            completedReads += value.getType() == emptyType && value.getStorage().empty();
-        }
-    }
-
-    BOOST_TEST(callAllocations == resultStorageAllocations);
-    BOOST_TEST(completedReads == 200);
-}
-
-BOOST_AUTO_TEST_CASE(prepared_script_execution_guards_do_not_allocate) {
-    Runtime runtime;
-    const auto functionId = runtime.registerScriptFunction("allocationFreeExecution", "allocation.nomad", "");
-    auto* function = runtime.getScriptFunction(functionId);
-    function->setReturnType(runtime.getIntegerType());
-    auto compiler = runtime.createCompiler();
-    function->setFunctionStart(runtime.getInstructions().size());
-    compiler->addFunctionEntry(function);
-    compiler->addLoadValue(runtime.getIntegerType(), RuntimeValue{NomadInteger{17}}, ExpressionTarget::Result);
-    compiler->addFunctionReturn(function);
-    function->setFunctionEnd(runtime.getInstructions().size());
-    runtime.initializeScripts();
-    VirtualMachine machine(&runtime, 64);
-    machine.executeFunction(*function);
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            machine.executeFunction(*function);
-        }
-    }
-
-    BOOST_TEST(callAllocations == 0U);
-    BOOST_TEST(machine.getIntegerResult() == 17);
-}
-
-BOOST_AUTO_TEST_CASE(indexer_argument_guards_do_not_allocate) {
-    Runtime runtime;
-    const auto ownerId = runtime.registerClass("AllocationIndexer", ClassMode::Closed);
-    BOOST_REQUIRE(ownerId.isValid());
-    const auto* owner = runtime.getType(ownerId).value();
-    RuntimeValue receiver;
-    const RuntimeValueGuard receiverGuard(*owner, &receiver);
-    receiver.setObjectValue(new NomadObject);
-    const auto integerId = runtime.getIntegerType()->getId();
-    const auto indexerId = runtime.registerNativeClassIndexer(ownerId, {
-        .valueTypeId = integerId,
-        .indexTypes = {integerId},
-        .getter = [](VirtualMachine* active) { active->setIntegerResult(71); },
-        .setter = [](VirtualMachine*) {}
-    });
-    BOOST_REQUIRE(indexerId.isValid());
-    auto compiler = runtime.createCompiler();
-    const auto readAddress = compiler->addOpCode(OpCodes::op_native_index_get);
-    compiler->addId(indexerId.id);
-    const auto writeAddress = compiler->addOpCode(OpCodes::op_native_index_set);
-    compiler->addId(indexerId.id);
-    const std::vector<RuntimeValue> readArguments{RuntimeValue{NomadInteger{17}}};
-    const std::vector<RuntimeValue> writeArguments{
-        RuntimeValue{NomadInteger{17}}, RuntimeValue{NomadInteger{23}}
-    };
-    VirtualMachine machine(&runtime, 64);
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            for (const auto write : {false, true}) {
-                machine.runNativeIndexer(
-                    indexerId, write ? writeArguments : readArguments, receiver, write
-                );
-                machine.pushThis();
-                machine.pushObjectValue(receiver);
-                if (write) {
-                    machine.pushInteger(23);
-                }
-
-                machine.pushInteger(17);
-                executeInstruction(runtime, machine, write ? writeAddress : readAddress);
-            }
-        }
-    }
-
-    BOOST_TEST(callAllocations == 0U);
-    BOOST_TEST(machine.captureExecutionState().stackIndex == 0U);
-    BOOST_TEST(receiver.getObjectValue()->getReferenceCount() == 1U);
-}
-
-BOOST_AUTO_TEST_CASE(runtime_value_and_scope_exit_guard_bookkeeping_does_not_allocate) {
-    Runtime runtime;
-    const auto* type = runtime.getIntegerType();
-    RuntimeValue value{NomadInteger{17}};
-    auto scopeCleanups = 0;
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            {
-                const RuntimeValueGuard guard(*type, &value);
-            }
-
-            {
-                RuntimeValueGuard guard(*type, &value);
-                guard.release();
-            }
-
-            BOOST_SCOPE_EXIT_ALL(&) {
-                ++scopeCleanups;
-            };
-        }
-    }
-
-    BOOST_TEST(callAllocations == 0U);
-    BOOST_TEST(scopeCleanups == 100);
-    BOOST_TEST(value.getIntegerValue() == 17);
-}
-
 BOOST_AUTO_TEST_CASE(allocation_hook_restoration_runs_before_failure_escapes) {
     const auto originalHook = _CrtSetAllocHook(nullptr);
     BOOST_SCOPE_EXIT_ALL(=) {
@@ -2689,7 +2128,7 @@ BOOST_AUTO_TEST_CASE(allocation_hook_restoration_runs_before_failure_escapes) {
     };
 
     const auto failWithHook = [] {
-        const auto previousHook = _CrtSetAllocHook(countCallAllocations);
+        const auto previousHook = _CrtSetAllocHook(trackCatalogAllocationFailures);
         BOOST_SCOPE_EXIT_ALL(=) {
             _CrtSetAllocHook(previousHook);
         };
@@ -2702,153 +2141,6 @@ BOOST_AUTO_TEST_CASE(allocation_hook_restoration_runs_before_failure_escapes) {
     BOOST_CHECK(restoredHook == nullptr);
 }
 
-BOOST_AUTO_TEST_CASE(struct_creation_uses_prepared_stack_storage_without_allocating) {
-    Runtime runtime;
-    const auto typeId = runtime.registerStruct("AllocationFreeStruct");
-    const auto* type = runtime.getTypeByName("AllocationFreeStruct");
-    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "number", runtime.getIntegerType()).isValid());
-    BOOST_REQUIRE(runtime.getTypeManager().registerScriptStructProperty(typeId, "text", runtime.getStringType()).isValid());
-    runtime.getTypeManager().finalizeCompositeFieldLayout(typeId);
-    const auto nativeId = runtime.registerNativeStructConstructor(typeId, {
-        .parameters = {{runtime.getIntegerType()->getId(), "number", ""}},
-        .function = [](VirtualMachine* active) {
-            active->getStorageParameter(1, 0) = active->getParameter(0);
-        }
-    });
-    const auto scriptId = runtime.registerScriptStructConstructor(typeId,
-        {defParameter("number", runtime.getIntegerType(), ""), defParameter("unused", runtime.getIntegerType(), "")},
-        "", "");
-    BOOST_REQUIRE(nativeId.isValid());
-    BOOST_REQUIRE(scriptId.isValid());
-    auto* script = runtime.getScriptCallable(scriptId);
-    auto compiler = runtime.createCompiler();
-    script->setFunctionStart(runtime.getInstructions().size());
-    compiler->addFunctionEntry(script);
-    compiler->addOpCode(OpCodes::op_parameter_load_r);
-    compiler->addIndex(0);
-    compiler->addOpCode(OpCodes::op_storage_parameter_set);
-    compiler->addIndex(2);
-    compiler->addIndex(0);
-    compiler->addFunctionReturn(script);
-    script->setFunctionEnd(runtime.getInstructions().size());
-    VirtualMachine machine(&runtime, 64);
-    std::array<RuntimeValue, 2> storage;
-    type->initValue(storage.data());
-    type->freeValue(storage.data());
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            machine.pushStorageAddress(storage.data());
-            machine.pushInteger(17);
-            machine.createNativeStruct(storage.data(), nativeId);
-            machine.pop2();
-            type->freeValue(storage.data());
-            machine.pushStorageAddress(storage.data());
-            machine.pushInteger(0);
-            machine.pushInteger(19);
-            machine.createScriptStruct(storage.data(), scriptId);
-            machine.pop3();
-            type->freeValue(storage.data());
-        }
-    }
-
-    BOOST_TEST(callAllocations == 0U);
-    BOOST_TEST(storage[0].getIntegerValue() == 19);
-    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
-}
-
-BOOST_AUTO_TEST_CASE(object_creation_adds_no_allocations_beyond_object_storage) {
-    nomad::test::LanguageTestFixture fixture;
-    auto& runtime = fixture.getRuntime();
-    const auto nativeTypeId = runtime.registerClass("CountedNative", ClassMode::Closed);
-    const auto* nativeType = runtime.getTypeByName("CountedNative")->asClassType();
-    runtime.getTypeManager().finalizeCompositeFieldLayout(nativeTypeId);
-    const auto nativeId = runtime.registerNativeClassConstructor(nativeTypeId, {
-        .parameters = {},
-        .function = [nativeType](VirtualMachine* active) {
-            active->getResult().setObjectValue(new ScriptObject(nativeType));
-        }
-    });
-    BOOST_REQUIRE(nativeId.isValid());
-    fixture.addFunction("main", "class CountedScript\nend");
-    BOOST_REQUIRE_MESSAGE(fixture.compile(), fixture.getDiagnostics());
-    const auto* scriptType = runtime.getTypeByName("CountedScript")->asClassType();
-    const auto scriptId = scriptType->getConstructors()[0]->getId();
-    VirtualMachine machine(&runtime, 64);
-    // Debug standard-library containers also allocate iterator proxies inside each object.
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            (new ScriptObject(nativeType))->releaseRef();
-            (new ScriptObject(scriptType))->releaseRef();
-        }
-    }
-
-    const auto objectAllocations = callAllocations;
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            machine.createNativeObject(nativeId)->releaseRef();
-            machine.createScriptObject(scriptId)->releaseRef();
-        }
-    }
-
-    BOOST_TEST(callAllocations == objectAllocations);
-    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
-}
-
-BOOST_AUTO_TEST_CASE(script_and_native_call_bookkeeping_does_not_allocate) {
-    Runtime runtime;
-    const auto& frame = registerFrameFunction(runtime);
-    VirtualMachine machine(&runtime, 64);
-    std::array<RuntimeValue, 2> storage;
-    const auto callback = runtime.registerNativeFunction("writeStorage", [](VirtualMachine* active) {
-        active->getStorageParameter(0, 0).setIntegerValue(17);
-    }, {}, runtime.getVoidType(), "");
-    BOOST_REQUIRE(callback.isValid());
-    callAllocations = 0;
-    previousAllocationHook = _CrtSetAllocHook(countCallAllocations);
-    {
-        const auto previousHook = previousAllocationHook;
-        BOOST_SCOPE_EXIT_ALL(=) {
-            _CrtSetAllocHook(previousHook);
-        };
-
-        for (auto index = 0; index < 100; ++index) {
-            machine.callScriptFunction(frame, 0);
-            machine.pushStorageAddress(storage.data());
-            machine.callScriptFunction(frame, 0);
-            machine.pushStorageAddress(storage.data() + 1);
-            machine.callNativeFunction(callback);
-            machine.pop1();
-            machine.returnFunction(0);
-            machine.pop1();
-            machine.returnFunction(0);
-        }
-    }
-
-    BOOST_TEST(callAllocations == 0U);
-    BOOST_TEST(storage[1].getIntegerValue() == 17);
-    BOOST_TEST(machine.peekStack(0).getIntegerValue() == 0);
-}
 #endif
 
 BOOST_AUTO_TEST_SUITE_END()
