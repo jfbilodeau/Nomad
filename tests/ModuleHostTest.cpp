@@ -26,6 +26,7 @@
 
 #include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Documentation.hpp>
+#include <nomad/script/Hub.hpp>
 #include <nomad/script/InstructionDump.hpp>
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -87,6 +88,92 @@ bool compileFixture(
 
 BOOST_AUTO_TEST_SUITE(module_host)
 
+BOOST_AUTO_TEST_CASE(system_module_uses_script_declared_hubs_and_preserves_native_calls) {
+    const TestDirectory directory("host-system-script-hubs");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"system"});
+    const SourceBatch sources{{
+        {"main", {"main.nomad",
+            "class Rounded\nvalue = math.floor 2.75\nend\n"
+            "open hub math\n"
+            "fun roundedTotal value:float\n"
+            "return (math.floor value) + (math.ceiling value)\nend\nend\n"
+            "open hub system\n"
+            "fun roundedNegative\nreturn math.roundedTotal -2.75\nend\nend\n"
+            "value = new Rounded\nassert value.value == 2.0\n"
+            "assert (math.floor 2.75) == 2.0\n"
+            "assert (math.ceiling 2.75) == 3.0\n"
+            "assert (math.floor -2.75) == -3.0\n"
+            "assert (math.ceiling -2.75) == -2.0\n"
+            "system.exit\nreturn system.roundedNegative"
+        }}
+    }, {}};
+
+    for (const auto target : {CompilationTarget::Executable, CompilationTarget::Analysis}) {
+        const auto mode = target == CompilationTarget::Executable ?
+            ModuleMode::Application : ModuleMode::Analysis;
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, mode);
+        auto* runtime = host->getRuntime();
+        BOOST_TEST(runtime->getHubId("math").isInvalid());
+        BOOST_TEST(runtime->getHubId("system").isInvalid());
+        BOOST_TEST(runtime->getNativeFunctionId("math.floor").isInvalid());
+        BOOST_TEST(runtime->getNativeFunctionId("system.exit").isInvalid());
+        BOOST_TEST(runtime->getNativeFunctionId("toInt").isValid());
+
+        const auto compilation = host->compileSources(sources, target);
+        BOOST_REQUIRE(compilation.succeeded());
+        const auto* mathHub = runtime->getHub(runtime->getHubId("math"));
+        const auto* systemHub = runtime->getHub(runtime->getHubId("system"));
+        BOOST_REQUIRE(mathHub != nullptr);
+        BOOST_REQUIRE(systemHub != nullptr);
+
+        for (const auto* name : {"ceiling", "floor"}) {
+            const auto* member = mathHub->getMember(name);
+            const auto* functions = member != nullptr ? std::get_if<HubFunctions>(member) : nullptr;
+            BOOST_REQUIRE(functions != nullptr);
+            BOOST_REQUIRE(functions->ids.size() == 1U);
+            BOOST_TEST(functions->ids.front() == runtime->getNativeFunctionId(NomadString("math.") + name));
+        }
+
+        const auto* exitMember = systemHub->getMember("exit");
+        const auto* exitFunctions = exitMember != nullptr ? std::get_if<HubFunctions>(exitMember) : nullptr;
+        BOOST_REQUIRE(exitFunctions != nullptr);
+        BOOST_REQUIRE(exitFunctions->ids.size() == 1U);
+        BOOST_TEST(exitFunctions->ids.front() == runtime->getNativeFunctionId("system.exit"));
+
+        if (target == CompilationTarget::Analysis) {
+            continue;
+        }
+
+        BOOST_TEST(!host->pollExit());
+        runtime->initializeScripts();
+        auto machine = runtime->createVirtualMachine();
+        RuntimeValue result;
+        machine->executeFunction(runtime->getScriptFunctionId("main"), {}, result);
+        BOOST_TEST(result.getFloatValue() == -5.0f);
+        BOOST_TEST(host->pollExit());
+    }
+}
+
+BOOST_AUTO_TEST_CASE(system_module_rejects_missing_script_hub_declarations) {
+    const TestDirectory directory("host-system-missing-hubs");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"system"});
+    auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+    const auto declarations = getSdkDirectory() / "modules" / "system" / "scripts" / "declarations.nomad";
+    const std::vector<ScriptSource> overrides{
+        {"ignored", {"editor:system", "", declarations}}
+    };
+    const auto sources = host->loadSources({}, overrides);
+    const auto compilation = host->compileSources(sources, CompilationTarget::Analysis);
+    BOOST_TEST(!compilation.succeeded());
+    BOOST_TEST(std::ranges::any_of(compilation.diagnostics, [](const auto& diagnostic) {
+
+        return diagnostic.message.find("script-declared") != NomadString::npos &&
+            diagnostic.message.find("hub") != NomadString::npos;
+    }));
+    BOOST_TEST(host->getRuntime()->getNativeFunctionId("math.floor").isInvalid());
+    BOOST_TEST(host->getRuntime()->getNativeFunctionId("system.exit").isInvalid());
+}
+
 BOOST_AUTO_TEST_CASE(module_script_declarations_are_available_without_running_the_file_body) {
     TestDirectory directory("host-module-script-declarations");
     const auto modules = scriptFixtureModules(directory);
@@ -125,8 +212,7 @@ BOOST_AUTO_TEST_CASE(module_sources_join_explicit_snapshots_and_preserve_compile
     };
     const auto batch = host->loadSources(std::vector{path.parent_path(), path}, overrides);
     BOOST_REQUIRE(batch.diagnostics.empty());
-    BOOST_REQUIRE(batch.sources.size() == 1U);
-    BOOST_TEST(batch.sources[0].scriptName == "$fixture.nested.main");
+    BOOST_TEST(std::ranges::count(batch.sources, NomadString("$fixture.nested.main"), &ScriptSource::scriptName) == 1);
     auto* compiler = host->getCompiler();
     CompilerContext context(compiler);
     compiler->registerSources(&context, batch);

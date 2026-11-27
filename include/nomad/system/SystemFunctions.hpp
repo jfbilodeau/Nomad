@@ -9,5 +9,8 @@
 namespace nomad {
 
 void registerSystemFunctions(Runtime* runtime);
+// Requires an existing math hub.
+void registerSystemHubFunctions(Runtime* runtime);
+void registerSystemPrimitives(Runtime* runtime);
 
 } // nomad
