@@ -33,8 +33,8 @@ behavior unless a change is reviewed and approved.
 - Exact qualified identifiers and context prefixes take precedence over ordinary
   member access. Lexical class/struct `this` correctly takes precedence over the
   game's `this.*` context.
-- The game exposes `Audio` and `Font` classes, but not scripting `Window`, `Scene`,
-  or `Entity` classes.
+- The game exposes `Audio`, `Font`, and native window/view classes. Scripting
+  `Scene` and `Entity` classes remain proposed.
 - `other.*` property reads use the first selected entity; writes and methods
   operate across the selection. A single entity reference is not equivalent.
 
@@ -66,7 +66,7 @@ introduced only to preserve spelling.
 
 ## Step 1: system module hub registration
 
-Status: implemented and validated; awaiting review. Later steps remain proposals.
+Status: implemented, validated, and reviewed.
 
 Approved implementation scope:
 
@@ -98,8 +98,23 @@ Validation:
 
 ## Step 2: one live-state family
 
-After Step 1 review, agree on a single family, preferably the window, and its
-public member paths.
+Status: implemented and validated; awaiting review. Later migrations remain
+proposals, not approved implementation scope.
+
+Approved decisions:
+
+- Expose one read-only `game.window` instance, without a `window` compatibility
+  alias. Preserve existing member names under the new path.
+- Keep `mouse` and `resolution` as live child objects.
+- Replace window dynamic variables, ordinary free functions, and callbacks with
+  native class members using the existing registration APIs.
+- Keep SDL ownership with the game and reject access through retained references
+  after game destruction. Do not add a window-creation API.
+- Nomad source cannot add methods to an already registered native class. Use
+  native bindings for this family rather than add language rules or duplicate
+  helper APIs.
+
+The user-added `math.PI` declaration remains unchanged.
 
 - Use existing native class properties/methods over the current engine state.
 - Preserve read/write permissions, validation, clamping, and side effects.
@@ -112,6 +127,12 @@ public member paths.
 
 Validate the family with focused tests and the existing consuming game smoke
 project. Stop before migrating another family.
+
+Completed validation covers live aliases, child views, read/write permissions,
+retained-reference failures in host and compiled calls, callback captures and
+self-clearing, and debugger rendering. The language, tooling, and remaining
+CTest groups, packaged headless graphical smoke project, CMake build, and strict
+MkDocs validation passed. No manual graphical/gameplay validation was performed.
 
 ## Step 3: scenes, entities, and selection
 

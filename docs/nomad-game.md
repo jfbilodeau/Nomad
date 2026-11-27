@@ -33,6 +33,36 @@ The API uses the `game`, `game.audio`, `game.music`, `game.debug`,
 `game.debug.console`, and `game.debug.draw` hubs. Scripts can extend these open
 hubs with their own declarations.
 
+## Window
+
+Use `game.window` to read or change the running game's window:
+
+```nomad
+game.window.title = "My game"
+game.window.setSizeAndCenter 800 480
+game.window.setResolution 800 480
+
+window = game.window
+mouse = window.mouse
+resolution = window.resolution
+mouse.x = 100.0
+resolution.width = 960
+```
+
+Assignments share the same live window, mouse, and resolution objects. The
+`game.window` reference and its `mouse` and `resolution` properties are read-only;
+their writable members remain assignable. New windows cannot be constructed
+with `new`. Access through a retained reference after the game is destroyed
+raises a runtime error.
+
+Window callbacks use the same receiver, for example `game.window.onClose` and
+`game.window.onResize`. A close request does not stop the game automatically when
+an `onClose` callback is registered.
+
+Existing scripts must replace the old `window.*` APIs with `game.window.*`.
+Window configuration keys in `nomad.toml` remain unchanged. Available properties,
+methods, and callback signatures are listed in the [Engine API](engine-api.md).
+
 ## Features and guides
 
 | Feature | Guide |

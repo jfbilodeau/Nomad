@@ -9,6 +9,7 @@
 #include <nomad/game/EntityVariableContext.hpp>
 #include <nomad/game/Scene.hpp>
 #include <nomad/game/VariablePersistence.hpp>
+#include <nomad/game/WindowObject.hpp>
 
 #include <nomad/game/resource/ResourceManager.hpp>
 
@@ -16,6 +17,7 @@
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/EnumType.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Path.hpp>
@@ -95,6 +97,7 @@ void Game::initEngine()
     initDynamicVariables();
     initVariableContext();
     initFunctions();
+    initWindowProperties();
     initResourceManager();
 }
 
@@ -193,6 +196,10 @@ void Game::initializeHeadless()
 
 Game::~Game() {
     releaseScriptState();
+    if (m_windowObject != nullptr) {
+        m_windowObject->detachGame();
+    }
+
     m_resourceManager.reset();
     m_canvas.reset();
 
@@ -218,6 +225,7 @@ Game::~Game() {
 
     m_virtualMachine.reset();
     m_ownedRuntime.reset();
+    m_windowObject.reset();
     m_runtime = nullptr;
 }
 
@@ -281,6 +289,12 @@ void Game::setWindowSize(const NomadInteger width, const NomadInteger height) {
 
 const Point& Game::getWindowSize() const {
     return m_windowSize;
+}
+
+void Game::setWindowTitle(const NomadString& title) {
+    if (!SDL_SetWindowTitle(m_window, title.c_str())) {
+        log::error("Unable to set window title: " + NomadString(SDL_GetError()));
+    }
 }
 
 void Game::centerWindow() const {
@@ -1275,6 +1289,38 @@ void Game::initObjects() {
     ).isInvalid()) {
         raiseError("Failed to create Font type");
     }
+
+    const auto hubId = m_runtime->getHubId("game");
+    const auto windowTypeId = m_runtime->registerHubClass(
+        hubId, "Window", 
+        ClassMode::Closed,
+        NomadDoc("The game window. References share live state; new windows cannot be constructed.")
+    );
+    const auto mouseTypeId = m_runtime->registerHubClass(
+        hubId, "WindowMouse", 
+        ClassMode::Closed,
+        NomadDoc("The live mouse position and movement for the game window.")
+    );
+    const auto resolutionTypeId = m_runtime->registerHubClass(
+        hubId, "WindowResolution", 
+        ClassMode::Closed,
+        NomadDoc("The live logical resolution of the game window.")
+    );
+
+    if (windowTypeId.isInvalid() || mouseTypeId.isInvalid() || resolutionTypeId.isInvalid()) {
+        raiseError("Failed to create window types");
+    }
+
+    const auto* windowType = m_runtime->getTypeByName("game.Window");
+    m_windowObject.reset(new WindowObject(*this));
+    RuntimeValue windowValue;
+    windowValue.setObjectValue(m_windowObject.get());
+    m_windowObject->addRef();
+    const RuntimeValueGuard windowValueOwner(*windowType, &windowValue);
+    
+    if (m_runtime->registerHubConstant(hubId, "window", windowValue, windowType).isInvalid()) {
+        raiseError("Failed to register game.window");
+    }
 }
 
 void Game::initEvents() const {
@@ -1306,7 +1352,6 @@ void Game::initDynamicVariables() {
     initOtherDynamicVariables();
     initSceneDynamicVariables();
     initThisDynamicVariables();
-    initWindowDynamicVariables();
 }
 
 void Game::initVariableContext() {

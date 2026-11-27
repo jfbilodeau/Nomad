@@ -39,6 +39,9 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/TileMap.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/TileMapData.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/VariablePersistence.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/WindowMouseObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/WindowObject.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/WindowResolutionObject.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/game/debug/DebugConsole.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/debug/DebugDraw.cpp
@@ -51,6 +54,7 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/SystemFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/ThisEntityFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/WindowFunctions.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/functions/WindowProperties.cpp
 
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/Animation.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/resource/Audio.cpp
@@ -73,7 +77,6 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/OtherDynamicVariables.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/SceneDynamicVariables.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/variables/ThisDynamicVariables.cpp
-    ${NOMAD_SOURCE_DIR}/nomad/game/variables/WindowDynamicVariables.cpp
 )
 nomad_configure_library_target(nomad-game)
 set_target_properties(nomad-game PROPERTIES OUTPUT_NAME "game.nomad")

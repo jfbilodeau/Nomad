@@ -9,8 +9,10 @@
 
 #include <nomad/interpreter/Interpreter.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Hub.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <TestDirectory.hpp>
@@ -162,6 +164,206 @@ BOOST_AUTO_TEST_CASE(borrowed_runtime_remains_usable_after_game_destruction)
     RuntimeValue result;
     virtualMachine->executeFunction(functionId, {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
+}
+
+BOOST_AUTO_TEST_CASE(window_aliases_and_child_views_mutate_live_game_state) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const auto functionId = compile(
+        "updateWindow",
+        "window = game.window\nmouse = window.mouse\nresolution = window.resolution\n"
+        "window.setSizeAndCenter 640 360\nwindow.setResolution 320 180\n"
+        "window.title = \"Property title\"\nassert window.title == \"Property title\"\n"
+        "window.setTitle \"Method title\"\n"
+        "window.setFps 75\nassert window.fps == 75\nwindow.fps = 90\n"
+        "mouse.x = 16.0\nmouse.y = -4.0\n"
+        "assert game.window.mouse.x == 16.0\nassert game.window.mouse.y == -4.0\n"
+        "assert mouse.deltaX == -16.0\nassert mouse.deltaY == 4.0\n"
+        "resolution.width = 400\nresolution.height = 225\n"
+        "window.width = 720\nwindow.height = 405\n"
+        "return $\"{window.title}:{resolution.width}x{resolution.height}\""
+    );
+    RuntimeValue result;
+    const RuntimeValueGuard resultOwner(*runtime.getStringType(), &result);
+    runtime.initializeScripts();
+    virtualMachine->executeFunction(functionId, {}, result);
+    BOOST_TEST(result.getStringValue() == "Method title:400x225");
+    BOOST_TEST(game->getWindowSize().getX() == 720);
+    BOOST_TEST(game->getWindowSize().getY() == 405);
+    BOOST_TEST(game->getResolution().getX() == 400);
+    BOOST_TEST(game->getResolution().getY() == 225);
+    BOOST_TEST(game->getFps() == 90U);
+
+    const Interpreter interpreter(*virtualMachine);
+    InterpreterContext context(interpreter);
+    BOOST_REQUIRE(interpreter.execute("window = game.window", context));
+    BOOST_REQUIRE(interpreter.execute("resolution = window.resolution", context));
+    game->setResolution(128, 72);
+    BOOST_REQUIRE(interpreter.execute("resolution.width", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 128);
+    BOOST_REQUIRE(interpreter.execute("resolution.height = 96", context));
+    BOOST_TEST(game->getResolution().getY() == 96);
+    BOOST_REQUIRE(interpreter.execute("window.title = \"Interpreter title\"", context));
+    BOOST_REQUIRE(interpreter.execute("game.window.title", context));
+    BOOST_TEST(context.getResult()->getValue().getStringValue() == "Interpreter title");
+}
+
+BOOST_AUTO_TEST_CASE(window_members_enforce_permissions_without_legacy_registrations) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    for (
+        auto id = runtime.getFirstDynamicVariableId();
+        id.isValid();
+        id = runtime.getNextDynamicVariableId(id)
+    ) {
+        BOOST_TEST(!runtime.getDynamicVariableName(id).starts_with("window."));
+    }
+
+    for (const auto* function : runtime.getNativeFunctions()) {
+        BOOST_TEST(!function->getName().starts_with("window."));
+        BOOST_TEST(!function->getName().starts_with("game.window."));
+    }
+
+    const Interpreter interpreter(*virtualMachine);
+    InterpreterContext context(interpreter);
+    for (const auto* source : {
+        "game.window = 42",
+        "game.window.mouse = game.window.mouse",
+        "game.window.resolution = game.window.resolution",
+        "game.window.mouse.deltaX = 1.0",
+        "game.window.hasFocus = true",
+        "game.window.isFullScreen = true",
+        "game.window.fps = 1.0",
+        "new game.Window"
+    }) {
+        BOOST_TEST_CONTEXT(source) {
+            BOOST_TEST(!interpreter.execute(source, context));
+            BOOST_TEST(context.hasError());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(retained_window_and_child_references_reject_use_after_game_destruction) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const Interpreter interpreter(*virtualMachine);
+    const auto constantId = runtime.getConstantId("game.window");
+    RuntimeValue value;
+    runtime.getConstantValue(constantId, value);
+    const InterpreterValue window(runtime.getConstantType(constantId), value);
+    auto windowReceiver = interpreter.createObjectReceiver(
+        *window.getType()->asClassType(), window.getValue().getObjectValue()
+    );
+    const auto mouse = windowReceiver->getProperty("mouse");
+    const auto resolution = windowReceiver->getProperty("resolution");
+    auto mouseReceiver = interpreter.createObjectReceiver(
+        *mouse.getType()->asClassType(), mouse.getValue().getObjectValue()
+    );
+    auto resolutionReceiver = interpreter.createObjectReceiver(
+        *resolution.getType()->asClassType(), resolution.getValue().getObjectValue()
+    );
+    const auto method = runtime.resolveMethod(window.getType(), "setFps", {runtime.getIntegerType()});
+    BOOST_REQUIRE(method.isResolved());
+    const auto readFunctionId = compile(
+        "readRetainedWindow", "params window:game.Window\nreturn window.width"
+    );
+    runtime.initializeScripts();
+    game.reset();
+
+    const auto reportsUnavailableWindow = [](const NomadException& error) {
+
+        return NomadString(error.what()).find("Window is no longer available") != NomadString::npos;
+    };
+    BOOST_CHECK_EXCEPTION(
+        (void)windowReceiver->getProperty("width"), NomadException, reportsUnavailableWindow
+    );
+    BOOST_CHECK_EXCEPTION(
+        (void)mouseReceiver->getProperty("x"), NomadException, reportsUnavailableWindow
+    );
+    BOOST_CHECK_EXCEPTION(
+        (void)resolutionReceiver->getProperty("width"), NomadException, reportsUnavailableWindow
+    );
+    const InterpreterValue fps(runtime.getIntegerType(), RuntimeValue{NomadInteger{60}});
+    BOOST_CHECK_EXCEPTION(
+        (void)interpreter.runObjectMethod(window, method.id, {&fps, 1}),
+        NomadException,
+        reportsUnavailableWindow
+    );
+    RuntimeValue result;
+    BOOST_CHECK_EXCEPTION(
+        virtualMachine->executeFunction(readFunctionId, {window.getValue()}, result),
+        NomadException,
+        reportsUnavailableWindow
+    );
+}
+
+BOOST_AUTO_TEST_CASE(window_callbacks_capture_lexical_receivers_and_can_clear_themselves) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const auto functionId = compile(
+        "installWindowCallbacks",
+        "class WindowEvents\nresizeWidth = 0\nresizeHeight = 0\ncloseCount = 0\n"
+        "fun install\n"
+        "game.window.onResize fun width height\n"
+        "this.resizeWidth = width\nthis.resizeHeight = height\n"
+        "game.window.clearOnResize\nend\n"
+        "game.window.onClose fun\nthis.closeCount = this.closeCount + 1\n"
+        "game.window.clearOnClose\nend\nend\nend\n"
+        "events = new WindowEvents\nglobal.windowEvents = events\nevents.install"
+    );
+    runtime.initializeScripts();
+    virtualMachine->executeFunction(functionId);
+    auto windowCount = 0;
+    auto** windows = SDL_GetWindows(&windowCount);
+    BOOST_REQUIRE(windows != nullptr);
+    const auto windowId = windowCount == 1 ? SDL_GetWindowID(windows[0]) : SDL_WindowID{};
+    SDL_free(windows);
+    BOOST_REQUIRE(windowId != 0);
+    SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+
+    for (const auto width : {320, 640}) {
+        SDL_Event event{};
+        event.type = SDL_EVENT_WINDOW_RESIZED;
+        event.window.windowID = windowId;
+        event.window.data1 = width;
+        event.window.data2 = width / 2;
+        BOOST_REQUIRE(SDL_PushEvent(&event));
+    }
+
+    for (auto index = 0; index < 2; ++index) {
+        SDL_Event event{};
+        event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        event.window.windowID = windowId;
+        BOOST_REQUIRE(SDL_PushEvent(&event));
+    }
+
+    auto polls = 0;
+    game->setExitHandler({}, [&polls] {
+
+        return ++polls > 16;
+    });
+    game->run();
+    BOOST_TEST(!game->running());
+    const Interpreter interpreter(*virtualMachine);
+    RuntimeValue eventsValue;
+    runtime.getContextVariableValue(runtime.getContextVariableId("global.windowEvents"), eventsValue);
+    const InterpreterValue events(runtime.getTypeByName("WindowEvents"), eventsValue);
+    auto receiver = interpreter.createObjectReceiver(
+        *events.getType()->asClassType(), events.getValue().getObjectValue()
+    );
+    BOOST_TEST(receiver->getProperty("resizeWidth").getValue().getIntegerValue() == 320);
+    BOOST_TEST(receiver->getProperty("resizeHeight").getValue().getIntegerValue() == 160);
+    BOOST_TEST(receiver->getProperty("closeCount").getValue().getIntegerValue() == 1);
+}
+
+BOOST_AUTO_TEST_CASE(window_properties_remain_available_in_debug_inspection) {
+    options.debug = true;
+    auto game = Game::createForRuntime(&runtime, options, true);
+    game->onEntryExecuted();
+    game->setDebugConsoleVisible(true);
+    auto polls = 0;
+    game->setExitHandler({}, [&polls] {
+
+        return ++polls > 3;
+    });
+    BOOST_CHECK_NO_THROW(game->run());
+    BOOST_TEST(polls > 3);
 }
 
 BOOST_AUTO_TEST_CASE(windowed_creation_does_not_compile_or_execute_entry)
