@@ -36,12 +36,9 @@ Cross-target runtime selection is not supported.
 
 ### Experimental module bindings
 
-`generate-bindings` reads `module.toml` and the selected module's declared script
-directory, using the ordinary compiler without running scripts or loading native
-modules. It does not discover a project or load the engine API. Unresolved
-native-dependent declarations fail with compiler diagnostics. Script dependencies
-require an explicit `--sdk` root containing `modules/<name>/module.toml`; only their
-transitive script roots are read.
+`generate-bindings` reads `module.toml` and the module's scripts without running
+them or loading native modules. Pass `--sdk <directory>` when the scripts depend
+on other SDK modules.
 
 The default output is `<module-directory>/generated`. An explicit `--output` is
 relative to the current working directory. Commit the generated files:
@@ -50,25 +47,17 @@ relative to the current working directory. Commit the generated files:
 - `src/Bindings.cpp`
 - `nomad-module.cmake`
 
-Only enums and ordinary configuration classes with primitive (`bool`, `int`,
-`float`, `string`) or enum stored fields and one zero-argument script constructor
-are supported. Methods, parameterized classes, other field types, and native
-properties are rejected. Free functions may supply initializer values but do not
-receive generated callable interfaces. Invalid scripts, unsupported shapes, C++
-keywords, and generated-name collisions fail before files are changed.
+Supported declarations are enums and configuration classes with primitive or
+enum stored fields and a zero-argument script constructor. Methods, structs,
+parameterized classes, and native properties are not supported.
 
-Generation is deterministic and leaves unchanged files untouched. `--check`
-returns nonzero for stale or deleted inventory files and never creates or changes
-files or directories. Source/output overlap, symbolic-link output paths, and
-collisions with unrelated files are rejected. Other files in an output directory
-are not removed. There is no automatic CMake generation or SDK script staging.
-See [embedding](embedding.md#experimental-generated-script-bindings) for ownership,
-runtime checks, and explicit CMake consumption.
+`--check` reports stale or missing generated files with a nonzero exit code
+without writing anything. Generation preserves unrelated output files and rejects
+unsafe output paths or name collisions. CMake does not run generation automatically.
+See [embedding](embedding.md#experimental-generated-script-bindings) for CMake
+integration and wrapper usage.
 
-Packaging compiles each nonempty raw sprite root into `catalog.json` and
-adjacent packed PNG pages. Individual source PNGs from that root are omitted
-from the archive. Roots that already contain a catalog are preserved, while
-empty roots remain uncompiled for dynamically installed mods.
+Packaging automatically packs raw sprites; see [Sprites](sprites.md#source-and-compiled-sprite-roots).
 
 ## Compiler
 
@@ -85,49 +74,30 @@ resource directory. Project modules supply their own validation rules. For
 game projects, checks require `game.entry` to exist, take no arguments, and
 return `void`.
 
-The compiler initializes a headless engine with dummy video/audio drivers.
-Engine functions and constants remain available. Diagnostics include source
-locations; compilation errors return a nonzero exit code.
+Checks expose the configured module APIs without opening a window or executing
+scripts. Diagnostics include source locations; errors return a nonzero exit code.
 
 Instruction dumps include script functions, methods, constructors, and generated
 class initializers. `--function` limits the dump to a named free function.
 
-Generated API Markdown includes script classes, their constructor overloads,
-read/write fields (including fields inferred from constructor assignments), and
-ordinary method overloads with parameter and return types. Qualified class names
-are preserved. Nested callbacks and generated initializers are omitted.
-Documentation generation does not execute the scripts.
+Generated API Markdown includes registered types, constructors, fields, methods,
+and functions. Documentation generation does not execute scripts.
 
-When `nomadc check` discovers a project, it also discovers and CPU-packs the
-configured sprite directories without uploading textures to the GPU. The
-report lists each physical texture page, its dimensions, logical and unique
-sprite counts, and pixel occupancy. Sprite discovery, image decoding, naming,
-collision, size, and packing failures produce a nonzero exit code. An explicit
-`nomadc check <path>` remains a script-only check.
+Project-aware checks also validate sprites and report packing results; see
+[Inspect packing](sprites.md#inspect-packing).
+An explicit `nomadc check <path>` remains a script-only check.
 
 ## Language server
 
-`nomad-lsp` is a separate application, not a `nomadc` verb. With no arguments it
-speaks LSP over standard input/output using `Content-Length` framing. The explicit
-`--stdio` flag is also supported, as used by the VS Code language client. Logs go to
-standard error. `--help`/`-h` prints usage and `--version`/`-v` prints the version;
-unknown arguments are rejected.
+`nomad-lsp` is a separate application. Run it with `--stdio` or no arguments to
+serve LSP over standard input/output; logs go to standard error.
+`--help`/`-h` prints usage and `--version`/`-v` prints the version.
 
-The server supports compiler diagnostics, API and project-function completion,
-local variable and parameter suggestions, object member completion, hover
-documentation, and signature help for function, method, and constructor calls.
-Signature help lists overloads and parameter descriptions and tracks the active
-argument in space-separated calls, including nested and parenthesized expressions.
-Hidden source-location parameters are omitted. Suggestions and diagnostics reflect unsaved editor changes and
-use the nearest project configuration. Scripts are never executed. See the
+It provides diagnostics, completion, hover documentation, and signature help using
+the nearest project configuration and unsaved editor changes. Scripts are not
+executed, but analysis can load trusted native modules. See the
 [VS Code extension guide](https://github.com/jfbilodeau/Nomad/blob/main/editor/README.md)
 for setup and current limitations.
-
-Local and parameter suggestions and hover information also cover script methods
-and constructors. Their receiver is available as `this`.
-Member suggestions and hover include script fields and method overloads, filtered
-by the receiver's type. Stored-field chains such as `owner.child.name` retain
-their member types, and unsaved class changes update suggestions across the project.
 
 ## Runtime
 
@@ -145,14 +115,5 @@ After the separator, `--help`, `--project-path`, `--debug`, and `--no-debug` are
 application data, not runtime options. Without `--`, `os.argv` is empty.
 See [os](nomad-os.md) for startup environment and path snapshots.
 
-Run `nomad run --debug` and press the grave/tilde key (`~`) in the game window
-to open the debug console. Runtime log messages appear in its **Logs** panel.
-Press `~` again to close it. The key has no special effect when debug mode is
-disabled.
-
-Runtime messages are written to the terminal that launched `nomad run`,
-including on Windows. Game applications also expose logs through the in-game
-debug console.
-
-See the [debugging guide](debugging.md) for console controls, physics debug
-drawing, and persisted debug settings.
+See the [debugging guide](debugging.md) for runtime logs, console controls,
+physics debug drawing, and persisted settings.

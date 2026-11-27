@@ -1,10 +1,12 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/log/Logger.hpp>
-
 #include <nomad/script/Variable.hpp>
 
+#include <nomad/log/Logger.hpp>
+
 #include <nomad/system/String.hpp>
+
+#include <limits>
 
 namespace nomad {
 
@@ -89,6 +91,43 @@ NomadIndex VariableMap::getVariableCount() const {
     return m_variables.size();
 }
 
+NomadIndex VariableMap::getVariableOffset(const VariableId variableId) const {
+    if (isIdOutOfRange(variableId.id, m_variables.size())) {
+        throw NomadException("Variable ID out of range");
+    }
+
+    auto offset = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < toNomadIndex(variableId.id); ++index) {
+        const auto& variable = m_variables[index];
+        const auto* type = variable.getType();
+        if (type == nullptr) {
+            throw NomadException("Cannot calculate variable layout: type of '" + variable.getName() + "' is unresolved");
+        }
+        const auto size = type->getSize();
+        if (size > std::numeric_limits<NomadIndex>::max() - offset) {
+            throw NomadException("Variable storage size exceeds the maximum slot count at '" + variable.getName() + "'");
+        }
+        offset += size;
+    }
+    return offset;
+}
+
+NomadIndex VariableMap::getStorageSize() const {
+    auto size = NomadIndex{0};
+    for (const auto& variable : m_variables) {
+        const auto* type = variable.getType();
+        if (type == nullptr) {
+            throw NomadException("Cannot calculate variable layout: type of '" + variable.getName() + "' is unresolved");
+        }
+        const auto variableSize = type->getSize();
+        if (variableSize > std::numeric_limits<NomadIndex>::max() - size) {
+            throw NomadException("Variable storage size exceeds the maximum slot count at '" + variable.getName() + "'");
+        }
+        size += variableSize;
+    }
+    return size;
+}
+
 bool VariableMap::isWritten(const VariableId variableId) const {
     return m_variables[toNomadIndex(variableId.id)].isWritten();
 }
@@ -114,7 +153,7 @@ VariableList::VariableList(const VariableMap* variableMap):
         const auto type = m_variableMap.getVariableType(variableId);
 
         if (type != nullptr) {
-            type->initValue(m_variableValues[i]);
+            type->initValue(&m_variableValues[i]);
         } else {
             log::warning("Initializing variable ID " + toString(variableId.id) + " with null type" );
         }
@@ -127,7 +166,7 @@ VariableList::~VariableList() {
 
         auto type = m_variableMap.getVariableType(variableId);
 
-        type->freeValue(m_variableValues[i]);
+        type->freeValue(&m_variableValues[i]);
     }
 }
 
@@ -147,37 +186,22 @@ NomadIndex VariableList::getVariableCount() const {
     return m_variableMap.getVariableCount();
 }
 
-void VariableList::setVariableValue(const VariableId variableId, const RuntimeValue& value) {
-    const auto variableIndex = toNomadIndex(variableId.id);
-
-#ifdef NOMAD_DEBUG
-    if (variableIndex >= m_variableValues.size()) {
-        log::error("Variable ID out of range");
-    }
-#endif
-
-    const auto* type = m_variableMap.getVariableType(variableId);
-
-    if (type == nullptr) {
-        m_variableValues[variableIndex] = value;
-        return;
+RuntimeValue* VariableList::setVariableValue(const VariableId variableId, const RuntimeValue& value) {
+    if (isIdOutOfRange(variableId.id, m_variableValues.size())) {
+        return nullptr;
     }
 
-    type->assignValue(value, m_variableValues[variableIndex]);
+    setUncheckedVariableValue(variableId, value);
+
+    return &m_variableValues[toNomadIndex(variableId.id)];
 }
 
-void VariableList::getVariableValue(const VariableId variableId, RuntimeValue& value) const {
-    const auto variableIndex = toNomadIndex(variableId.id);
-
-#ifdef NOMAD_DEBUG
-    if (variableIndex >= m_variableValues.size()) {
-        log::error("Variable ID out of range");
-
-        return;
+const RuntimeValue* VariableList::getVariableValue(const VariableId variableId) const {
+    if (isIdOutOfRange(variableId.id, m_variableValues.size())) {
+        return nullptr;
     }
-#endif
 
-    value = m_variableValues[variableIndex];
+    return &getUncheckedVariableValue(variableId);
 }
 
 } // nomad

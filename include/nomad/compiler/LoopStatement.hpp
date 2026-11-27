@@ -22,7 +22,7 @@ protected:
     void resetControls();
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
     StatementList m_body;
 

@@ -69,6 +69,9 @@ std::unique_ptr<FunctionNode> parseThenBody(
 
 // Statement parsers. Errors are reported to the tokenizer's context; pre-parse functions return false and parse
 // functions return nullptr on error.
+[[nodiscard]] bool isFunStatementBlock(const Tokenizer* tokens);
+[[nodiscard]] bool isIfStatementBlock(const Tokenizer* tokens);
+[[nodiscard]] bool isOpenStatementBlock(const Tokenizer* tokens);
 std::unique_ptr<Statement> parseHubStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens);
 bool preParseHubStatement(
     CompilerContext* context,

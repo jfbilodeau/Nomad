@@ -104,7 +104,6 @@ void setDeliveryMode(LogDeliveryMode mode);
 
 void debug(NomadStringView message, const Location& location = Location());
 void info(NomadStringView message, const Location& location = Location());
-// void warn(NomadStringView message, const Location& location = Location());
 void warning(NomadStringView message, const Location& location = Location());
 void error(NomadStringView message, const Location& location = Location());
 void critical(NomadStringView message, const Location& location = Location());

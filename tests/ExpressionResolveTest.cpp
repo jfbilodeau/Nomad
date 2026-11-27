@@ -8,7 +8,10 @@
 #include <nomad/compiler/CompilerContext.hpp>
 #include <nomad/compiler/Expression.hpp>
 #include <nomad/compiler/SyntaxTree.hpp>
-#include <nomad/script/InterpreterContext.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+#include <nomad/interpreter/InterpreterContext.hpp>
+
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -44,12 +47,14 @@ BOOST_AUTO_TEST_CASE(function_call_nodes_retain_the_resolved_target_across_catal
     }, {defParameter("value", runtime.getFloatType(), "")}, runtime.getIntegerType(), "").isValid());
 
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext evaluation(*machine);
-    expression.evaluate(evaluation);
+    const Interpreter evaluationEvaluator(*machine);
+    InterpreterContext evaluation(evaluationEvaluator);
+    const auto result = expression.evaluate(evaluation);
     BOOST_REQUIRE(!evaluation.hasError());
-    BOOST_REQUIRE(evaluation.getResult() != nullptr);
-    BOOST_TEST(evaluation.getResult()->getValue().getIntegerValue() == 11);
-    statement.evaluate(evaluation);
+    BOOST_TEST(result.getValue().getIntegerValue() == 11);
+    const auto statementResult = statement.evaluate(evaluation);
+    BOOST_TEST(statementResult.getType()->isVoid());
+    BOOST_TEST(evaluation.getResult() == nullptr);
     BOOST_TEST(!evaluation.hasError());
     BOOST_TEST(selectedCalls == 2);
 }
@@ -69,7 +74,7 @@ BOOST_AUTO_TEST_CASE(expression_resolve_reports_unknown_identifier_without_throw
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
 
     const auto& diagnostic = context.getDiagnostics().front();
-    BOOST_TEST((diagnostic.severity == DiagnosticSeverity::Error));
+    BOOST_TEST((diagnostic.severity == CompilerDiagnosticSeverity::Error));
     BOOST_TEST(diagnostic.message == "Unknown identifier: missing");
     BOOST_TEST(diagnostic.line == 3);
     BOOST_TEST(diagnostic.column == 7);
@@ -101,8 +106,8 @@ BOOST_AUTO_TEST_CASE(statement_resolve_reports_errors_in_call_arguments)
     BOOST_TEST(!resolved);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
 
-    const auto* error = context.getFirstError();
-    BOOST_REQUIRE(error != nullptr);
+    const auto error = context.getFirstError();
+    BOOST_REQUIRE(error.has_value());
     BOOST_TEST(error->message == "Unknown identifier: missing");
     BOOST_TEST(error->line == 1);
     BOOST_TEST(error->column == 4);
@@ -144,8 +149,8 @@ BOOST_AUTO_TEST_CASE(assignment_resolve_reports_function_variable_type_mismatch)
     BOOST_TEST(!resolved);
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
 
-    const auto* error = context.getFirstError();
-    BOOST_REQUIRE(error != nullptr);
+    const auto error = context.getFirstError();
+    BOOST_REQUIRE(error.has_value());
     BOOST_TEST(error->message.find("Cannot assign value of type") != NomadString::npos);
     BOOST_TEST(error->line == 2);
     BOOST_TEST(error->column == 3);
@@ -192,7 +197,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_return_type_of_function_resolved_l
 
     BOOST_TEST(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("b"))->getReturnType() == runtime.getIntegerType());
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("b"))->getReturnType() == runtime.getIntegerType());
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_infers_recursive_return_type_from_later_return)
@@ -204,6 +209,48 @@ BOOST_AUTO_TEST_CASE(compile_functions_infers_recursive_return_type_from_later_r
 
     BOOST_TEST(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);
+}
+
+BOOST_AUTO_TEST_CASE(compile_functions_infers_return_chain_declared_in_reverse_order)
+{
+    constexpr auto chainLength = 64;
+    std::vector<ScriptSource> sources;
+    for (auto index = 0; index < chainLength; ++index) {
+        const auto name = "f" + std::to_string(index);
+        const auto body = index + 1 < chainLength ? "return f" + std::to_string(index + 1) : std::string("return 42");
+
+        sources.push_back({name, {name + ".nomad", body}});
+    }
+
+    Runtime runtime;
+    auto compiler = runtime.createCompiler();
+    CompilerContext context(compiler.get());
+    compiler->registerSources(&context, {sources, {}});
+
+    BOOST_TEST(compiler->compileFunctions(&context));
+    BOOST_TEST(context.getErrorCount() == 0);
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("f0"))->getReturnType() == runtime.getIntegerType());
+}
+
+BOOST_AUTO_TEST_CASE(verifier_rejects_control_flow_that_joins_with_different_stack_depths)
+{
+    Runtime runtime;
+    const auto functionId = runtime.registerScriptFunction("unbalanced", "unbalanced.nomad", "");
+    auto* function = runtime.getScriptFunction(functionId);
+    function->setReturnType(runtime.getVoidType());
+    auto compiler = runtime.createCompiler();
+
+    const auto base = runtime.getInstructions().size();
+    function->setFunctionStart(base);
+    compiler->addOpCode(OpCodes::op_jump_if_false);
+    compiler->addIndex(base + 5);
+    compiler->addOpCode(OpCodes::op_push_r);
+    compiler->addOpCode(OpCodes::op_jump);
+    compiler->addIndex(base + 5);
+    compiler->addOpCode(OpCodes::op_return);
+    function->setFunctionEnd(runtime.getInstructions().size());
+
+    BOOST_CHECK_THROW(Compiler::computeReservedStackSlots(runtime, *function), NomadBug);
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_reports_recursive_function_without_typed_return)
@@ -245,7 +292,7 @@ BOOST_AUTO_TEST_CASE(compile_functions_treats_function_without_return_as_void)
     BOOST_TEST(!compiler->compileFunctions(&context));
     BOOST_REQUIRE_EQUAL(context.getErrorCount(), 1);
     BOOST_TEST(context.getDiagnostics()[0].message == "Function 'noValue' does not return a value");
-    BOOST_TEST(runtime.getScriptFunction(runtime.getFunctionId("noValue"))->getReturnType() == runtime.getVoidType());
+    BOOST_TEST(runtime.getScriptFunction(runtime.getScriptFunctionId("noValue"))->getReturnType() == runtime.getVoidType());
 }
 
 BOOST_AUTO_TEST_CASE(compile_functions_reports_non_boolean_if_condition_while_resolving)
@@ -326,13 +373,13 @@ BOOST_AUTO_TEST_CASE(format_expression_infers_return_type_and_captures_before_co
     CompilerContext context(compiler.get());
     compiler->registerSources(&context, {{{"formatCapture", {"formatCapture.nomad",
         "params value:int\nlocal = 2\nreturn $\"{value + local}\""}}}, {}});
-    const auto hostId = runtime.getFunctionId("formatCapture");
+    const auto hostId = runtime.getScriptFunctionId("formatCapture");
 
     BOOST_REQUIRE(compiler->compileFunctions(&context));
     BOOST_TEST(context.getErrorCount() == 0);
 
     std::vector<ScriptFunction*> functions;
-    runtime.getFunctions(functions);
+    runtime.getScriptFunctions(functions);
     auto generatedCount = NomadIndex{0};
     for (const auto* function : functions) {
         if (function->getParentId() == hostId) {

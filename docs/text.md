@@ -6,50 +6,28 @@ entities to use text without embedding it directly in source files.
 
 ## Default catalog
 
-New projects include `res/text/text.csv`:
-
-```csv
-key,en
-hello,Hello from Nomad!
-```
-
-The first column must be named `key`. Each remaining column header is a
-language code, and each row supplies the value for one key in those languages:
+New projects include `res/text/text.csv` with an English `hello` entry.
+The first column must be named `key`; additional columns are language codes.
+Add keys and translations as rows, quoting values that contain commas:
 
 ```csv
 key,en,fr
 game.title,Example Game,Jeu d'exemple
 menu.start,Start,Commencer
 menu.quit,Quit,Quitter
-```
-
-Keep every row aligned with the header. Quote values that contain commas:
-
-```csv
-key,en,fr
 welcome,"Welcome, traveler!","Bienvenue, voyageur!"
 ```
 
-Nomad starts games using the `en` language. The runtime registers constants
-for every key in that column.
+Keep every row aligned with the header. Nomad starts games using `en` and exposes
+that column's keys as constants.
 
 ## Use text in scripts
 
-Prefix a catalog key with `t.` to read its value:
+Prefix a catalog key with `t.` to read its value. Keys can contain dots to
+organize related text:
 
 ```nomad
 this.text.value = t.game.title
-```
-
-Keys may contain dots to organize related text:
-
-```csv
-key,en,fr
-menu.start,Start,Commencer
-menu.quit,Quit,Quitter
-```
-
-```nomad
 this.text.value = t.menu.start
 ```
 
@@ -92,13 +70,6 @@ directories = []
 When the `[text]` table or `directories` property is omitted, Nomad loads
 `text/text.csv`.
 
-Configured paths must:
-
-- be non-empty and relative to the resource directory;
-- remain inside the resource directory;
-- identify `.csv` files; and
-- be unique, including case-insensitive duplicates.
-
 See the [project configuration reference](configuration.md#text-directories)
 for the complete configuration rules.
 
@@ -130,7 +101,5 @@ catalog that references them is configured at another path.
 ## Language selection
 
 CSV catalogs may contain several language columns, but the standalone Nomad
-runtime currently selects `en` during startup. Support for changing languages
-at runtime from Nomad scripts is forthcoming. Until then, every catalog used
-by a standalone game should provide an `en` value for each key referenced by
-its scripts.
+runtime currently selects `en` during startup. Scripts cannot change languages
+at runtime. Supply an `en` value for every key referenced by the game.

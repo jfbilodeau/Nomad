@@ -51,7 +51,7 @@ bool sameSourcePath(const std::filesystem::path& left, const std::filesystem::pa
 }
 
 void reportOverrideError(SourceBatch& batch, const ScriptSource& script, NomadString message) {
-    batch.diagnostics.push_back({DiagnosticSeverity::Error, std::move(message),
+    batch.diagnostics.push_back({CompilerDiagnosticSeverity::Error, std::move(message),
         script.source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX});
 }
 
@@ -138,7 +138,7 @@ bool applyOverride(SourceBatch& batch, const std::filesystem::path& path, Script
 
 void reportLoadError(SourceBatch& batch, const std::filesystem::path& path, NomadString message) {
     batch.diagnostics.push_back({
-        DiagnosticSeverity::Error,
+        CompilerDiagnosticSeverity::Error,
         std::move(message),
         pathToGenericUtf8(path),
         NOMAD_INVALID_INDEX,

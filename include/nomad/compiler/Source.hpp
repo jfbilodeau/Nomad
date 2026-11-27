@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/compiler/Diagnostic.hpp>
+#include <nomad/compiler/CompilerDiagnostic.hpp>
 
 #include <filesystem>
 #include <optional>
@@ -33,7 +33,7 @@ struct SourceRoot {
 
 struct SourceBatch {
     std::vector<ScriptSource> sources;
-    std::vector<Diagnostic> diagnostics;
+    std::vector<CompilerDiagnostic> diagnostics;
 };
 
 } // namespace nomad

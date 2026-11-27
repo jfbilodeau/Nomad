@@ -4,8 +4,9 @@
 
 #include <nomad/log/Logger.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <boost/json.hpp>
@@ -480,7 +481,7 @@ void loadVariableContext(const Runtime* runtime, VariableContext& context, const
     for (auto& pendingValue : pendingValues) {
         // The variable context copies what it keeps.
         context.setValue(pendingValue.variableId, pendingValue.value);
-        pendingValue.type->freeValue(pendingValue.value);
+        pendingValue.type->freeValue(&pendingValue.value);
     }
 }
 

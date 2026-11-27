@@ -1,0 +1,209 @@
+// Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
+
+#pragma once
+
+#include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/ClassType.hpp>
+#include <nomad/script/EnumType.hpp>
+#include <nomad/script/Event.hpp>
+#include <nomad/script/FunctionResolution.hpp>
+#include <nomad/script/Member.hpp>
+#include <nomad/script/NativeMember.hpp>
+#include <nomad/script/Property.hpp>
+#include <nomad/script/Type.hpp>
+
+#include <concepts>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace nomad {
+
+class TypeManager {
+public:
+    explicit TypeManager(Runtime& runtime);
+    ~TypeManager();
+    TypeManager(const TypeManager&) = delete;
+    TypeManager& operator=(const TypeManager&) = delete;
+    TypeManager(TypeManager&&) = delete;
+    TypeManager& operator=(TypeManager&&) = delete;
+
+    [[nodiscard]] Runtime& getRuntime() const;
+    // Catalog-only registration: names are opaque and namespace members are not published.
+    [[nodiscard]] TypeId registerClass(
+        NomadString name,
+        ClassMode mode,
+        NomadString documentation = {}
+    );
+    template<std::derived_from<ClassType> Descriptor, typename... Arguments>
+    [[nodiscard]] TypeId registerClass(
+        NomadString name,
+        ClassMode mode,
+        Arguments&&... arguments
+    ) {
+        if (!canRegisterClass(name, mode)) {
+            return TypeId::INVALID;
+        }
+
+        const auto id = reserveTypeId();
+        if (id.isInvalid()) {
+            return TypeId::INVALID;
+        }
+
+        auto type = std::make_unique<Descriptor>(
+            &m_runtime, id, name, mode, std::forward<Arguments>(arguments)...
+        );
+
+        return registerClassDescriptor(id, name, mode, std::move(type));
+    }
+    [[nodiscard]] TypeId registerStruct(NomadString name, NomadString documentation = {});
+    // Invalid ownership, IDs, or duplicate nominal names return INVALID without logging.
+    [[nodiscard]] TypeId registerType(std::unique_ptr<Type> type);
+    [[nodiscard]] const OpaqueIdType* registerOpaqueIdType(const NomadString& name, NomadDocArg);
+    [[nodiscard]] TypeId createEnum(
+        NomadString name,
+        std::vector<EnumValueDefinition> values,
+        NomadString documentation = {}
+    );
+    // Catalog-only declaration and EventType creation; duplicate names return INVALID without logging.
+    [[nodiscard]] EventId createEvent(
+        const NomadString& name,
+        const std::vector<EventParameter>& parameters
+    );
+    [[nodiscard]] EventId getEventId(const NomadString& name) const;
+    // Borrows stable read-only metadata until catalog destruction; invalid or missing IDs return nullptr.
+    [[nodiscard]] const EventDefinition* getEventDefinition(EventId id) const;
+    [[nodiscard]] EventId getFirstEventId() const;
+    [[nodiscard]] EventId getNextEventId(EventId currentId) const;
+    [[nodiscard]] const Type* getCallbackType(
+        const std::vector<const Type*>& parameterTypes,
+        const Type* returnType
+    );
+    [[nodiscard]] const Type* getPredicateType();
+    using ParameterizedConstructorInitializer =
+        std::function<void(const NomadString&, const std::vector<const Type*>&)>;
+    bool registerNativeParameterizedConstructor(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedConstructorInitializer initializer
+    );
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedConstructorArgumentCount(const NomadString& name) const;
+    void getParameterizedConstructorNames(std::vector<NomadString>& names) const;
+    [[nodiscard]] NomadString getParameterizedConstructorName(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
+    using ParameterizedTypeFactory =
+        std::function<std::unique_ptr<Type>(Runtime*, TypeId, const std::vector<const Type*>&)>;
+    using ParameterizedTypeInitializer = std::function<void(Runtime*, TypeId)>;
+    bool registerParameterizedType(
+        const NomadString& name,
+        NomadIndex argumentCount,
+        ParameterizedTypeFactory factory,
+        ParameterizedTypeInitializer initializer = {}
+    );
+    [[nodiscard]] std::optional<NomadIndex> getParameterizedTypeArgumentCount(const NomadString& name) const;
+    void getParameterizedTypeNames(std::vector<NomadString>& names) const;
+    [[nodiscard]] const Type* getParameterizedType(
+        const NomadString& name,
+        const std::vector<const Type*>& arguments
+    );
+    bool registerConstructorTemplate(const NomadString& name, std::vector<TemplateParameter> parameters);
+    [[nodiscard]] std::optional<std::vector<TemplateParameter>> getConstructorTemplate(const NomadString& name) const;
+    [[nodiscard]] ConstructorInferenceResult inferConstructorTypeArguments(
+        const NomadString& name,
+        const std::vector<const Type*>& argumentTypes
+    ) const;
+    // Catalog-only signature registration; nullptr parameter types represent generic values.
+    bool registerMemberTemplate(
+        const NomadString& family,
+        const NomadString& name,
+        MemberSignature signature
+    );
+    // Returns a family-specific metadata snapshot; no Runtime parser signature is published.
+    [[nodiscard]] std::optional<MemberSignature> getMemberTemplateSignature(
+        const NomadString& family,
+        const NomadString& name
+    ) const;
+    [[nodiscard]] TypeId getTypeId(const NomadString& name) const;
+    [[nodiscard]] std::optional<const Type*> getType(TypeId id) const;
+    [[nodiscard]] const Type* getTypeByName(const NomadString& name) const;
+    void getTypes(std::vector<const Type*>& types) const;
+    [[nodiscard]] NomadIndex getTypeCount() const;
+    [[nodiscard]] ParameterShape getParameterShape(const Type* type) const;
+    [[nodiscard]] bool ownsType(const Type* type) const;
+    [[nodiscard]] ClassType* getMutableClassType(const ClassType* type);
+    [[nodiscard]] CompositeType* getMutableCompositeType(TypeId id);
+    void finalizeCompositeFieldLayout(TypeId id);
+    [[nodiscard]] const ClassType* getIteratorType(const Type* valueType);
+    [[nodiscard]] std::optional<IterableInfo> getIterableInfo(const Type* sourceType) const;
+    [[nodiscard]] PropertyId registerScriptClassProperty(
+        TypeId ownerId,
+        const NomadString& name,
+        const Type* valueType
+    );
+    [[nodiscard]] PropertyId registerScriptStructProperty(
+        TypeId ownerId,
+        const NomadString& name,
+        const Type* valueType
+    );
+    [[nodiscard]] PropertyId registerProperty(
+        CompositeType* owner,
+        std::unique_ptr<Property> property
+    );
+    [[nodiscard]] PropertyId getNextPropertyId() const;
+    [[nodiscard]] const Property* getProperty(PropertyId id) const;
+    [[nodiscard]] Property* getMutableProperty(PropertyId id);
+    [[nodiscard]] std::vector<const Property*> getProperties() const;
+
+    // Reserves an unused catalog slot; invalid when the type ID space is exhausted.
+    [[nodiscard]] TypeId reserveTypeId();
+
+private:
+    struct ParameterizedConstructorRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedConstructorInitializer initializer;
+    };
+
+    struct ParameterizedTypeRegistration {
+        NomadString name;
+        NomadIndex argumentCount;
+        ParameterizedTypeFactory factory;
+        ParameterizedTypeInitializer initializer;
+        std::optional<std::vector<TemplateParameter>> constructorTemplate;
+        std::unordered_map<NomadString, MemberSignature> memberTemplates;
+    };
+
+    struct TypeSpecialization {
+        NomadString name;
+        std::vector<const Type*> arguments;
+        const Type* type;
+    };
+
+    [[nodiscard]] bool canRegisterClass(const NomadString& name, ClassMode mode) const;
+    [[nodiscard]] bool hasConstructor(const NomadString& name) const;
+    [[nodiscard]] TypeId registerClassDescriptor(
+        TypeId id,
+        const NomadString& name,
+        ClassMode mode,
+        std::unique_ptr<ClassType> type
+    );
+    [[nodiscard]] PropertyId registerScriptProperty(
+        CompositeType* owner,
+        const NomadString& name,
+        const Type* valueType
+    );
+    Runtime& m_runtime;
+    std::vector<std::unique_ptr<Type>> m_types;
+    std::vector<std::unique_ptr<EventDefinition>> m_events;
+    std::vector<Property*> m_properties;
+    std::vector<ParameterizedTypeRegistration> m_parameterizedTypes;
+    std::vector<TypeSpecialization> m_typeSpecializations;
+    std::vector<ParameterizedConstructorRegistration> m_parameterizedConstructors;
+    std::vector<NomadString> m_constructorSpecializations;
+};
+
+} // namespace nomad

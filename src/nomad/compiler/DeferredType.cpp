@@ -2,6 +2,7 @@
 
 #include <nomad/compiler/DeferredType.hpp>
 
+#include <exception>
 #include <utility>
 
 namespace nomad {
@@ -25,19 +26,26 @@ TypeStorage DeferredType::getStorage() const {
     reportUnresolved();
 }
 
-void DeferredType::initValue(RuntimeValue&) const {
+NomadIndex DeferredType::getSize() const {
     reportUnresolved();
 }
 
-void DeferredType::freeValue(RuntimeValue&) const {
+void DeferredType::initValue(RuntimeValue*) const {
     reportUnresolved();
 }
 
-void DeferredType::copyValue(const RuntimeValue&, RuntimeValue&) const {
+void DeferredType::freeValue(RuntimeValue*) const noexcept {
+    std::terminate();
+}
+
+void DeferredType::emitFreeParameter(OpCodeEmitter&, NomadIndex) const {
+}
+
+void DeferredType::copyValue(const RuntimeValue*, RuntimeValue*) const {
     reportUnresolved();
 }
 
-void DeferredType::toString(const RuntimeValue&, NomadString&) const {
+void DeferredType::toString(const RuntimeValue*, NomadString&) const {
     reportUnresolved();
 }
 

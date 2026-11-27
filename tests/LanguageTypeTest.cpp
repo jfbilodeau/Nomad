@@ -2,13 +2,16 @@
 
 #include <LanguageTestFixture.hpp>
 
-#include <nomad/script/Interpreter.hpp>
+#include <nomad/interpreter/Interpreter.hpp>
+
+#include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <string>
@@ -57,8 +60,8 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
         "typedEvent", {{"value", integerId, "int"}}
     );
     BOOST_REQUIRE(eventId.isValid());
-    const auto event = runtime.getEventDefinition(eventId);
-    BOOST_REQUIRE(event.has_value());
+    const auto* event = runtime.getEventDefinition(eventId);
+    BOOST_REQUIRE(event != nullptr);
     BOOST_REQUIRE(event->parameters.size() == 1);
     BOOST_TEST(event->parameters.front().typeId.id == integerId.id);
     BOOST_TEST(*runtime.getType(event->parameters.front().typeId) == runtime.getIntegerType());
@@ -68,6 +71,60 @@ BOOST_AUTO_TEST_CASE(type_lookup_uses_strong_ids)
     const auto addedId = runtime.getTypeId("AddedType");
     BOOST_TEST(addedId.id != integerId.id);
     BOOST_TEST(*runtime.getType(addedId) == runtime.getTypeByName("AddedType"));
+}
+
+BOOST_AUTO_TEST_CASE(fixed_type_getters_preserve_per_runtime_identity_through_registration)
+{
+    constexpr auto getters = std::array{
+        &Runtime::getVoidType, &Runtime::getBooleanType, &Runtime::getIntegerType, &Runtime::getFloatType,
+        &Runtime::getStringType, &Runtime::getFileNameType, &Runtime::getFunctionNameType,
+        &Runtime::getLineNumberType, &Runtime::getEventCallbackType, &Runtime::getEventDispatchType
+    };
+    const auto names = std::array{
+        VOID_TYPE_NAME, BOOLEAN_TYPE_NAME, INTEGER_TYPE_NAME, FLOAT_TYPE_NAME, STRING_TYPE_NAME,
+        FILE_NAME_TYPE_NAME, FUNCTION_NAME_TYPE_NAME, FUNCTION_LINE_NUMBER_TYPE_NAME,
+        EVENT_CALLBACK_TYPE_NAME, EVENT_DISPATCH_TYPE_NAME
+    };
+    Runtime firstRuntime;
+    Runtime secondRuntime;
+    std::array<const Type*, getters.size()> original{};
+    for (auto index = NomadIndex{0}; index < getters.size(); ++index) {
+        const auto* first = (firstRuntime.*getters[index])();
+        const auto* second = (secondRuntime.*getters[index])();
+        BOOST_REQUIRE(first != nullptr);
+        BOOST_REQUIRE(second != nullptr);
+        original[index] = first;
+        BOOST_TEST(first != second);
+        BOOST_TEST(first->getRuntime() == &firstRuntime);
+        BOOST_TEST(second->getRuntime() == &secondRuntime);
+        BOOST_TEST(first->getTypeName() == names[index]);
+        BOOST_TEST(second->getTypeName() == names[index]);
+        BOOST_TEST(firstRuntime.getTypeByName(names[index]) == first);
+        BOOST_TEST(secondRuntime.getTypeByName(names[index]) == second);
+        BOOST_TEST(firstRuntime.getType(first->getId()).value() == first);
+        BOOST_TEST(secondRuntime.getType(second->getId()).value() == second);
+    }
+
+    for (auto index = NomadIndex{0}; index < 64; ++index) {
+        BOOST_REQUIRE(firstRuntime.registerClass(
+            "views.Added" + std::to_string(index),
+            ClassMode::Closed
+        ).isValid());
+    }
+
+    BOOST_REQUIRE(firstRuntime.registerHub("views", HubMode::Opened).isValid());
+    BOOST_REQUIRE(firstRuntime.getTypeManager().getCallbackType({original[2]}, original[0]) != nullptr);
+    for (auto index = NomadIndex{0}; index < getters.size(); ++index) {
+        const auto* first = (firstRuntime.*getters[index])();
+        const auto* second = (secondRuntime.*getters[index])();
+        BOOST_REQUIRE(first != nullptr);
+        BOOST_REQUIRE(second != nullptr);
+        BOOST_TEST(first == original[index]);
+        BOOST_TEST(firstRuntime.getTypeByName(names[index]) == original[index]);
+        BOOST_TEST(firstRuntime.getType(original[index]->getId()).value() == original[index]);
+        BOOST_TEST(secondRuntime.getTypeByName(names[index]) == second);
+        BOOST_TEST(second->getRuntime() == &secondRuntime);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)
@@ -81,6 +138,42 @@ BOOST_AUTO_TEST_CASE(types_report_their_runtime_storage_category)
     BOOST_TEST(static_cast<int>(runtime.getBooleanType()->getStorage()) == static_cast<int>(TypeStorage::Value));
     BOOST_TEST(static_cast<int>(enumType.getStorage()) == static_cast<int>(TypeStorage::Value));
     BOOST_TEST(static_cast<int>(runtime.getStringType()->getStorage()) == static_cast<int>(TypeStorage::Object));
+}
+
+BOOST_AUTO_TEST_CASE(types_report_their_size_in_runtime_value_slots)
+{
+    Runtime runtime;
+    BOOST_REQUIRE(runtime.createEnum("State", {{"idle", 1}}).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().getCallbackType(
+        {runtime.getIntegerType(), runtime.getFloatType()}, runtime.getVoidType()
+    ) != nullptr);
+
+    auto types = std::vector<const Type*>{};
+    runtime.getTypes(types);
+    BOOST_REQUIRE(!types.empty());
+    BOOST_TEST(runtime.getVoidType()->getSize() == 0u);
+
+    for (const auto* type : types) {
+        BOOST_TEST_CONTEXT(type->getTypeName()) {
+            const auto expectedSize = type == runtime.getVoidType() ? NomadIndex{0} : NomadIndex{1};
+            BOOST_TEST(type->getSize() == expectedSize);
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(class_value_size_is_independent_of_its_field_count)
+{
+    Runtime runtime;
+    const auto typeId = runtime.registerClass("Point", ClassMode::Closed);
+    BOOST_REQUIRE(typeId.isValid());
+    const auto* type = runtime.getType(typeId).value();
+    BOOST_TEST(type->getSize() == 1u);
+    BOOST_TEST(type->asClassType()->getPropertyCount() == 0u);
+
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(typeId, "x", runtime.getFloatType()).isValid());
+    BOOST_REQUIRE(runtime.getTypeManager().registerScriptClassProperty(typeId, "y", runtime.getFloatType()).isValid());
+    BOOST_TEST(type->asClassType()->getPropertyCount() == 2u);
+    BOOST_TEST(type->getSize() == 1u);
 }
 
 BOOST_AUTO_TEST_CASE(variable_type_is_inferred_from_first_assignment)
@@ -485,19 +578,20 @@ BOOST_AUTO_TEST_CASE(interpreter_locals_can_change_type)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
-    BOOST_REQUIRE(Interpreter{}.execute("value = 10", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("value = 10", interpreter));
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getIntegerType());
 
     BOOST_REQUIRE_MESSAGE(
-        Interpreter{}.execute("value = \"text\"", interpreter),
-        (interpreter.getError() ? *interpreter.getError() : NomadString{})
+        interpreter.getInterpreter().execute("value = \"text\"", interpreter),
+        (interpreter.getFirstError() ? interpreter.getFirstError()->message : NomadString{})
     );
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getStringType());
     BOOST_TEST(NomadString(interpreter.getVariableValue("value")->getStringValue()) == "text");
 
-    BOOST_REQUIRE(Interpreter{}.execute("value = 1.5", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("value = 1.5", interpreter));
     BOOST_TEST(interpreter.getVariableType("value") == runtime.getFloatType());
 }
 
@@ -505,10 +599,11 @@ BOOST_AUTO_TEST_CASE(interpreter_context_variables_keep_their_type)
 {
     Runtime runtime;
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext interpreter(*machine);
+    const Interpreter interpreterEvaluator(*machine);
+    InterpreterContext interpreter(interpreterEvaluator);
 
-    BOOST_REQUIRE(Interpreter{}.execute("global.interpreterTyped = 10", interpreter));
-    BOOST_TEST(!Interpreter{}.execute("global.interpreterTyped = \"text\"", interpreter));
+    BOOST_REQUIRE(interpreter.getInterpreter().execute("global.interpreterTyped = 10", interpreter));
+    BOOST_TEST(!interpreter.getInterpreter().execute("global.interpreterTyped = \"text\"", interpreter));
     BOOST_TEST(interpreter.hasError());
 }
 

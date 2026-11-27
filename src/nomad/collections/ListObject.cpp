@@ -2,6 +2,7 @@
 
 #include <nomad/collections/ListObject.hpp>
 
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/Type.hpp>
 
 #include <nomad/system/String.hpp>
@@ -28,7 +29,7 @@ void ListObject::clear() {
     }
     if (m_elementType->needsFree()) {
         for (auto& value : m_values) {
-            m_elementType->freeValue(value);
+            m_elementType->freeValue(&value);
         }
     }
     m_values.clear();
@@ -61,14 +62,11 @@ void ListObject::insert(const NomadInteger index, const RuntimeValue& value) {
             " is out of bounds for size " + toString(m_values.size()));
     }
     RuntimeValue storedValue;
-    try {
-        m_elementType->copyValue(value, storedValue);
-        m_values.insert(m_values.begin() + static_cast<std::vector<RuntimeValue>::difference_type>(index), storedValue);
-        ++m_structuralVersion;
-    } catch (...) {
-        m_elementType->freeValue(storedValue);
-        throw;
-    }
+    m_elementType->copyValue(&value, &storedValue);
+    RuntimeValueGuard guard(*m_elementType, &storedValue);
+    m_values.insert(m_values.begin() + static_cast<std::vector<RuntimeValue>::difference_type>(index), storedValue);
+    guard.release();
+    ++m_structuralVersion;
 }
 
 bool ListObject::remove(const NomadInteger index) {
@@ -77,7 +75,7 @@ bool ListObject::remove(const NomadInteger index) {
     }
     const auto position = m_values.begin() + static_cast<std::vector<RuntimeValue>::difference_type>(index);
     if (m_elementType->needsFree()) {
-        m_elementType->freeValue(*position);
+        m_elementType->freeValue(&*position);
     }
     m_values.erase(position);
     ++m_structuralVersion;
@@ -107,7 +105,7 @@ const RuntimeValue& ListObject::getValue(const NomadInteger index) const {
 }
 
 void ListObject::setValue(const NomadInteger index, const RuntimeValue& value) {
-    m_elementType->assignValue(value, m_values[validateIndex(index)]);
+    m_elementType->assignValue(&value, &m_values[validateIndex(index)]);
 }
 
 } // namespace nomad

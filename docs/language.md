@@ -1,20 +1,19 @@
 # Nomad Programming Language
 
-Nomad is a compiled, strongly typed scripting language designed to be embedded in C++ applications. It emphasizes explicit behavior, predictable execution, and callback‑driven design. Nomad is currently used by the Nomad game engine.
-
-Nomad is case‑sensitive.
+Nomad is a compiled, strongly typed, case-sensitive scripting language used by
+the Nomad game engine and embeddable in C++ applications.
 
 ---
 
 ## Table of Contents
 
-- [Core characteristics](#core-characteristics)
 - [Quick start](#quick-start)
 - [Modules](#modules)
 - [Comments](#comments)
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Hubs](#hubs)
 - [Class declarations](#class-declarations)
+- [Struct declarations and value semantics](#struct-declarations-and-value-semantics)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
 - [Class types and members](#class-types-and-members)
 - [Variables and variable kinds](#variables-and-variable-kinds)
@@ -29,48 +28,35 @@ Nomad is case‑sensitive.
 - [Scripts: file layout and compilation model](#scripts-file-layout-and-compilation-model)
 - [Native functions](#native-functions)
   - [Overloading](#overloading)
-- [Debug settings persistence](#debug-settings-persistence)
 - [Callbacks and Events](#callbacks-and-events)
 - [Error handling](#error-handling)
 - [Language rules and reserved words](#language-rules-and-reserved-words)
 
 ---
 
-## Core characteristics
-
-- Compiled to intermediate machine‑like instructions
-- Strong static typing
-- Designed for embedding in C++ runtimes
-- Callback‑oriented execution model
-- Script‑based with directory‑driven compilation
-
----
-
 ## Quick start
 
-1. Place your `*.nomad` scripts under a compile root directory.
-2. The Nomad compiler is pointed at the compile root and scans all `*.nomad` scripts in the directory tree.
-3. Refer to section [Scripts: file layout and compilation model](#scripts-file-layout-and-compilation-model) for naming rules and collisions.
-4. The engine can execute a compiled function by name, for example the function compiled from `init.nomad`.
+In a [Nomad project](index.md#create-and-run-a-game), edit `res/scripts/main.nomad`:
+
+```nomad
+fun add first:int second:int
+    return first + second
+end
+
+score = add 10 20
+print $"Score: {score}"
+```
+
+Run the project with `nomad run`. Functions and arguments are separated by spaces;
+blocks end with `end`. Variable and return types are inferred.
 
 ---
 
 ## Modules
 
-Modules extend the language runtime with types, functions, and other features.
-A project's module selection determines what functionality is loaded and exposed to scripts.
-The SDK includes:
-
-| Module | Purpose |
-| --- | --- |
-| `collections` | Typed collections. |
-| `os` | Arguments, environment snapshots, platform, architecture, and OS paths. |
-| `log` | Structured logging through the open `log` hub. |
-| `system` | Math, conversions, and application exit. |
-| `game` | Graphics, input, audio, scenes, entities, and game resources. |
-
-Core language features, including strings and `print`, do not require a module. See
-[Runtime modules](modules.md) for module selection, dependencies, and usage.
+Modules provide additional types, functions, and services. Core language
+features, including strings and `print`, require no module. See
+[Runtime modules](modules.md) for available modules and project configuration.
 
 ---
 
@@ -139,35 +125,12 @@ Hub variables are shared across function calls. Their types are inferred from
 their initializers and cannot change. Circular dependencies that prevent type
 inference are compile errors.
 
-Safely resolved initial values are installed first, across all scripts and hubs.
-The remaining assignments run once in the internal `$init` function, before the
-application entry, even when the script containing the hub is not called.
-These assignments follow script-name order and declaration order within each
-script. Renaming a script can therefore change runtime initialization order.
-A statically initialized member is not assigned again by `$init`.
-
-The compiler conservatively stops propagating mutable hub values once it
-encounters an initializer requiring runtime execution. For example:
-
-```nomad
-fun changeA
-    example.a = example.a + 1
-    return example.a
-end
-
-open hub example
-    a = 10
-    b = changeA
-    c = example.a # Reads 11 during $init, not the original 10.
-end
-```
-
-Runtime-dependent members have their type's default value until their assignment
-runs. The compiler does not analyze reads or writes hidden inside initializer
-calls, and premature reads do not receive a special runtime initialization
-error. Developers are responsible for initialization-order dependencies; use
-explicit application-entry assignments when sequencing is important.
-Initialization failure prevents subsequent script execution and is not retried.
+Safely resolved initial values are installed first. Remaining initializers run
+once before the application entry, in script-name order and declaration order
+within each script, even if the script itself is never called. Members awaiting
+runtime initialization hold their type's default value. Renaming a script can
+change initialization order; use explicit entry-function assignments when
+sequencing matters. Initialization failure prevents application startup.
 
 Declare new members inside a hub block. Qualified assignments outside a hub
 can update existing variables, but cannot introduce new members:
@@ -225,16 +188,8 @@ hubs.
 
 ## Class declarations
 
-Empty script class declarations introduce class types. Classes are closed by
-default; `open class` marks a type as open for compile-time extension:
-
-```nomad
-class Point
-end
-
-open class SharedState
-end
-```
+Classes are closed by default. Use `open class` to allow external field
+declarations during compilation.
 
 Classes may be declared at script level or inside a hub, where their declaration
 names receive the hub prefix. References to these types must use their fully
@@ -257,9 +212,6 @@ class Point
         this.y = 0.0
     end
 
-    point = new Point
-    point.moveTo 3.0 4.0
-
     init x:float y:float
         this.x = x
         this.y = y
@@ -270,6 +222,9 @@ class Point
         this.y = y
     end
 end
+
+point = new Point
+point.moveTo 3.0 4.0
 ```
 
 Explicit fields use `name = initializer`. Constructors use `init`, optionally
@@ -284,25 +239,17 @@ selection uses the receiver's type and prefers exact argument types over
 compatible conversions. Method return types are inferred as for functions.
 A call returning a value may be used in an expression or discarded as a statement;
 a method returning no value can only be used as a statement.
-Arguments are copied, so reassigning a method parameter does not reassign the
-caller's variable. Object values retain reference semantics. Nested calls restore
-the enclosing receiver, and arguments are evaluated before binding the called
-method's receiver. The interpreter can call methods of already compiled classes,
-but cannot declare new classes.
+Arguments follow the same [copy and return rules](#parameters-and-returns) as
+functions. The interpreter can call methods of compiled classes but cannot
+declare new classes.
 
 `init` is contextual: at class-member declaration position it introduces a
 constructor, and cannot name a field or an ordinary method (`fun init`).
 Elsewhere it remains an ordinary identifier, including function names, variables,
-and qualified members such as `example.init`. Editors highlight constructor
-headers and offer `init` completion in class bodies, not inside callable bodies.
+and qualified members such as `example.init`.
 
 Duplicate fields, field/method name conflicts, and duplicate callable signatures
 are errors. Parameter names do not distinguish signatures.
-Member signatures are registered before bodies are parsed. Initializers and
-callable bodies use the ordinary expression and statement parser, with source
-diagnostics for malformed syntax and unresolved names/types. Supported bodies can
-use locals, typed parameters, control flow, free/native functions, callbacks, and
-format strings.
 
 Inside a member body, explicit `this` refers to the declaring class instance.
 It is not a declared parameter and cannot be reassigned or used as a parameter
@@ -314,7 +261,7 @@ overloads. Each field has one type shared by all instances; conflicting
 assignments and field/method name collisions are errors. Methods may read and
 assign existing fields but cannot introduce new fields. Reads of unknown fields
 are errors. These names never fall back to the game's `this.*` context.
-Field metadata is available during compilation. Class initialization evaluates
+Class initialization evaluates
 explicit field initializers in source order, then gives the remaining fields
 their type defaults before the constructor body runs. Explicit initializers
 cannot use or capture `this`, including in callbacks or format expressions.
@@ -327,7 +274,7 @@ failure stops subsequent initializers and the constructor body.
 initializes its fields, then runs the selected constructor body. If no `init`
 is declared, the class has an implicit parameterless constructor. Declaring any
 `init` suppresses that implicit constructor. The `new` expression produces the
-new instance. Script member calls are not executable yet.
+new instance.
 Script constructors return `void`: they may use a bare `return` but cannot return
 an expression. An early return still completes `new` with the allocated instance.
 Member parameters are declared in the header, not with a later `params` statement.
@@ -350,14 +297,11 @@ fun read point:Point
 end
 ```
 
-The compiler checks all compiled files and callable bodies before diagnosing
-unknown fields; the read may appear before the assignment that introduces the
-field. A read without any declaration or valid introducing assignment is an
-error. Conflicting field types and field/method name collisions are errors.
-An externally introduced field that is assigned but never read produces a
-warning at its introducing assignment. Reads through another instance, an
-alias, `this`, a callback, or a format placeholder count as uses. These checks
-do not prove that an assignment executes before a read.
+The introducing assignment may appear after a read or in another file. A field
+without a declaration or valid introducing assignment is an error; conflicting
+types and field/method names are also errors. Externally introduced fields that
+are assigned but never read produce a warning. These checks do not prove that
+an assignment executes before a read.
 
 The same extension rules apply to native class types marked open by the host.
 Native properties retain their getter/setter contracts and do not need a script
@@ -365,12 +309,138 @@ assignment before a read. Host-declared fields are not subject to the
 external-introduction warning.
 Hub members must still be introduced inside a hub block, even for open hubs.
 
-Stored fields can be read and assigned in compiled code and the interpreter
-when the host supplies an initialized instance with field storage. Field
-discovery must finish before the host creates these instances. Native objects
-without stored-field storage cannot execute these accesses.
-The embedding host can also initialize class fields without running a constructor.
-Script member calls remain unavailable.
+Native objects need host-provided storage to support stored fields; see
+[embedding](embedding.md#script-object-storage).
+
+## Struct declarations and value semantics
+
+Use `struct` for a value whose fields copy independently, rather than a shared
+class instance:
+
+```nomad
+struct Point
+    x = 0.0
+    y = 0.0
+
+    init x:float y:float
+        this.x = x
+        this.y = y
+    end
+
+    fun move dx:float dy:float
+        this.x = this.x + dx
+        this.y = this.y + dy
+    end
+end
+
+fun moved value:Point dx:float dy:float
+    value.move dx dy
+    return value
+end
+
+point = new Point 1.0 2.0
+copiedPoint = point
+copiedPoint.move 3.0 4.0
+movedPoint = moved point 10.0 20.0
+assert point.x == 1.0
+assert point.y == 2.0
+assert copiedPoint.x == 4.0
+assert copiedPoint.y == 6.0
+assert movedPoint.x == 11.0
+assert movedPoint.y == 22.0
+```
+
+### Declaration and construction
+
+Structs may be declared at script level or inside a hub, not inside functions,
+control-flow blocks, or other type declarations. Types are available across
+files before callable bodies are compiled. Hub types require fully qualified
+references, including in their own member signatures.
+
+Structs use the same field, `init`, and `fun` syntax as
+[classes](#class-declarations). Fields are inferred from explicit initializers
+and constructor assignments to `this.field`. Methods can update existing fields
+but cannot introduce new ones. Structs are closed: `open struct` and external
+field additions are errors. Different struct declarations have distinct types,
+even when their fields match.
+
+Inside a struct member, `this` always denotes that struct receiver, including
+inside callbacks and format expressions. Its fields do not fall back to a
+game/entity `this.*` context.
+
+`new Point arguments` evaluates arguments right-to-left, runs explicit field
+initializers once in source order, supplies defaults for remaining fields, then
+executes the selected constructor. Initializers cannot use or capture `this`.
+With no declared `init`, a struct has an implicit parameterless constructor;
+declaring an `init` suppresses it. Constructor overloads follow the same rules as
+class constructors. Constructors return no expression; a bare early `return`
+still completes construction.
+
+Copying or default-initializing nested struct storage does not run its
+constructor or explicit field initializer expressions.
+
+### Copies, fields, and methods
+
+Assignment, ordinary arguments, returned values, and callback captures copy
+struct fields. Nested struct fields copy recursively. Strings retain their value,
+and class or collection fields retain references to the same objects:
+
+```nomad
+class Label
+    text = "shared"
+end
+
+struct Location
+    point = new Point 0.0 0.0
+    label = new Label
+end
+
+location = new Location
+copiedLocation = location
+copiedLocation.point.move 5.0 6.0
+copiedLocation.label.text = "shared edit"
+assert location.point.x == 0.0
+assert copiedLocation.point.x == 5.0
+assert location.label.text == "shared edit"
+```
+
+This example uses `Point` from above. Methods borrow their receiver: calling
+`point.move` changes `point`, whereas calling `value.move` inside `moved` changes
+only that function's parameter copy. A method can return or pass `this` as an
+ordinary value; those uses copy it.
+
+Stored struct fields can be read, assigned, and used as method receivers through
+locals, parameters, `this`, class-owned fields, and temporary construction or
+function results. Nested paths such as `player.location.point.move 1.0 2.0`
+update the selected stored value. A temporary receiver is evaluated once before
+the method's arguments or an assignment's right-hand side and kept alive until
+the operation finishes. Mutating a temporary changes only that temporary,
+apart from shared class objects contained in it.
+
+Whole-struct assignment evaluates its complete right-hand side before replacing
+the destination. Self-assignment is safe. Right-hand-side side effects are not
+rolled back if evaluation fails. A native getter returning a struct produces a
+snapshot, not a stored-field alias; mutating that snapshot does not automatically
+call the property's setter.
+
+Callbacks capture struct snapshots when created, including struct parameters and
+`this`. Each invocation receives independent struct copies; captured class
+objects remain shared. Interpreter expressions can construct registered types
+and invoke compiled methods, but cannot declare new structs or inline callbacks.
+
+### Empty structs and limitations
+
+An empty struct still has its own type, distinct from `void`. It can be copied,
+passed, captured, returned, and used as a receiver. Its constructors and methods
+still execute; copying does not rerun construction.
+
+- Structs cannot be type arguments, directly or nested: `List<Point>` and
+  `Map<string List<Point>>` are rejected. Constructor inference also rejects
+  struct type arguments. A struct may still contain a `List<int>` reference.
+- Structs have no built-in `==` or `!=` operation, including empty structs.
+  Compare the required fields explicitly.
+- Inline struct layouts cannot contain direct or indirect value cycles.
+  Class-reference fields do not form inline layout cycles.
 
 ## Data types and numeric ranges
 
@@ -406,13 +476,16 @@ event changed items:List<int>
 Each type family defines its required number of type arguments and must be registered
 before use. Parameterized types are not restricted to any particular module.
 Different specializations, such as `List<int>` and `List<string>`, are distinct,
-incompatible types. Type arguments cannot be `void` or internal types. Type annotations
+incompatible types. Type arguments cannot be `void`, internal types, or structs,
+including structs nested in another type argument. Type annotations
 must fit on one line; nesting is limited to 64 types.
 
 String literal notes:
 
 - The escape sequences `\n` (linefeed), `\r` (carriage return), `\t` (tab), `\"` (double quote) and `\\` (backslash) are supported inside double‑quoted strings and format strings.
 - Example: `text = "Line1\nLine2\tIndented"`.
+- Strings are managed automatically. Assignment, arguments, and returns preserve
+  their value without manual cleanup; an uninitialized string is empty, not null.
 
 Numeric literal notes:
 
@@ -444,6 +517,8 @@ Constructor arguments follow the name and any type arguments, separated by space
 expression syntax as function arguments. Their number and types are checked at
 compile time; value restrictions are checked by the constructor at runtime. 
 Construction is also available in interpreter expressions.
+Constructor and function arguments evaluate right-to-left in both compiled code
+and the interpreter; a method receiver is evaluated before its arguments.
 
 Constructors can be overloaded by argument count or types. The selected
 constructor determines the result's type; overloads may return different types.
@@ -478,11 +553,12 @@ Writable properties may also change an instance through a parameter
 or temporary. Changes to an object's contents are immediate and are not rolled
 back if a property setter or method fails.
 
-Assigning a new reference to the parameter itself remains invalid.
+Reassigning a parameter changes only the called function's copy, not the
+caller's variable.
 
-Script classes support construction with `new`, but cannot yet execute ordinary
-methods. Their stored properties are readable and writable in compiled code and
-the interpreter. See [Class declarations](#class-declarations).
+Script classes support construction, methods, and stored-property reads/writes
+in compiled code and the interpreter. See [Class declarations](#class-declarations)
+and [struct value semantics](#struct-declarations-and-value-semantics).
 
 The available members for each class type are listed in the [engine API](engine-api.md#object-members).
 
@@ -519,23 +595,7 @@ receiver type. Parenthesize indices when needed to keep them
 separate: `value[0 (-1)]` supplies two indices, while `value[0 - 1]` supplies one
 subtraction expression.
 
-### Audio and fonts
-
-`game.audio.load` returns an `Audio` object, and `game.loadFont` returns a `Font`
-object. These types cannot be created with `new`.
-
-```nomad
-sound = game.audio.load "audio.hit"
-sound.volume = 0.5
-sound.play
-font = game.loadFont "fonts/main.ttf" 16
-this.setText font "Hello"
-```
-
-Assignments share the same instance. Keep a reference to an `Audio` object for as
-long as it should play: releasing its last reference stops playback and cancels
-its completion callback. A font remains alive while any variable or entity uses
-it. Its font resource is released when the last reference is gone.
+### Member names
 
 Member names share the identifier namespace with dotted identifiers. Assigning a type to a variable is rejected if that type would introduce a qualified member name that already exists:
 
@@ -585,7 +645,7 @@ const MAX_SCORE = 1000
 
 Predefined constant:
 
-- `pi` — the value of `std::numbers::pi` from the host C++ runtime.
+- `pi` — the mathematical constant.
 
 ---
 
@@ -624,8 +684,6 @@ next = state.idle + state.walking # enums do not support arithmetic
 ```
 
 The embedding engine may register enum members with explicit internal values rather than compiler-assigned sequential values. This preserves corresponding C++ enum values without weakening Nomad's type rules.
-
-In the DebugConsole variable inspector, an enum is displayed as `enum <name>`, its value is shown by member name, and editable enum variables use a member selector rather than accepting arbitrary text or integers.
 
 ---
 
@@ -786,7 +844,7 @@ if finished break
 if skipValue continue
 ```
 
-Loops are synchronous. They do not wait for callbacks or automatically yield
+Loops are synchronous. They do not wait for callbacks or suspend
 execution; an unbounded loop can block the calling thread.
 
 ---
@@ -811,6 +869,9 @@ functions. Other placeholders accept normal expressions, including operators,
 parentheses, native and script function calls with arguments, and object members.
 Each expression must return a non-void value. Placeholders are evaluated from left
 to right using current values; expression results are converted to text.
+
+Format literals are checked at compile time. `$template` evaluates a string's
+`{...}` placeholders at runtime.
 
 Format literals also work in the debug console: `$"{1+2}"` evaluates to `"3"`.
 
@@ -842,6 +903,24 @@ use the simple-placeholder rules; use a call with arguments or a parenthesized
 expression to select expression parsing. Object members such as `{name.toUpper}`
 and `{name.length}` do not require parentheses. An exact qualified identifier takes
 precedence over object member access.
+
+Struct values use the same default representation as class objects: their type
+name, without a field dump. For a `Point` struct, `{point}` produces `Point`;
+`{point.x}` formats the selected field. Empty structs also produce their type
+name. Nested fields, temporary construction/function results, parameters, and
+struct `this` are supported in both compiled and dynamic format strings.
+
+Compiled expression placeholders copy captured struct values for each
+placeholder. A mutating method called through that capture changes only its
+copy; contained class objects remain shared. Dynamic placeholders evaluate
+against live interpreter/frame storage instead. For example, if `counter.next`
+increments and returns a struct field initially equal to zero:
+
+```nomad
+compiled = $"{counter.next} {counter.value}" # "1 0"; counter.value remains 0
+template = "{counter.next} {counter.value}"
+live = $template # "1 1"; counter.value becomes 1
+```
 
 ### Format string operator
 
@@ -1001,22 +1080,15 @@ end
 
 ### Calling a function
 
+Using the functions declared above:
+
 ```nomad
-# Declaring the function `simple`
-fun simple
-    print "called!"
-end
-
-# Declaring the `add` function
-fun add value1:int value2:int
-    return value1 + value2
-end
-
-# Calling a function called `simple`
 simple
-# Calling a function `add` that takes two `int`s and returns an `int`.
 total = add 10 20
 ```
+
+Calls execute synchronously. A value-returning call used as a statement discards
+its result.
 
 ---
 
@@ -1044,100 +1116,12 @@ Native functions are callable entities provided by the runtime/engine and invoke
 print "Example"
 ```
 
-Inline callback parameters support three forms:
-
-1. `fun ... end`
-2. `then ...`
-3. Function name reference (for example `existing.callbackHandler`)
-
-Nested `fun` callbacks and inline `then` callbacks capture variables and parameters from the surrounding scopes.
-
-Explicit callback example:
-
-```nomad
-fun afterCreateScene
-    # statements...
-end
-
-game.createSceneByNameThen "test" afterCreateScene
-```
-
-`fun` (inline) callback example:
-
-```nomad
-game.createSceneByNameThen "test" fun
-    scene.z = 100
-    print "scene created!"
-end
-```
-
-`then` (continuation) callback example:
-
-```nomad
-game.createSceneByNameThen "test" then
-scene.z = 100
-print "scene created!"
-```
-
-`then` notes:
-
-- `then` may declare callback parameters (for example `then x y`).
-- There is no closing `end` for a `then` callback.
-- `then` consumes the remaining body of the current function as the callback body.
-- `then` applies only to callback arguments.
-- `then` is allowed only at the root of the current script or function body,
-  not inside an `if` or loop. An explicit `fun ... end` callback inside a block
-  establishes a fresh function body and may use `then` at its own root.
-
 The built-in `print message:string` writes plain text followed by a newline
 to standard output, independently of logging levels and sinks. It is available
 without any modules. Use format strings to print non-string values.
 
-The [logging module](nomad-log.md) supplies `log.debug`, `log.info`,
-`log.warning`, `log.error`, and `log.critical`. Select `log` explicitly;
-`log.fatal` is not available to scripts.
-
-The system module supplies these native functions:
-
-- `math.floor` — Floor a float value.
-- `toFloat` — Convert an `int` or a `string` to a `float`.
-- `toInt` — Convert a `float` or a `string` to an `int`.
-- `breakpoint` — Request a C++ breakpoint. (Nomad has no built‑in debugger; this native function can be used to signal the host runtime.)
-
-Window native functions:
-
-| Native function | Behavior |
-| --- | --- |
-| `window.maximize` | Maximize the window. |
-| `window.minimize` | Minimize the window. |
-| `window.clearOnClose` | Clear the close-request callback. |
-| `window.clearOnGainFocus` | Clear the focus-gained callback. |
-| `window.clearOnLoseFocus` | Clear the focus-lost callback. |
-| `window.clearOnMaximize` | Clear the maximize callback. |
-| `window.clearOnMinimize` | Clear the minimize callback. |
-| `window.clearOnMove` | Clear the move callback. |
-| `window.clearOnResize` | Clear the resize callback. |
-| `window.clearOnRestore` | Clear the restore callback. |
-| `window.onClose callback:callback` | Register a callback that is invoked when the user tries to close the window, such as by clicking its close button. This notification does not close the window. |
-| `window.onGainFocus callback:callback` | Register a callback that is invoked when the window gains focus. |
-| `window.onLoseFocus callback:callback` | Register a callback that is invoked when the window loses focus. |
-| `window.onMaximize callback:callback` | Register a callback that is invoked when the window is maximized. |
-| `window.onMinimize callback:callback` | Register a callback that is invoked when the window is minimized. |
-| `window.onMove callback:callback` | Register a callback that is invoked with `x:int` and `y:int` when the window is moved. |
-| `window.onResize callback:callback` | Register a callback that is invoked with `width:int` and `height:int` when the window is resized. |
-| `window.onRestore callback:callback` | Register a callback that is invoked when the window is restored. |
-| `window.toggleFullScreen` | Toggle the window between windowed and full-screen modes. |
-
-Each `window.clearOn*` native function takes no arguments. Clearing an unregistered callback has no effect; clearing a callback while it is running does not interrupt that invocation.
-
-Window state variables:
-
-| Variable | Behavior |
-| --- | --- |
-| `window.hasFocus:bool` | Whether the window currently has focus. |
-| `window.isFullScreen:bool` | Whether the window is currently in full-screen mode. |
-| `window.isMaximized:bool` | Whether the window is currently maximized. |
-| `window.isMinimized:bool` | Whether the window is currently minimized. |
+Available native APIs depend on the selected modules. See the [engine API](engine-api.md),
+[logging module](nomad-log.md), and [system module](nomad-system.md) for reference.
 
 Native function naming follows the same identifier rules as variables and functions.
 
@@ -1163,32 +1147,6 @@ Because a call is parsed before its overload is chosen, every overload of a name
 
 Overloading applies to native functions. Functions written in Nomad are not overloadable: one name means one function.
 
-### String lifetime
-
-String memory is managed automatically. Assigning, passing, or returning a string
-preserves its value without requiring manual cleanup. An uninitialized string is
-empty, not null. Host integration details are covered in the [embedding guide](embedding.md).
-
----
-
-## Debug settings persistence
-
-The game engine does not provide built-in game save/load or user settings save/load APIs.
-The `game.inventory` and `game.settings` hubs are available for scripts to declare
-and populate with their own functions.
-
-Engine-owned debug settings are persisted automatically. Set `game.organization`
-and `game.name` to select their storage location. The engine passes both values
-to SDL's preference-path API and stores JSON files under the resulting `<pref>` directory:
-
-| API | Behavior | File |
-| --- | --- | --- |
-| `game.debug.console.visible:bool` | Show or hide the console in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
-| `game.debug.console.scale:float` | Set the console scale from `0.8` to `2.0`. Saved automatically when changed. | `<pref>/debug.json` |
-| `game.debug.draw.visible:bool` | Show or hide Box2D physics debug drawing in debug mode. Saved automatically when changed. | `<pref>/debug.json` |
-
-Debug settings are loaded lazily after both `game.organization` and `game.name` are set. Assigning a debug setting before those values are available does not save it.
-
 ---
 
 ## Callbacks and Events
@@ -1196,6 +1154,38 @@ Debug settings are loaded lazily after both `game.organization` and `game.name` 
 Nomad supports named events and callbacks. Events are global (declared once and visible to all functions). Callback scope — i.e. how and when callbacks are invoked and what context they receive — is defined by the native function or embedding engine.
 
 The language provides the `event` declaration. Registering callbacks and dispatching events are performed by native functions supplied by the embedding engine; `on` and `trigger` are not standalone Nomad statements. For example, the game engine provides the `this.on` and `this.trigger` entity native functions.
+
+### Callback forms
+
+A callback argument accepts a named function, an inline `fun ... end`, or a
+`then` continuation. Inline callbacks capture surrounding variables and
+parameters when created.
+
+```nomad
+fun afterCreateScene
+    print "scene created!"
+end
+
+game.createSceneByNameThen "test" afterCreateScene
+
+game.createSceneByNameThen "test" fun
+    scene.z = 100
+end
+```
+
+`then` consumes the rest of the current function body as its callback, without
+a closing `end`:
+
+```nomad
+game.createSceneByNameThen "test" then
+scene.z = 100
+print "scene created!"
+```
+
+It may declare callback parameters, such as `then x y`, and applies only to
+callback arguments. Use it at the root of a script or function body, not directly
+inside an `if` or loop. An explicit `fun ... end` inside a block establishes a
+new function body and may use `then` at its own root.
 
 ### Declaring an event
 
@@ -1238,7 +1228,8 @@ Notes:
 
 ## Error handling
 
-Nomad does not support exceptions inside functions. Errors detectable at compile time prevent compilation. Runtime errors (e.g. division by zero) will originate as C++ exceptions inside the engine and cannot be handled within Nomad functions.
+Compile-time errors prevent execution. Runtime errors, such as division by zero,
+stop execution and cannot be caught in Nomad code.
 
 ---
 
@@ -1263,4 +1254,5 @@ Reserved words (cannot use as identifiers):
 - `open`
 - `params`
 - `return`
+- `struct`
 - `then`

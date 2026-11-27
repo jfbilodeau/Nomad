@@ -6,6 +6,7 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/SourceLoader.hpp>
 
+#include <nomad/script/EnumType.hpp>
 #include <nomad/script/Runtime.hpp>
 
 #include <nomad/system/ModuleManifest.hpp>

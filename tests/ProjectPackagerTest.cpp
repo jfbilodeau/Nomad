@@ -495,9 +495,9 @@ BOOST_AUTO_TEST_CASE(module_scripts_keep_their_ownership_after_packaging_and_rel
             diagnostics += formatDiagnostic(diagnostic) + "\n";
         }
         BOOST_REQUIRE_MESSAGE(compilation.succeeded(), diagnostics);
-        BOOST_TEST(host->getRuntime()->getFunctionId("$system.main").isValid());
-        BOOST_TEST(host->getRuntime()->getFunctionId(moduleFunction).isValid());
-        BOOST_TEST(host->getRuntime()->getFunctionId("main").isValid());
+        BOOST_TEST(host->getRuntime()->getScriptFunctionId("$system.main").isValid());
+        BOOST_TEST(host->getRuntime()->getScriptFunctionId(moduleFunction).isValid());
+        BOOST_TEST(host->getRuntime()->getScriptFunctionId("main").isValid());
         host.reset();
         std::filesystem::remove(output / "modules/fixture/module.toml");
         BOOST_CHECK_THROW((void)resolveProjectModules(release, directory.getPath()), ModuleException);

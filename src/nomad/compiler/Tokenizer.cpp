@@ -8,15 +8,12 @@
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 
-#if defined(NOMAD_DEBUG)
-//#define BOOST_SPIRIT_DEBUG
-#endif
-
 #define BOOST_NO_CXX98_FUNCTION_BASE
 #include "boost/spirit/include/qi.hpp"
 #include "boost/phoenix.hpp"
 
 #include <sstream>
+#include <stdexcept>
 
 BOOST_FUSION_ADAPT_STRUCT(
     nomad::Token,
@@ -35,7 +32,6 @@ namespace phoenix = boost::phoenix;
 template<typename Iterator>
 struct CommentSkipper : qi::grammar<Iterator> {
     CommentSkipper() : CommentSkipper::base_type(skip) {
-//        BOOST_SPIRIT_DEBUG_NODE(skip);
     }
 
     qi::rule<Iterator> skip =
@@ -47,22 +43,6 @@ template<typename Iterator>
 struct LineGrammar : boost::spirit::qi::grammar<Iterator, std::vector<Token>()> {
     LineGrammar() :
         LineGrammar::base_type(start) {
-
-//        BOOST_SPIRIT_DEBUG_NODE(hex_value);
-//        BOOST_SPIRIT_DEBUG_NODE(decimal_value);
-//        BOOST_SPIRIT_DEBUG_NODE(value);
-//        BOOST_SPIRIT_DEBUG_NODE(escape_sequence);
-//        BOOST_SPIRIT_DEBUG_NODE(quoted_content);
-//        BOOST_SPIRIT_DEBUG_NODE(format_content);
-//        BOOST_SPIRIT_DEBUG_NODE(literal_string);
-//        BOOST_SPIRIT_DEBUG_NODE(format_string);
-//        BOOST_SPIRIT_DEBUG_NODE(operators);
-//        BOOST_SPIRIT_DEBUG_NODE(keyword);
-//        BOOST_SPIRIT_DEBUG_NODE(identifier);
-//        BOOST_SPIRIT_DEBUG_NODE(basic_token);
-//        BOOST_SPIRIT_DEBUG_NODE(token);
-//        BOOST_SPIRIT_DEBUG_NODE(start);
-//        BOOST_SPIRIT_DEBUG_NODE(skipper);
     }
 
     CommentSkipper<Iterator> skipper;
@@ -154,12 +134,23 @@ TokenizerException::TokenizerException(const NomadString& message, NomadIndex li
     m_lineIndex(lineIndex),
     m_character(character) {}
 
-Tokenizer::Tokenizer(CompilerContext* context, NomadString sourceName, const NomadString& source) :
+Tokenizer::Tokenizer(
+    CompilerContext* context,
+    NomadString sourceName,
+    const NomadString& source,
+    const NomadIndex firstLine
+):
     m_context(context),
     m_sourceName(std::move(sourceName)),
-    m_source(source) {
+    m_source(source),
+    m_firstLine(firstLine)
+{
     if (m_context == nullptr) {
         throw NomadBug("Tokenizer requires a compiler context");
+    }
+
+    if (m_firstLine == 0 || m_firstLine == NOMAD_INVALID_INDEX) {
+        throw std::invalid_argument("Tokenizer source origin must be a valid one-based line");
     }
 
     std::stringstream stream(source);
@@ -168,6 +159,10 @@ Tokenizer::Tokenizer(CompilerContext* context, NomadString sourceName, const Nom
 
     while (std::getline(stream, line)) {
         m_lines.push_back(line);
+    }
+
+    if (m_lines.size() > NOMAD_INVALID_INDEX - m_firstLine) {
+        throw std::invalid_argument("Tokenizer source line range exceeds the maximum valid index");
     }
 
     tokenizeLines();
@@ -200,7 +195,6 @@ const NomadString& Tokenizer::getSource() const {
 }
 
 bool Tokenizer::isEndOfFile() const {
-//    return m_line_index >= (int) m_lines.size();
     return m_endOfFile;
 }
 
@@ -262,7 +256,7 @@ bool Tokenizer::expect(TokenType type) {
 }
 
 NomadIndex Tokenizer::getLineIndex() const {
-    return m_lineIndex;
+    return m_firstLine - 1 + m_lineIndex;
 }
 
 NomadIndex Tokenizer::getColumnIndex() const {
@@ -371,7 +365,7 @@ bool Tokenizer::expectEndOfLine() {
 }
 
 void Tokenizer::reportError(const NomadString& message) const {
-    m_context->reportError(message, this);
+    m_context->addError(message, this);
 }
 
 void Tokenizer::tokenizeLines() {
@@ -420,10 +414,10 @@ void Tokenizer::tokenizeLines() {
 
         if (!success || first != line.cend()) {
             const auto column = static_cast<NomadIndex>(first - line.cbegin()) + 1;
-            m_context->reportError(
+            m_context->addError(
                 "Unrecognized token `" + NomadString(first, line.cend()) + "` in line: `" + line + "`",
                 m_sourceName,
-                lineIndex + 1,
+                m_firstLine + lineIndex,
                 column
             );
             lineTokens.clear();

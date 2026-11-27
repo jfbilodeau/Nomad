@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/compiler/Diagnostic.hpp>
+#include <nomad/compiler/CompilerDiagnostic.hpp>
 
 #include <vector>
 
@@ -20,6 +20,7 @@ enum class CompilationPhase {
     Emit,
     Link,
     Verify,
+    // Executable setup is installed before this phase; analysis reports completion after resolution.
     Completed,
 };
 
@@ -29,7 +30,7 @@ enum class CompilationTarget {
 };
 
 struct CompilationResult {
-    std::vector<Diagnostic> diagnostics;
+    std::vector<CompilerDiagnostic> diagnostics;
     NomadIndex errorCount = 0;
     NomadIndex warningCount = 0;
 

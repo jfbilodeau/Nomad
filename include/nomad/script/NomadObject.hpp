@@ -10,6 +10,8 @@
 
 namespace nomad {
 
+class ScriptObject;
+
 class NomadObject {
 public:
     NomadObject() noexcept;
@@ -20,6 +22,9 @@ public:
     void releaseRef() noexcept;
 
     [[nodiscard]] NomadIndex getReferenceCount() const noexcept;
+
+    [[nodiscard]] virtual ScriptObject* asScriptObject() noexcept;
+    [[nodiscard]] virtual const ScriptObject* asScriptObject() const noexcept;
 
     // Number of objects currently alive (all types).
     [[nodiscard]] static NomadIndex getLiveObjectCount() noexcept;

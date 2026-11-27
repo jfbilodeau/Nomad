@@ -5,8 +5,14 @@
 #include <nomad/Nomad.hpp>
 
 #include <nomad/compiler/Identifier.hpp>
+#include <nomad/compiler/StorageLocation.hpp>
+
+#include <nomad/interpreter/InterpreterValue.hpp>
+
+#include <nomad/script/OpCode.hpp>
 
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace nomad {
@@ -18,7 +24,6 @@ class Compiler;
 class CompilerContext;
 class FunStatementNode;  // Defined in StatementParsers.hpp
 class InterpreterContext;
-class TypedValue;
 class Runtime;
 class ScriptCallableBase;
 class FunctionBuilder;
@@ -82,12 +87,6 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 // Expressions
 ///////////////////////////////////////////////////////////////////////////////
-enum class ExpressionTarget {
-    Result,
-    Intermediate,
-    Stack
-};
-
 class Expression : public AstNode {
 public:
     Expression(const Expression* parent, NomadIndex line, NomadIndex column, const Type* type = nullptr);
@@ -96,7 +95,16 @@ public:
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function);
     // The expression must have been resolved first.
     void compile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target);
+    // Destination must be a resolved same-type local, disjoint from borrowed sources or identical.
+    void compileIntoLocal(
+        Compiler* compiler,
+        ScriptCallableBase* function,
+        VariableId destination
+    );
+    [[nodiscard]] virtual bool supportsReturnDestination() const;
+    void compileIntoReturn(Compiler* compiler, ScriptCallableBase* function);
     [[nodiscard]] virtual bool isWritable() const;
+    [[nodiscard]] virtual std::optional<StorageLocation> getStorageLocation() const;
     [[nodiscard]] virtual IdentifierExpression* asIdentifierExpression();
     [[nodiscard]] virtual const IdentifierExpression* asIdentifierExpression() const;
     [[nodiscard]] virtual NativeMemberExpression* asNativeExpression();
@@ -107,16 +115,16 @@ public:
         const Type* valueType = nullptr
     );
     virtual void compileAssignment(Compiler* compiler, ScriptCallableBase* function, Expression* expression);
-    virtual void evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
+    [[nodiscard]] virtual InterpreterValue evaluateAssignment(InterpreterContext& context, const Expression* expression) const;
     // The expression must have been resolved first.
-    void evaluate(InterpreterContext& context) const;
+    [[nodiscard]] InterpreterValue evaluate(InterpreterContext& context) const;
 
     [[nodiscard]] const Type* getType() const;
     [[nodiscard]] const RuntimeValue& getValue() const;
     [[nodiscard]] bool hasType() const;
     [[nodiscard]] bool hasValue() const;
     [[nodiscard]] bool isParsed() const;
-    [[nodiscard]] virtual std::unique_ptr<TypedValue> getInitialValue(Compiler* compiler) const;
+    [[nodiscard]] virtual std::unique_ptr<InterpreterValue> getInitialValue(Compiler* compiler) const;
     // Is the expression terminal (no further computation necessary) or compound (needs further evaluation)
     // ie: the r/i registers will be used if false.
     [[nodiscard]]
@@ -133,7 +141,13 @@ protected:
 
     virtual void onResolve(CompilerContext* context, ScriptCallableBase* function) = 0;
     virtual void onCompile(Compiler* compiler, ScriptCallableBase* function, ExpressionTarget target) = 0;
-    virtual void onEvaluate(InterpreterContext& context) const;
+    virtual void onCompileIntoLocal(
+        Compiler* compiler,
+        ScriptCallableBase* function,
+        VariableId destination
+    );
+    virtual void onCompileIntoReturn(Compiler* compiler, ScriptCallableBase* function);
+    [[nodiscard]] virtual InterpreterValue onEvaluate(InterpreterContext& context) const;
     [[nodiscard]]
     virtual const Statement* onGetStatement() const;
 
@@ -156,7 +170,7 @@ public:
     // Resolves identifiers and expression types. Returns false if errors were reported.
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function);
     void compile(Compiler* compiler, ScriptCallableBase* function);
-    void evaluate(InterpreterContext& context) const;
+    [[nodiscard]] InterpreterValue evaluate(InterpreterContext& context) const;
 
     // True when every execution path through this statement ends with a `return`.
     [[nodiscard]] virtual NomadBoolean alwaysReturns() const;
@@ -168,7 +182,7 @@ public:
 protected:
     virtual void onResolve(CompilerContext* context, ScriptCallableBase* function);
     virtual void onCompile(Compiler* compiler, ScriptCallableBase* function);
-    virtual void onEvaluate(InterpreterContext& context) const;
+    [[nodiscard]] virtual InterpreterValue onEvaluate(InterpreterContext& context) const;
 };
 
 class NullStatement : public Statement {
@@ -177,7 +191,7 @@ public:
 
 protected:
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 };
 
 class AssignmentStatement : public Statement {
@@ -185,16 +199,18 @@ public:
     AssignmentStatement(NomadIndex line, NomadIndex column, NomadString identifier, std::unique_ptr<Expression> expression);
     [[nodiscard]] const NomadString& getIdentifier() const;
     [[nodiscard]] const Expression* getExpression() const;
+    [[nodiscard]] VariableId getStagingVariable() const;
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     NomadString m_identifier;
     IdentifierDefinition m_identifierDefinition;
     std::unique_ptr<Expression> m_expression;
+    VariableId m_stagingVariable = VariableId::INVALID;
 };
 
 class HubInitializerStatement final : public AssignmentStatement {
@@ -209,8 +225,8 @@ public:
     );
     ~HubInitializerStatement() override;
     [[nodiscard]] const NomadString& getSourceName() const;
-    [[nodiscard]] const TypedValue* getInitialValue() const;
-    void setInitialValue(std::unique_ptr<TypedValue> value);
+    [[nodiscard]] const InterpreterValue* getInitialValue() const;
+    void setInitialValue(std::unique_ptr<InterpreterValue> value);
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
@@ -219,18 +235,22 @@ protected:
 private:
     ScriptCallableBase* m_sourceFunction;
     NomadString m_hub;
-    std::unique_ptr<TypedValue> m_initialValue;
+    std::unique_ptr<InterpreterValue> m_initialValue;
 };
 
 class MemberAssignmentStatement final : public Statement {
 public:
-    MemberAssignmentStatement(NomadIndex line, NomadIndex column, std::unique_ptr<Expression> target,
-                              std::unique_ptr<Expression> expression);
+    MemberAssignmentStatement(
+        NomadIndex line,
+        NomadIndex column,
+        std::unique_ptr<Expression> target,
+        std::unique_ptr<Expression> expression
+    );
 
 protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     std::unique_ptr<Expression> m_target;
@@ -244,10 +264,11 @@ public:
   protected:
     void onResolve(CompilerContext* context, ScriptCallableBase* function) override;
     void onCompile(Compiler* compiler, ScriptCallableBase* function) override;
-    void onEvaluate(InterpreterContext& context) const override;
+    [[nodiscard]] InterpreterValue onEvaluate(InterpreterContext& context) const override;
 
 private:
     std::unique_ptr<Expression> m_expression;
+    VariableId m_destination = VariableId::INVALID;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -262,11 +283,12 @@ public:
 
     [[nodiscard]] NomadBoolean resolve(CompilerContext* context, ScriptCallableBase* function) const;
     void compile(Compiler* compiler, ScriptCallableBase* function) const;
-    void evaluate(InterpreterContext& context) const;
+    [[nodiscard]] InterpreterValue evaluate(InterpreterContext& context) const;
 
     void addStatement(std::unique_ptr<Statement> statement);
 
     [[nodiscard]] NomadIndex getStatementCount() const;
+    [[nodiscard]] const Statement* getStatement(NomadIndex index) const;
     [[nodiscard]] NomadIndex isEmpty() const;
     // True when execution cannot reach the end of the list without executing a `return`.
     [[nodiscard]] NomadBoolean alwaysReturns() const;

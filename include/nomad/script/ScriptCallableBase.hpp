@@ -38,6 +38,10 @@ public:
     [[nodiscard]] virtual const NomadString& getName() const = 0;
     [[nodiscard]] virtual const std::vector<Parameter>& getParameters() const = 0;
     [[nodiscard]] virtual NomadIndex getParameterCount() const = 0;
+    [[nodiscard]] virtual NomadIndex getParameterOffset(NomadId parameterId) const = 0;
+    [[nodiscard]] virtual NomadIndex getParameterStorageSize() const = 0;
+    [[nodiscard]] virtual CallStorageLayout getCallStorageLayout() const = 0;
+    [[nodiscard]] virtual CallStorageLayout getCallStorageLayout(NomadIndex argumentSlotCount) const = 0;
     [[nodiscard]] virtual const Type* getReturnType() const = 0;
     [[nodiscard]] virtual const Type* getClassType() const = 0;
     virtual void setReturnType(const Type* returnType) = 0;
@@ -226,17 +230,31 @@ public:
     }
 
     [[nodiscard]] NomadIndex getVariableCount() const { return m_variables.getVariableCount(); }
+    [[nodiscard]] NomadIndex getVariableOffset(VariableId variableId) const;
+    [[nodiscard]] NomadIndex getVariableStorageSize() const;
+    [[nodiscard]] bool isVariableStoredLocally(VariableId variableId) const;
+    [[nodiscard]] VariableId getNamedReturnVariable() const;
+    // Compiler-selected candidate and redundant assignment/return staging retain logical IDs only.
+    void setNamedReturnVariable(
+        VariableId variableId,
+        VariableId assignmentStaging,
+        VariableId returnStaging
+    );
 
     [[nodiscard]] NomadString getVisibleVariableName(VariableId variableId) const {
         const auto& storageName = getVariableName(variableId);
-        return storageName.find('@') == NomadString::npos ? storageName : NomadString{};
+        return storageName.find('@') == NomadString::npos && !storageName.starts_with("$") ?
+            storageName : NomadString{};
     }
 
     void setFunctionStart(const NomadIndex functionStartIndex) { m_functionStartIndex = functionStartIndex; }
     [[nodiscard]] NomadIndex getFunctionStart() const { return m_functionStartIndex; }
     void setFunctionEnd(const NomadIndex functionEndIndex) { m_functionEndIndex = functionEndIndex; }
     [[nodiscard]] NomadIndex getFunctionEnd() const { return m_functionEndIndex; }
+    [[nodiscard]] bool isCompiled() const noexcept;
     [[nodiscard]] NomadIndex getFunctionLength() const { return m_functionEndIndex - m_functionStartIndex; }
+    void setReservedStackSlots(const NomadIndex slots) { m_reservedStackSlots = slots; }
+    [[nodiscard]] NomadIndex getReservedStackSlots() const { return m_reservedStackSlots; }
 
 protected:
     ScriptCallableBase(
@@ -247,6 +265,12 @@ protected:
     [[nodiscard]] virtual std::vector<Parameter>& getEditableParameters() = 0;
 
 private:
+    struct NamedReturnVariables {
+        VariableId candidate = VariableId::INVALID;
+        VariableId assignmentStaging = VariableId::INVALID;
+        VariableId returnStaging = VariableId::INVALID;
+    };
+
     NomadId registerCapture(const Capture& capture) {
         const auto& name = capture.name;
         const auto existingCaptureId = getCaptureId(name);
@@ -284,7 +308,9 @@ private:
     NomadIndex m_sourceEndLine = NOMAD_INVALID_INDEX;
     NomadIndex m_functionStartIndex = NOMAD_INVALID_INDEX;
     NomadIndex m_functionEndIndex = NOMAD_INVALID_INDEX;
+    NomadIndex m_reservedStackSlots = 0;
     VariableMap m_variables;
+    NamedReturnVariables m_returnVariables;
     std::vector<Capture> m_captures;
     CallableId m_parentId = CallableId{};
 };

@@ -39,6 +39,7 @@ public:
     ~LanguageTestFixture();
 
     [[nodiscard]] Runtime& getRuntime();
+    [[nodiscard]] VirtualMachine& getVirtualMachine();
     [[nodiscard]] Compiler& getCompiler();
 
     void addFunction(const NomadString& name, const NomadString& source);
@@ -47,7 +48,7 @@ public:
 
     [[nodiscard]] NomadString getDiagnostics() const;
     [[nodiscard]] NomadIndex getErrorCount() const;
-    [[nodiscard]] const Diagnostic* findError(const NomadString& messageFragment) const;
+    [[nodiscard]] const CompilerDiagnostic* findError(const NomadString& messageFragment) const;
     [[nodiscard]] bool hasError(const NomadString& messageFragment) const;
 
     // Executes a compiled function. VM faults are captured in `FunctionOutcome::fault`.
@@ -55,6 +56,7 @@ public:
 
 private:
     Runtime m_runtime;
+    std::unique_ptr<VirtualMachine> m_virtualMachine;
     std::unique_ptr<Compiler> m_compiler;
     std::unique_ptr<CompilerContext> m_context;
     bool m_compiled = false;

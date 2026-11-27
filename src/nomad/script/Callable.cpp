@@ -2,8 +2,11 @@
 
 #include <nomad/script/Callable.hpp>
 
+#include <nomad/script/BaseTypes.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/Type.hpp>
 
+#include <limits>
 #include <utility>
 
 namespace nomad {
@@ -23,6 +26,21 @@ NomadString Parameter::getTypeName() const {
     return "unknown";
 }
 
+NomadIndex Parameter::getStackValueCount() const {
+    if (type == nullptr) {
+        throw NomadException("Cannot calculate parameter layout: type of '" + name + "' is unresolved");
+    }
+
+    if (
+        dynamic_cast<const EventDispatchType*>(type) != nullptr &&
+        type->getRuntime()->getType(type->getId()) == type
+    ) {
+        throw NomadException("Parameter '" + name + "' has a call-site-dependent event-dispatch layout");
+    }
+
+    return type->getParameterStackValueCount();
+}
+
 Parameter defParameter(const NomadString& name, const Type* type, const NomadString& doc) {
     return {
         name,
@@ -40,6 +58,7 @@ TemplateParameter defTemplateParameter(
 }
 
 Callable::Callable(
+    const CallableId id,
     const CallableType type,
     const CallableSource source,
     NomadString name,
@@ -48,6 +67,7 @@ Callable::Callable(
     const Type* classType,
     NomadString doc
 ):
+    m_id(id),
     m_name(std::move(name)),
     m_type(type),
     m_source(source),
@@ -84,6 +104,74 @@ NomadIndex Callable::getParameterCount() const {
     return m_parameters.size();
 }
 
+NomadIndex Callable::getParameterOffset(const NomadId parameterId) const {
+    if (isIdOutOfRange(parameterId, m_parameters.size())) {
+        throw NomadException("Parameter ID out of range");
+    }
+
+    auto offset = NomadIndex{0};
+    for (auto index = NomadIndex{0}; index < toNomadIndex(parameterId); ++index) {
+        const auto& parameter = m_parameters[index];
+        const auto size = parameter.getStackValueCount();
+        if (size > std::numeric_limits<NomadIndex>::max() - offset) {
+            throw NomadException("Parameter storage size exceeds the maximum slot count at '" + parameter.name + "'");
+        }
+        offset += size;
+    }
+    return offset;
+}
+
+CallStorageLayout Callable::getCallStorageLayout() const {
+    return getCallStorageLayout(getParameterStorageSize());
+}
+
+CallStorageLayout Callable::getCallStorageLayout(const NomadIndex argumentSlotCount) const {
+    if (m_returnType == nullptr) {
+        throw NomadException("Cannot calculate call storage layout: return type of '" + m_name + "' is unresolved");
+    }
+    const auto returnSize = m_returnType->getSize();
+    CallStorageLayout layout{argumentSlotCount, {}, {}, argumentSlotCount};
+    const auto appendPointer = [&]() {
+        if (layout.stackSlotCount == std::numeric_limits<NomadIndex>::max()) {
+            throw NomadException("Call storage size exceeds the maximum slot count for '" + m_name + "'");
+        }
+        return layout.stackSlotCount++;
+    };
+
+    if (m_type == CallableType::Method || m_type == CallableType::Constructor) {
+        if (m_classType == nullptr) {
+            throw NomadException("Cannot calculate call storage layout: receiver type of '" + m_name + "' is unresolved");
+        }
+
+        const auto receiverSize = m_classType->getSize();
+        if (m_classType->isStruct() && receiverSize != 0) {
+            layout.receiverOffset = appendPointer();
+        }
+    }
+
+    if (m_returnType->isStruct() && returnSize != 0) {
+        layout.returnOffset = appendPointer();
+    }
+
+    return layout;
+}
+
+NomadIndex Callable::getParameterStorageSize() const {
+    auto size = NomadIndex{0};
+
+    for (const auto& parameter : m_parameters) {
+        const auto parameterSize = parameter.getStackValueCount();
+
+        if (parameterSize > std::numeric_limits<NomadIndex>::max() - size) {
+            throw NomadException("Parameter storage size exceeds the maximum slot count at '" + parameter.name + "'");
+        }
+
+        size += parameterSize;
+    }
+
+    return size;
+}
+
 const Type* Callable::getReturnType() const {
     return m_returnType;
 }
@@ -96,19 +184,6 @@ const NomadString& Callable::getDoc() const {
     return m_doc;
 }
 
-CallableId Callable::registerWithRuntime(Runtime& runtime) {
-    if (m_id != CallableId{}) {
-        return CallableId::INVALID;
-    }
-
-    m_id = runtime.catalogCallable(this);
-    return m_id;
-}
-
-void Callable::setId(const CallableId id) {
-    m_id = id;
-}
-
 void Callable::setReturnType(const Type* returnType) {
     m_returnType = returnType;
 }
@@ -118,13 +193,23 @@ std::vector<Parameter>& Callable::getEditableParameters() {
 }
 
 Function::Function(
+    const CallableId id,
     const CallableSource source,
     NomadString name,
     std::vector<Parameter> parameters,
     const Type* returnType,
     NomadString doc
 ):
-    Callable(CallableType::Function, source, std::move(name), std::move(parameters), returnType, nullptr, std::move(doc))
+    Callable(
+        id, 
+        CallableType::Function, 
+        source, 
+        std::move(name), 
+        std::move(parameters), 
+        returnType, 
+        nullptr, 
+        std::move(doc)
+    )
 {
 }
 
@@ -141,6 +226,7 @@ const ScriptFunction* Function::asScriptFunction() const {
 }
 
 Method::Method(
+    const CallableId id,
     const CallableSource source,
     NomadString name,
     const Type* classType,
@@ -148,7 +234,16 @@ Method::Method(
     const Type* returnType,
     NomadString doc
 ):
-    Callable(CallableType::Method, source, std::move(name), std::move(parameters), returnType, classType, std::move(doc))
+    Callable(
+        id, 
+        CallableType::Method, 
+        source, 
+        std::move(name), 
+        std::move(parameters),
+        returnType,
+        classType,
+        std::move(doc)
+    )
 {
 }
 
@@ -161,6 +256,7 @@ const ScriptMethod* Method::asScriptMethod() const {
 }
 
 Constructor::Constructor(
+    const CallableId id,
     const CallableSource source,
     NomadString name,
     const Type* classType,
@@ -168,7 +264,16 @@ Constructor::Constructor(
     const Type* createdType,
     NomadString doc
 ):
-    Callable(CallableType::Constructor, source, std::move(name), std::move(parameters), createdType, classType, std::move(doc))
+    Callable(
+        id, 
+        CallableType::Constructor, 
+        source, 
+        std::move(name), 
+        std::move(parameters), 
+        createdType, 
+        classType, 
+        std::move(doc)
+    )
 {
 }
 

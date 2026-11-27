@@ -38,7 +38,6 @@ public:
     Entity(const Entity& other) = delete;
     ~Entity();
 
-//    void init(Game* game, NomadId init_function_id);
     void update(const Scene* scene);
     void render(Canvas* canvas);
 

@@ -7,7 +7,7 @@ Select `log` in `nomad.toml` for structured logging:
 modules = ["log"]
 ```
 
-Keep the project's existing `nomad.version`. The module is independent of
+The module is independent of
 `system`, `game`, and `os`; none loads it automatically.
 For a game using logging, select `["game", "log"]`.
 
@@ -53,8 +53,7 @@ The module exposes these ordinary typed values:
 - `log.Logger`: the live host logger, available as the read-only reference `log.logger`.
 
 Use `log.logger.level` and `log.logger.deliveryMode` to inspect or change the logger.
-Both are native-backed read/write properties; assigning `log.logger` itself is not allowed.
-Logger properties read and update the logger referenced by their receiver.
+Both are read/write properties; assigning `log.logger` itself is not allowed.
 `log.flush` delivers pending messages and flushes active sinks.
 
 ```nomad
@@ -75,8 +74,8 @@ Neither operation affects plain `print` output.
 
 ### Creation settings
 
-`new log.SinkConfiguration` creates an ordinary reference-semantic script object
-with `active:bool = true` and `level:log.Level = log.Level.Info`.
+`new log.SinkConfiguration` creates settings with `active = true` and
+`level = log.Level.Info`.
 Pass it to `log.createConsoleSink`.
 
 `new log.FileSinkConfiguration` creates a separate script object with those same
@@ -108,21 +107,15 @@ Limits must be positive for bytes and nonnegative for archives.
 Startup rotation is independent of size rotation. Set `rotateAtStartup = false`
 and `rotationMode = log.FileRotationMode.None` to append indefinitely across runs.
 
-Each constructor creates independent settings. Assignment aliases the same
-configuration object, as with other script objects. Factories copy its values:
-changing the configuration afterward does not alter an existing sink.
-The module supplies these declarations in its `scripts/` directory; hosts must
-compile the module scripts before using its configuration types or factories.
-An inactive sink (`active = false`) is owned but receives no entries and creates
-no files until started. Enable it with `sink.active = true`; an active
-flush, including an empty one, starts it.
+Factories copy configuration values; editing the configuration afterward does not
+alter an existing sink. An inactive sink receives no entries and creates no files
+until started. Enable it with `sink.active = true`; the next delivery or flush
+starts it, including an empty flush.
 
 ### Live sink settings
 
 `log.createConsoleSink` returns `log.ConsoleSink`; `log.createFileSink` returns
-`log.FileSink`. Both are independent types with native-backed properties.
-Assigning a sink object aliases the same reference; there is no script constructor.
-Creation settings remain ordinary script objects: editing them does not update a live sink.
+`log.FileSink`. Assignments share a sink; there is no script constructor.
 
 | Property | Access |
 | --- | --- |
@@ -135,7 +128,7 @@ Creation settings remain ordinary script objects: editing them does not update a
 
 Use `log.setFileRotationLimits sink maxSizeBytes maxFiles` to change both limits
 atomically. `log.getFilePath sink` returns the active path; create a replacement
-to change the path or name. The former setting get/set functions are no longer available.
+to change the path or name.
 
 The compiler rejects file-specific properties and functions on console sinks.
 `log.removeSink` accepts either sink type. Changing the startup
@@ -149,13 +142,6 @@ logger are rejected by sink properties and functions. Directory,
 file, rotation, and delivery errors also propagate as script execution errors.
 Memory sinks and custom script sink callbacks are not exposed.
 
-C++ hosts invoking logging functions or properties receive logger, sink, binding,
-and filesystem exceptions unchanged. The module does not wrap those failures in
-`VirtualMachineException`; application-mode restrictions still raise VM faults.
-Native callbacks assume non-null receivers and arguments of the declared types.
-C++ hosts calling them directly must supply valid values; null arguments and
-type mismatches are not supported error cases.
-
 Analysis mode exposes types and signatures without configuring the host logger
 or creating files. Configuration mutations, factory calls, and flushing require
 application mode. Constructing configuration objects alone has no logging or
@@ -163,20 +149,8 @@ filesystem effects.
 
 ## C++ sink configuration
 
-C++ hosts can create logger-owned console, file, and memory sinks, configure their
-activation and minimum levels, flush and replace all sinks, and select buffered
-or synchronous delivery. Factories return strong `LogSinkId` handles; removed
-handles cannot refer to a newly created sink. See
+C++ hosts can also create memory sinks and custom sinks. See
 [C++ logging](embedding.md#c-logging) for the public API and ownership contracts.
-
-File sinks default to size-based rotation at 10 MiB, rotation at startup, and
-retention of ten archives.
-The configurable base name defaults to `application`, producing
-`application.log`, `application.1.log` (newest archive), and so on.
-`rotateAtStartup` is independent of the rotation mode and defaults to `true`.
-`None` disables ongoing size-based rotation; also disable `rotateAtStartup` for
-unlimited append across runs. See
-[File sinks](embedding.md#file-sinks) for configuration and failure behavior.
 
 ## Project logging schema
 
@@ -226,24 +200,12 @@ Unknown keys, incorrect types, unsupported values, and file-only options on
 console sinks are rejected. Values are case-sensitive.
 Projects without the `log` module retain these settings without interpreting them.
 
-Application startup prepares the new sinks before flushing and removing all
-existing sinks. Preparation or old-sink flushing failures abort startup without
-detaching existing sinks or changing level/delivery settings. Preparing an active
-file sink can create files or rotate existing logs; these filesystem effects are
-not rolled back.
-The module registers the prepared sinks, then applies level and delivery mode.
-Failures after clearing the old sinks abort startup without restoring them.
-Inactive configured sinks remain inactive.
+Applying startup settings replaces existing sinks; inactive configured sinks
+remain inactive. Logging failures abort startup. Opening or rotating files can
+have effects that are not rolled back.
 
-Subsequent programmatic changes override startup settings. Sinks registered after
-the module loads remain attached until removed or session teardown. Application
-session shutdown flushes and clears all sinks, releasing file handles and custom
-sinks before module libraries unload. Game debug mode does not change logging
-levels or sinks.
-
-C++ hosts can call `readLogConfiguration(configuration, projectDirectory)` from
-`<nomad/log/LogConfiguration.hpp>` to obtain the validated settings without
-applying them. File constraints use the same validation as native file sinks.
+Subsequent programmatic changes override startup settings. Shutdown flushes and
+clears sinks. Game debug mode does not change logging levels or sinks.
 
 ## Extending the hub
 
@@ -271,6 +233,3 @@ timestamps or script locations. It works even with `nomad.modules = []`:
 print "Hello"
 print $"Score: {score}"
 ```
-
-Existing projects using `log.info` through `system` must either select
-`log` explicitly or use `print` when plain output is sufficient.

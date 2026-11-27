@@ -1,17 +1,25 @@
 // Copyright (c) 2026 Jean-François Bilodeau (@jfbilodeau).
 
+#include <FailingVariableContext.hpp>
 #include <LanguageTestFixture.hpp>
+
+#include <nomad/interpreter/Interpreter.hpp>
+
+#include <nomad/log/Logger.hpp>
+#include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/FormatString.hpp>
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/OpCode.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
+#include <boost/scope_exit.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <array>
+#include <memory>
+#include <stdexcept>
 #include <type_traits>
 
 using namespace nomad;
@@ -29,6 +37,123 @@ static_assert(!std::is_invocable_v<decltype(&Compiler::addLoadContextVariable),
     Compiler&, NomadId, const Type*, ExpressionTarget>);
 
 BOOST_AUTO_TEST_SUITE(language_context_variables)
+
+BOOST_AUTO_TEST_CASE(invalid_handles_report_once_from_a_shared_origin_without_changing_values_or_tracking) {
+    Runtime runtime;
+    const auto& constRuntime = runtime;
+    auto context = std::make_unique<SimpleVariableContext>();
+    const auto* borrowedContext = context.get();
+    const auto contextId = runtime.registerVariableContext("checked", "checked.", std::move(context));
+    BOOST_REQUIRE(contextId.isValid());
+    const auto variableId = runtime.registerContextVariable(contextId, "checked.value", runtime.getIntegerType());
+    BOOST_REQUIRE(variableId.isValid());
+    const auto localVariableId = borrowedContext->getVariableId("checked.value");
+    constRuntime.setContextVariableValue(variableId, RuntimeValue{NomadInteger{17}});
+
+    auto& logger = log::getLogger();
+    logger.flush();
+    const auto previousLevel = logger.getLogLevel();
+    const auto sinkId = logger.createMemorySink();
+    BOOST_SCOPE_EXIT_ALL(&) {
+        logger.removeSink(sinkId);
+        logger.setLogLevel(previousLevel);
+    };
+
+    logger.setLogLevel(LogLevel::Error);
+    auto* sink = static_cast<MemorySink*>(logger.getSink(sinkId));
+    BOOST_REQUIRE(sink != nullptr);
+    NomadString diagnosticOrigin;
+    const auto checkSharedError = [&](const ContextVariableId invalidId) {
+        logger.flush();
+        const auto& entries = sink->getEntries();
+        BOOST_REQUIRE(entries.size() == 1U);
+        const auto& entry = entries.front();
+        BOOST_TEST((entry.level == LogLevel::Error));
+        const auto expectedMessage = "Invalid context variable id: " + std::to_string(invalidId.id);
+        const auto messagePosition = entry.message.find(expectedMessage);
+        BOOST_REQUIRE(messagePosition != NomadString::npos);
+        const auto origin = entry.message.substr(messagePosition + expectedMessage.size());
+        BOOST_REQUIRE(!origin.empty());
+        if (diagnosticOrigin.empty()) {
+            diagnosticOrigin = origin;
+        } else {
+            BOOST_TEST(origin == diagnosticOrigin);
+        }
+
+        sink->clear();
+    };
+
+    for (const auto invalidId : {
+        ContextVariableId::INVALID,
+        ContextVariableId{-2},
+        ContextVariableId{variableId.id + 1},
+        ContextVariableId{NOMAD_ID_MAX}
+    }) {
+        BOOST_TEST(constRuntime.getContextVariableName(invalidId).empty());
+        checkSharedError(invalidId);
+        BOOST_TEST(constRuntime.getContextVariableType(invalidId) == nullptr);
+        checkSharedError(invalidId);
+        constRuntime.setContextVariableRead(invalidId, true);
+        checkSharedError(invalidId);
+        constRuntime.setContextVariableWritten(invalidId, true);
+        checkSharedError(invalidId);
+        constRuntime.setContextVariableValue(invalidId, RuntimeValue{NomadInteger{29}});
+        checkSharedError(invalidId);
+        RuntimeValue output{NomadInteger{37}};
+        constRuntime.getContextVariableValue(invalidId, output);
+        checkSharedError(invalidId);
+        BOOST_TEST(output.getIntegerValue() == 37);
+        BOOST_TEST(!borrowedContext->isRead(localVariableId));
+        BOOST_TEST(!borrowedContext->isWritten(localVariableId));
+    }
+
+    RuntimeValue stored;
+    constRuntime.getContextVariableValue(variableId, stored);
+    BOOST_TEST(stored.getIntegerValue() == 17);
+    logger.flush();
+    BOOST_TEST(sink->getEntries().empty());
+}
+
+BOOST_AUTO_TEST_CASE(string_context_setter_failures_release_temporaries_and_preserve_retained_values) {
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    for (const auto retainValueBeforeFailure : {false, true}) {
+        {
+            Runtime runtime;
+            const auto contextId = runtime.registerVariableContext(
+                "failing",
+                "failing.",
+                std::make_unique<FailingVariableContext>(retainValueBeforeFailure)
+            );
+            BOOST_REQUIRE(contextId.isValid());
+            const auto variableId = runtime.registerContextVariable(
+                contextId,
+                "failing.value",
+                runtime.getStringType()
+            );
+            BOOST_REQUIRE(variableId.isValid());
+            BOOST_CHECK_EXCEPTION(
+                runtime.setStringContextVariableValue(variableId, "retained context text"),
+                std::runtime_error,
+                [](const std::runtime_error& error) {
+
+                    return NomadString{error.what()} == "context setter failed";
+                }
+            );
+            RuntimeValue borrowed;
+            runtime.getContextVariableValue(variableId, borrowed);
+            if (retainValueBeforeFailure) {
+                BOOST_TEST(borrowed.getStringValue() == "retained context text");
+                BOOST_TEST(borrowed.getObjectValue()->getReferenceCount() == 1U);
+            } else {
+                BOOST_TEST(borrowed.getObjectValue() == nullptr);
+            }
+        }
+
+        BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+        BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore);
+    }
+}
 
 BOOST_AUTO_TEST_CASE(context_ids_support_lookup_iteration_and_catalog_growth)
 {
@@ -69,6 +194,35 @@ BOOST_AUTO_TEST_CASE(context_ids_support_lookup_iteration_and_catalog_growth)
     BOOST_TEST(count == originalCount + 65);
     BOOST_TEST(visitedId == lastId);
     BOOST_TEST(runtime.getNextVariableContextId(lastId) == VariableContextId::INVALID);
+}
+
+BOOST_AUTO_TEST_CASE(identifier_classification_distinguishes_context_prefixes_from_registered_variables)
+{
+    Runtime runtime;
+    const auto contextId = runtime.registerVariableContext(
+        "values", "values.", std::make_unique<SimpleVariableContext>()
+    );
+    BOOST_REQUIRE(contextId.isValid());
+    const auto variableId = runtime.registerContextVariable(contextId, "values.answer", runtime.getIntegerType());
+    BOOST_REQUIRE(variableId.isValid());
+    const auto compiler = runtime.createCompiler();
+
+    BOOST_TEST((compiler->getIdentifierType("values.", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition prefix{};
+    compiler->getIdentifierDefinition("values.", nullptr, prefix);
+    BOOST_TEST((prefix.identifierType == IdentifierType::Unknown));
+
+    BOOST_TEST((compiler->getIdentifierType("values.missing", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition missing{};
+    compiler->getIdentifierDefinition("values.missing", nullptr, missing);
+    BOOST_TEST((missing.identifierType == IdentifierType::Unknown));
+
+    BOOST_TEST((compiler->getIdentifierType("values.answer", nullptr) == IdentifierType::ContextVariable));
+    IdentifierDefinition answer{};
+    compiler->getIdentifierDefinition("values.answer", nullptr, answer);
+    BOOST_TEST((answer.identifierType == IdentifierType::ContextVariable));
+    BOOST_TEST(answer.contextVariableId == variableId);
+    BOOST_TEST(answer.valueType == runtime.getIntegerType());
 }
 
 BOOST_AUTO_TEST_CASE(global_handles_preserve_context_and_local_identity_after_growth)
@@ -155,6 +309,81 @@ BOOST_AUTO_TEST_CASE(hub_variable_registration_returns_global_handles_but_member
     BOOST_TEST(value.getIntegerValue() == 42);
 }
 
+BOOST_AUTO_TEST_CASE(context_prefix_resolution_preserves_hub_membership_and_first_prefix_precedence)
+{
+    Runtime runtime;
+    const auto parentHub = runtime.registerHub("lookup", HubMode::Opened);
+    const auto childHub = runtime.registerHub("lookup.child", HubMode::Opened);
+    BOOST_REQUIRE(parentHub.isValid());
+    BOOST_REQUIRE(childHub.isValid());
+    const auto parentVariable = runtime.registerHubVariable("lookup.value");
+    const auto dottedVariable = runtime.registerHubVariable("lookup.branch.leaf");
+    const auto childVariable = runtime.registerHubVariable("lookup.child.value");
+    BOOST_REQUIRE(parentVariable.isValid());
+    BOOST_REQUIRE(dottedVariable.isValid());
+    BOOST_REQUIRE(childVariable.isValid());
+    BOOST_REQUIRE(runtime.registerHubConstant(
+        childHub,
+        "constant",
+        RuntimeValue{NomadInteger{17}},
+        runtime.getIntegerType()
+    ).isValid());
+    const auto parentContext = runtime.getContextId("lookup");
+    const auto childContext = runtime.getContextId("lookup.child");
+    const auto broad = runtime.registerVariableContext(
+        "broad",
+        "lookup.",
+        std::make_unique<SimpleVariableContext>()
+    );
+    const auto narrow = runtime.registerVariableContext(
+        "narrow",
+        "lookup.child.",
+        std::make_unique<SimpleVariableContext>()
+    );
+    BOOST_REQUIRE(parentContext.isValid());
+    BOOST_REQUIRE(childContext.isValid());
+    BOOST_REQUIRE(broad.isValid());
+    BOOST_REQUIRE(narrow.isValid());
+    const auto& constRuntime = runtime;
+    const auto checkResolution = [&] {
+        BOOST_TEST(constRuntime.isHubVariable("lookup.value"));
+        BOOST_TEST(constRuntime.isHubVariable("lookup.branch.leaf"));
+        BOOST_TEST(constRuntime.isHubVariable("lookup.child.value"));
+        BOOST_TEST(constRuntime.getContainingHub("lookup.branch.leaf") == "lookup");
+        BOOST_TEST(constRuntime.getContainingHub("lookup.child.value") == "lookup.child");
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.value") == parentContext);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.branch.leaf") == parentContext);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.child.value") == childContext);
+        BOOST_TEST(!constRuntime.isHubVariable("lookup.child.constant"));
+        BOOST_TEST(!constRuntime.isHubVariable("lookup.child.unknown"));
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.child.constant") == broad);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.child.unknown") == broad);
+        BOOST_TEST(constRuntime.getVariableContextIdByPrefix("lookup.unknown") == broad);
+        for (const auto* name : {"", "unqualified", "absent.value"}) {
+            BOOST_TEST(!constRuntime.isHubVariable(name));
+            BOOST_TEST(constRuntime.getVariableContextIdByPrefix(name) == VariableContextId::INVALID);
+        }
+
+        BOOST_TEST(runtime.getContextVariableId("lookup.value") == parentVariable);
+        BOOST_TEST(runtime.getContextVariableId("lookup.branch.leaf") == dottedVariable);
+        BOOST_TEST(runtime.getContextVariableId("lookup.child.value") == childVariable);
+        BOOST_TEST(constRuntime.getVariableContext(broad)->getVariableCount() == 0U);
+        BOOST_TEST(constRuntime.getVariableContext(narrow)->getVariableCount() == 0U);
+    };
+    checkResolution();
+    for (auto index = NomadIndex{0}; index < 64; ++index) {
+        const auto name = "later" + std::to_string(index);
+        BOOST_REQUIRE(runtime.registerHub(name, HubMode::Opened).isValid());
+        BOOST_REQUIRE(runtime.registerVariableContext(
+            name,
+            "host." + name + ".",
+            std::make_unique<SimpleVariableContext>()
+        ).isValid());
+    }
+
+    checkResolution();
+}
+
 BOOST_AUTO_TEST_CASE(context_loads_encode_global_handles_for_scalar_and_object_targets)
 {
     Runtime runtime;
@@ -197,19 +426,20 @@ BOOST_AUTO_TEST_CASE(interpreter_and_formatting_resolve_global_handles_in_multip
     runtime.registerVariableContext("first", "first.", std::make_unique<SimpleVariableContext>());
     runtime.registerVariableContext("second", "second.", std::make_unique<SimpleVariableContext>());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("first.value = 17", context));
-    BOOST_REQUIRE(Interpreter{}.execute("second.value = 29", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("second.value", context));
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
+    BOOST_REQUIRE(context.getInterpreter().execute("first.value = 17", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.value = 29", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.value", context));
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 29);
-    BOOST_REQUIRE(Interpreter{}.execute("second.value = first.value + second.value", context));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("$(\"{first.value}:{second.value}\")", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.value = first.value + second.value", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("$(\"{first.value}:{second.value}\")", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "17:46");
-    BOOST_REQUIRE(Interpreter{}.execute("first.name = \"first\"", context));
-    BOOST_REQUIRE(Interpreter{}.execute("second.name = \"second\"", context));
-    BOOST_REQUIRE_MESSAGE(Interpreter{}.execute("second.name = $\"{second.name}!\"", context),
-        (context.getError() != nullptr ? *context.getError() : "Interpreter assignment failed"));
-    BOOST_REQUIRE(Interpreter{}.evaluateExpression("second.name", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("first.name = \"first\"", context));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.name = \"second\"", context));
+    BOOST_REQUIRE_MESSAGE(context.getInterpreter().execute("second.name = $\"{second.name}!\"", context),
+        (context.getFirstError().has_value() ? context.getFirstError()->message : "Interpreter assignment failed"));
+    BOOST_REQUIRE(context.getInterpreter().execute("second.name", context));
     BOOST_TEST(context.getResult()->getValue().getStringValue() == "second!");
 
     auto compiler = runtime.createCompiler();

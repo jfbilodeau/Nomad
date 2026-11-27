@@ -11,9 +11,9 @@
 #include <nomad/game/resource/AudioObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
 
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/Closure.hpp>
 #include <nomad/script/Runtime.hpp>
-#include <nomad/script/Type.hpp>
 #include <nomad/script/VirtualMachine.hpp>
 
 #include <nomad/system/Path.hpp>
@@ -85,14 +85,17 @@ void executeAudioAction(VirtualMachine* virtualMachine, Fn&& action) {
 void Game::initAudioFunctions() {
     log::debug("Initializing audio functions");
 
+    const auto audioHubId = m_runtime->getHubId("game.audio");
+    const auto musicHubId = m_runtime->getHubId("game.music");
     const auto* audioType = static_cast<const ClassType*>(m_runtime->getTypeByName("Audio"));
     if (audioType == nullptr) {
         raiseError("Audio type is not registered");
     }
     const auto audioTypeId = m_runtime->getTypeId("Audio");
 
-    m_runtime->registerNativeFunction(
-        "game.audio.load",
+    const auto loadAudioFunctionId = m_runtime->registerHubNativeFunction(
+        audioHubId,
+        "load",
         [this](VirtualMachine* virtualMachine) {
             const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             auto* audio = m_resourceManager->getAudio();
@@ -120,8 +123,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Creates a controllable audio instance for a preloaded sound effect.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.audio.pauseAll",
+    const auto pauseAllFunctionId = m_runtime->registerHubNativeFunction(
+        audioHubId,
+        "pauseAll",
         [this](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [this] {
                 m_resourceManager->getAudio()->pauseAll();
@@ -132,8 +136,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Pauses every playing sound effect.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.audio.resumeAll",
+    const auto resumeAllFunctionId = m_runtime->registerHubNativeFunction(
+        audioHubId,
+        "resumeAll",
         [this](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [this] {
                 m_resourceManager->getAudio()->resumeAll();
@@ -144,8 +149,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Resumes every paused sound effect.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.audio.stopAll",
+    const auto stopAllFunctionId = m_runtime->registerHubNativeFunction(
+        audioHubId,
+        "stopAll",
         [this](VirtualMachine* virtualMachine) {
             executeAudioAction(virtualMachine, [this] {
                 m_resourceManager->getAudio()->stopAll();
@@ -156,7 +162,7 @@ void Game::initAudioFunctions() {
         NomadDoc("Stops every playing or paused sound effect.")
     );
 
-    const auto volumeId = m_runtime->addProperty(audioTypeId, {
+    const auto volumeId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getFloatType(),
         .name = "volume",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -170,7 +176,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("The sound-effect instance volume from 0.0 to 1.0.")
     });
 
-    const auto playingId = m_runtime->addProperty(audioTypeId, {
+    const auto playingId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "playing",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -180,7 +186,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Whether the sound effect is currently playing.")
     });
 
-    const auto pausedId = m_runtime->addProperty(audioTypeId, {
+    const auto pausedId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "paused",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -190,7 +196,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Whether the sound effect is currently paused.")
     });
 
-    const auto loopingId = m_runtime->addProperty(audioTypeId, {
+    const auto loopingId = m_runtime->registerNativeClassProperty(audioTypeId, {
         .valueType = m_runtime->getBooleanType(),
         .name = "looping",
         .getter = [](VirtualMachine* virtualMachine, RuntimeValue& result) {
@@ -203,7 +209,7 @@ void Game::initAudioFunctions() {
         raiseError("Failed to register Audio properties");
     }
 
-    const auto playId = m_runtime->addMethod(audioTypeId, {
+    const auto playId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "play",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -215,7 +221,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Plays the sound effect once from the beginning.")
     });
 
-    const auto playLoopId = m_runtime->addMethod(audioTypeId, {
+    const auto playLoopId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "playLoop",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -227,10 +233,10 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Plays the sound effect repeatedly.")
     });
 
-    const auto playOnceThenId = m_runtime->addMethod(audioTypeId, {
+    const auto playOnceThenId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "playOnceThen",
         .parameters = {{
-            m_runtime->getCallbackType({}, m_runtime->getVoidType())->getId(),
+            m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType())->getId(),
             "callback",
             NomadParamDoc("Function to execute after the sound effect finishes.")
         }},
@@ -243,7 +249,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Plays the sound effect once and invokes a callback when it finishes.")
     });
 
-    const auto pauseId = m_runtime->addMethod(audioTypeId, {
+    const auto pauseId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "pause",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -255,7 +261,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Pauses the sound effect.")
     });
 
-    const auto resumeId = m_runtime->addMethod(audioTypeId, {
+    const auto resumeId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "resume",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -267,7 +273,7 @@ void Game::initAudioFunctions() {
         .documentation = NomadDoc("Resumes the paused sound effect.")
     });
 
-    const auto stopId = m_runtime->addMethod(audioTypeId, {
+    const auto stopId = m_runtime->registerNativeClassMethod(audioTypeId, {
         .name = "stop",
         .parameters = {},
         .returnTypeId = m_runtime->getTypeId("void"),
@@ -283,8 +289,9 @@ void Game::initAudioFunctions() {
         raiseError("Failed to register Audio methods");
     }
 
-    m_runtime->registerNativeFunction(
-        "game.music.play",
+    const auto playMusicFunctionId = m_runtime->registerHubNativeFunction(
+        musicHubId,
+        "play",
         [this](const VirtualMachine* virtualMachine) {
             const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             (void)m_resourceManager->getAudio()->playMusic(
@@ -304,8 +311,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Streams and repeatedly plays a music resource from the music directory.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.music.playOnce",
+    const auto playMusicOnceFunctionId = m_runtime->registerHubNativeFunction(
+        musicHubId,
+        "playOnce",
         [this](VirtualMachine* virtualMachine) {
             const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             (void)m_resourceManager->getAudio()->playMusic(
@@ -325,8 +333,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Streams and plays a music resource once from the music directory.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.music.playThen",
+    const auto playMusicThenFunctionId = m_runtime->registerHubNativeFunction(
+        musicHubId,
+        "playThen",
         [this](VirtualMachine* virtualMachine) {
             const auto& resourceName = virtualMachine->getStringParameter(0)->getString();
             (void)m_resourceManager->getAudio()->playMusic(
@@ -344,7 +353,7 @@ void Game::initAudioFunctions() {
             ),
             defParameter(
                 "callback",
-                m_runtime->getCallbackType({}, m_runtime->getVoidType()),
+                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
                 NomadParamDoc("Function to execute after the music finishes.")
             )
         },
@@ -352,8 +361,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Streams a music resource once and invokes a callback when it finishes.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.music.pause",
+    const auto pauseMusicFunctionId = m_runtime->registerHubNativeFunction(
+        musicHubId,
+        "pause",
         [this](VirtualMachine* /*virtualMachine*/) {
             m_resourceManager->getAudio()->pauseMusic();
         },
@@ -362,8 +372,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Pauses the current music track.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.music.resume",
+    const auto resumeMusicFunctionId = m_runtime->registerHubNativeFunction(
+        musicHubId,
+        "resume",
         [this](VirtualMachine* /*virtualMachine*/) {
             m_resourceManager->getAudio()->resumeMusic();
         },
@@ -372,8 +383,9 @@ void Game::initAudioFunctions() {
         NomadDoc("Resumes the paused music track.")
     );
 
-    m_runtime->registerNativeFunction(
-        "game.music.stop",
+    const auto stopMusicFunctionId = m_runtime->registerHubNativeFunction(
+        musicHubId,
+        "stop",
         [this](VirtualMachine* /*virtualMachine*/) {
             m_resourceManager->getAudio()->stopMusic();
         },
@@ -381,6 +393,22 @@ void Game::initAudioFunctions() {
         m_runtime->getVoidType(),
         NomadDoc("Stops the current music track and releases its stream.")
     );
+
+    if (
+        loadAudioFunctionId.isInvalid() ||
+        pauseAllFunctionId.isInvalid() ||
+        resumeAllFunctionId.isInvalid() ||
+        stopAllFunctionId.isInvalid() ||
+        playMusicFunctionId.isInvalid() ||
+        playMusicOnceFunctionId.isInvalid() ||
+        playMusicThenFunctionId.isInvalid() ||
+        pauseMusicFunctionId.isInvalid() ||
+        resumeMusicFunctionId.isInvalid() ||
+        stopMusicFunctionId.isInvalid()
+    ) {
+        raiseError("Failed to register audio and music hub functions");
+    }
+
 }
 
 } // namespace nomad

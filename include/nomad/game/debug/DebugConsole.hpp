@@ -6,10 +6,11 @@
 
 #include <nomad/game/Game.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/log/MemorySink.hpp>
 
 #include <nomad/script/DynamicVariable.hpp>
-#include <nomad/script/Interpreter.hpp>
 #include <nomad/script/VariableContext.hpp>
 
 #include <SDL3/SDL.h>
@@ -135,6 +136,7 @@ private:
     SDL_Texture* m_gameTexture = nullptr;
     LogSinkId m_memorySinkId;
     std::unique_ptr<VirtualMachine> m_interpreterVirtualMachine;
+    Interpreter m_interpreter;
     InterpreterContext m_interpreterContext;
     std::unique_ptr<VirtualMachine> m_inspectionVirtualMachine;
     std::unique_ptr<ImGuiStyle> m_baseStyle;

@@ -2,8 +2,9 @@
 
 #include <LanguageTestFixture.hpp>
 
+#include <nomad/interpreter/Interpreter.hpp>
+
 #include <nomad/script/Hub.hpp>
-#include <nomad/script/Interpreter.hpp>
 
 #include <boost/test/unit_test.hpp>
 
@@ -154,8 +155,9 @@ BOOST_AUTO_TEST_CASE(scalar_const_references_preserve_values_without_numeric_nar
 
     auto machine = runtime.createVirtualMachine();
     for (const auto value : {std::numeric_limits<NomadInteger>::min(), std::numeric_limits<NomadInteger>::max()}) {
-        machine->runNativeFunction(identityId, {RuntimeValue(value)});
-        BOOST_TEST(machine->getResult().getIntegerValue() == value);
+        const InterpreterValue argument(runtime.getIntegerType(), RuntimeValue{value});
+        const auto result = Interpreter{*machine}.runFunction(identityId, {&argument, 1});
+        BOOST_TEST(result.getValue().getIntegerValue() == value);
     }
 }
 
@@ -204,14 +206,14 @@ BOOST_AUTO_TEST_CASE(global_functions_share_overloads_and_reject_conflicts_witho
     BOOST_REQUIRE(manualId.isValid());
     const auto hubId = runtime.registerHub("reserved", HubMode::Opened);
     BOOST_REQUIRE(hubId.isValid());
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     BOOST_TEST(runtime.registerNativeFunction("convert", [](NomadInteger) {
         return NomadFloat{0.0f};
     }, {{"renamedValue", ""}}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerNativeFunction("reserved", [] {
         return NomadInteger{0};
     }, {}, NomadDoc("")).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before);
+    BOOST_TEST(runtime.getCallableCount() == before);
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
     BOOST_TEST(runtime.getNativeFunctionId("reserved").isInvalid());
     fixture.addFunction("main",
@@ -229,7 +231,7 @@ BOOST_AUTO_TEST_CASE(invalid_registration_does_not_publish_a_callable) {
     Runtime runtime;
     const auto hubId = runtime.registerHub("example", HubMode::Opened);
     BOOST_REQUIRE(hubId.isValid());
-    const auto before = runtime.getFunctionTableSize();
+    const auto before = runtime.getCallableCount();
     const auto callback = [](NomadInteger value) { return value; };
     BOOST_TEST(runtime.registerNativeFunction("invalid", callback, {}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerNativeFunction("invalid", callback,
@@ -239,20 +241,22 @@ BOOST_AUTO_TEST_CASE(invalid_registration_does_not_publish_a_callable) {
     BOOST_TEST(runtime.registerNativeFunction("invalid", missing, {{"value", ""}}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerHubNativeFunction(HubId::INVALID, "invalid", callback,
         {{"value", ""}}, NomadDoc("")).isInvalid());
-    BOOST_TEST(runtime.registerHubNativeFunction(hubId, "child.invalid", callback,
-        {{"value", ""}}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerHubNativeFunction(hubId, "invalid", callback, {}, NomadDoc("")).isInvalid());
     BOOST_TEST(runtime.registerHubNativeFunction(hubId, "invalid", missing,
         {{"value", ""}}, NomadDoc("")).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == before);
-    BOOST_TEST(runtime.getFunctionId("invalid").isInvalid());
+    BOOST_TEST(runtime.getCallableCount() == before);
+    BOOST_TEST(runtime.getScriptFunctionId("invalid").isInvalid());
     BOOST_TEST(runtime.getHub(hubId)->getMembers().empty());
+    const auto qualified = runtime.registerHubNativeFunction(hubId, "child.invalid", callback,
+        {{"value", ""}}, NomadDoc(""));
+    BOOST_REQUIRE(qualified.isValid());
+    BOOST_TEST(runtime.getNativeFunctionId("example.child.invalid") == qualified);
     BOOST_REQUIRE(runtime.registerHubNativeFunction(hubId, "valid", callback,
         {{"value", ""}}, NomadDoc("")).isValid());
-    const auto after = runtime.getFunctionTableSize();
+    const auto after = runtime.getCallableCount();
     BOOST_TEST(runtime.registerHubNativeFunction(hubId, "valid", callback,
         {{"value", ""}}, NomadDoc("")).isInvalid());
-    BOOST_TEST(runtime.getFunctionTableSize() == after);
+    BOOST_TEST(runtime.getCallableCount() == after);
 }
 
 BOOST_AUTO_TEST_CASE(string_results_copy_values_and_release_temporary_arguments) {
@@ -290,13 +294,15 @@ BOOST_AUTO_TEST_CASE(host_calls_copy_string_values_and_own_results_independently
     const auto before = RuntimeValue::getLiveStringCount();
     RuntimeValue argument(NomadString("a\0b", 3));
     for (auto index = 0; index < 20; ++index) {
-        machine->runNativeFunction(id, {argument});
+        {
+            const InterpreterValue value(runtime.getStringType(), argument);
+            const auto result = Interpreter{*machine}.runFunction(id, {&value, 1});
+            BOOST_TEST(result.getValue().getStringObject()->getString() == NomadString("a\0b!", 4));
+            BOOST_TEST(result.getValue().getObjectValue() != argument.getObjectValue());
+            BOOST_TEST(result.getValue().getObjectValue()->getReferenceCount() == 1U);
+        }
         BOOST_TEST(argument.getStringObject()->getString() == NomadString("a\0b", 3));
         BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
-        BOOST_TEST(machine->getResult().getStringObject()->getString() == NomadString("a\0b!", 4));
-        BOOST_TEST(machine->getResult().getObjectValue() != argument.getObjectValue());
-        BOOST_TEST(machine->getResult().getObjectValue()->getReferenceCount() == 1U);
-        machine->getResult().freeObjectValue();
 #ifdef NOMAD_DEBUG
         BOOST_TEST(RuntimeValue::getLiveStringCount() == before + 1);
 #endif
@@ -346,7 +352,11 @@ BOOST_AUTO_TEST_CASE(host_calls_release_string_arguments_when_typed_callbacks_th
     auto machine = runtime.createVirtualMachine();
     const auto before = RuntimeValue::getLiveStringCount();
     RuntimeValue argument(NomadString("temporary argument"));
-    BOOST_CHECK_THROW(machine->runNativeFunction(id, {argument}), VirtualMachineException);
+    {
+        const InterpreterValue value(runtime.getStringType(), argument);
+        BOOST_CHECK_THROW(static_cast<void>(Interpreter{*machine}.runFunction(id, {&value, 1})),
+            VirtualMachineException);
+    }
     BOOST_TEST(argument.getObjectValue()->getReferenceCount() == 1U);
     argument.freeObjectValue();
     BOOST_TEST(RuntimeValue::getLiveStringCount() == before);
@@ -357,8 +367,9 @@ BOOST_AUTO_TEST_CASE(typed_functions_are_available_to_the_interpreter) {
     BOOST_REQUIRE(runtime.registerNativeFunction("measure", measureText,
         {{"text", ""}, {"scale", ""}}, NomadDoc("")).isValid());
     auto machine = runtime.createVirtualMachine();
-    InterpreterContext context(*machine);
-    BOOST_REQUIRE(Interpreter{}.execute("measure \"abc\" 2.0", context));
+    const Interpreter contextEvaluator(*machine);
+    InterpreterContext context(contextEvaluator);
+    BOOST_REQUIRE(context.getInterpreter().execute("measure \"abc\" 2.0", context));
     BOOST_REQUIRE(context.getResult() != nullptr);
     BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 6);
 }
@@ -374,8 +385,9 @@ BOOST_AUTO_TEST_CASE(typed_hub_functions_preserve_strings_in_the_interpreter) {
         auto machine = runtime.createVirtualMachine();
         const auto before = RuntimeValue::getLiveStringCount();
         {
-            InterpreterContext context(*machine);
-            BOOST_REQUIRE(Interpreter{}.execute("example.describe \"value:\" 7 2.5 true", context));
+            const Interpreter contextEvaluator(*machine);
+            InterpreterContext context(contextEvaluator);
+            BOOST_REQUIRE(context.getInterpreter().execute("example.describe \"value:\" 7 2.5 true", context));
             BOOST_REQUIRE(context.getResult() != nullptr);
             BOOST_TEST(context.getResult()->getValue().getStringObject()->getString() == "value:7:ok");
         }

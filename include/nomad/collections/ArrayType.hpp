@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <nomad/script/Type.hpp>
+#include <nomad/script/ClassType.hpp>
 
 namespace nomad {
 
@@ -14,7 +14,7 @@ public:
     ArrayType& operator=(const ArrayType&) = delete;
     ~ArrayType() override;
 
-    void initValue(RuntimeValue& value) const override;
+    void initValue(RuntimeValue* value) const override;
     [[nodiscard]] const Type* getElementType() const;
     [[nodiscard]] NomadIndex getDimensionCount() const;
 

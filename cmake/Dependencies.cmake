@@ -5,6 +5,7 @@ include(FetchContent)
 set(
     BOOST_INCLUDE_LIBRARIES
     algorithm
+    container
     dll
     exception
     json
@@ -13,6 +14,7 @@ set(
     phoenix
     process
     program_options
+    scope_exit
     spirit
     test
     tokenizer

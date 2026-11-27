@@ -2,21 +2,21 @@
 
 #include <nomad/script/Property.hpp>
 
-#include <nomad/log/Logger.hpp>
-
-#include <nomad/script/Runtime.hpp>
+#include <nomad/script/CompositeType.hpp>
 
 #include <utility>
 
 namespace nomad {
 
 Property::Property(
-    const ClassType* classType,
+    PropertyId id,
+    const CompositeType* ownerType,
     NomadString name,
     const Type* valueType,
     NomadString doc
 ):
-    m_classType(classType),
+    m_id(id),
+    m_ownerType(ownerType),
     m_name(std::move(name)),
     m_valueType(valueType),
     m_doc(std::move(doc))
@@ -29,7 +29,11 @@ PropertyId Property::getId() const {
 }
 
 const ClassType* Property::getClassType() const {
-    return m_classType;
+    return m_ownerType == nullptr ? nullptr : m_ownerType->asClassType();
+}
+
+const CompositeType* Property::getOwnerType() const {
+    return m_ownerType;
 }
 
 const NomadString& Property::getName() const {
@@ -58,15 +62,6 @@ void Property::setHasExplicitInitializer(const bool hasExplicitInitializer) {
 
 const NativeProperty* Property::asNativeProperty() const {
     return nullptr;
-}
-
-PropertyId Property::registerWithRuntime(Runtime& runtime) {
-    if (m_id.isValid()) {
-        log::error("Cannot register property: property is already registered");
-        return PropertyId::INVALID;
-    }
-    m_id = runtime.catalogProperty(this);
-    return m_id;
 }
 
 } // namespace nomad
