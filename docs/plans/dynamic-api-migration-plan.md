@@ -200,7 +200,7 @@ changing directory-to-function naming requires a separate language decision.
 
 ## Object scripts: compiler foundation
 
-Status: implemented and validated; awaiting review.
+Status: implemented, validated, and reviewed.
 
 An object-script directory maps sources to a receiver class without changing their
 path-derived identities. The file body becomes an initializer method; named `fun`
@@ -229,3 +229,42 @@ Next: integrate native Entity/Scene field storage, project directory configurati
 factory initializer binding, and explicit receiver binding for named callbacks,
 then implement the root scene facade in reviewable increments. The compiler
 foundation alone does not enable object scripts in existing game projects.
+
+## Object scripts: native scene storage
+
+Status: implemented and validated within the approved scope; awaiting review.
+
+This increment completes stored-field support on the existing native scene
+reference before introducing Entity bindings or automatic game integration.
+
+- Each native scene allocates one field-layout snapshot when created and
+  initializes fields to their type defaults.
+- Every reference to that scene shares its field values. Different scenes remain
+  independent.
+- Field declarations must be compiled before scene creation. Existing instances
+  are not resized when the class later gains fields.
+- Actual scene removal releases the stored fields and invalidates retained
+  references, without changing queued removal or engine ownership.
+- Scalar and struct access reuse the existing `asScriptObject` storage contract
+  in the compiler, VM, and interpreter.
+- Existing `scene.*` variables, game factories, and project configuration remain
+  unchanged.
+
+Validation passed for shared aliases, independent scenes, scalar/string and struct
+fields, nested struct mutation, field-layout snapshots, and releasing stored
+objects/self-references on removal. The build, language/tooling/remaining CTest
+groups, packaged headless smoke project, grammar stability, and strict MkDocs
+validation passed. No manual gameplay validation was performed.
+
+Known limitation, explicitly deferred from this increment: a fault during a
+compiled method can leave expression/register temporaries unreleased. One
+reproduction is invoking an initializer that evaluates `new ScenePayload` before
+writing a field through a removed scene reference. Scene removal releases its
+own stored fields correctly; this is a separate execution-unwinding problem.
+Low-level opcode inputs may be borrowed, so releasing registers inside failing
+opcodes is not a valid general fix. Discuss an explicit exception-ownership
+contract before implementing that follow-up.
+
+After review, add native Entity references and field storage, then connect
+configured object-script directories and factories. Named method callbacks and
+the root current-context `scene` hub remain separate follow-up contracts.

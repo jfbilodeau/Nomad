@@ -240,33 +240,44 @@ std::unique_ptr<Expression> createNativeMemberExpression(
 std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
-    if (context->getCompiler()->getReceiverType(function) != nullptr && name == "this") {
+    const auto* receiverType = context->getCompiler()->getReceiverType(function);
+    if (receiverType != nullptr && name == "this") {
+
         return std::make_unique<IdentifierExpression>(parent, line, column, name);
     }
-    const auto functionId = context->getRuntime()->getFunctionId(name);
-    if (functionId.isValid()) {
-        const auto* targetFunction = context->getRuntime()->getFunction(functionId);
-        if (targetFunction->getParameterCount() != 0) {
-            context->addError("Function receiver '" + name + "' requires arguments");
-            return nullptr;
+
+    if (receiverType == nullptr || !name.starts_with("this.")) {
+        const auto functionId = context->getRuntime()->getFunctionId(name);
+        if (functionId.isValid()) {
+            const auto* targetFunction = context->getRuntime()->getFunction(functionId);
+            if (targetFunction->getParameterCount() != 0) {
+                context->addError("Function receiver '" + name + "' requires arguments");
+
+                return nullptr;
+            }
+
+            return std::make_unique<FunctionCallExpression>(parent, line, column, name);
         }
 
-        return std::make_unique<FunctionCallExpression>(parent, line, column, name);
-    }
+        if (context->getRuntime()->getConstantId(name).isValid()) {
 
-    if (context->getRuntime()->getConstantId(name).isValid()) {
-        return std::make_unique<ConstantValueExpression>(parent, line, column, name);
-    }
+            return std::make_unique<ConstantValueExpression>(parent, line, column, name);
+        }
 
-    for (auto* scope = function; scope != nullptr;
-        scope = context->getRuntime()->getScriptCallable(scope->getParentId())) {
-        if (context->getCompiler()->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+        for (auto* scope = function; scope != nullptr;
+            scope = context->getRuntime()->getScriptCallable(scope->getParentId())) {
+            if (context->getCompiler()->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+
+                return std::make_unique<IdentifierExpression>(parent, line, column, name);
+            }
+        }
+
+        if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
+
             return std::make_unique<IdentifierExpression>(parent, line, column, name);
         }
     }
-    if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
-        return std::make_unique<IdentifierExpression>(parent, line, column, name);
-    }
+
     const auto parts = splitMemberName(name);
     if (!parts) {
         return std::make_unique<IdentifierExpression>(

@@ -1857,6 +1857,8 @@ property reads/assignments use the same compiler selection path.
 `NomadObject::asScriptObject()` returns a borrowed `ScriptObject` pointer, or
 `nullptr` for objects without script field storage. Mutable and const overloads
 preserve the object's identity and do not retain references.
+Native objects supplying this storage support scalar and struct fields in both
+compiled code and the interpreter, including nested struct mutation.
 
 The VM checks that the receiver supplies script storage through this query and
 that the offset fits its allocated storage. Missing receivers and objects
@@ -2751,6 +2753,20 @@ method return rules. They operate on an existing receiver; they do not allocate
 or automatically initialize objects. Native receivers need the existing
 [stored-field storage contract](#script-object-storage) when their scripts add
 fields.
+
+The game module's scene references support stored fields declared by
+host-configured object scripts targeting `game.Scene`. Each scene starts its fields
+at their type defaults. References to the same scene share those fields; different
+scenes have independent values. Compile field declarations before creating scenes:
+adding fields later does not resize existing instances.
+
+Scene removal releases its stored fields, including owned strings and objects.
+Retained scene references cannot access those fields after removal. This does not
+guarantee release of temporary values evaluated by a later failing compiled method.
+
+Object-script file bodies must still be invoked explicitly by the host; the game factories and
+project directory configuration do not yet enable them automatically. Existing
+`scene.*` context variables remain separate and unchanged.
 
 Named `fun` declarations become methods shared by all scripts targeting the same
 class. They use typed headers and ordinary overload/conflict rules, cannot

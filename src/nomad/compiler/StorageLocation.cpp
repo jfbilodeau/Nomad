@@ -127,7 +127,8 @@ InterpreterValue StorageLocation::withReceiver(
             throw NomadBug("Stored receiver location requires an enclosing object");
         }
         const auto owner = m_owner != nullptr ? m_owner->evaluate(context) : enclosing->getValue();
-        auto* object = dynamic_cast<ScriptObject*>(owner.getValue().getObjectValue());
+        auto* instance = owner.getValue().getObjectValue();
+        auto* object = instance != nullptr ? instance->asScriptObject() : nullptr;
         if (object == nullptr || object->getClassType() != m_objectProperty->getOwnerType()) {
             context.getVirtualMachine()->fault("Stored property receiver has no matching field storage");
         }
