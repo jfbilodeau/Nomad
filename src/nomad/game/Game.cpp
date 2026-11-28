@@ -1291,6 +1291,15 @@ void Game::initObjects() {
     }
 
     const auto hubId = m_runtime->getHubId("game");
+    if (m_runtime->registerHubClass(
+        hubId,
+        "Scene",
+        ClassMode::Closed,
+        NomadDoc("A reference to an existing scene. References become unavailable when the scene is removed.")
+    ).isInvalid()) {
+        raiseError("Failed to create Scene type");
+    }
+
     const auto windowTypeId = m_runtime->registerHubClass(
         hubId, "Window", 
         ClassMode::Closed,
@@ -1339,6 +1348,7 @@ void Game::initFunctions() {
     initInputFunctions();
     initOtherEntityFunctions();
     initSceneFunctions();
+    initSceneMethods();
     initSystemFunctions();
     initThisEntityFunctions();
     initWindowFunctions();

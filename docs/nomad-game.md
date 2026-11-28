@@ -63,6 +63,37 @@ Existing scripts must replace the old `window.*` APIs with `game.window.*`.
 Window configuration keys in `nomad.toml` remain unchanged. Available properties,
 methods, and callback signatures are listed in the [Engine API](engine-api.md).
 
+## Scenes
+
+Read `game.currentScene` to obtain the scene for the current script invocation:
+
+```nomad
+current = game.currentScene
+current.loadInputMapping "controls"
+current.createEntity entities.player 100.0 100.0 0
+```
+
+Repeated reads in the same scene return the same reference. A retained reference
+continues to target that scene when another scene becomes current. Reading
+`game.currentScene` outside a scene context raises a runtime error.
+
+The following former `scene.*` functions are now methods on this reference:
+
+- `addAnimatedTile`
+- `createEntity`, `createEntityByName`, `createEntityByNameThen`, `createEntityThen`
+- `createTextByNameEntity`, `createTextEntity`, `createTextEntityAndThen`
+- `loadInputMapping`, `loadMap`
+- `pauseAll`, `unpauseAll`, `removeSelf`
+
+Their arguments and creation callbacks are unchanged. Creation and removal remain
+queued. `removeSelf` does not invalidate the reference until removal is processed;
+using it after removal or game destruction raises a runtime error. Scenes cannot
+be constructed with `new`.
+
+Scene properties, camera and event APIs, and custom `scene.*` variables retain
+their existing syntax for now. Keep scene references in locals with another name,
+such as `current`, because the `scene.*` prefix still denotes the legacy context.
+
 ## Features and guides
 
 | Feature | Guide |

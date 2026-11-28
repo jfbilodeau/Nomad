@@ -11,7 +11,7 @@ Things the author wants to do.
 [ ] `object` dynamic type
 [ ] Code: distinguish between property and variable
 [ ] Line continuation. Use operator? (`myMethod.nextMethod` -> `myMethod\n.nextMethod`)
-[ ] Use `Task<T>` for captures?
+[ ] Use `Task<T>` for callbacks?
 [ ] Support for Nomad unit testing
 [ ] Improve animations declaration (avoid duplicate files...)
 [ ] Add private hub/class members

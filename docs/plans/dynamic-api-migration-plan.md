@@ -33,8 +33,9 @@ behavior unless a change is reviewed and approved.
 - Exact qualified identifiers and context prefixes take precedence over ordinary
   member access. Lexical class/struct `this` correctly takes precedence over the
   game's `this.*` context.
-- The game exposes `Audio`, `Font`, and native window/view classes. Scripting
-  `Scene` and `Entity` classes remain proposed.
+- The game exposes `Audio`, `Font`, native window/view classes, and a `game.Scene`
+  reference with selected methods. Scene properties/camera/events and scripting
+  entity instances remain proposed.
 - `other.*` property reads use the first selected entity; writes and methods
   operate across the selection. A single entity reference is not equivalent.
 
@@ -98,8 +99,7 @@ Validation:
 
 ## Step 2: one live-state family
 
-Status: implemented and validated; awaiting review. Later migrations remain
-proposals, not approved implementation scope.
+Status: implemented, validated, and reviewed.
 
 Approved decisions:
 
@@ -136,7 +136,35 @@ MkDocs validation passed. No manual graphical/gameplay validation was performed.
 
 ## Step 3: scenes, entities, and selection
 
-Discuss and approve these contracts before implementation:
+### Step 3a: scene references and non-event methods
+
+Status: implemented and validated; awaiting review.
+
+- Expose `game.currentScene` using an ordinary parameterless hub function.
+- Give each scene one stable reference object. References target their receiver,
+  not whatever scene is currently active, and do not keep removed scenes alive.
+- Missing current scenes and use after actual scene deletion raise runtime errors.
+  Creation/removal queues and engine ownership remain unchanged.
+- Move animated-tile, entity/text creation, loading, pause/unpause, and removal
+  functions to native scene methods, without compatibility aliases.
+- Leave scene properties, camera/events, custom `scene.*` variables, entities, and
+  selection unchanged. Their data and event contracts need separate approval.
+
+Completed validation covers receiver identity, operations outside the receiver's
+ambient context, missing/removed scenes, queued entity/text creation, and callback
+captures. The language, tooling, and remaining CTest groups, packaged headless
+smoke project, CMake build, reproducible grammar generation, and strict MkDocs
+validation passed. No manual gameplay validation was performed.
+
+### Following increments
+
+Next, discuss the scene state/context boundary before migrating properties and
+camera access. In particular, removing dynamic properties while leaving the
+`scene.*` prefix active must not silently turn old assignments into custom variables.
+Then address scene events, entity receivers, and selection in separate reviewable
+increments.
+
+Discuss and approve the remaining contracts before implementation:
 
 - How scripts obtain current scene/entity receivers without changing lexical
   class/struct `this`.

@@ -8,6 +8,8 @@
 
 #include <nomad/geometry/Rectangle.hpp>
 
+#include <nomad/script/NomadObject.hpp>
+
 #include <box2d/box2d.h>
 
 #include <array>
@@ -23,6 +25,7 @@ constexpr NomadInteger SCENE_LAYER_COUNT = 5;
 class Canvas;
 struct EventDispatch;
 class Game;
+class SceneObject;
 
 struct TileInformation {
     NomadInteger x;
@@ -51,6 +54,7 @@ public:
     ~Scene();
 
     [[nodiscard]] Game* getGame() const;
+    [[nodiscard]] SceneObject* getSceneObject() const;
 
     [[nodiscard]] NomadId getId() const;
 
@@ -265,6 +269,7 @@ private: // methods
 
 private: // data
     Game* m_game;
+    std::unique_ptr<SceneObject, decltype(&nomad::releaseRef)> m_sceneObject;
     NomadId m_id = NOMAD_INVALID_ID;
     NomadString m_name;
     NomadInteger m_z = 0;

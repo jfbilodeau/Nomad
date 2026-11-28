@@ -9,6 +9,7 @@
 #include <nomad/game/resource/Texture.hpp>
 
 #include <nomad/game/Game.hpp>
+#include <nomad/game/SceneObject.hpp>
 
 #include <nomad/script/Runtime.hpp>
 
@@ -18,6 +19,7 @@ namespace nomad {
 
 Scene::Scene(Game* game, const NomadId sceneId):
     m_game(game),
+    m_sceneObject(new SceneObject(*this), nomad::releaseRef),
     m_id (sceneId),
     m_variables(game->getSceneVariables())
 {
@@ -26,6 +28,7 @@ Scene::Scene(Game* game, const NomadId sceneId):
 
 Scene::Scene(const NomadId sceneId, const VariableMap* variableMap):
     m_game(nullptr),
+    m_sceneObject(new SceneObject(*this), nomad::releaseRef),
     m_id(sceneId),
     m_variables(variableMap)
 {
@@ -52,6 +55,11 @@ void Scene::initializePhysicsLayers() {
 }
 
 Scene::~Scene() {
+    m_sceneObject->detachScene();
+    if (m_game != nullptr && m_game->getCurrentContext()->getScene() == this) {
+        m_game->getCurrentContext()->reset(nullptr, nullptr);
+    }
+
     while (!m_entities.empty()) {
         removeEntity(m_entities.back().get());
     }
@@ -63,6 +71,11 @@ Scene::~Scene() {
 
 Game* Scene::getGame() const {
     return m_game;
+}
+
+SceneObject* Scene::getSceneObject() const {
+
+    return m_sceneObject.get();
 }
 
 NomadId Scene::getId() const {

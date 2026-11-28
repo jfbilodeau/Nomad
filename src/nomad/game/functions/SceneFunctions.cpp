@@ -1,7 +1,5 @@
 // Copyright (c) 2023-2026 Jean-François Bilodeau (@jfbilodeau).
 
-#include <nomad/system/TempHeap.hpp>
-
 #include <nomad/game/Game.hpp>
 
 #include <nomad/game/Entity.hpp>
@@ -11,6 +9,8 @@
 
 #include <nomad/script/Runtime.hpp>
 #include <nomad/script/VirtualMachine.hpp>
+
+#include <nomad/system/TempHeap.hpp>
 
 namespace nomad {
 
@@ -23,27 +23,6 @@ namespace nomad {
 
 void Game::initSceneFunctions() {
     log::debug("Initializing scene functions");
-
-    m_runtime->registerNativeFunction(
-        "scene.addAnimatedTile",
-        [this](const VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot add an animated tile outside of a scene")
-
-            const auto& tileName = interpreter->getStringParameter(0)->getString();
-            const auto count = interpreter->getIntegerParameter(1);
-            const auto speed = interpreter->getIntegerParameter(2);
-
-            if (!scene->addAnimatedTile(tileName, count, speed)) {
-                log::error("Cannot add animated tile with an unknown name, invalid count, or invalid speed");
-            }
-        }, {
-            defParameter("tileName", m_runtime->getStringType(), NomadParamDoc("Name of the first tile in the animation.")),
-            defParameter("count", m_runtime->getIntegerType(), NomadParamDoc("Number of consecutive tiles (frames) to animate.")),
-            defParameter("speed", m_runtime->getIntegerType(), NomadParamDoc("Scene updates per displayed tile frame."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Adds a looping animation for a consecutive range of tiles.")
-    );
 
     m_runtime->registerNativeFunction(
         "scene.camera.follow",
@@ -75,301 +54,6 @@ void Game::initSceneFunctions() {
         },
         m_runtime->getVoidType(),
         NomadDoc("Sets the camera position.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.createEntity",
-        [this](const VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
-
-            const auto callableId = interpreter->getCallableIdParameter(0);
-            const auto entityX = interpreter->getFloatParameter(1);
-            const auto entityY = interpreter->getFloatParameter(2);
-            const auto layer = interpreter->getIntegerParameter(3);
-
-            addEntityToScene(
-                scene->getId(),
-                callableId,
-                entityX,
-                entityY,
-                0.0,
-                0.0,
-                layer,
-                ""
-            );
-        }, {
-            defParameter(
-                "function",
-                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
-                NomadParamDoc("Function to initialize the entity.")
-            ),
-            defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
-            defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
-            defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Creates a new entity for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.createEntityByName",
-        [this](const VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
-
-            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
-            const auto entityX = interpreter->getFloatParameter(1);
-            const auto entityY = interpreter->getFloatParameter(2);
-            const auto layer = interpreter->getIntegerParameter(3);
-
-            const auto initFunctionId = getFunctionId(initFunctionName);
-
-            if (initFunctionId.isValid()) {
-                addEntityToScene(
-                    scene->getId(),
-                    initFunctionId,
-                    entityX,
-                    entityY,
-                    0.0,
-                    0.0,
-                    layer,
-                    ""
-                );
-            } else {
-                log::warning(NomadString("Function '") + initFunctionName + "' not found. Cannot create entity.");
-            }
-        }, {
-            defParameter(
-                "functionName", m_runtime->getStringType(),
-                NomadParamDoc("Name of the function to execute to initialize the entity.")
-            ),
-            defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
-            defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
-            defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Creates a new entity for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.createEntityByNameThen",
-        [this](VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
-
-            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
-            const auto entityX = interpreter->getFloatParameter(1);
-            const auto entityY = interpreter->getFloatParameter(2);
-            const auto layer = interpreter->getIntegerParameter(3);
-            const auto callableId = interpreter->getCallableIdParameter(4);
-            auto postFunctionClosure = interpreter->createClosure(m_runtime, callableId);
-
-            addEntityToScene(
-                scene->getId(),
-                getFunctionId(initFunctionName),
-                entityX,
-                entityY,
-                0.0,
-                0.0,
-                layer,
-                "",
-                std::move(postFunctionClosure)
-            );
-        }, {
-            defParameter(
-                "functionName", m_runtime->getStringType(),
-                NomadParamDoc("Name of the function to execute to initialize the entity.")
-            ),
-            defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
-            defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
-            defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Creates a new entity for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.createEntityThen",
-        [this](const VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
-
-            auto functionId = interpreter->getCallableIdParameter(0);
-            const auto entityX = interpreter->getFloatParameter(1);
-            const auto entityY = interpreter->getFloatParameter(2);
-            const auto layer = interpreter->getIntegerParameter(3);
-            const auto postFunctionId = interpreter->getCallableIdParameter(4);
-            auto postFunctionClosure = interpreter->createClosure(m_runtime, postFunctionId);
-
-            addEntityToScene(
-                scene->getId(),
-                functionId,
-                entityX,
-                entityY,
-                0.0,
-                0.0,
-                layer,
-                "",
-                std::move(postFunctionClosure)
-            );
-        }, {
-            defParameter(
-                "function",
-                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
-                NomadParamDoc("Name of the function to execute to initialize the entity.")
-            ),
-            defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
-            defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
-            defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Creates a new entity for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.createTextByNameEntity",
-        [this](VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
-
-            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
-            const auto entityX = interpreter->getFloatParameter(1);
-            const auto entityY = interpreter->getFloatParameter(2);
-            const auto layer = interpreter->getIntegerParameter(3);
-            const auto& text = interpreter->getStringParameter(4)->getString();
-
-            addEntityToScene(
-                scene->getId(),
-                getFunctionId(initFunctionName),
-                entityX,
-                entityY,
-                0.0,
-                0.0,
-                layer,
-                text
-            );
-        }, {
-            defParameter(
-                "functionName", m_runtime->getStringType(),
-                NomadParamDoc("Name of the function to execute to initialize the entity.")
-            ),
-            defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
-            defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
-            defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to display for the entity."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Creates a new entity for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.createTextEntity",
-        [this](const VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
-
-            const auto function = interpreter->getCallableIdParameter(0);
-            const auto entityX = interpreter->getFloatParameter(1);
-            const auto entityY = interpreter->getFloatParameter(2);
-            const auto layer = interpreter->getIntegerParameter(3);
-            const auto& text = interpreter->getStringParameter(4)->getString();
-
-            addEntityToScene(
-                scene->getId(),
-                function,
-                entityX,
-                entityY,
-                0.0,
-                0.0,
-                layer,
-                text
-            );
-        }, {
-            defParameter(
-                "function",
-                m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()),
-                NomadParamDoc("Name of the function to execute to initialize the entity.")
-            ),
-            defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
-            defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
-            defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to display for the entity."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Creates a new entity for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.createTextEntityAndThen",
-        [this](VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot create entity outside of a scene")
-
-            const auto& initFunctionName = interpreter->getStringParameter(0)->getString();
-            const auto entityX = interpreter->getFloatParameter(1);
-            const auto entityY = interpreter->getFloatParameter(2);
-            const auto layer = interpreter->getIntegerParameter(3);
-            const auto& text = interpreter->getStringParameter(4)->getString();
-            const auto functionId = interpreter->getCallableIdParameter(5);
-            auto postFunctionClosure = interpreter->createClosure(m_runtime, functionId);
-
-            addEntityToScene(
-                scene->getId(),
-                getFunctionId(initFunctionName),
-                entityX,
-                entityY,
-                0.0,
-                0.0,
-                layer,
-                text,
-                std::move(postFunctionClosure)
-            );
-        }, {
-            defParameter(
-                "functionName", m_runtime->getStringType(),
-                NomadParamDoc("Name of the function to execute to initialize the entity.")
-            ),
-            defParameter("x", m_runtime->getFloatType(), NomadParamDoc("X position of the entity.")),
-            defParameter("y", m_runtime->getFloatType(), NomadParamDoc("Y position of the entity.")),
-            defParameter("layer", m_runtime->getIntegerType(), NomadParamDoc("Layer of the entity.")),
-            defParameter("text", m_runtime->getStringType(), NomadParamDoc("Text to display for the entity.")),
-            defParameter("function", m_runtime->getTypeManager().getCallbackType({}, m_runtime->getVoidType()), NomadParamDoc("ID of the function to execute after creating the entity."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Creates a new entity for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.loadInputMapping",
-        [this](VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot load input mapping outside of a scene")
-
-            const auto& mappingName = interpreter->getStringParameter(0)->getString();
-
-            scene->loadActionMapping(mappingName);
-        }, {
-            defParameter(
-                "mappingName", m_runtime->getStringType(), NomadParamDoc("Name of the input mapping to load.")
-            )
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Load an input mapping for this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.loadMap",
-        [this](const VirtualMachine* interpreter) {
-            CHECK_SCENE_NOT_NULL("Cannot load input mapping outside of a scene")
-
-            const auto& mapName = interpreter->getStringParameter(0)->getString();
-            const auto& tileSetTexture = interpreter->getStringParameter(1)->getString();
-
-            const auto mapFileName = mapName + ".tmj";
-            const auto tileSetTextureFileName = tileSetTexture + ".png";
-
-            scene->loadTileMap(mapFileName, tileSetTextureFileName);
-        }, {
-            defParameter("mapName", m_runtime->getStringType(), NomadParamDoc("Name of the map to load.")),
-                        defParameter("tileSetTexture", m_runtime->getStringType(), NomadParamDoc("Name of the tile set texture to load."))
-        },
-        m_runtime->getVoidType(),
-        NomadDoc("Loads a map for this scene.")
     );
 
     m_runtime->registerNativeFunction(
@@ -441,18 +125,6 @@ void Game::initSceneFunctions() {
     );
 
     m_runtime->registerNativeFunction(
-        "scene.pauseAll",
-        [this](VirtualMachine* /*interpreter*/) {
-            CHECK_SCENE_NOT_NULL("Cannot pause entities outside of a scene")
-
-            scene->pauseAllEntities();
-        },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Pauses all entities in this scene.")
-    );
-
-    m_runtime->registerNativeFunction(
         "scene.queue",
         [this](const VirtualMachine* interpreter) {
             CHECK_SCENE_NOT_NULL("Cannot trigger event outside of a scene")
@@ -468,18 +140,6 @@ void Game::initSceneFunctions() {
         },
         m_runtime->getVoidType(),
         NomadDoc("Trigger an event after a specified number of frames.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.removeSelf",
-        [this](VirtualMachine* /*interpreter*/) {
-            CHECK_SCENE_NOT_NULL("Cannot call `scene.removeSelf` outside of a scene")
-
-            removeScene(scene);
-        },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Unloads this scene.")
     );
 
     m_runtime->registerNativeFunction(
@@ -576,18 +236,6 @@ void Game::initSceneFunctions() {
         },
         m_runtime->getVoidType(),
         NomadDoc("Trigger an event for all entities on the specified layer.")
-    );
-
-    m_runtime->registerNativeFunction(
-        "scene.unpauseAll",
-        [this](VirtualMachine* /*interpreter*/) {
-            CHECK_SCENE_NOT_NULL("Cannot unpause entities outside of a scene")
-
-            scene->unpauseAllEntities();
-        },
-        {},
-        m_runtime->getVoidType(),
-        NomadDoc("Unpauses all entities in this scene.")
     );
 
     m_runtime->registerNativeFunction(

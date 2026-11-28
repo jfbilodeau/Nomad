@@ -232,6 +232,7 @@ private:
     void initInputFunctions();
     void initOtherEntityFunctions();
     void initSceneFunctions();
+    void initSceneMethods();
     void initSystemFunctions();
     void initThisEntityFunctions();
     void initWindowFunctions();

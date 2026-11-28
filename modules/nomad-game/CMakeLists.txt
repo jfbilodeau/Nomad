@@ -34,6 +34,7 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/Scene.loadTileMap.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Scene.render.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Scene.update.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/SceneObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/SceneVariableContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/System.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/TileMap.cpp
@@ -51,6 +52,7 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/InputFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/OtherEntityFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/SceneFunctions.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/functions/SceneMethods.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/SystemFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/ThisEntityFunctions.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/functions/WindowFunctions.cpp

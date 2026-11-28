@@ -3,7 +3,10 @@
 #include <nomad/compiler/Compiler.hpp>
 #include <nomad/compiler/CompilerContext.hpp>
 
+#include <nomad/game/Entity.hpp>
 #include <nomad/game/Game.hpp>
+#include <nomad/game/Scene.hpp>
+#include <nomad/game/SceneObject.hpp>
 
 #include <nomad/game/resource/SpritePacker.hpp>
 
@@ -164,6 +167,171 @@ BOOST_AUTO_TEST_CASE(borrowed_runtime_remains_usable_after_game_destruction)
     RuntimeValue result;
     virtualMachine->executeFunction(functionId, {}, result);
     BOOST_TEST(result.getIntegerValue() == 42);
+}
+
+BOOST_AUTO_TEST_CASE(current_scene_returns_stable_references_and_methods_use_their_receiver) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const Interpreter interpreter(*virtualMachine);
+    const auto accessorId = runtime.getFunctionId("game.currentScene");
+    const auto reportsNoScene = [](const NomadException& error) {
+
+        return NomadString(error.what()).find("There is no current scene") != NomadString::npos;
+    };
+    BOOST_CHECK_EXCEPTION(
+        (void)interpreter.runFunction(accessorId, {}), NomadException, reportsNoScene
+    );
+
+    Scene first(game.get(), 1);
+    Scene second(game.get(), 2);
+    first.addEntity(std::make_unique<Entity>(&first, game->getEntityVariables(), 1, 0.0f, 0.0f, 0));
+    second.addEntity(std::make_unique<Entity>(&second, game->getEntityVariables(), 1, 0.0f, 0.0f, 0));
+    game->getCurrentContext()->reset(&first, nullptr);
+    const auto firstReference = interpreter.runFunction(accessorId, {});
+    const auto alias = interpreter.runFunction(accessorId, {});
+    BOOST_TEST(firstReference.getValue().getObjectValue() == alias.getValue().getObjectValue());
+    BOOST_TEST(firstReference.getValue().getObjectValue() == first.getSceneObject());
+
+    game->getCurrentContext()->reset(&second, nullptr);
+    const auto secondReference = interpreter.runFunction(accessorId, {});
+    BOOST_TEST(firstReference.getValue().getObjectValue() != secondReference.getValue().getObjectValue());
+    const auto pauseId = compile("pauseSceneReference", "params target:game.Scene\ntarget.pauseAll");
+    runtime.initializeScripts();
+    virtualMachine->executeFunction(pauseId, {firstReference.getValue()});
+    BOOST_TEST(first.getEntityById(1)->isPaused());
+    BOOST_TEST(!second.getEntityById(1)->isPaused());
+    BOOST_TEST(game->getCurrentContext()->getScene() == &second);
+
+    const auto unpause = runtime.resolveMethod(firstReference.getType(), "unpauseAll", {});
+    BOOST_REQUIRE(unpause.isResolved());
+    (void)interpreter.runObjectMethod(firstReference, unpause.id, {});
+    BOOST_TEST(!first.getEntityById(1)->isPaused());
+    BOOST_TEST(runtime.getNativeFunctionId("scene.pauseAll").isInvalid());
+    BOOST_TEST(runtime.getNativeFunctionId("scene.unpauseAll").isInvalid());
+    BOOST_TEST(runtime.getNativeFunctionId("scene.onUpdate").isValid());
+    BOOST_TEST(runtime.getDynamicVariableId("scene.camera.x").isValid());
+}
+
+BOOST_AUTO_TEST_CASE(scene_references_expire_after_queued_removal_and_game_destruction) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const auto firstInitializer = compile("initializeFirstScene", "global.firstScene = game.currentScene");
+    const auto secondInitializer = compile("initializeSecondScene", "global.secondScene = game.currentScene");
+    runtime.initializeScripts();
+    const auto firstId = game->createScene("first", firstInitializer);
+    const auto secondId = game->createScene("second", secondInitializer);
+    auto polls = 0;
+    game->setExitHandler({}, [&] {
+
+        return ++polls > 16 ||
+            (game->getSceneById(firstId) != nullptr && game->getSceneById(secondId) != nullptr);
+    });
+    game->run();
+    BOOST_REQUIRE(game->getSceneById(firstId) != nullptr);
+    BOOST_REQUIRE(game->getSceneById(secondId) != nullptr);
+
+    RuntimeValue firstValue;
+    RuntimeValue secondValue;
+    runtime.getContextVariableValue(runtime.getContextVariableId("global.firstScene"), firstValue);
+    runtime.getContextVariableValue(runtime.getContextVariableId("global.secondScene"), secondValue);
+    const auto* type = runtime.getTypeByName("game.Scene");
+    const InterpreterValue firstReference(type, firstValue);
+    const InterpreterValue secondReference(type, secondValue);
+    const Interpreter interpreter(*virtualMachine);
+    const auto remove = runtime.resolveMethod(type, "removeSelf", {});
+    const auto pause = runtime.resolveMethod(type, "pauseAll", {});
+    BOOST_REQUIRE(remove.isResolved());
+    BOOST_REQUIRE(pause.isResolved());
+    (void)interpreter.runObjectMethod(firstReference, remove.id, {});
+    (void)interpreter.runObjectMethod(firstReference, pause.id, {});
+    BOOST_TEST(game->getSceneById(firstId) != nullptr);
+
+    polls = 0;
+    game->setExitHandler({}, [&] {
+
+        return ++polls > 16 || game->getSceneById(firstId) == nullptr;
+    });
+    game->run();
+    BOOST_TEST(game->getSceneById(firstId) == nullptr);
+    BOOST_TEST(game->getSceneById(secondId) != nullptr);
+    const auto reportsRemovedScene = [](const NomadException& error) {
+
+        return NomadString(error.what()).find("Scene is no longer available") != NomadString::npos;
+    };
+    BOOST_CHECK_EXCEPTION(
+        (void)interpreter.runObjectMethod(firstReference, pause.id, {}),
+        NomadException,
+        reportsRemovedScene
+    );
+    (void)interpreter.runObjectMethod(secondReference, pause.id, {});
+    game.reset();
+    BOOST_CHECK_EXCEPTION(
+        (void)interpreter.runObjectMethod(secondReference, pause.id, {}),
+        NomadException,
+        reportsRemovedScene
+    );
+}
+
+BOOST_AUTO_TEST_CASE(scene_creation_methods_preserve_queue_targets_and_callback_captures) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const auto declarations = compile(
+        "declareSceneRequests",
+        "class SceneRequests\ncompleted = 0\n"
+        "fun enqueue target:game.Scene\n"
+        "target.createEntity initializeEntity 1.0 10.0 0\n"
+        "target.createEntityByName \"initializeEntity\" 2.0 20.0 0\n"
+        "target.createEntityByNameThen \"initializeEntity\" 3.0 30.0 0 fun\n"
+        "this.completed = this.completed + 1\nend\n"
+        "target.createEntityThen initializeEntity 4.0 40.0 0 fun\n"
+        "this.completed = this.completed + 1\nend\n"
+        "target.createTextByNameEntity \"initializeEntity\" 5.0 50.0 0 \"named text\"\n"
+        "target.createTextEntity initializeEntity 6.0 60.0 0 \"callable text\"\n"
+        "target.createTextEntityAndThen \"initializeEntity\" 7.0 70.0 0 \"captured text\" fun\n"
+        "this.completed = this.completed + 1\nend\nend\nend\n"
+        "fun initializeEntity\nthis.name = \"queued\"\nend\n"
+        "fun initializeRequestScene\n"
+        "requests = new SceneRequests\nglobal.sceneRequests = requests\n"
+        "requests.enqueue game.currentScene\nend\n"
+        "fun initializeEmptyScene\nend"
+    );
+    BOOST_TEST(declarations.isValid());
+    runtime.initializeScripts();
+    const auto firstId = game->createScene("requests", runtime.getScriptFunctionId("initializeRequestScene"));
+    const auto secondId = game->createScene("empty", runtime.getScriptFunctionId("initializeEmptyScene"));
+    auto polls = 0;
+    game->setExitHandler({}, [&] {
+        auto count = NomadIndex{0};
+        if (auto* scene = game->getSceneById(firstId)) {
+            scene->forEachEntities([&count](Entity*) { ++count; });
+        }
+
+        return ++polls > 16 || count == 7U;
+    });
+    game->run();
+    auto* first = game->getSceneById(firstId);
+    auto* second = game->getSceneById(secondId);
+    BOOST_REQUIRE(first != nullptr);
+    BOOST_REQUIRE(second != nullptr);
+    std::vector<Entity*> entities;
+    first->forEachEntities([&entities](Entity* entity) { entities.push_back(entity); });
+    BOOST_REQUIRE(entities.size() == 7U);
+    for (auto index = NomadIndex{0}; index < entities.size(); ++index) {
+        BOOST_TEST(entities[index]->getX() == static_cast<NomadFloat>(index + 1));
+        BOOST_TEST(entities[index]->getY() == static_cast<NomadFloat>((index + 1) * 10));
+        BOOST_TEST(entities[index]->getName() == "queued");
+    }
+
+    BOOST_TEST(entities[4]->getText() == "named text");
+    BOOST_TEST(entities[5]->getText() == "callable text");
+    BOOST_TEST(entities[6]->getText() == "captured text");
+    auto secondCount = NomadIndex{0};
+    second->forEachEntities([&secondCount](Entity*) { ++secondCount; });
+    BOOST_TEST(secondCount == 0U);
+    RuntimeValue requestsValue;
+    runtime.getContextVariableValue(runtime.getContextVariableId("global.sceneRequests"), requestsValue);
+    const Interpreter interpreter(*virtualMachine);
+    auto requests = interpreter.createObjectReceiver(
+        *runtime.getTypeByName("SceneRequests")->asClassType(), requestsValue.getObjectValue()
+    );
+    BOOST_TEST(requests->getProperty("completed").getValue().getIntegerValue() == 3);
 }
 
 BOOST_AUTO_TEST_CASE(window_aliases_and_child_views_mutate_live_game_state) {

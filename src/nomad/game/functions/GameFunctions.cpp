@@ -4,6 +4,7 @@
 
 #include <nomad/game/Entity.hpp>
 #include <nomad/game/Scene.hpp>
+#include <nomad/game/SceneObject.hpp>
 
 #include <nomad/game/resource/FontObject.hpp>
 #include <nomad/game/resource/ResourceManager.hpp>
@@ -23,6 +24,24 @@ void Game::initGameFunctions() {
     if (fontType == nullptr) {
         raiseError("Font type is not registered");
     }
+
+    const auto currentSceneId = m_runtime->registerHubNativeFunction(
+        hubId,
+        "currentScene",
+        [this](VirtualMachine* machine) {
+            auto* scene = getCurrentContext()->getScene();
+            if (scene == nullptr) {
+                machine->fault("There is no current scene");
+            }
+
+            auto* object = scene->getSceneObject();
+            object->addRef();
+            machine->getResult().setObjectValue(object);
+        },
+        {},
+        m_runtime->getTypeByName("game.Scene"),
+        NomadDoc("Returns the current scene. Raises a runtime error outside a scene context.")
+    );
 
     const auto createSceneId = m_runtime->registerHubNativeFunction(
         hubId,
@@ -256,6 +275,7 @@ void Game::initGameFunctions() {
     );
 
     if (
+        currentSceneId.isInvalid() ||
         createSceneId.isInvalid() ||
         createSceneByNameId.isInvalid() ||
         createSceneByNameThenId.isInvalid() ||
