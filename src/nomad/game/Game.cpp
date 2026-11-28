@@ -1293,6 +1293,15 @@ void Game::initObjects() {
     const auto hubId = m_runtime->getHubId("game");
     if (m_runtime->registerHubClass(
         hubId,
+        "Entity",
+        ClassMode::Closed,
+        NomadDoc("A reference to an existing entity. References become unavailable when the entity is removed.")
+    ).isInvalid()) {
+        raiseError("Failed to create Entity type");
+    }
+
+    if (m_runtime->registerHubClass(
+        hubId,
         "Scene",
         ClassMode::Closed,
         NomadDoc("A reference to an existing scene. References become unavailable when the scene is removed.")

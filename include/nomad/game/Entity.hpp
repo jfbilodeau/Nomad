@@ -16,6 +16,8 @@
 #include <nomad/geometry/PointF.hpp>
 #include <nomad/geometry/RectangleF.hpp>
 
+#include <nomad/script/NomadObject.hpp>
+
 #include <box2d/box2d.h>
 
 #include <memory>
@@ -25,6 +27,7 @@ namespace nomad {
 // Forward declarations
 class Animation;
 class Canvas;
+class EntityObject;
 class FontObject;
 class Closure;
 class Game;
@@ -44,6 +47,7 @@ public:
     [[nodiscard]] NomadId getId() const;
 
     [[nodiscard]] Scene* getScene() const;
+    [[nodiscard]] EntityObject* getEntityObject() const;
 
     void setName(const NomadString& name);
     [[nodiscard]] const NomadString& getName() const;
@@ -314,6 +318,7 @@ private: // Data members
     NomadId m_id = NOMAD_INVALID_ID;
     NomadString m_name;
     Scene* m_scene;
+    std::unique_ptr<EntityObject, decltype(&nomad::releaseRef)> m_entityObject;
     NomadString m_functionName;
 
     // World position

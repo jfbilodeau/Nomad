@@ -2754,19 +2754,30 @@ or automatically initialize objects. Native receivers need the existing
 [stored-field storage contract](#script-object-storage) when their scripts add
 fields.
 
-The game module's scene references support stored fields declared by
-host-configured object scripts targeting `game.Scene`. Each scene starts its fields
-at their type defaults. References to the same scene share those fields; different
-scenes have independent values. Compile field declarations before creating scenes:
-adding fields later does not resize existing instances.
+The game module's scene and entity references support stored fields declared by
+host-configured object scripts targeting `game.Scene` or `game.Entity`. Each
+instance starts its fields at their type defaults. References to the same instance
+share those fields; different instances have independent values. Compile field
+declarations before creating instances: adding fields later does not resize them.
 
-Scene removal releases its stored fields, including owned strings and objects.
-Retained scene references cannot access those fields after removal. This does not
-guarantee release of temporary values evaluated by a later failing compiled method.
+For native entities, `Entity::getEntityObject()` returns a borrowed `EntityObject`.
+Use `Interpreter::createObjectReceiver` or `InterpreterValue` to retain a reference
+for host invocation. The scene still owns the native entity; retaining its reference
+does not prevent removal. `EntityObject::getEntity()` raises `NomadException` after
+the entity has been removed. Entities cannot be constructed with `new game.Entity`.
+
+Scene or entity removal releases its stored fields, including owned strings and
+objects. Retained references cannot access those fields after removal. This does
+not guarantee release of temporary values evaluated by a later failing compiled
+method.
 
 Object-script file bodies must still be invoked explicitly by the host; the game factories and
 project directory configuration do not yet enable them automatically. Existing
-`scene.*` context variables remain separate and unchanged.
+`scene.*`, `this.*`, and `other.*` context APIs remain separate and unchanged.
+Engine entity properties and callbacks are not yet members of `game.Entity`;
+this increment exposes custom stored fields and host-compiled methods only.
+Do not switch existing entity initializer files to object scripts until their
+engine members and factory binding have been migrated.
 
 Named `fun` declarations become methods shared by all scripts targeting the same
 class. They use typed headers and ordinary overload/conflict rules, cannot

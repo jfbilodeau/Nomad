@@ -70,10 +70,10 @@ BOOST_AUTO_TEST_CASE(entity_keeps_font_alive_until_cleared)
     options.resourcePath = directory.getPath().string();
     auto game = Game::createHeadless(options);
     auto* fonts = game->getResources()->getFonts();
+    Entity entity(nullptr, game->getEntityVariables(), 1, 0, 0, 1);
     const auto liveObjects = NomadObject::getLiveObjectCount();
     auto* font = fonts->registerFont("font.ttf", 13.0f);
     BOOST_REQUIRE(font != nullptr);
-    Entity entity(nullptr, game->getEntityVariables(), 1, 0, 0, 1);
     entity.setFont(font);
     BOOST_TEST(font->getReferenceCount() == 2U);
     releaseRef(font);

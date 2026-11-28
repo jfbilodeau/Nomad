@@ -27,7 +27,7 @@ void Game::initGameFunctions() {
 
     const auto currentSceneId = m_runtime->registerHubNativeFunction(
         hubId,
-        "currentScene",
+        "scene",
         [this](VirtualMachine* machine) {
             auto* scene = getCurrentContext()->getScene();
             if (scene == nullptr) {

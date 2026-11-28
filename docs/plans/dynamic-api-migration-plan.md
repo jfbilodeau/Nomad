@@ -140,7 +140,7 @@ MkDocs validation passed. No manual graphical/gameplay validation was performed.
 
 Status: implemented and validated; awaiting review.
 
-- Expose `game.currentScene` using an ordinary parameterless hub function.
+- Expose `game.scene` using an ordinary parameterless hub function.
 - Give each scene one stable reference object. References target their receiver,
   not whatever scene is currently active, and do not keep removed scenes alive.
 - Missing current scenes and use after actual scene deletion raise runtime errors.
@@ -232,7 +232,7 @@ foundation alone does not enable object scripts in existing game projects.
 
 ## Object scripts: native scene storage
 
-Status: implemented and validated within the approved scope; awaiting review.
+Status: implemented, validated, and reviewed within the approved scope.
 
 This increment completes stored-field support on the existing native scene
 reference before introducing Entity bindings or automatic game integration.
@@ -265,6 +265,37 @@ Low-level opcode inputs may be borrowed, so releasing registers inside failing
 opcodes is not a valid general fix. Discuss an explicit exception-ownership
 contract before implementing that follow-up.
 
-After review, add native Entity references and field storage, then connect
-configured object-script directories and factories. Named method callbacks and
-the root current-context `scene` hub remain separate follow-up contracts.
+Native entity reference/storage work follows below. Engine member migration,
+configured object-script directories, factories, named callbacks, and the root
+current-context `scene` hub remain separate follow-up contracts.
+
+## Object scripts: native entity storage
+
+Status: implemented and validated; awaiting review.
+
+- Register the non-constructible `game.Entity` reference type.
+- Each native entity supplies one stable reference through its C++ API and
+  allocates one stored-field snapshot when created.
+- References share their entity's custom fields; different entities remain
+  independent. Fields start at their type defaults.
+- Scenes continue owning entities. Entity removal releases its fields and
+  invalidates retained references, including when its scene is removed.
+- Compile fields before creating entities. Existing allocations do not expand
+  when additional fields are declared later.
+- Keep legacy `this.*` and `other.*` APIs, built-in entity members, callbacks,
+  factories, and project configuration unchanged. Do not add another current-
+  entity accessor or a compatibility alias in this increment.
+- The deferred VM fault-temporary cleanup limitation remains separate.
+- Preserve the user's `game.scene` accessor rename and align its existing
+  consumers and documentation, without adding an old-name alias.
+
+Validation passed for shared aliases, independent scalar/string and struct fields,
+nested struct mutation, entity/parent removal, owned-field cleanup, fixed layouts,
+and unchanged legacy entity APIs. The build, language/tooling/remaining CTest
+groups, packaged headless smoke project, reproducible grammar generation, and
+strict MkDocs validation passed. No manual gameplay validation was performed.
+
+After review, migrate native entity members needed by existing initializer files,
+then connect object-script directory configuration and factory invocation. Named
+callback receiver binding and the root scene facade follow in separately reviewed
+steps. Stored fields alone do not enable existing game scripts as object scripts.

@@ -16,6 +16,7 @@ add_library(nomad-game SHARED
     ${NOMAD_SOURCE_DIR}/nomad/game/Canvas.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Color.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Entity.cpp
+    ${NOMAD_SOURCE_DIR}/nomad/game/EntityObject.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/EntityVariableContext.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/EventRegistration.cpp
     ${NOMAD_SOURCE_DIR}/nomad/game/Game.cpp

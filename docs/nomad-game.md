@@ -65,17 +65,17 @@ methods, and callback signatures are listed in the [Engine API](engine-api.md).
 
 ## Scenes
 
-Read `game.currentScene` to obtain the scene for the current script invocation:
+Read `game.scene` to obtain the scene for the current script invocation:
 
 ```nomad
-current = game.currentScene
+current = game.scene
 current.loadInputMapping "controls"
 current.createEntity entities.player 100.0 100.0 0
 ```
 
 Repeated reads in the same scene return the same reference. A retained reference
 continues to target that scene when another scene becomes current. Reading
-`game.currentScene` outside a scene context raises a runtime error.
+`game.scene` outside a scene context raises a runtime error.
 
 The following former `scene.*` functions are now methods on this reference:
 

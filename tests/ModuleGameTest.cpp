@@ -4,6 +4,7 @@
 #include <nomad/compiler/CompilerContext.hpp>
 
 #include <nomad/game/Entity.hpp>
+#include <nomad/game/EntityObject.hpp>
 #include <nomad/game/Game.hpp>
 #include <nomad/game/Scene.hpp>
 #include <nomad/game/SceneObject.hpp>
@@ -71,17 +72,21 @@ struct ModuleGameFixture {
         return runtime.getScriptFunctionId(name);
     }
 
-    CallableId compileSceneObjectScript(const NomadString& name, const NomadString& source) {
+    CallableId compileObjectScript(
+        const NomadString& receiverTypeName,
+        const NomadString& name,
+        const NomadString& source
+    ) {
         auto compiler = runtime.createCompiler();
         CompilerContext context(compiler.get());
         compiler->registerSources(&context, {{
-            {name, {name + ".nomad", source}, {}, {}, "game.Scene"}
+            {name, {name + ".nomad", source}, {}, {}, receiverTypeName}
         }, {}});
         const auto compiled = compiler->compileFunctions(&context);
         const auto error = context.getFirstError();
-        const auto diagnostic = error.has_value() ? error->message : "Scene object script did not compile";
+        const auto diagnostic = error.has_value() ? error->message : "Object script did not compile";
         BOOST_REQUIRE_MESSAGE(compiled, diagnostic);
-        const auto method = runtime.resolveMethod(runtime.getTypeByName("game.Scene"), name, {});
+        const auto method = runtime.resolveMethod(runtime.getTypeByName(receiverTypeName), name, {});
         BOOST_REQUIRE(method.isResolved());
 
         return method.id;
@@ -188,7 +193,7 @@ BOOST_AUTO_TEST_CASE(borrowed_runtime_remains_usable_after_game_destruction)
 BOOST_AUTO_TEST_CASE(current_scene_returns_stable_references_and_methods_use_their_receiver) {
     auto game = Game::createForRuntime(&runtime, options, true);
     const Interpreter interpreter(*virtualMachine);
-    const auto accessorId = runtime.getFunctionId("game.currentScene");
+    const auto accessorId = runtime.getFunctionId("game.scene");
     const auto reportsNoScene = [](const NomadException& error) {
 
         return NomadString(error.what()).find("There is no current scene") != NomadString::npos;
@@ -229,8 +234,8 @@ BOOST_AUTO_TEST_CASE(current_scene_returns_stable_references_and_methods_use_the
 
 BOOST_AUTO_TEST_CASE(scene_references_expire_after_queued_removal_and_game_destruction) {
     auto game = Game::createForRuntime(&runtime, options, true);
-    const auto firstInitializer = compile("initializeFirstScene", "global.firstScene = game.currentScene");
-    const auto secondInitializer = compile("initializeSecondScene", "global.secondScene = game.currentScene");
+    const auto firstInitializer = compile("initializeFirstScene", "global.firstScene = game.scene");
+    const auto secondInitializer = compile("initializeSecondScene", "global.secondScene = game.scene");
     runtime.initializeScripts();
     const auto firstId = game->createScene("first", firstInitializer);
     const auto secondId = game->createScene("second", secondInitializer);
@@ -288,7 +293,8 @@ BOOST_AUTO_TEST_CASE(scene_references_expire_after_queued_removal_and_game_destr
 
 BOOST_AUTO_TEST_CASE(native_scene_object_fields_share_storage_and_keep_instances_independent) {
     auto game = Game::createForRuntime(&runtime, options, true);
-    const auto initializer = compileSceneObjectScript(
+    const auto initializer = compileObjectScript(
+        "game.Scene",
         "scenes.storedFields",
         "struct SceneState\nnumber = 0\ntext = \"\"\n"
         "fun add amount:int\nthis.number = this.number + amount\nreturn this.number\nend\nend\n"
@@ -344,7 +350,8 @@ BOOST_AUTO_TEST_CASE(native_scene_object_fields_share_storage_and_keep_instances
 
 BOOST_AUTO_TEST_CASE(native_scene_removal_releases_owned_fields_even_with_retained_self_references) {
     auto game = Game::createForRuntime(&runtime, options, true);
-    const auto initializer = compileSceneObjectScript(
+    const auto initializer = compileObjectScript(
+        "game.Scene",
         "scenes.ownedFields",
         "class ScenePayload\nend\n"
         "this.payload = new ScenePayload\nthis.self = this\n"
@@ -385,7 +392,8 @@ BOOST_AUTO_TEST_CASE(native_scene_removal_releases_owned_fields_even_with_retain
 BOOST_AUTO_TEST_CASE(native_scene_field_layouts_do_not_expand_after_creation) {
     auto game = Game::createForRuntime(&runtime, options, true);
     Scene existing(game.get(), 1);
-    const auto initializer = compileSceneObjectScript(
+    const auto initializer = compileObjectScript(
+        "game.Scene",
         "scenes.newFields", "this.counter = 42\nreturn this.counter"
     );
     runtime.initializeScripts();
@@ -409,6 +417,162 @@ BOOST_AUTO_TEST_CASE(native_scene_field_layouts_do_not_expand_after_creation) {
     BOOST_TEST(interpreter.runObjectMethod(freshReference, initializer, {}).getValue().getIntegerValue() == 42);
 }
 
+BOOST_AUTO_TEST_CASE(native_entity_object_fields_share_storage_and_keep_instances_independent) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const auto initializer = compileObjectScript(
+        "game.Entity",
+        "entities.storedFields",
+        "struct EntityState\nnumber = 0\ntext = \"\"\n"
+        "fun add amount:int\nthis.number = this.number + amount\nreturn this.number\nend\nend\n"
+        "this.counter = 10\nthis.label = \"initialized\"\nthis.state = new EntityState\n"
+        "this.state.number = 3\nthis.state.text = \"initial state\"\n"
+        "fun advance\nthis.counter = this.counter + 1\nthis.state.add 2\nreturn this.counter\nend\n"
+        "return this.counter"
+    );
+    runtime.initializeScripts();
+    Scene scene(game.get(), 1);
+    scene.addEntity(std::make_unique<Entity>(&scene, game->getEntityVariables(), 1, 7.0f, 9.0f, 0));
+    scene.addEntity(std::make_unique<Entity>(&scene, game->getEntityVariables(), 2, 11.0f, 13.0f, 0));
+    auto* first = scene.getEntityById(1);
+    auto* second = scene.getEntityById(2);
+    BOOST_REQUIRE(first != nullptr && second != nullptr);
+    const auto* type = runtime.getTypeByName("game.Entity")->asClassType();
+    RuntimeValue firstValue;
+    firstValue.setObjectValue(first->getEntityObject());
+    const InterpreterValue firstReference(type, firstValue);
+    const InterpreterValue alias(type, firstValue);
+    const Interpreter interpreter(*virtualMachine);
+    auto firstReceiver = interpreter.createObjectReceiver(*type, first->getEntityObject());
+    auto aliasReceiver = interpreter.createObjectReceiver(*type, alias.getValue().getObjectValue());
+    auto secondReceiver = interpreter.createObjectReceiver(*type, second->getEntityObject());
+    BOOST_TEST(firstReceiver->getProperty("counter").getValue().getIntegerValue() == 0);
+    BOOST_TEST(firstReceiver->getProperty("label").getValue().getStringValue() == "");
+    BOOST_TEST(firstReceiver->getProperty("state.number").getValue().getIntegerValue() == 0);
+    BOOST_TEST(interpreter.runObjectMethod(firstReference, initializer, {}).getValue().getIntegerValue() == 10);
+    const auto advance = runtime.resolveMethod(type, "advance", {});
+    BOOST_REQUIRE(advance.isResolved());
+    BOOST_TEST(interpreter.runObjectMethod(alias, advance.id, {}).getValue().getIntegerValue() == 11);
+    BOOST_TEST(firstReceiver->getProperty("counter").getValue().getIntegerValue() == 11);
+    BOOST_TEST(aliasReceiver->getProperty("state.number").getValue().getIntegerValue() == 5);
+    BOOST_TEST(secondReceiver->getProperty("counter").getValue().getIntegerValue() == 0);
+    const auto state = firstReceiver->getProperty("state");
+    secondReceiver->setProperty("state", state);
+    const InterpreterValue number(runtime.getIntegerType(), RuntimeValue{NomadInteger{99}});
+    secondReceiver->setProperty("state.number", number);
+    BOOST_TEST(firstReceiver->getProperty("state.number").getValue().getIntegerValue() == 5);
+    BOOST_TEST(secondReceiver->getProperty("state.number").getValue().getIntegerValue() == 99);
+
+    InterpreterContext context(interpreter);
+    context.setVariable("current", type, firstValue);
+    BOOST_REQUIRE(interpreter.execute("current.counter = 25", context));
+    BOOST_REQUIRE(interpreter.execute("current.state.add 4", context));
+    BOOST_TEST(context.getResult()->getValue().getIntegerValue() == 9);
+    BOOST_TEST(aliasReceiver->getProperty("counter").getValue().getIntegerValue() == 25);
+    BOOST_TEST(aliasReceiver->getProperty("state.number").getValue().getIntegerValue() == 9);
+    BOOST_TEST(secondReceiver->getProperty("state.number").getValue().getIntegerValue() == 99);
+    BOOST_TEST(first->getX() == 7.0f);
+    BOOST_TEST(second->getX() == 11.0f);
+    BOOST_TEST(runtime.getDynamicVariableId("this.x").isValid());
+    BOOST_TEST(runtime.getDynamicVariableId("other.x").isValid());
+    BOOST_TEST(!interpreter.execute("new game.Entity", context));
+    BOOST_TEST(context.hasError());
+}
+
+BOOST_AUTO_TEST_CASE(native_entity_removal_releases_fields_and_parent_removal_invalidates_references) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    const auto initializer = compileObjectScript(
+        "game.Entity",
+        "entities.ownedFields",
+        "class EntityPayload\nend\n"
+        "this.payload = new EntityPayload\nthis.self = this\n"
+        "this.counter = 42\nthis.label = $\"entity-{this.counter}\""
+    );
+    runtime.initializeScripts();
+    const auto objectsBefore = NomadObject::getLiveObjectCount();
+    const auto stringsBefore = RuntimeValue::getLiveStringCount();
+    auto scene = std::make_unique<Scene>(game.get(), 1);
+    scene->addEntity(std::make_unique<Entity>(scene.get(), game->getEntityVariables(), 2, 0.0f, 0.0f, 0));
+    const auto objectsWithSecond = NomadObject::getLiveObjectCount();
+    scene->addEntity(std::make_unique<Entity>(scene.get(), game->getEntityVariables(), 1, 0.0f, 0.0f, 0));
+    auto* first = scene->getEntityById(1);
+    auto* second = scene->getEntityById(2);
+    BOOST_REQUIRE(first != nullptr && second != nullptr);
+    const auto* type = runtime.getTypeByName("game.Entity")->asClassType();
+    RuntimeValue firstValue;
+    firstValue.setObjectValue(first->getEntityObject());
+    RuntimeValue secondValue;
+    secondValue.setObjectValue(second->getEntityObject());
+    const InterpreterValue firstReference(type, firstValue);
+    const InterpreterValue secondReference(type, secondValue);
+    const Interpreter interpreter(*virtualMachine);
+    auto firstReceiver = interpreter.createObjectReceiver(*type, first->getEntityObject());
+    auto secondReceiver = interpreter.createObjectReceiver(*type, second->getEntityObject());
+    (void)interpreter.runObjectMethod(firstReference, initializer, {});
+    BOOST_TEST(firstReceiver->getProperty("label").getValue().getStringValue() == "entity-42");
+    scene->removeEntity(first);
+    BOOST_TEST(scene->getEntityById(1) == nullptr);
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsWithSecond + 1);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    const auto reportsRemovedEntity = [](const NomadException& error) {
+
+        return NomadString(error.what()).find("Entity is no longer available") != NomadString::npos;
+    };
+    BOOST_CHECK_EXCEPTION(
+        (void)firstReference.getValue().asObject<EntityObject>()->getEntity(),
+        NomadException,
+        reportsRemovedEntity
+    );
+    const auto reportsMissingStorage = [](const NomadException& error) {
+
+        return NomadString(error.what()).find("Stored property receiver has no matching field storage") !=
+            NomadString::npos;
+    };
+    BOOST_CHECK_EXCEPTION(
+        (void)firstReceiver->getProperty("counter"), NomadException, reportsMissingStorage
+    );
+    const InterpreterValue replacement(runtime.getIntegerType(), RuntimeValue{NomadInteger{1}});
+    BOOST_CHECK_EXCEPTION(
+        firstReceiver->setProperty("counter", replacement), NomadException, reportsMissingStorage
+    );
+    (void)interpreter.runObjectMethod(secondReference, initializer, {});
+    BOOST_TEST(secondReceiver->getProperty("counter").getValue().getIntegerValue() == 42);
+    scene.reset();
+    BOOST_TEST(NomadObject::getLiveObjectCount() == objectsBefore + 2);
+    BOOST_TEST(RuntimeValue::getLiveStringCount() == stringsBefore);
+    BOOST_CHECK_EXCEPTION(
+        (void)secondReference.getValue().asObject<EntityObject>()->getEntity(),
+        NomadException,
+        reportsRemovedEntity
+    );
+    BOOST_CHECK_EXCEPTION(
+        (void)secondReceiver->getProperty("counter"), NomadException, reportsMissingStorage
+    );
+}
+
+BOOST_AUTO_TEST_CASE(native_entity_field_layouts_do_not_expand_after_creation) {
+    auto game = Game::createForRuntime(&runtime, options, true);
+    Scene scene(game.get(), 1);
+    scene.addEntity(std::make_unique<Entity>(&scene, game->getEntityVariables(), 1, 0.0f, 0.0f, 0));
+    const auto initializer = compileObjectScript(
+        "game.Entity", "entities.newFields", "this.counter = 42\nreturn this.counter"
+    );
+    runtime.initializeScripts();
+    scene.addEntity(std::make_unique<Entity>(&scene, game->getEntityVariables(), 2, 0.0f, 0.0f, 0));
+    const auto* type = runtime.getTypeByName("game.Entity")->asClassType();
+    const Interpreter interpreter(*virtualMachine);
+    auto existing = interpreter.createObjectReceiver(*type, scene.getEntityById(1)->getEntityObject());
+    auto fresh = interpreter.createObjectReceiver(*type, scene.getEntityById(2)->getEntityObject());
+    BOOST_CHECK_EXCEPTION(
+        (void)existing->getProperty("counter"),
+        NomadException,
+        [](const NomadException& error) {
+
+            return NomadString(error.what()).find("field index is out of bounds") != NomadString::npos;
+        }
+    );
+    BOOST_TEST(fresh->callMethod(initializer, {}).getValue().getIntegerValue() == 42);
+}
+
 BOOST_AUTO_TEST_CASE(scene_creation_methods_preserve_queue_targets_and_callback_captures) {
     auto game = Game::createForRuntime(&runtime, options, true);
     const auto declarations = compile(
@@ -428,7 +592,7 @@ BOOST_AUTO_TEST_CASE(scene_creation_methods_preserve_queue_targets_and_callback_
         "fun initializeEntity\nthis.name = \"queued\"\nend\n"
         "fun initializeRequestScene\n"
         "requests = new SceneRequests\nglobal.sceneRequests = requests\n"
-        "requests.enqueue game.currentScene\nend\n"
+        "requests.enqueue game.scene\nend\n"
         "fun initializeEmptyScene\nend"
     );
     BOOST_TEST(declarations.isValid());
