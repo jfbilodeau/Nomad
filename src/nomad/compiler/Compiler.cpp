@@ -2129,7 +2129,11 @@ void Compiler::registerObjectScript(CompilerContext* context, const NomadId scri
     }
 
     const auto id = m_runtime->registerScriptClassMethod(
-        owner->getId(), script.scriptName, {}, script.source.sourceName, script.source.text
+        owner->getId(),
+        script.scriptName,
+        {},
+        script.source.sourceName,
+        script.source.text
     );
     if (id.isInvalid()) {
         context->addError(

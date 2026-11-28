@@ -273,6 +273,18 @@ bool preParseFunStatement(
     funName = context->qualifyDeclaration(funName);
     auto* compiler = context->getCompiler();
     if (const auto* owner = compiler->getObjectScriptClass(function)) {
+        if (
+            funName.find('.') != NomadString::npos ||
+            funName == "init" ||
+            context->getRuntime()->getKeywordId(funName).isValid()
+        ) {
+            context->addError(
+                "Object script method declarations require unqualified, non-reserved, non-constructor names", tokens
+            );
+
+            return false;
+        }
+
         std::vector<Parameter> parameters;
         if (!parser::parseParameters(context, tokens, parameters)) {
 
@@ -280,7 +292,11 @@ bool preParseFunStatement(
         }
 
         const auto id = context->getRuntime()->registerScriptClassMethod(
-            owner->getId(), funName, std::move(parameters), tokens->getSourceName(), tokens->getSource()
+            owner->getId(),
+            funName,
+            std::move(parameters),
+            tokens->getSourceName(),
+            tokens->getSource()
         );
         if (id.isInvalid()) {
             context->addError("Cannot register object script method '" + funName + "'", tokens);
@@ -1421,6 +1437,15 @@ bool preParseParamsStatement(
     if (!parser::parseParameters(context, tokens, parameters)) {
         return false;
     }
+    if (
+        function->getClassType() != nullptr &&
+        std::ranges::any_of(parameters, [](const auto& parameter) { return parameter.name == "this"; })
+    ) {
+        context->addError("'this' names the class receiver and cannot be a parameter", tokens);
+
+        return false;
+    }
+
     for (const auto& parameter : parameters) {
         function->addParameter(parameter.name, parameter.type, "");
     }

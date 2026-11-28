@@ -197,3 +197,35 @@ inspection, and regression tests together.
 Preserve directory-derived script function names, qualified type/enum names,
 and dotted resource strings. Removing arbitrary dotted local identifiers or
 changing directory-to-function naming requires a separate language decision.
+
+## Object scripts: compiler foundation
+
+Status: implemented and validated; awaiting review.
+
+An object-script directory maps sources to a receiver class without changing their
+path-derived identities. The file body becomes an initializer method; named `fun`
+declarations become ordinary methods shared by every script targeting that class.
+Method calls require explicit receivers. File-body `this.field` assignments infer
+stored fields using constructor-style rules; named methods only update existing
+fields. Returns retain ordinary method inference rather than becoming void-only.
+
+The first increment provides compiler/embedding registration and tests using
+existing class, method, field, and receiver-capture machinery. Initializer entries
+are selected through the host method catalog by their source identity, such as
+`entities.player`. Native Entity/Scene storage, project configuration, factory
+binding, and named bound callbacks remain separate follow-up work.
+
+The root `scene` API will be a current-context hub, not a replacement object value.
+Object-script initializers and methods use their own typed `this`. Agree the
+remaining data and callback contracts before changing those engine APIs.
+
+Validation passed for receiver-bound initializer invocation, per-instance fields,
+shared methods and overloads, ordinary return values, inline receiver captures,
+editor snapshots, invalid receiver mappings, and native-property permissions.
+The build, language/tooling/remaining CTest groups, grammar stability check, and
+strict MkDocs validation passed. No new VM instructions were introduced.
+
+Next: integrate native Entity/Scene field storage, project directory configuration,
+factory initializer binding, and explicit receiver binding for named callbacks,
+then implement the root scene facade in reviewable increments. The compiler
+foundation alone does not enable object scripts in existing game projects.

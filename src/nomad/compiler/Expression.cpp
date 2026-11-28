@@ -1814,6 +1814,16 @@ const NomadString& IdentifierExpression::getIdentifier() const {
 }
 
 void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (
+        context->isHubInitializer() &&
+        context->getCompiler()->getReceiverType(function) != nullptr &&
+        (m_identifier == "this" || m_identifier.starts_with("this."))
+    ) {
+        reportError(context, function, "Hub initializers cannot read the object receiver 'this'");
+
+        return;
+    }
+
     if (context->getCompiler()->isFieldInitializer(function) &&
         (m_identifier == "this" || m_identifier.starts_with("this."))) {
         reportError(context, function, "Field initializers cannot use or capture 'this'");
