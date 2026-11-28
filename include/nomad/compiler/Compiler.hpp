@@ -269,6 +269,7 @@ public:
 
     // Configure additional roots before registering snapshots. Snapshots override their backing files.
     void registerSourceRoots(std::span<const SourceRoot> roots);
+    void registerObjectScriptRoots(std::span<const ObjectScriptRoot> roots);
     // Copies snapshots and immediately reports loading and registration diagnostics.
     void registerSources(CompilerContext* context, const SourceBatch& batch);
     // Parser interface: creates a function belonging to an already registered script.
@@ -291,6 +292,8 @@ public:
         CompilationCallableTarget kind
     );
     [[nodiscard]] const Type* getReceiverType(const ScriptCallableBase* function) const;
+    [[nodiscard]] const ClassType* getObjectScriptClass(const ScriptCallableBase* function) const;
+    [[nodiscard]] bool isObjectScriptInitializer(const ScriptCallableBase* function) const;
     [[nodiscard]] bool isFieldInitializer(const ScriptCallableBase* function) const;
     void registerScriptInitializer(
         CompilerContext* context,
@@ -373,6 +376,7 @@ private:
     void prepareScriptInitialization(CompilerContext* context);
     void installScriptInitialValues();
     void registerScript(CompilerContext* context, const ScriptSource& script);
+    void registerObjectScript(CompilerContext* context, NomadId scriptId);
     void preParseFunction(CompilerContext* context, ScriptCompilation& script, bool hubsOnly = false);
     void parseFunction(CompilerContext* context, ScriptCompilation& script);
     [[nodiscard]] bool resolveFunction(CompilerContext* context, const FunctionCompilation& function);
@@ -413,6 +417,7 @@ private:
     std::vector<OpCodeRegistration> m_opCodeRegistrations;
     std::deque<std::function<void(CompilerContext*, CompilationPhase)>> m_phaseHooks;
     std::vector<SourceRoot> m_sourceRoots;
+    std::vector<ObjectScriptRoot> m_objectScriptRoots;
     bool m_sourceRootsLoaded = false;
     std::vector<ScriptCompilation> m_scripts;
     std::vector<FunctionCompilation> m_functions;

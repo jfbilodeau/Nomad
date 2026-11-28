@@ -251,7 +251,9 @@ void AssignmentStatement::onResolve(CompilerContext* context, ScriptCallableBase
     if (compiler->getReceiverType(function) != nullptr && m_identifier.starts_with("this.")) {
         const auto* property = compiler->resolveClassField(
             context, function, m_identifier.substr(5), expressionType,
-            context->getRuntime()->getConstructor(function->getId()) != nullptr, getLine(), getColumn()
+            context->getRuntime()->getConstructor(function->getId()) != nullptr ||
+                compiler->isObjectScriptInitializer(function),
+            getLine(), getColumn()
         );
         if (property != nullptr && expressionType != nullptr && expressionType->isStruct() &&
             m_stagingVariable.isInvalid()) {

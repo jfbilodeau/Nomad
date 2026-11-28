@@ -779,9 +779,21 @@ bool NativeMemberExpression::resolveMember(
         if (owner != nullptr) {
             const auto* property = owner->getProperty(m_memberName);
             if (assignment && context->getMode() == CompilerMode::Script) {
-                property = context->getCompiler()->resolveObjectField(
-                    context, function, owner, m_memberName, valueType, owner->isOpen(), getLine(), getColumn()
-                );
+                auto* compiler = context->getCompiler();
+                const auto* identifier = m_receiver->asIdentifierExpression();
+                if (
+                    identifier != nullptr &&
+                    identifier->getIdentifier() == "this" &&
+                    compiler->isObjectScriptInitializer(function)
+                ) {
+                    property = compiler->resolveClassField(
+                        context, function, m_memberName, valueType, true, getLine(), getColumn()
+                    );
+                } else {
+                    property = compiler->resolveObjectField(
+                        context, function, owner, m_memberName, valueType, owner->isOpen(), getLine(), getColumn()
+                    );
+                }
             }
             if (property != nullptr) {
                 if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
