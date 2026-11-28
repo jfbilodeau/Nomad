@@ -1,1 +1,1 @@
-window.toggleFullScreen
+game.window.toggleFullScreen

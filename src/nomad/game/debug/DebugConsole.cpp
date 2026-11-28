@@ -11,9 +11,12 @@
 #include <nomad/log/Logger.hpp>
 
 #include <nomad/script/BaseTypes.hpp>
+#include <nomad/script/ClassType.hpp>
 #include <nomad/script/EnumType.hpp>
+#include <nomad/script/NativeProperty.hpp>
 #include <nomad/script/NomadObject.hpp>
 #include <nomad/script/Runtime.hpp>
+#include <nomad/script/RuntimeValueGuard.hpp>
 #include <nomad/script/ScriptCallable.hpp>
 #include <nomad/script/VariableContext.hpp>
 #include <nomad/script/VirtualMachine.hpp>
@@ -1108,6 +1111,7 @@ void DebugConsole::renderVariableInspector() {
 void DebugConsole::collectVariableRows(std::vector<VariableRow>& rows) const {
     collectContextVariableRows(rows);
     collectDynamicVariableRows(rows);
+    collectWindowPropertyRows(rows);
     collectConsoleVariableRows(rows);
 }
 
@@ -1251,6 +1255,72 @@ void DebugConsole::collectDynamicVariableRows(std::vector<VariableRow>& rows) co
     }
 }
 
+void DebugConsole::collectWindowPropertyRows(std::vector<VariableRow>& rows) const {
+    if (m_selectionKind != SelectionKind::Game) {
+
+        return;
+    }
+
+    auto* runtime = m_game->getRuntime();
+    const auto id = runtime->getConstantId("game.window");
+    RuntimeValue value;
+    runtime->getConstantValue(id, value);
+    const InterpreterValue receiver(runtime->getConstantType(id), value);
+    collectObjectPropertyRows(receiver, "game.window", rows);
+}
+
+void DebugConsole::collectObjectPropertyRows(
+    const InterpreterValue& receiver,
+    const NomadString& prefix,
+    std::vector<VariableRow>& rows
+) const {
+    const Interpreter interpreter(*m_inspectionVirtualMachine);
+    const auto* owner = receiver.getType()->asClassType();
+    auto object = interpreter.createObjectReceiver(*owner, receiver.getValue().getObjectValue());
+
+    for (const auto* property : owner->getProperties()) {
+        const auto* native = property->asNativeProperty();
+
+        if (native == nullptr) {
+            continue;
+        }
+
+        const auto info = native->getInfo();
+
+        if (!info.getFn && info.getterMethodId.isInvalid()) {
+            continue;
+        }
+
+        const auto name = prefix + "." + property->getName();
+        const auto* type = property->getValueType();
+        const auto objectProperty = type->asClassType() != nullptr && !type->isString();
+
+        if (!objectProperty && !containsText(name, m_variableFilter.data())) {
+            continue;
+        }
+
+        const auto value = object->getProperty(property->getId());
+        
+        if (objectProperty) {
+            collectObjectPropertyRows(value, name, rows);
+            continue;
+        }
+
+        rows.push_back({
+            name,
+            type,
+            valueToDisplayString(type, value.getValue()),
+            VariableRow::Source::Property,
+            VariableContextId::INVALID,
+            VariableId::INVALID,
+            isEditableType(type) && (info.setFn || info.setterMethodId.isValid()),
+            DynamicVariableId::INVALID,
+            property->getId(),
+            receiver
+        });
+    }
+}
+
 void DebugConsole::collectConsoleVariableRows(std::vector<VariableRow>& rows) const {
     if (m_selectionKind != SelectionKind::Game) {
         return;
@@ -1326,6 +1396,18 @@ bool DebugConsole::applyVariableEdit(const VariableRow& row, const NomadString& 
         const auto name = row.name.substr(std::strlen("console."));
         m_interpreterContext.setVariable(name, row.type, value);
         row.type->freeValue(&value);
+        return true;
+    }
+    case VariableRow::Source::Property: {
+        const RuntimeValueGuard valueOwner(*row.type, &value);
+        const InterpreterValue assignedValue(row.type, value);
+        const Interpreter interpreter(*m_inspectionVirtualMachine);
+        auto receiver = interpreter.createObjectReceiver(
+            *row.receiver->getType()->asClassType(),
+            row.receiver->getValue().getObjectValue()
+        );
+        receiver->setProperty(row.propertyId, assignedValue);
+
         return true;
     }
     }

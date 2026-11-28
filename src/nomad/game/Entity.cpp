@@ -3,6 +3,7 @@
 #include <nomad/game/Entity.hpp>
 
 #include <nomad/game/Canvas.hpp>
+#include <nomad/game/EntityObject.hpp>
 #include <nomad/game/EventRegistration.hpp>
 #include <nomad/game/Game.hpp>
 #include <nomad/game/Scene.hpp>
@@ -32,6 +33,7 @@ Entity::Entity(
 ):
     m_id(id),
     m_scene(scene),
+    m_entityObject(new EntityObject(*this), nomad::releaseRef),
     m_position(x, y),
     m_previousPosition(x, y),
     m_layer(layer),
@@ -41,6 +43,7 @@ Entity::Entity(
 }
 
 Entity::~Entity() {
+    m_entityObject->detachEntity();
     invalidateTextTexture(); // Clear the text texture if it exists
     releaseRef(m_textFont);
 }
@@ -256,6 +259,11 @@ NomadId Entity::getId() const {
 
 Scene* Entity::getScene() const {
     return m_scene;
+}
+
+EntityObject* Entity::getEntityObject() const {
+
+    return m_entityObject.get();
 }
 
 void Entity::setName(const NomadString& name) {

@@ -120,6 +120,11 @@ void stageSystemModule(TestDirectory& directory, const NomadStringView nativeCon
     const auto destination = directory.getPath() / "modules" / "system";
     std::filesystem::create_directories(destination);
     std::filesystem::copy_file(source, destination / library);
+    std::filesystem::copy(
+        source.parent_path() / "scripts",
+        destination / "scripts",
+        std::filesystem::copy_options::recursive
+    );
     directory.write("modules/system/module.toml", "schema = 1\n[module]\nname = \"system\"\n");
     directory.write("modules/system/shared.dll", NomadString(nativeContents));
     directory.write("modules/system/runtime.json",
@@ -487,7 +492,7 @@ BOOST_AUTO_TEST_CASE(module_scripts_keep_their_ownership_after_packaging_and_rel
         auto host = ModuleHost::create(release.document, output, modules, {}, ModuleMode::Analysis);
         const auto batch = host->loadSources(resolveScriptPaths(release.document, output));
         BOOST_REQUIRE(batch.diagnostics.empty());
-        BOOST_TEST(batch.sources.size() == 3U);
+        BOOST_TEST(batch.sources.size() == 4U);
         BOOST_TEST(std::ranges::count(batch.sources, NomadString(moduleFunction), &ScriptSource::scriptName) == 1);
         const auto compilation = host->compileSources(batch, CompilationTarget::Analysis);
         NomadString diagnostics;
@@ -507,12 +512,19 @@ BOOST_AUTO_TEST_CASE(module_scripts_keep_their_ownership_after_packaging_and_rel
 BOOST_AUTO_TEST_CASE(empty_module_script_directories_survive_packaging)
 {
     TestDirectory directory("nomad_empty_module_scripts_package");
-    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configurationWithSystemModule());
+    auto configuration = configurationWithSystemModule();
+    configuration.replace(
+        configuration.find("modules = [\"system\"]"),
+        NomadStringView("modules = [\"system\"]").size(),
+        "modules = [\"fixture\"]"
+    );
+    const auto projectFile = directory.write(NOMAD_PROJECT_FILE_NAME, configuration);
     directory.write("assets/main.nomad", "return\n");
     directory.write("runtime/engine", "runtime");
     writeRuntimeManifest(directory, "engine");
     stageSystemModule(directory, "shared");
-    std::filesystem::create_directories(directory.getPath() / "modules/system/scripts");
+    stageFixtureModule(directory);
+    std::filesystem::create_directories(directory.getPath() / "modules/fixture/scripts");
     const auto project = loadNomadProject(projectFile);
     const auto runtime = directory.getPath() / "runtime";
     const auto preview = packageProject(project, runtime, false, true);
@@ -520,12 +532,16 @@ BOOST_AUTO_TEST_CASE(empty_module_script_directories_survive_packaging)
     BOOST_TEST(preview.files == result.files, boost::test_tools::per_element());
     const auto output = directory.getPath() / "extracted";
     extractArchive(result.output, output);
-    BOOST_TEST(std::filesystem::is_directory(output / "modules/system/scripts"));
+    BOOST_TEST(std::filesystem::is_directory(output / "modules/fixture/scripts"));
+    BOOST_TEST(std::filesystem::is_empty(output / "modules/fixture/scripts"));
     const auto release = loadNomadProject(output / NOMAD_PROJECT_FILE_NAME);
     const auto modules = resolveProjectModules(release, directory.getPath() / "missing-sdk");
     const auto batch = loadSourceRoots(getModuleScriptRoots(modules));
     BOOST_TEST(batch.diagnostics.empty());
-    BOOST_TEST(batch.sources.empty());
+    BOOST_TEST(std::ranges::none_of(batch.sources, [](const auto& source) {
+
+        return source.owner == "fixture";
+    }));
 }
 
 BOOST_AUTO_TEST_CASE(invalid_module_script_roots_fail_packaging_and_dry_runs)
@@ -536,6 +552,7 @@ BOOST_AUTO_TEST_CASE(invalid_module_script_roots_fail_packaging_and_dry_runs)
     directory.write("runtime/engine", "runtime");
     writeRuntimeManifest(directory, "engine");
     stageSystemModule(directory, "shared");
+    std::filesystem::remove_all(directory.getPath() / "modules" / "system" / "scripts");
     directory.write("modules/system/scripts", "not a directory");
     const auto project = loadNomadProject(projectFile);
     const auto runtime = directory.getPath() / "runtime";
@@ -626,6 +643,15 @@ BOOST_AUTO_TEST_CASE(failed_game_generation_preserves_previous_archive_and_clean
         const auto library = getModuleLibraryName(module.name);
         std::filesystem::copy_file(module.directory / library, destination / library);
         std::filesystem::copy_file(module.directory / "module.toml", destination / "module.toml");
+        const auto scripts = module.directory / "scripts";
+        if (std::filesystem::exists(scripts)) {
+            std::filesystem::copy(
+                scripts,
+                destination / "scripts",
+                std::filesystem::copy_options::recursive
+            );
+        }
+
         directory.write(
             NomadPath("modules") / pathFromUtf8(module.name) / "runtime.json",
             R"({"schema":1,"files":[]})"

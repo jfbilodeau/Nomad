@@ -12,6 +12,9 @@ This module does not open a game
 window. It is also loaded automatically when a project selects `game`.
 See [Runtime modules](modules.md) for module setup and startup behavior.
 
+The `math` and `system` hubs are open. Scripts may add members using matching
+`open hub math` or `open hub system` blocks.
+
 ## Plain output and logging
 
 Use the built-in `print` function for plain output; it requires no module:

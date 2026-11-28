@@ -172,8 +172,8 @@ BOOST_AUTO_TEST_CASE(displays_the_configured_splash_at_the_configured_resolution
     writeTextCatalogue(directory);
     writePng(directory, "splash.png");
     directory.write("scripts/main.nomad",
-        "assert window.resolution.width == 1280\nassert window.resolution.height == 720\n"
-        "assert window.width == 1600\nassert window.height == 900\nsystem.exit\n");
+        "assert game.window.resolution.width == 1280\nassert game.window.resolution.height == 720\n"
+        "assert game.window.width == 1600\nassert game.window.height == 900\nsystem.exit\n");
     selectDummyDrivers();
 
     const auto configuration = NomadConfiguration::parse(
@@ -190,8 +190,8 @@ BOOST_AUTO_TEST_CASE(uses_resolution_as_window_size_when_size_is_unconfigured)
     TestDirectory directory("nomad_game_startup_resolution_size");
     writeTextCatalogue(directory);
     directory.write("scripts/main.nomad",
-        "assert window.resolution.width == 1024\nassert window.resolution.height == 576\n"
-        "assert window.width == 1024\nassert window.height == 576\nsystem.exit\n");
+        "assert game.window.resolution.width == 1024\nassert game.window.resolution.height == 576\n"
+        "assert game.window.width == 1024\nassert game.window.height == 576\nsystem.exit\n");
     selectDummyDrivers();
 
     const auto host = createGameHost(directory, NomadConfiguration::parse("[window]\nresolution = [1024, 576]\n"));

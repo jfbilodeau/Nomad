@@ -23,6 +23,12 @@ struct ScriptSource {
     SourceText source;
     NomadString owner = {};
     NomadPath relativePath = {};
+    NomadString receiverTypeName = {};
+};
+
+struct ObjectScriptRoot {
+    NomadPath path;
+    NomadString receiverTypeName;
 };
 
 struct SourceRoot {

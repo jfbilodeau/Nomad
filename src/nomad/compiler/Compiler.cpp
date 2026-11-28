@@ -2074,14 +2074,78 @@ void Compiler::registerScript(CompilerContext* context, const ScriptSource& scri
             NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
         return;
     }
+    auto source = script;
+    if (source.source.filePath) {
+        try {
+            for (const auto& root : m_objectScriptRoots) {
+                if (!getSourceRelativePath(root.path, *source.source.filePath)) {
+                    continue;
+                }
+
+                if (!source.receiverTypeName.empty() && source.receiverTypeName != root.receiverTypeName) {
+                    context->addError("Object script has conflicting receiver types '" +
+                        source.receiverTypeName + "' and '" + root.receiverTypeName + "'",
+                        source.source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+
+                    return;
+                }
+
+                source.receiverTypeName = root.receiverTypeName;
+            }
+        } catch (const std::filesystem::filesystem_error& error) {
+            context->addError(error.what(), source.source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX);
+
+            return;
+        }
+    }
+
     const auto scriptId = toNomadId(m_scripts.size());
-    m_scripts.push_back({script, nullptr, NOMAD_INVALID_ID});
+    m_scripts.push_back({std::move(source), nullptr, CallableId::INVALID});
+    if (!m_scripts.back().script.receiverTypeName.empty()) {
+
+        return;
+    }
+
     const auto functionId = createFunction(context, scriptId, script.scriptName);
     if (functionId.isInvalid()) {
         m_scripts.pop_back();
         return;
     }
     m_scripts.back().functionId = functionId;
+}
+
+void Compiler::registerObjectScript(CompilerContext* context, const NomadId scriptId) {
+    auto& file = m_scripts[toNomadIndex(scriptId)];
+    const auto& script = file.script;
+    const auto* type = m_runtime->getTypeByName(script.receiverTypeName);
+    const auto* owner = type != nullptr && !type->isInternal() ? type->asClassType() : nullptr;
+    if (owner == nullptr) {
+        context->addError(
+            "Object script requires a registered public class receiver: '" + script.receiverTypeName + "'",
+            script.source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX
+        );
+
+        return;
+    }
+
+    const auto id = m_runtime->registerScriptClassMethod(
+        owner->getId(),
+        script.scriptName,
+        {},
+        script.source.sourceName,
+        script.source.text
+    );
+    if (id.isInvalid()) {
+        context->addError(
+            "Cannot register object script method '" + script.scriptName + "' on '" + script.receiverTypeName + "'",
+            script.source.sourceName, NOMAD_INVALID_INDEX, NOMAD_INVALID_INDEX
+        );
+
+        return;
+    }
+
+    file.functionId = id;
+    m_functions.push_back({scriptId, {}, m_runtime->getScriptCallable(id), CompilationCallableTarget::Function});
 }
 
 CallableId Compiler::createFunction(
@@ -2153,6 +2217,30 @@ const Type* Compiler::getReceiverType(const ScriptCallableBase* function) const 
     return nullptr;
 }
 
+const ClassType* Compiler::getObjectScriptClass(const ScriptCallableBase* function) const {
+    if (function == nullptr) {
+
+        return nullptr;
+    }
+
+    const auto& script = getScript(getScriptId(function->getId()));
+    const auto* type = m_runtime->getTypeByName(script.receiverTypeName);
+
+    return type != nullptr ? type->asClassType() : nullptr;
+}
+
+bool Compiler::isObjectScriptInitializer(const ScriptCallableBase* function) const {
+    if (function == nullptr) {
+
+        return false;
+    }
+
+    return std::ranges::any_of(m_scripts, [function](const auto& script) {
+
+        return script.functionId == function->getId() && !script.script.receiverTypeName.empty();
+    });
+}
+
 bool Compiler::isFieldInitializer(const ScriptCallableBase* function) const {
     while (function != nullptr) {
         if (std::ranges::any_of(m_functions, [&](const auto& source) {
@@ -2196,6 +2284,20 @@ void Compiler::registerSourceRoots(const std::span<const SourceRoot> roots) {
         throw NomadBug("Source roots must be configured before registering source snapshots");
     }
     m_sourceRoots.insert(m_sourceRoots.end(), roots.begin(), roots.end());
+}
+
+void Compiler::registerObjectScriptRoots(const std::span<const ObjectScriptRoot> roots) {
+    if (m_sourceRootsLoaded) {
+        throw NomadBug("Object script roots must be configured before registering source snapshots");
+    }
+
+    for (const auto& root : roots) {
+        if (root.path.empty() || root.receiverTypeName.empty()) {
+            throw NomadException("Object script roots require a path and receiver type name");
+        }
+    }
+
+    m_objectScriptRoots.insert(m_objectScriptRoots.end(), roots.begin(), roots.end());
 }
 
 void Compiler::registerSources(CompilerContext* context, const SourceBatch& batch) {
@@ -2409,6 +2511,22 @@ bool Compiler::compileScripts(CompilerContext* context, const CompilationTarget 
     if (hasNewErrors()) {
         return false;
     }
+    for (auto index = NomadIndex{0}; index < m_scripts.size(); ++index) {
+        const auto& script = m_scripts[index].script;
+        if (script.receiverTypeName.empty()) {
+            continue;
+        }
+
+        reportExceptions(script.source.sourceName, [&] {
+            registerObjectScript(context, toNomadId(index));
+        });
+    }
+
+    if (hasNewErrors()) {
+
+        return false;
+    }
+
     for (auto* script : orderedScripts) {
         reportExceptions(script->script.source.sourceName, [&] {
             preParseFunction(context, *script);

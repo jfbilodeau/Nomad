@@ -240,33 +240,44 @@ std::unique_ptr<Expression> createNativeMemberExpression(
 std::unique_ptr<Expression> createQualifiedReceiverExpression(CompilerContext* context, ScriptCallableBase* function,
                                                               const Expression* parent, const NomadString& name,
                                                               const NomadIndex line, const NomadIndex column) {
-    if (context->getCompiler()->getReceiverType(function) != nullptr && name == "this") {
+    const auto* receiverType = context->getCompiler()->getReceiverType(function);
+    if (receiverType != nullptr && name == "this") {
+
         return std::make_unique<IdentifierExpression>(parent, line, column, name);
     }
-    const auto functionId = context->getRuntime()->getFunctionId(name);
-    if (functionId.isValid()) {
-        const auto* targetFunction = context->getRuntime()->getFunction(functionId);
-        if (targetFunction->getParameterCount() != 0) {
-            context->addError("Function receiver '" + name + "' requires arguments");
-            return nullptr;
+
+    if (receiverType == nullptr || !name.starts_with("this.")) {
+        const auto functionId = context->getRuntime()->getFunctionId(name);
+        if (functionId.isValid()) {
+            const auto* targetFunction = context->getRuntime()->getFunction(functionId);
+            if (targetFunction->getParameterCount() != 0) {
+                context->addError("Function receiver '" + name + "' requires arguments");
+
+                return nullptr;
+            }
+
+            return std::make_unique<FunctionCallExpression>(parent, line, column, name);
         }
 
-        return std::make_unique<FunctionCallExpression>(parent, line, column, name);
-    }
+        if (context->getRuntime()->getConstantId(name).isValid()) {
 
-    if (context->getRuntime()->getConstantId(name).isValid()) {
-        return std::make_unique<ConstantValueExpression>(parent, line, column, name);
-    }
+            return std::make_unique<ConstantValueExpression>(parent, line, column, name);
+        }
 
-    for (auto* scope = function; scope != nullptr;
-        scope = context->getRuntime()->getScriptCallable(scope->getParentId())) {
-        if (context->getCompiler()->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+        for (auto* scope = function; scope != nullptr;
+            scope = context->getRuntime()->getScriptCallable(scope->getParentId())) {
+            if (context->getCompiler()->getIdentifierType(name, scope) != IdentifierType::Unknown) {
+
+                return std::make_unique<IdentifierExpression>(parent, line, column, name);
+            }
+        }
+
+        if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
+
             return std::make_unique<IdentifierExpression>(parent, line, column, name);
         }
     }
-    if (context->getCompiler()->getIdentifierType(name, nullptr) != IdentifierType::Unknown) {
-        return std::make_unique<IdentifierExpression>(parent, line, column, name);
-    }
+
     const auto parts = splitMemberName(name);
     if (!parts) {
         return std::make_unique<IdentifierExpression>(
@@ -1100,10 +1111,18 @@ std::unique_ptr<Statement> parseAssignmentStatement(CompilerContext* context, Sc
             context->addError("Cannot reassign the class receiver 'this'", tokens);
             return nullptr;
         }
-        if (context->getMode() != CompilerMode::Interpreter &&
+        if (
+            context->getMode() != CompilerMode::Interpreter &&
             context->getCompiler()->getReceiverType(function)->isClass() &&
-            target.starts_with("this.") && target.find('.', 5) == NomadString::npos &&
-            tokens->getTokenCount() >= 3 && tokens->getTokenAt(1) == "=") {
+            target.starts_with("this.") &&
+            target.find('.', 5) == NomadString::npos &&
+            !context->getRuntime()->getNativeMemberId(
+                context->getCompiler()->getReceiverType(function),
+                target.substr(5)
+            ).has_value() &&
+            tokens->getTokenCount() >= 3 &&
+            tokens->getTokenAt(1) == "="
+        ) {
             auto name = tokens->next().textValue;
             tokens->next();
             auto expression = parseExpression(context, function, tokens);

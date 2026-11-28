@@ -271,6 +271,45 @@ bool preParseFunStatement(
         return false;
     }
     funName = context->qualifyDeclaration(funName);
+    auto* compiler = context->getCompiler();
+    if (const auto* owner = compiler->getObjectScriptClass(function)) {
+        if (
+            funName.find('.') != NomadString::npos ||
+            funName == "init" ||
+            context->getRuntime()->getKeywordId(funName).isValid()
+        ) {
+            context->addError(
+                "Object script method declarations require unqualified, non-reserved, non-constructor names", tokens
+            );
+
+            return false;
+        }
+
+        std::vector<Parameter> parameters;
+        if (!parser::parseParameters(context, tokens, parameters)) {
+
+            return false;
+        }
+
+        const auto id = context->getRuntime()->registerScriptClassMethod(
+            owner->getId(),
+            funName,
+            std::move(parameters),
+            tokens->getSourceName(),
+            tokens->getSource()
+        );
+        if (id.isInvalid()) {
+            context->addError("Cannot register object script method '" + funName + "'", tokens);
+
+            return false;
+        }
+
+        context->getRuntime()->getScriptCallable(id)->setHub(context->getHub());
+        compiler->registerMemberCompilation(id, function->getId(), CompilationCallableTarget::Function);
+
+        return true;
+    }
+
     if (context->getRuntime()->isHub(funName)) {
         context->addError("Function name '" + funName + "' is reserved by a hub", tokens);
         return false;
@@ -299,7 +338,6 @@ bool preParseFunStatement(
     }
 
     // Generate `fun`
-    auto* compiler = context->getCompiler();
     const auto funId = compiler->createFunction(context, compiler->getScriptId(function->getId()), funName);
     if (funId.isInvalid()) {
         return false;
@@ -401,7 +439,7 @@ std::unique_ptr<FunctionNode> parseThenBody(
     return thenBody;
 }
 
-std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptCallableBase* /*function*/, Tokenizer* tokens) {
+std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptCallableBase* function, Tokenizer* tokens) {
     NomadString funName;
 
     if (!tokens->is(TokenType::Identifier)) {
@@ -414,10 +452,26 @@ std::unique_ptr<Statement> parseFunStatement(CompilerContext* context, ScriptCal
     funName = context->qualifyDeclaration(funName);
 
     const auto declarationLine = tokens->getLineIndex();
+    auto funId = context->getRuntime()->getScriptFunctionId(funName);
+    if (const auto* owner = context->getCompiler()->getObjectScriptClass(function)) {
+        std::vector<Parameter> parameters;
+        if (!parser::parseParameters(context, tokens, parameters)) {
+
+            return nullptr;
+        }
+
+        std::vector<const Type*> types;
+        for (const auto& parameter : parameters) {
+            types.push_back(parameter.type);
+        }
+
+        const auto resolution = context->getRuntime()->resolveMethod(owner, funName, types);
+        funId = resolution.isResolved() ? resolution.id : CallableId::INVALID;
+    }
+
     // Fun is already registered by pre_parse_fun_statement
     tokens->nextLine();
 
-    auto funId =  context->getRuntime()->getScriptFunctionId(funName);
     auto funFunction = context->getRuntime()->getScriptCallable(funId);
 
     if (funFunction == nullptr) {
@@ -1366,7 +1420,10 @@ bool preParseParamsStatement(
     if (phase == PreParsePhase::Declarations) {
         return true;
     }
-    if (function->getClassType() != nullptr) {
+    if (
+        function->getClassType() != nullptr &&
+        !context->getCompiler()->isObjectScriptInitializer(function)
+    ) {
         context->addError("Class member parameters must be declared in the member header", tokens);
         return false;
     }
@@ -1380,6 +1437,15 @@ bool preParseParamsStatement(
     if (!parser::parseParameters(context, tokens, parameters)) {
         return false;
     }
+    if (
+        function->getClassType() != nullptr &&
+        std::ranges::any_of(parameters, [](const auto& parameter) { return parameter.name == "this"; })
+    ) {
+        context->addError("'this' names the class receiver and cannot be a parameter", tokens);
+
+        return false;
+    }
+
     for (const auto& parameter : parameters) {
         function->addParameter(parameter.name, parameter.type, "");
     }

@@ -1,1 +1,1 @@
-this.setLocation window.mouse.x window.mouse.y
+this.setLocation game.window.mouse.x game.window.mouse.y

@@ -23,6 +23,7 @@
 
 #include <array>
 #include <functional>
+#include <memory>
 
 namespace nomad {
 
@@ -38,6 +39,7 @@ class Scene;
 class ScriptFunction;
 class Closure;
 class VirtualMachine;
+class WindowObject;
 
 class GameException final : public NomadException {
 public:
@@ -230,9 +232,12 @@ private:
     void initInputFunctions();
     void initOtherEntityFunctions();
     void initSceneFunctions();
+    void initSceneMethods();
     void initSystemFunctions();
     void initThisEntityFunctions();
     void initWindowFunctions();
+    void initWindowProperties();
+    void setWindowTitle(const NomadString& title);
     void initVariableContext();
     void initResourceManager();
 
@@ -243,7 +248,6 @@ private:
     void initOtherDynamicVariables();
     void initSceneDynamicVariables() const;
     void initThisDynamicVariables();
-    void initWindowDynamicVariables();
 
     void initDebugConsole();
 
@@ -340,6 +344,7 @@ private:
     std::function<bool()> m_pollExit;
 
     SDL_Window* m_window = nullptr;
+    std::unique_ptr<WindowObject, decltype(&releaseRef)> m_windowObject{nullptr, releaseRef};
     SDL_Renderer* m_renderer = nullptr;
     bool m_sdlTtfInitialized = false;
     std::unique_ptr<Canvas> m_canvas;

@@ -57,7 +57,8 @@ InterpreterValue InterpreterObjectReceiver::getProperty(const PropertyId propert
     }
     const auto* type = property->getValueType();
     if (type->isStruct()) {
-        const auto* object = dynamic_cast<const ScriptObject*>(m_object);
+        const auto* instance = m_object;
+        const auto* object = instance != nullptr ? instance->asScriptObject() : nullptr;
         if (property->asNativeProperty() != nullptr || object == nullptr ||
             object->getClassType() != property->getOwnerType()) {
             getInterpreter().getVirtualMachine().fault("Stored property receiver has no matching field storage");
@@ -94,7 +95,7 @@ void InterpreterObjectReceiver::setProperty(const PropertyId propertyId, const I
     }
     const auto* type = property->getValueType();
     if (type->isStruct()) {
-        auto* object = dynamic_cast<ScriptObject*>(m_object);
+        auto* object = m_object != nullptr ? m_object->asScriptObject() : nullptr;
         if (property->asNativeProperty() != nullptr || object == nullptr ||
             object->getClassType() != property->getOwnerType()) {
             getInterpreter().getVirtualMachine().fault("Stored property receiver has no matching field storage");
@@ -141,7 +142,7 @@ void InterpreterObjectReceiver::setProperty(
             return;
         }
     }
-    auto* object = dynamic_cast<ScriptObject*>(m_object);
+    auto* object = m_object != nullptr ? m_object->asScriptObject() : nullptr;
     if (property->asNativeProperty() != nullptr || object == nullptr ||
         object->getClassType() != property->getOwnerType()) {
         getInterpreter().getVirtualMachine().fault("Stored property receiver has no matching field storage");

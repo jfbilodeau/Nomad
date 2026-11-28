@@ -156,6 +156,13 @@ std::unique_ptr<ModuleHost> createCompilerSession(
     );
 }
 
+bool compileModuleDeclarations(ModuleHost& session) {
+    const auto result = session.compileSources({}, CompilationTarget::Analysis);
+    printDiagnostics(result);
+
+    return result.succeeded();
+}
+
 CompilationPaths resolveRequestedPaths(const std::optional<NomadString>& requestedPath) {
     const auto explicitPath = requestedPath.has_value();
     const auto path = explicitPath
@@ -241,6 +248,11 @@ int documentationCommand(DocumentationParameters& parameters, const std::vector<
                 << "; generating engine-only documentation.\n";
 
             const auto session = createCompilerSession(resolveCompilationPaths(currentPath, true), arguments);
+            if (!compileModuleDeclarations(*session)) {
+
+                return EXIT_FAILURE;
+            }
+
             std::ostringstream output;
             generateDocumentation(session->getRuntime(), output);
             return writeOutputFile(outputPath, "documentation", output.str());
@@ -264,6 +276,11 @@ int documentationCommand(DocumentationParameters& parameters, const std::vector<
 int textMateCommand(TextMateParameters& parameters, const std::vector<NomadString>& arguments) {
     const auto paths = resolveRequestedPaths(parameters.path);
     const auto session = createCompilerSession(paths, arguments);
+    if (!compileModuleDeclarations(*session)) {
+
+        return EXIT_FAILURE;
+    }
+
     std::ostringstream output;
     generateTextMateGrammar(session->getRuntime(), output);
     return writeOutputFile(pathFromUtf8(parameters.output), "TextMate grammar", output.str());

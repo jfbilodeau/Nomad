@@ -65,8 +65,29 @@ string(JSON STRUCT_PATTERN_TYPE TYPE "${GRAMMAR_JSON}" repository structs patter
 if(NOT STRUCT_PATTERN_TYPE STREQUAL "ARRAY")
     message(FATAL_ERROR "TextMate grammar omitted struct declaration patterns")
 endif()
+string(JSON FUNCTION_PATTERN GET "${GRAMMAR_JSON}" repository functions patterns 0 match)
+foreach(EXPECTED IN ITEMS "math\\.ceiling" "math\\.floor" "system\\.exit")
+    string(FIND "${FUNCTION_PATTERN}" "${EXPECTED}" POSITION)
+    if(POSITION EQUAL -1)
+        message(FATAL_ERROR "TextMate grammar omitted a module function: ${EXPECTED}")
+    endif()
+endforeach()
+
+set(ENGINE_DOCUMENTATION "${NOMAD_TEST_ROOT}/engine-reference.md")
+nomadRunTestCommand("Generate engine-only documentation with module declarations"
+    COMMAND "${NOMADC}" docs --output "${ENGINE_DOCUMENTATION}"
+    WORKING_DIRECTORY "${NOMAD_TEST_ROOT}")
+file(READ "${ENGINE_DOCUMENTATION}" ENGINE_CONTENTS)
+foreach(EXPECTED IN ITEMS "math.ceiling" "math.floor" "system.exit")
+    string(FIND "${ENGINE_CONTENTS}" "${EXPECTED}" POSITION)
+    if(POSITION EQUAL -1)
+        message(FATAL_ERROR "Engine-only documentation omitted a module function: ${EXPECTED}")
+    endif()
+endforeach()
 
 file(WRITE "${SCRIPT}" "return missingExportValue\n")
+nomadRunTestCommand("Generate module grammar without analyzing invalid application source"
+    COMMAND "${NOMADC}" textmate "${PROJECT}" --output "${GRAMMAR}")
 nomadRunTestCommand("Reject dumping invalid source" EXPECT_FAILURE
     COMMAND "${NOMADC}" dump "${PROJECT}" OUTPUT_VARIABLE INVALID_OUTPUT ERROR_VARIABLE INVALID_ERROR)
 if(NOT INVALID_OUTPUT STREQUAL "" OR NOT INVALID_ERROR MATCHES "missingExportValue")

@@ -779,9 +779,21 @@ bool NativeMemberExpression::resolveMember(
         if (owner != nullptr) {
             const auto* property = owner->getProperty(m_memberName);
             if (assignment && context->getMode() == CompilerMode::Script) {
-                property = context->getCompiler()->resolveObjectField(
-                    context, function, owner, m_memberName, valueType, owner->isOpen(), getLine(), getColumn()
-                );
+                auto* compiler = context->getCompiler();
+                const auto* identifier = m_receiver->asIdentifierExpression();
+                if (
+                    identifier != nullptr &&
+                    identifier->getIdentifier() == "this" &&
+                    compiler->isObjectScriptInitializer(function)
+                ) {
+                    property = compiler->resolveClassField(
+                        context, function, m_memberName, valueType, true, getLine(), getColumn()
+                    );
+                } else {
+                    property = compiler->resolveObjectField(
+                        context, function, owner, m_memberName, valueType, owner->isOpen(), getLine(), getColumn()
+                    );
+                }
             }
             if (property != nullptr) {
                 if (m_hasExplicitArguments && m_arguments.getArgumentCount() != 0) {
@@ -1802,6 +1814,16 @@ const NomadString& IdentifierExpression::getIdentifier() const {
 }
 
 void IdentifierExpression::onResolve(CompilerContext* context, ScriptCallableBase* function) {
+    if (
+        context->isHubInitializer() &&
+        context->getCompiler()->getReceiverType(function) != nullptr &&
+        (m_identifier == "this" || m_identifier.starts_with("this."))
+    ) {
+        reportError(context, function, "Hub initializers cannot read the object receiver 'this'");
+
+        return;
+    }
+
     if (context->getCompiler()->isFieldInitializer(function) &&
         (m_identifier == "this" || m_identifier.starts_with("this."))) {
         reportError(context, function, "Field initializers cannot use or capture 'this'");

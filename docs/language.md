@@ -13,6 +13,7 @@ the Nomad game engine and embeddable in C++ applications.
 - [Identifiers and naming rules](#identifiers-and-naming-rules)
 - [Hubs](#hubs)
 - [Class declarations](#class-declarations)
+- [Object scripts](#object-scripts)
 - [Struct declarations and value semantics](#struct-declarations-and-value-semantics)
 - [Data types and numeric ranges](#data-types-and-numeric-ranges)
 - [Class types and members](#class-types-and-members)
@@ -175,8 +176,8 @@ Only declaration names receive the hub prefix. All hub-member references require
 their fully qualified names, including inside hub initializers, function
 signatures, function bodies, and format strings. There is no implicit current-
 or parent-namespace lookup. Globals, built-ins, local variables, and parameters
-retain ordinary unqualified names. Hub initializers cannot read script locals
-or parameters. Enum types and values have qualified names too:
+retain ordinary unqualified names. Hub initializers cannot read script locals,
+parameters, or an object-script receiver. Enum types and values have qualified names too:
 an enum `State` inside `hub game` is named `game.State`, with values such as
 `game.State.Ready`.
 
@@ -311,6 +312,24 @@ Hub members must still be introduced inside a hub block, even for open hubs.
 
 Native objects need host-provided storage to support stored fields; see
 [embedding](embedding.md#script-object-storage).
+
+## Object scripts
+
+An embedding host can associate source directories with a class receiver.
+These object scripts are methods, not free functions. Inside an object script,
+`this` is the typed receiver and cannot fall back to an engine context.
+
+The file body can infer fields from `this.field` assignments, declare parameters
+with `params`, and return values as an ordinary method. Named `fun` declarations
+become shared class methods and can update existing fields, but cannot introduce
+them. Call these methods with an explicit receiver, such as `this.moveHome`.
+Normal method overload and name-conflict rules apply across object scripts
+targeting the same class.
+
+Object scripts require host configuration; they are not enabled automatically
+by the game project's script directories. See
+[object-script embedding](embedding.md#object-scripts) for receiver mappings and
+initializer invocation.
 
 ## Struct declarations and value semantics
 

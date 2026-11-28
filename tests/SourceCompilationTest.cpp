@@ -691,7 +691,7 @@ BOOST_AUTO_TEST_CASE(headless_game_exposes_the_engine_api_to_the_compiler)
     TestDirectory directory("nomad_compilation_test_headless");
     directory.write(
         "start.nomad",
-        "window.setTitle \"Nomad\"\n"
+        "game.window.setTitle \"Nomad\"\n"
         "font = game.loadFont \"font.ttf\" 16\n"
         "this.text.font = font\n"
         "this.setText font \"Nomad\"\n"

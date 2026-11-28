@@ -18,6 +18,7 @@
 #include <array>
 #include <deque>
 #include <memory>
+#include <optional>
 #include <vector>
 
 struct ImGuiStyle;
@@ -88,6 +89,7 @@ private:
             Context,
             Dynamic,
             Console,
+            Property,
         };
 
         NomadString name;
@@ -98,6 +100,8 @@ private:
         VariableId variableId = VariableId::INVALID;
         bool editable = false;
         DynamicVariableId dynamicVariableId = DynamicVariableId::INVALID;
+        PropertyId propertyId = PropertyId::INVALID;
+        std::optional<InterpreterValue> receiver = std::nullopt;
     };
 
     void ensureGameTexture();
@@ -122,6 +126,12 @@ private:
     void collectVariableRows(std::vector<VariableRow>& rows) const;
     void collectContextVariableRows(std::vector<VariableRow>& rows) const;
     void collectDynamicVariableRows(std::vector<VariableRow>& rows) const;
+    void collectWindowPropertyRows(std::vector<VariableRow>& rows) const;
+    void collectObjectPropertyRows(
+        const InterpreterValue& receiver,
+        const NomadString& prefix,
+        std::vector<VariableRow>& rows
+    ) const;
     void collectConsoleVariableRows(std::vector<VariableRow>& rows) const;
     [[nodiscard]] bool applyVariableEdit(const VariableRow& row, const NomadString& text);
     [[nodiscard]] Scene* getSelectedScene() const;

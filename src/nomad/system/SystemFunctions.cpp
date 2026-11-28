@@ -13,8 +13,10 @@
 
 namespace nomad {
 
-void registerSystemFunctions(Runtime* runtime) {
-    runtime->registerNativeFunction(
+namespace {
+
+void registerBreakpoint(Runtime* runtime) {
+    const auto id = runtime->registerNativeFunction(
         "breakpoint",
         [](const VirtualMachine* interpreter) {
             const auto instructionIndex = interpreter->getInstructionIndex();
@@ -35,39 +37,13 @@ void registerSystemFunctions(Runtime* runtime) {
         NomadDoc("Set a breakpoint")
     );
 
-    runtime->registerNativeFunction(
-        "math.ceiling",
-        [](VirtualMachine* interpreter) {
-            auto value = interpreter->getFloatParameter(0);
+    if (id.isInvalid()) {
+        throw NomadException("Failed to register breakpoint");
+    }
+}
 
-            auto ceiled_value = floatCeiling(value);
-
-            interpreter->setFloatResult(ceiled_value);
-        },  // NativeFunction function
-        {
-            defParameter("value", runtime->getFloatType(), NomadParamDoc("The float to ceiling"))
-        },
-        runtime->getFloatType(),
-        NomadDoc("Ceiling a float value.")
-    );
-
-    runtime->registerNativeFunction(
-        "math.floor",
-        [](VirtualMachine* interpreter) {
-            auto value = interpreter->getFloatParameter(0);
-
-            auto floored_value = floatFloor(value);
-
-            interpreter->setFloatResult(floored_value);
-        },  // NativeFunction function
-        {
-            defParameter("value", runtime->getFloatType(), NomadParamDoc("The float to floor"))
-        },
-        runtime->getFloatType(),
-        NomadDoc("Floor a float value.")
-    );
-
-    runtime->registerNativeFunction(
+void registerConversions(Runtime* runtime) {
+    const auto stringToFloatId = runtime->registerNativeFunction(
         "toFloat",
         [](VirtualMachine* interpreter) {
             const auto* value = interpreter->getStringParameter(0)->getText();
@@ -85,7 +61,7 @@ void registerSystemFunctions(Runtime* runtime) {
         NomadDoc("Convert a string to a float. Returns 0 if the string is not a number.")
     );
 
-    runtime->registerNativeFunction(
+    const auto integerToFloatId = runtime->registerNativeFunction(
         "toFloat",
         [](VirtualMachine* interpreter) {
             const auto value = interpreter->getIntegerParameter(0);
@@ -101,7 +77,7 @@ void registerSystemFunctions(Runtime* runtime) {
         NomadDoc("Convert an integer to a float.")
     );
 
-    runtime->registerNativeFunction(
+    const auto floatToIntegerId = runtime->registerNativeFunction(
         "toInt",
         [](VirtualMachine* interpreter) {
             const auto value = interpreter->getFloatParameter(0);
@@ -117,7 +93,7 @@ void registerSystemFunctions(Runtime* runtime) {
         NomadDoc("Convert a float to an integer.")
     );
 
-    runtime->registerNativeFunction(
+    const auto stringToIntegerId = runtime->registerNativeFunction(
         "toInt",
         [](VirtualMachine* interpreter) {
             const auto* value = interpreter->getStringParameter(0)->getText();
@@ -134,6 +110,71 @@ void registerSystemFunctions(Runtime* runtime) {
         runtime->getIntegerType(),
         NomadDoc("Convert a string to an integer. Returns 0 if the string is not a number.")
     );
+
+    if (
+        stringToFloatId.isInvalid() ||
+        integerToFloatId.isInvalid() ||
+        floatToIntegerId.isInvalid() ||
+        stringToIntegerId.isInvalid()
+    ) {
+        throw NomadException("Failed to register system conversions");
+    }
+}
+
+} // namespace
+
+void registerSystemFunctions(Runtime* runtime) {
+    registerBreakpoint(runtime);
+
+    const auto ceilingId = runtime->registerNativeFunction(
+        "math.ceiling",
+        floatCeiling,
+        {{"value", NomadParamDoc("The float to ceiling")}},
+        NomadDoc("Ceiling a float value.")
+    );
+    const auto floorId = runtime->registerNativeFunction(
+        "math.floor",
+        floatFloor,
+        {{"value", NomadParamDoc("The float to floor")}},
+        NomadDoc("Floor a float value.")
+    );
+
+    if (ceilingId.isInvalid() || floorId.isInvalid()) {
+        throw NomadException("Failed to register math functions");
+    }
+
+    registerConversions(runtime);
+}
+
+void registerSystemHubFunctions(Runtime* runtime) {
+    const auto hubId = runtime->getHubId("math");
+    if (hubId.isInvalid()) {
+        throw NomadException("System module requires a script-declared math hub");
+    }
+
+    const auto ceilingId = runtime->registerHubNativeFunction(
+        hubId,
+        "ceiling",
+        floatCeiling,
+        {{"value", NomadParamDoc("The float to ceiling")}},
+        NomadDoc("Ceiling a float value.")
+    );
+    const auto floorId = runtime->registerHubNativeFunction(
+        hubId,
+        "floor",
+        floatFloor,
+        {{"value", NomadParamDoc("The float to floor")}},
+        NomadDoc("Floor a float value.")
+    );
+
+    if (ceilingId.isInvalid() || floorId.isInvalid()) {
+        throw NomadException("Failed to register math hub functions");
+    }
+}
+
+void registerSystemPrimitives(Runtime* runtime) {
+    registerBreakpoint(runtime);
+    registerConversions(runtime);
 }
 
 } // nomad

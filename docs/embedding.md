@@ -1857,6 +1857,8 @@ property reads/assignments use the same compiler selection path.
 `NomadObject::asScriptObject()` returns a borrowed `ScriptObject` pointer, or
 `nullptr` for objects without script field storage. Mutable and const overloads
 preserve the object's identity and do not retain references.
+Native objects supplying this storage support scalar and struct fields in both
+compiled code and the interpreter, including nested struct mutation.
 
 The VM checks that the receiver supplies script storage through this query and
 that the offset fits its allocated storage. Missing receivers and objects
@@ -2672,7 +2674,8 @@ identifies a backing file, not a request to read it: the supplied text is always
 authoritative, including unsaved editor changes and files not yet created.
 Untitled documents and interpreter input can leave it unset.
 `ScriptSource` pairs that text with an explicit `scriptName`. This is the
-source-level name used to register the script's compiled runtime function.
+source-level identity used to register an ordinary script's free function or
+an object script's initializer method.
 It also retains an `owner` (empty for application sources) and `relativePath`
 when loaded from a root. Module sources use `$owner.relative.file` script names;
 their diagnostic source names remain paths or editor document names.
@@ -2701,8 +2704,9 @@ void compileSources() {
 `registerSources` accepts a batch of script inputs; a single script is a batch
 with one entry. It copies the input, so the batch may be changed or destroyed
 after registration. It appends sources; it does not replace already registered
-functions. Duplicate script names are reported immediately to the supplied
-`CompilerContext`. That same context collects loading and compilation diagnostics;
+functions. Ordinary script-name conflicts are reported immediately to the supplied
+`CompilerContext`; object-script member conflicts are reported during compilation.
+That same context collects loading and compilation diagnostics;
 compilation refuses to proceed if it already contains errors. Use a fresh runtime
 for independent analysis snapshots, or provide a runtime containing the host APIs
 needed by the scripts. Compilation does not execute scripts.
@@ -2714,6 +2718,79 @@ batch (or when compilation starts without a batch); supplied snapshots override
 matching backing files. Module hosts configure their resolved module roots
 automatically, including for compiler tools using the host's runtime.
 
+### Object scripts
+
+Call `Compiler::registerObjectScriptRoots(roots)` before registering source
+snapshots to associate directories with public class receiver types. Each
+`ObjectScriptRoot` contains a `path` and `receiverTypeName`. These mappings classify
+sources; they do not discover additional files. Include their directories in
+ordinary source roots or a batch loaded with `loadSourcePaths`.
+
+```cpp
+const std::vector<nomad::SourceRoot> sources{{projectDirectory / "scripts"}};
+const std::vector<nomad::ObjectScriptRoot> objects{
+    {projectDirectory / "scripts" / "entities", "Entity"}
+};
+compiler->registerSourceRoots(sources);
+compiler->registerObjectScriptRoots(objects);
+```
+
+In this example, `scripts/entities/player.nomad` retains the identity
+`entities.player`, but its file body becomes a method of `Entity`, not a free
+function. The receiver class may be registered by the host or declared in another
+source file. Missing, internal, or non-class receiver types are compilation
+errors. Mappings assigning different receiver types to the same file are errors.
+Path matching follows source-loader rules, including case-insensitive matching
+on Windows, and preserves editor snapshots.
+
+For in-memory sources, set `ScriptSource::receiverTypeName` directly. Leaving it
+empty uses ordinary source rules unless a directory mapping matches the backing
+`filePath`. A direct receiver choice must agree with matching mappings.
+
+Object-script file bodies can declare typed parameters with `params`, infer
+stored fields through `this.field` assignments, and return values using ordinary
+method return rules. They operate on an existing receiver; they do not allocate
+or automatically initialize objects. Native receivers need the existing
+[stored-field storage contract](#script-object-storage) when their scripts add
+fields.
+
+The game module's scene and entity references support stored fields declared by
+host-configured object scripts targeting `game.Scene` or `game.Entity`. Each
+instance starts its fields at their type defaults. References to the same instance
+share those fields; different instances have independent values. Compile field
+declarations before creating instances: adding fields later does not resize them.
+
+For native entities, `Entity::getEntityObject()` returns a borrowed `EntityObject`.
+Use `Interpreter::createObjectReceiver` or `InterpreterValue` to retain a reference
+for host invocation. The scene still owns the native entity; retaining its reference
+does not prevent removal. `EntityObject::getEntity()` raises `NomadException` after
+the entity has been removed. Entities cannot be constructed with `new game.Entity`.
+
+Scene or entity removal releases its stored fields, including owned strings and
+objects. Retained references cannot access those fields after removal. This does
+not guarantee release of temporary values evaluated by a later failing compiled
+method.
+
+Object-script file bodies must still be invoked explicitly by the host; the game factories and
+project directory configuration do not yet enable them automatically. Existing
+`scene.*`, `this.*`, and `other.*` context APIs remain separate and unchanged.
+Engine entity properties and callbacks are not yet members of `game.Entity`;
+this increment exposes custom stored fields and host-compiled methods only.
+Do not switch existing entity initializer files to object scripts until their
+engine members and factory binding have been migrated.
+
+Named `fun` declarations become methods shared by all scripts targeting the same
+class. They use typed headers and ordinary overload/conflict rules, cannot
+introduce fields, and require explicit receiver calls such as `this.moveHome`.
+Inline callbacks retain the existing receiver-capture behavior. Object scripts
+and their methods are not free-function callback names.
+
+Select a file initializer with `Runtime::resolveMethod`, using its receiver type
+and source identity, then invoke the result through `Interpreter::runObjectMethod`
+with an initialized receiver. Filename-qualified entries are currently exposed
+for host initializer selection; game factory binding and bound named-method
+callbacks are not supplied by this compiler/embedding increment.
+
 Custom statements register with
 `registerParseStatementFn(name, availability, parser, preParser, blockMode, blockClassifier)`.
 The required `StatementAvailability` is `Compiler`, `Interpreter`, or `Both`;
@@ -2722,6 +2799,8 @@ The optional pre-parser receives `PreParsePhase::Declarations` first, then
 `PreParsePhase::Signatures`. Publish early type/namespace declarations in the
 first phase and resolve signatures in the second without registering declarations
 again. Interpreter-only statements do not run pre-parsers during compilation.
+Object-script declaration pre-parsers can receive a null callable in the
+declarations phase; their receiver-bound callable is available for signatures.
 Statements default to `StatementBlockMode::None`. Use `Statement` for a block
 opened at the start of a line, or `Inline` for a block that can start anywhere
 on the line, such as a callback. Each opening requires a matching `end`.
