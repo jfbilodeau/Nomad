@@ -33,6 +33,34 @@ The API uses the `game`, `game.audio`, `game.music`, `game.debug`,
 `game.debug.console`, and `game.debug.draw` hubs. Scripts can extend these open
 hubs with their own declarations.
 
+## Geometry values
+
+The game module supplies the root struct types `Point` and `Rectangle`:
+
+```nomad
+point = new Point 10.0 20.0
+rectangle = new Rectangle 0.0 0.0 100.0 50.0
+copied = rectangle
+copied.move point.x point.y
+assert rectangle.left == 0.0
+assert copied.right == 110.0
+```
+
+`Point` has writable `float` fields `x` and `y`. `Rectangle` has writable `float`
+fields `x`, `y`, `width`, and `height`; `x` and `y` denote its top-left position.
+Use `new Point` or `new Rectangle` for zero-valued fields, or supply all fields
+to the corresponding value constructor. `move deltaX deltaY` shifts a value
+without changing its size.
+
+Rectangle edge reads use `left`, `top`, `right`, and `bottom`. They reflect its
+current fields: `right` is `x + width` and `bottom` is `y + height`. Dimensions
+are not normalized or restricted. Struct assignment and arguments copy the
+fields, so changing a copy does not change the original.
+
+These root names are reserved by the selected game module; use another name or
+a hub-qualified type for project-defined geometry. The types do not yet change
+entity properties or automatically write geometry values back to engine objects.
+
 ## Window
 
 Use `game.window` to read or change the running game's window:

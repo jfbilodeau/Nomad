@@ -271,7 +271,7 @@ current-context `scene` hub remain separate follow-up contracts.
 
 ## Object scripts: native entity storage
 
-Status: implemented and validated; awaiting review.
+Status: implemented, validated, and reviewed.
 
 - Register the non-constructible `game.Entity` reference type.
 - Each native entity supplies one stable reference through its C++ API and
@@ -299,3 +299,33 @@ After review, migrate native entity members needed by existing initializer files
 then connect object-script directory configuration and factory invocation. Named
 callback receiver binding and the root scene facade follow in separately reviewed
 steps. Stored fields alone do not enable existing game scripts as object scripts.
+
+## Object scripts: Nomad geometry values
+
+Status: implemented and validated; awaiting review.
+
+The direct entity-property increment was paused in favor of defining geometry
+and derived behavior in Nomad before adding more native bindings.
+
+- Add root `Point` and `Rectangle` structs in the game module's scripts.
+- Use float fields; rectangles store top-left `x`/`y` and `width`/`height`.
+- Supply zero/default and value constructors, movement methods, and
+  parameterless rectangle `left`/`top`/`right`/`bottom` methods.
+- Keep ordinary struct value semantics and permit unnormalized dimensions.
+- Do not add syntax, compiler rules, or automatic property writeback.
+- Leave native entity members and legacy `this.*`/`other.*` bindings unchanged.
+
+Validation passed for construction, movement, rectangle-edge calculations, value
+copy independence, and module loading in analysis and executable compilation.
+The build, language/tooling/remaining CTest groups, packaged headless smoke
+project, reproducible grammar generation, and strict MkDocs validation passed.
+No manual gameplay validation was performed.
+
+After review, choose the minimal native geometry bridge for entity position/size
+and implement derived operations in Nomad where possible. A native getter
+returning a struct is a snapshot; mutations of that snapshot do not update the
+entity unless the whole replacement is assigned back. Discuss any different
+writeback behavior before implementation.
+
+Entity nested views/methods, directory configuration, factory binding, named
+callbacks, and the root scene hub remain subsequent reviewable increments.

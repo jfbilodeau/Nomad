@@ -88,6 +88,69 @@ bool compileFixture(
 
 BOOST_AUTO_TEST_SUITE(module_host)
 
+BOOST_AUTO_TEST_CASE(game_module_geometry_values_move_independently_and_compute_edges) {
+    const TestDirectory directory("host-game-geometry");
+    const auto modules = resolveModules(getSdkDirectory() / "modules", {"game"});
+    const SourceBatch sources{{
+        {"main", {"editor:geometry",
+            "point = new Point 1.0 -2.0\npointCopy = point\npointCopy.move 3.0 5.0\n"
+            "assert point.x == 1.0\nassert point.y == -2.0\n"
+            "assert pointCopy.x == 4.0\nassert pointCopy.y == 3.0\n"
+            "origin = new Point\norigin.move point.x point.y\n"
+            "assert origin.x == point.x\nassert origin.y == point.y\n"
+            "rectangle = new Rectangle -4.0 2.0 8.0 6.0\ncopied = rectangle\n"
+            "copied.move pointCopy.x pointCopy.y\n"
+            "assert rectangle.left == -4.0\nassert rectangle.top == 2.0\n"
+            "assert rectangle.right == 4.0\nassert rectangle.bottom == 8.0\n"
+            "assert copied.left == 0.0\nassert copied.top == 5.0\n"
+            "assert copied.right == 8.0\nassert copied.bottom == 11.0\n"
+            "copied.width = -3.0\nassert copied.right == -3.0\nassert rectangle.right == 4.0\n"
+            "empty = new Rectangle\nempty.move -1.0 2.0\n"
+            "assert empty.right == -1.0\nassert empty.bottom == 2.0\n"
+            "return copied.bottom"
+        }}
+    }, {}};
+
+    for (const auto target : {CompilationTarget::Analysis, CompilationTarget::Executable}) {
+        auto host = ModuleHost::create({}, directory.getPath(), modules, {}, ModuleMode::Analysis);
+        const auto compilation = host->compileSources(sources, target);
+        NomadString diagnostics;
+        for (const auto& diagnostic : compilation.diagnostics) {
+            diagnostics += formatDiagnostic(diagnostic) + "\n";
+        }
+
+        BOOST_REQUIRE_MESSAGE(compilation.succeeded(), diagnostics);
+        if (target == CompilationTarget::Analysis) {
+            continue;
+        }
+
+        auto* runtime = host->getRuntime();
+        runtime->initializeScripts();
+        auto machine = runtime->createVirtualMachine();
+        RuntimeValue result;
+        machine->executeFunction(runtime->getScriptFunctionId("main"), {}, result);
+        BOOST_TEST(result.getFloatValue() == 11.0f);
+        const Interpreter interpreter(*machine);
+        InterpreterContext context(interpreter);
+        BOOST_REQUIRE(interpreter.execute("point = new Point 2.0 3.0", context));
+        BOOST_REQUIRE(interpreter.execute("copiedPoint = point", context));
+        BOOST_REQUIRE(interpreter.execute("copiedPoint.move -1.0 4.0", context));
+        BOOST_REQUIRE(interpreter.execute("point.x", context));
+        BOOST_TEST(context.getResult()->getValue().getFloatValue() == 2.0f);
+        BOOST_REQUIRE(interpreter.execute("copiedPoint.y", context));
+        BOOST_TEST(context.getResult()->getValue().getFloatValue() == 7.0f);
+        BOOST_REQUIRE(interpreter.execute("rectangle = new Rectangle 1.0 2.0 3.0 4.0", context));
+        BOOST_REQUIRE(interpreter.execute("rectangle.move -2.0 3.0", context));
+        BOOST_REQUIRE(interpreter.execute("rectangle.left", context));
+        BOOST_TEST(context.getResult()->getValue().getFloatValue() == -1.0f);
+        BOOST_REQUIRE(interpreter.execute("rectangle.bottom", context));
+        BOOST_TEST(context.getResult()->getValue().getFloatValue() == 9.0f);
+        BOOST_REQUIRE(interpreter.execute("rectangle.height = 1.0", context));
+        BOOST_REQUIRE(interpreter.execute("rectangle.bottom", context));
+        BOOST_TEST(context.getResult()->getValue().getFloatValue() == 6.0f);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(system_module_uses_script_declared_hubs_and_preserves_native_calls) {
     const TestDirectory directory("host-system-script-hubs");
     const auto modules = resolveModules(getSdkDirectory() / "modules", {"system"});
