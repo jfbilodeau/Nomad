@@ -101,7 +101,7 @@ private:
         bool editable = false;
         DynamicVariableId dynamicVariableId = DynamicVariableId::INVALID;
         PropertyId propertyId = PropertyId::INVALID;
-        std::optional<InterpreterValue> receiver;
+        std::optional<InterpreterValue> receiver = std::nullopt;
     };
 
     void ensureGameTexture();
